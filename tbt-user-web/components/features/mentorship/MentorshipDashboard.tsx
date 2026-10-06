@@ -5,12 +5,14 @@ import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   Flame, Heart, CheckCircle2, Clock, TrendingUp, TrendingDown,
   BookOpen, BarChart3, Target, Phone, ChevronRight, Trophy, Star, Activity,
+  Play, Lock,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
+import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
@@ -1140,6 +1142,7 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
   const upsert = useUpsertMentorshipSocial();
   const { data: social } = useMentorshipSocial();
 
+  const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<SocialFormState>(EMPTY_SOCIAL);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -1168,40 +1171,59 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
 
   const n = (v: string): number | null => (v === "" ? null : Number(v));
 
-  // Calculations
-  const followers = n(form.totalFollowers);
-  const followersPrev = n(form.followersPrev);
-  const videoViews = n(form.videoViews);
-  const videoViewsPrev = n(form.videoViewsPrev);
-  const contentUploads = n(form.contentUploads);
-  const contentTarget = n(form.contentUploadTarget) ?? 7;
-  const interactions = n(form.interactions);
-  const interactionsPrev = n(form.interactionsPrev);
-  const dmLeads = n(form.dmLeads);
-  const bioClicks = n(form.bioLinkClicks);
-  const bioClicksPrev = n(form.bioLinkClicksPrev);
+  // ── Display values from saved social data ───────────────────────────────────
+  const followers      = social?.totalFollowers ?? null;
+  const followersPrev  = social?.followersPrev ?? null;
+  const videoViews     = social?.videoViews ?? null;
+  const videoViewsPrev = social?.videoViewsPrev ?? null;
+  const contentUploads = social?.contentUploads ?? null;
+  const contentTarget  = social?.contentUploadTarget ?? 7;
+  const interactions   = social?.interactions ?? null;
+  const interactionsPrev = social?.interactionsPrev ?? null;
+  const dmLeads        = social?.dmLeads ?? null;
+  const bioClicks      = social?.bioLinkClicks ?? null;
+  const bioClicksPrev  = social?.bioLinkClicksPrev ?? null;
 
-  const followersGrowth = growthPct(followers, followersPrev);
-  const videoGrowth = growthPct(videoViews, videoViewsPrev);
+  const followersGrowth    = growthPct(followers, followersPrev);
+  const videoGrowth        = growthPct(videoViews, videoViewsPrev);
   const interactionsGrowth = growthPct(interactions, interactionsPrev);
-  const bioGrowth = growthPct(bioClicks, bioClicksPrev);
-  const contentPct = contentUploads != null && contentTarget > 0 ? Math.round((contentUploads / contentTarget) * 100) : null;
-  const targetPace = contentPct ?? 0;
+  const bioGrowth          = growthPct(bioClicks, bioClicksPrev);
+  const contentPct         = contentUploads != null && contentTarget > 0 ? Math.round((contentUploads / contentTarget) * 100) : null;
+  const targetPace         = contentPct ?? 0;
+
+  // ── Form-state derived values (used inside the edit form) ───────────────────
+  const fFollowers      = n(form.totalFollowers);
+  const fFollowersPrev  = n(form.followersPrev);
+  const fVideoViews     = n(form.videoViews);
+  const fVideoViewsPrev = n(form.videoViewsPrev);
+  const fContentUploads = n(form.contentUploads);
+  const fContentTarget  = n(form.contentUploadTarget) ?? 7;
+  const fInteractions   = n(form.interactions);
+  const fInteractionsPrev = n(form.interactionsPrev);
+  const fDmLeads        = n(form.dmLeads);
+  const fBioClicks      = n(form.bioLinkClicks);
+  const fBioClicksPrev  = n(form.bioLinkClicksPrev);
+
+  const fFollowersGrowth    = growthPct(fFollowers, fFollowersPrev);
+  const fVideoGrowth        = growthPct(fVideoViews, fVideoViewsPrev);
+  const fInteractionsGrowth = growthPct(fInteractions, fInteractionsPrev);
+  const fBioGrowth          = growthPct(fBioClicks, fBioClicksPrev);
+  const fContentPct         = fContentUploads != null && fContentTarget > 0 ? Math.round((fContentUploads / fContentTarget) * 100) : null;
 
   const handleSave = async () => {
     try {
       await upsert.mutateAsync({
-        totalFollowers:      followers != null ? Math.round(followers) : null,
-        followersPrev:       followersPrev != null ? Math.round(followersPrev) : null,
-        videoViews:          videoViews != null ? Math.round(videoViews) : null,
-        videoViewsPrev:      videoViewsPrev != null ? Math.round(videoViewsPrev) : null,
-        contentUploads:      contentUploads != null ? Math.round(contentUploads) : null,
-        contentUploadTarget: Math.round(contentTarget),
-        interactions:        interactions != null ? Math.round(interactions) : null,
-        interactionsPrev:    interactionsPrev != null ? Math.round(interactionsPrev) : null,
-        dmLeads:             dmLeads != null ? Math.round(dmLeads) : null,
-        bioLinkClicks:       bioClicks != null ? Math.round(bioClicks) : null,
-        bioLinkClicksPrev:   bioClicksPrev != null ? Math.round(bioClicksPrev) : null,
+        totalFollowers:      fFollowers != null ? Math.round(fFollowers) : null,
+        followersPrev:       fFollowersPrev != null ? Math.round(fFollowersPrev) : null,
+        videoViews:          fVideoViews != null ? Math.round(fVideoViews) : null,
+        videoViewsPrev:      fVideoViewsPrev != null ? Math.round(fVideoViewsPrev) : null,
+        contentUploads:      fContentUploads != null ? Math.round(fContentUploads) : null,
+        contentUploadTarget: Math.round(fContentTarget),
+        interactions:        fInteractions != null ? Math.round(fInteractions) : null,
+        interactionsPrev:    fInteractionsPrev != null ? Math.round(fInteractionsPrev) : null,
+        dmLeads:             fDmLeads != null ? Math.round(fDmLeads) : null,
+        bioLinkClicks:       fBioClicks != null ? Math.round(fBioClicks) : null,
+        bioLinkClicksPrev:   fBioClicksPrev != null ? Math.round(fBioClicksPrev) : null,
       });
       setIsDirty(false);
       toast.success("Social stats saved!");
@@ -1210,20 +1232,33 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
     }
   };
 
-  // Social metric tile: compact input pair + calculated % badge
+  // ── Read-only display card ───────────────────────────────────────────────────
+  const displayCard = (label: string, value: string, sub: React.ReactNode) => (
+    <div
+      className="rounded-xl p-3.5 flex flex-col gap-1.5"
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+    >
+      <p className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
+      <p className="text-xl font-extrabold text-white leading-none">{value}</p>
+      <div className="mt-0.5">{sub}</div>
+    </div>
+  );
+
+  const staticBadge = (text: string) => (
+    <span className="text-[10px] font-semibold" style={{ color: "var(--color-text-subtle)" }}>{text}</span>
+  );
+
+  // ── Edit form input tile ─────────────────────────────────────────────────────
   const tile = (
     label: string,
     currKey: keyof SocialFormState,
     prevKey: keyof SocialFormState | null,
     growth: number | null,
     badge: string,
-    opts?: { isQuota?: boolean; targetKey?: keyof SocialFormState; noGrowth?: boolean; suffix?: string },
+    opts?: { isQuota?: boolean; noGrowth?: boolean },
   ) => {
     const currVal = n(form[currKey]);
-    const target = opts?.targetKey ? n(form[opts.targetKey]) : null;
-    const displayVal = currVal != null
-      ? (opts?.suffix ? `${fmtK(currVal)}${opts.suffix}` : fmtK(currVal))
-      : "—";
+    const displayVal = currVal != null ? fmtK(currVal) : "—";
 
     return (
       <div
@@ -1231,19 +1266,11 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
         style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
       >
         <p className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
-        <div className="text-lg font-extrabold text-white leading-none">
-          {displayVal}
-          {opts?.isQuota && target != null && (
-            <span className="text-xs font-semibold ml-0.5" style={{ color: "var(--color-text-secondary)" }}>/{target}</span>
-          )}
-        </div>
-
-        {/* Input fields */}
+        <div className="text-base font-extrabold text-white leading-none">{displayVal}</div>
         <div className="flex gap-1">
           <input
-            type="number"
-            min={0}
-            placeholder="This wk"
+            type="number" min={0}
+            placeholder={opts?.isQuota ? "Uploaded" : "This wk"}
             value={form[currKey]}
             onChange={set(currKey)}
             className="min-w-0 flex-1 rounded-lg py-1 px-2 text-[10px] text-white outline-none"
@@ -1253,8 +1280,7 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
           />
           {prevKey && (
             <input
-              type="number"
-              min={0}
+              type="number" min={0}
               placeholder={opts?.isQuota ? "Target" : "Last wk"}
               value={form[prevKey]}
               onChange={set(prevKey)}
@@ -1265,117 +1291,270 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
             />
           )}
         </div>
-
-        {/* Result badge */}
         {!opts?.noGrowth && growth != null ? (
           <GrowthBadge value={growth} />
         ) : (
           <span className="text-[10px] font-semibold" style={{ color: "var(--color-text-subtle)" }}>{badge}</span>
         )}
-        {opts?.isQuota && contentPct != null && (
+        {opts?.isQuota && fContentPct != null && (
           <div className="w-full h-1 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
-            <div className="h-1 rounded-full" style={{ width: `${Math.min(100, contentPct)}%`, background: contentPct >= 100 ? "#22c55e" : "var(--color-accent)", transition: "width 0.8s ease" }} />
+            <div className="h-1 rounded-full" style={{ width: `${Math.min(100, fContentPct)}%`, background: fContentPct >= 100 ? "#22c55e" : "var(--color-accent)", transition: "width 0.8s ease" }} />
           </div>
         )}
       </div>
     );
   };
 
-  // Tasks row from batch data
-  const recentDays: any[] = (batchData?.days ?? [])
-    .slice()
-    .sort((a: any, b: any) => b.dayNumber - a.dayNumber)
-    .slice(0, 6);
+  // ── Process-based task cards ─────────────────────────────────────────────────
+  const processes: any[]     = batchData?.processes ?? [];
+  const programTasks: any[]  = batchData?.programTasks ?? [];
+  const mySubmissions: any[] = batchData?.mySubmissions ?? [];
 
-  const taskIcon = (status: string) => {
-    if (status === "approved") return { bg: "rgba(34,197,94,0.15)", border: "rgba(34,197,94,0.25)", icon: "✓", color: "#22c55e" };
-    if (status === "submitted") return { bg: "rgba(251,191,36,0.12)", border: "rgba(251,191,36,0.25)", icon: "→", color: "#fbbf24" };
-    if (status === "rejected") return { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.25)", icon: "!", color: "#ef4444" };
-    return { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.09)", icon: "○", color: "rgba(255,255,255,0.3)" };
+  const getProcessStatus = (proc: any): "completed" | "active" | "locked" => {
+    const tasks = programTasks
+      .filter((t: any) => t.processId === proc.id)
+      .sort((a: any, b: any) => a.stagePosition - b.stagePosition);
+    if (tasks.length === 0) return "locked";
+    if (tasks[0]?.stageLocked) return "locked";
+    const allApproved = tasks.every((t: any) => mySubmissions.some((s: any) => s.taskId === t.id && s.status === "approved"));
+    return allApproved ? "completed" : "active";
+  };
+
+  const statusStyle = (s: "completed" | "active" | "locked") => {
+    if (s === "completed") return { bg: "rgba(34,197,94,0.12)",   border: "rgba(34,197,94,0.22)",    icon: "✓", color: "#22c55e",              label: "Completed" };
+    if (s === "active")    return { bg: "rgba(239,68,68,0.10)",   border: "rgba(239,68,68,0.22)",    icon: "!", color: "#ef4444",              label: "In Progress" };
+    return                        { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.09)", icon: "○", color: "rgba(255,255,255,0.25)", label: "Locked" };
   };
 
   return (
     <motion.div variants={fadeUp} className="space-y-4">
-      {/* Social Growth card */}
-      <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* ── Social Growth display card ──────────────────────────────── */}
+      <div
+        className="rounded-2xl p-4"
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+      >
         <div className="flex items-center justify-between mb-4 gap-3">
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Social Media Organic Growth</h2>
           <span
             className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0"
             style={{
-              background: targetPace >= 100 ? "rgba(34,197,94,0.15)" : targetPace >= 50 ? "rgba(251,146,60,0.12)" : "rgba(255,255,255,0.05)",
-              color: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#fb923c" : "rgba(255,255,255,0.4)",
-              border: `1px solid ${targetPace >= 100 ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.08)"}`,
+              background: targetPace >= 100 ? "rgba(34,197,94,0.15)" : targetPace >= 50 ? "rgba(129,140,248,0.15)" : "rgba(255,255,255,0.05)",
+              color:      targetPace >= 100 ? "#22c55e"               : targetPace >= 50 ? "#818cf8"                : "rgba(255,255,255,0.4)",
+              border: `1px solid ${targetPace >= 100 ? "rgba(34,197,94,0.2)" : targetPace >= 50 ? "rgba(129,140,248,0.2)" : "rgba(255,255,255,0.08)"}`,
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#fb923c" : "rgba(255,255,255,0.3)" }} />
-            Target Pace: {contentPct ?? 0}%
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#818cf8" : "rgba(255,255,255,0.3)" }} />
+            Target Pace: {targetPace}%
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {tile("Total Followers", "totalFollowers", "followersPrev", followersGrowth, "+6.8% new fans")}
-          {tile("Video Views", "videoViews", "videoViewsPrev", videoGrowth, "+12.8% this wk")}
-          {tile("Content Uploads", "contentUploads", "contentUploadTarget", null, "Weekly Quota", { isQuota: true, noGrowth: true })}
-          {tile("Interactions", "interactions", "interactionsPrev", interactionsGrowth, "+0.5% Increase")}
-          {tile("Inbound DM Leads", "dmLeads", null, null, "Organic", { noGrowth: true })}
-          {tile("Bio Link Clicks", "bioLinkClicks", "bioLinkClicksPrev", bioGrowth, "+16.4% CTR")}
+        {/* Read-only metric cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          {displayCard("Total Followers",   followers  != null ? fmtK(followers)          : "—", <GrowthBadge value={followersGrowth} />)}
+          {displayCard("Video Views",       videoViews != null ? fmtK(videoViews)         : "—", <GrowthBadge value={videoGrowth} />)}
+          {displayCard("Content Uploads",   contentUploads != null ? `${contentUploads}/${contentTarget}` : "—", staticBadge("Weekly Quota"))}
+          {displayCard("Interactions",      interactions != null ? fmtK(interactions)     : "—", <GrowthBadge value={interactionsGrowth} />)}
+          {displayCard("Inbound DM Leads",  dmLeads    != null ? String(dmLeads)          : "—", staticBadge("Organic"))}
+          {displayCard("Bio Link Clicks",   bioClicks  != null ? String(bioClicks)        : "—", <GrowthBadge value={bioGrowth} />)}
         </div>
 
+        {/* Toggle to show/hide the update form */}
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowForm(v => !v)}
+            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+            style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
+          >
+            {showForm ? "Close" : "Update social stats"}
+          </button>
+        </div>
+
+        {/* Collapsible edit form */}
         <AnimatePresence>
-          {isDirty && (
+          {showForm && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              className="flex justify-end pt-4"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
             >
-              <button
-                onClick={handleSave}
-                disabled={upsert.isPending}
-                className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
-                style={{ background: "var(--color-accent)" }}
+              <div
+                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 pt-4"
+                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
               >
-                {upsert.isPending ? "Saving…" : "Save Social Stats"}
-              </button>
+                {tile("Total Followers",   "totalFollowers",  "followersPrev",   fFollowersGrowth,    "+6.8% new fans")}
+                {tile("Video Views",       "videoViews",      "videoViewsPrev",  fVideoGrowth,        "+12.8% this wk")}
+                {tile("Content Uploads",   "contentUploads",  "contentUploadTarget", null,            "Weekly Quota", { isQuota: true, noGrowth: true })}
+                {tile("Interactions",      "interactions",    "interactionsPrev", fInteractionsGrowth, "+0.5% Increase")}
+                {tile("Inbound DM Leads",  "dmLeads",         null,              null,                "Organic", { noGrowth: true })}
+                {tile("Bio Link Clicks",   "bioLinkClicks",   "bioLinkClicksPrev", fBioGrowth,        "+16.4% CTR")}
+              </div>
+              <AnimatePresence>
+                {isDirty && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    className="flex justify-end pt-4"
+                  >
+                    <button
+                      onClick={handleSave}
+                      disabled={upsert.isPending}
+                      className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
+                      style={{ background: "var(--color-accent)" }}
+                    >
+                      {upsert.isPending ? "Saving…" : "Save Social Stats"}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Tasks row */}
-      {recentDays.length > 0 && (
+      {/* ── Tasks (process stage cards) ─────────────────────────────── */}
+      {processes.length > 0 && (
         <div>
           <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Tasks</p>
           <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-            {recentDays.map((day: any) => {
-              const t = taskIcon(day.status ?? "pending");
+            {processes.map((proc: any) => {
+              const s  = getProcessStatus(proc);
+              const st = statusStyle(s);
               return (
                 <div
-                  key={day.dayNumber}
+                  key={proc.id}
                   className="shrink-0 rounded-2xl p-3.5 flex flex-col gap-2 w-44"
-                  style={{ background: t.bg, border: `1px solid ${t.border}` }}
+                  style={{ background: st.bg, border: `1px solid ${st.border}` }}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-                      Tasks · Day {day.dayNumber}
-                    </span>
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0" style={{ background: t.border, color: t.color }}>
-                      {t.icon}
+                    <span className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Tasks</span>
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0"
+                      style={{ background: st.border, color: st.color }}
+                    >
+                      {st.icon}
                     </span>
                   </div>
-                  <p className="text-sm font-bold leading-snug" style={{ color: "var(--color-text-normal)" }}>
-                    {day.category ?? `Day ${day.dayNumber}`}
-                  </p>
-                  <p className="text-[9px] capitalize" style={{ color: "var(--color-text-subtle)" }}>
-                    {day.status ?? "pending"}
-                  </p>
+                  <p className="text-sm font-bold leading-snug" style={{ color: "var(--color-text-normal)" }}>{proc.title}</p>
+                  <p className="text-[9px]" style={{ color: "var(--color-text-subtle)" }}>{st.label}</p>
                 </div>
               );
             })}
           </div>
         </div>
       )}
+    </motion.div>
+  );
+}
+
+// ─── Now Learning ─────────────────────────────────────────────────────────────
+
+function NowLearningSection() {
+  const { data: items } = useContinueLearning();
+  const item = (items as any[] | undefined)?.find((i: any) => !i.isCompleted) ?? (items as any[] | undefined)?.[0] ?? null;
+
+  if (!item) return null;
+
+  const progressPct  = item.progressPercent ?? (item.durationSeconds > 0 ? Math.round((item.lastWatchedSecs / item.durationSeconds) * 100) : 0);
+  const courseBase   = item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`;
+  const lessonHref   = item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase;
+
+  return (
+    <motion.div variants={fadeUp} className="space-y-3">
+      <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Now Learning</h2>
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+      >
+        <div className="flex flex-col sm:flex-row">
+          {/* ── Thumbnail ─────────────────────────────────────── */}
+          <div className="relative shrink-0 sm:w-52 h-36 sm:h-auto">
+            {item.thumbnailUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={item.thumbnailUrl as string} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div
+                className="w-full h-full min-h-[9rem] flex items-center justify-center"
+                style={{ background: "rgba(255,255,255,0.04)" }}
+              >
+                <Play className="w-10 h-10" style={{ color: "var(--color-text-subtle)" }} />
+              </div>
+            )}
+            <div
+              className="absolute inset-0 flex flex-col justify-end p-3"
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 55%, transparent 100%)" }}
+            >
+              <p className="text-[8px] font-bold uppercase tracking-wide overlay-meta mb-0.5 line-clamp-1">{item.title}</p>
+              <p className="text-xs font-black leading-tight overlay-text line-clamp-2">{item.lastLessonTitle}</p>
+            </div>
+          </div>
+
+          {/* ── Center info ───────────────────────────────────── */}
+          <div className="flex-1 p-4 flex flex-col justify-between gap-3 min-w-0">
+            <div>
+              <p className="text-[10px] mb-1" style={{ color: "var(--color-text-subtle)" }}>
+                {item.title} &middot; Lesson {item.episodeOrder} of {item.episodeCount}
+              </p>
+              <h3 className="text-lg font-black leading-tight" style={{ color: "var(--color-text-normal)" }}>
+                {item.lastLessonTitle}
+              </h3>
+              {(item.durationSeconds as number) > 0 && (
+                <p className="text-[10px] mt-1" style={{ color: "var(--color-text-subtle)" }}>
+                  Duration &middot; {Math.round((item.durationSeconds as number) / 60)} min
+                </p>
+              )}
+            </div>
+            <div className="space-y-3">
+              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+                <div
+                  className="h-1.5 rounded-full"
+                  style={{
+                    width: `${Math.min(100, progressPct)}%`,
+                    background: "var(--color-accent)",
+                    transition: "width 1s ease",
+                  }}
+                />
+              </div>
+              <Link href={lessonHref}>
+                <span
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-black hover:opacity-90 transition-opacity cursor-pointer"
+                  style={{ background: "#facc15" }}
+                >
+                  <span>→</span> Continue Learning
+                </span>
+              </Link>
+            </div>
+          </div>
+
+          {/* ── Next Lesson panel ─────────────────────────────── */}
+          <div
+            className="hidden lg:flex shrink-0 w-40 flex-col gap-3 p-4"
+            style={{ borderLeft: "1px solid rgba(255,255,255,0.06)" }}
+          >
+            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Next Lesson</p>
+            <div
+              className="flex-1 rounded-xl flex flex-col items-center justify-center gap-2 p-3"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+            >
+              <Lock className="w-5 h-5" style={{ color: "rgba(255,255,255,0.2)" }} />
+              <p className="text-[9px] text-center leading-snug" style={{ color: "var(--color-text-subtle)" }}>
+                {(item.episodeOrder as number) < (item.episodeCount as number)
+                  ? `Lesson ${(item.episodeOrder as number) + 1}`
+                  : "Final Lesson"}
+              </p>
+            </div>
+            <Link
+              href={courseBase}
+              className="text-[10px] font-semibold hover:opacity-80 transition-opacity"
+              style={{ color: "#818cf8" }}
+            >
+              View Full Module
+            </Link>
+          </div>
+        </div>
+      </div>
     </motion.div>
   );
 }
@@ -1613,6 +1792,12 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
 
       {/* ── F. Weekly Revenue & Order Trajectory (saved daily numbers) ──── */}
       <WeeklyChartSection revenue={revenue} />
+
+      {/* ── G. Social Media Organic Growth + Process Stage Tasks ─────────── */}
+      <SocialGrowthSection batchData={batchData} />
+
+      {/* ── H. Now Learning ──────────────────────────────────────────────── */}
+      <NowLearningSection />
 
       {/* ── Data entry: the member's own weekly numbers feed E and F ────── */}
       <motion.div variants={fadeUp} className="flex flex-col gap-3">
