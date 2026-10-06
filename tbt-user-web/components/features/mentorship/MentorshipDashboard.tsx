@@ -1474,7 +1474,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           label="Daily Time Spent"
           value={`${dailyHrsCount} hrs`}
           sub={dailyGoal != null ? `vs ${dailyGoal}hr goal` : "Today"}
-          growth={dailyGrowth}
+          growth={dailyHrs > 0 ? dailyGrowth : null}
           icon={Clock}
         />
         <KpiCard
@@ -1499,7 +1499,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           sub={revenue?.leadsPrev != null ? `Closed ${leadsGrowthVal != null ? Math.abs(leadsGrowthVal) : "—"}% Since Prev` : "Weekly vs prior week"}
           icon={TrendingUp}
           accentColor="#22c55e"
-          valueColor={leadsGrowthVal != null && leadsGrowthVal >= 0 ? "#22c55e" : "#ef4444"}
+          valueColor={leadsGrowthVal != null ? (leadsGrowthVal >= 0 ? "#22c55e" : "#ef4444") : undefined}
         />
       </motion.div>
 
