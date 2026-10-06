@@ -20,7 +20,8 @@ import {
   notifyQuizPassed,
 } from '../../lib/courseNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
-import { computeMemberStats } from '../../lib/tbtStats.js';
+import { computeMemberStats, syncLegacyPointsToLedger } from '../../lib/tbtStats.js';
+import { computeStreakSummary, type StreakActivityRow } from '../../lib/streakSummaryLogic.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
@@ -1961,6 +1962,26 @@ export async function getMyStreakPointsHandler(request: FastifyRequest, reply: F
   ).catch(() => [] as StreakPointsRow[]);
 
   return ok(reply, computeStreakPointsSummary(rows));
+}
+
+// Header streak widget — same tbt_activity_log ledger + UTC day rule as the
+// dashboard "Current Streak" stat (computeMemberStats), plus longest streak and
+// a 7-day activity strip. Cached briefly because the navbar mounts on every page.
+export async function getMyStreakHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const prisma = request.server.prisma;
+  const summary = await cacheGetOrCompute(request.server.redis ?? null, `streak:${memberId}`, 60, async () => {
+    await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
+    const rows = await prisma.$queryRawUnsafe<StreakActivityRow[]>(
+      `SELECT activity_date, COALESCE(SUM(points), 0)::bigint AS points
+       FROM tbt_activity_log
+       WHERE member_id = $1::uuid
+       GROUP BY activity_date`,
+      memberId,
+    ).catch(() => [] as StreakActivityRow[]);
+    return computeStreakSummary(rows);
+  });
+  return ok(reply, summary);
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
