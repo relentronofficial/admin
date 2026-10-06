@@ -81,8 +81,8 @@ function MentorshipHeader({
   const filledHearts = lifelinesTotal != null ? lifelinesTotal - (lifelinesUsed ?? 0) : 0;
 
   return (
-    <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3 mb-6">
-      <h1 className="text-lg font-bold flex-1 min-w-0 truncate" style={{ color: "var(--color-text-normal)" }}>
+    <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3 mb-5">
+      <h1 className="text-xl font-bold flex-1 min-w-0 truncate" style={{ color: "var(--color-text-normal)" }}>
         {programName ?? "Mentorship Program"}
       </h1>
       <div className="flex items-center gap-2 flex-wrap">
@@ -92,24 +92,29 @@ function MentorshipHeader({
           </span>
         )}
         <span className="mentorship-streak-badge inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(251,146,60,0.15)", color: "#fb923c", border: "1px solid rgba(251,146,60,0.3)" }}>
-          <Flame className="w-3 h-3" /> {streakDays} Days
+          <Flame className="w-3 h-3" /> Streak {streakDays} Days
         </span>
-        <span className="inline-flex items-center gap-0.5">
-          {Array.from({ length: totalHearts }).map((_, i) => (
-            <motion.span
-              key={i}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.6 + i * 0.08, type: "spring", stiffness: 400, damping: 16 }}
-            >
-              <Heart
-                className="w-4 h-4"
-                style={{ color: i < filledHearts ? "#ef4444" : "rgba(255,255,255,0.15)" }}
-                fill={i < filledHearts ? "#ef4444" : "none"}
-              />
-            </motion.span>
-          ))}
-        </span>
+        {totalHearts > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Lifelines</span>
+            <span className="inline-flex items-center gap-0.5 ml-0.5">
+              {Array.from({ length: totalHearts }).map((_, i) => (
+                <motion.span
+                  key={i}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.6 + i * 0.08, type: "spring", stiffness: 400, damping: 16 }}
+                >
+                  <Heart
+                    className="w-4 h-4"
+                    style={{ color: i < filledHearts ? "#ef4444" : "rgba(255,255,255,0.2)" }}
+                    fill={i < filledHearts ? "#ef4444" : "none"}
+                  />
+                </motion.span>
+              ))}
+            </span>
+          </span>
+        )}
       </div>
     </motion.div>
   );
@@ -122,6 +127,7 @@ function KpiCard({
   growth,
   icon: Icon,
   accentColor,
+  valueColor,
 }: {
   label: string;
   value: string;
@@ -129,6 +135,7 @@ function KpiCard({
   growth?: number | null;
   icon: React.ElementType;
   accentColor?: string;
+  valueColor?: string;
 }) {
   return (
     <motion.div
@@ -141,10 +148,10 @@ function KpiCard({
       whileHover={{ scale: 1.015, transition: { duration: 0.18 } }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
-        <Icon className="w-4 h-4" style={{ color: accentColor ?? "var(--color-accent)", opacity: 0.7 }} />
+        <span className="text-[10px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        <Icon className="w-4 h-4 shrink-0" style={{ color: accentColor ?? "var(--color-accent)", opacity: 0.7 }} />
       </div>
-      <div className="text-2xl font-black tracking-tight text-white">{value}</div>
+      <div className="text-2xl font-black tracking-tight leading-none" style={{ color: valueColor ?? "#ffffff" }}>{value}</div>
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{sub}</span>
         {growth != null && <GrowthBadge value={growth} />}
@@ -161,6 +168,9 @@ function JourneyTile({
   icon: Icon,
   noBar,
   pct: pctOverride,
+  badge,
+  badgeColor,
+  sub,
 }: {
   label: string;
   used: number | string;
@@ -169,34 +179,47 @@ function JourneyTile({
   icon: React.ElementType;
   noBar?: boolean;
   pct?: number | null;
+  badge?: string;
+  badgeColor?: string;
+  sub?: string;
 }) {
   const pct = pctOverride != null
     ? Math.min(100, pctOverride)
     : typeof used === "number" && typeof total === "number" && total > 0
       ? (used / total) * 100
       : 0;
+  const bColor = badgeColor ?? "rgba(255,255,255,0.5)";
   return (
     <div
       className="rounded-xl p-3 flex flex-col gap-1"
       style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
     >
-      <div className="flex items-center gap-1.5 mb-1">
-        <Icon className="w-3 h-3" style={{ color: "var(--color-accent)", opacity: 0.7 }} />
-        <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+      <div className="flex items-center justify-between gap-1 mb-1">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <Icon className="w-3 h-3 shrink-0" style={{ color: "var(--color-accent)", opacity: 0.7 }} />
+          <span className="text-[9px] font-bold uppercase tracking-widest truncate" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        </div>
+        {badge && (
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: `${bColor}20`, color: bColor, border: `1px solid ${bColor}30` }}>
+            {badge}
+          </span>
+        )}
       </div>
       <div className="flex items-baseline gap-1">
         <span className="text-xl font-black text-white">{used}</span>
         {total != null && <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>/{total}{suffix}</span>}
         {!total && suffix && <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{suffix}</span>}
       </div>
+      {sub && <p className="text-[9px] leading-tight" style={{ color: "var(--color-text-subtle)" }}>{sub}</p>}
       {!noBar && <ProgressBar pct={pct} />}
     </div>
   );
 }
 
 function SupportCallTile({ label, used, total }: { label: string; used: number; total: number }) {
-  const pct = total > 0 ? (used / total) * 100 : 0;
+  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const isExhausted = total > 0 && used >= total;
+  const pctColor = isExhausted ? "#ef4444" : pct >= 75 ? "#fb923c" : "#818cf8";
   return (
     <div
       className="rounded-xl p-3 flex flex-col gap-1"
@@ -205,12 +228,19 @@ function SupportCallTile({ label, used, total }: { label: string; used: number; 
         border: `1px solid ${isExhausted ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.07)"}`,
       }}
     >
-      <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-[9px] font-bold uppercase tracking-widest truncate" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        {total > 0 && (
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: `${pctColor}20`, color: pctColor, border: `1px solid ${pctColor}30` }}>
+            {pct}%
+          </span>
+        )}
+      </div>
       <div className="flex items-baseline gap-0.5">
-        <span className="text-lg font-black" style={{ color: isExhausted ? "#ef4444" : "white" }}>{used}</span>
+        <span className="text-xl font-black" style={{ color: isExhausted ? "#ef4444" : "white" }}>{used}</span>
         <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>/{total}</span>
       </div>
-      <ProgressBar pct={pct} color={isExhausted ? "#ef4444" : "var(--color-accent)"} />
+      <ProgressBar pct={pct} color={isExhausted ? "#ef4444" : pctColor} />
     </div>
   );
 }
@@ -680,6 +710,17 @@ function fmtK(v: number): string {
   return v.toLocaleString("en-IN");
 }
 
+function ordinalSuffix(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return "th";
+  switch (n % 10) {
+    case 1: return "st";
+    case 2: return "nd";
+    case 3: return "rd";
+    default: return "th";
+  }
+}
+
 // ─── Part 2 — Revenue Summary KPI Cards ──────────────────────────────────────
 
 function RevenueSummarySection({ revenue }: { revenue: any }) {
@@ -721,20 +762,21 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   const card = (
     label: string,
     main: React.ReactNode,
+    mainColor: string,
     meta1: React.ReactNode,
     meta2?: React.ReactNode,
-    growth?: number | null,
+    topRight?: React.ReactNode,
     badge?: { text: string; color: string } | null,
   ) => (
     <div
       className="rounded-2xl p-4 flex flex-col gap-2 min-w-0"
       style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
-        {growth != null && <GrowthBadge value={growth} />}
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        {topRight}
       </div>
-      <div className="text-2xl font-black tracking-tight text-white leading-none">{main}</div>
+      <div className="text-2xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
       {badge && (
         <span className="self-start text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badge.color}26`, color: badge.color }}>
           {badge.text}
@@ -746,6 +788,19 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
       </div>
     </div>
   );
+
+  const roasTopBadge = roas != null ? (
+    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: "rgba(234,179,8,0.2)", color: "#eab308", border: "1px solid rgba(234,179,8,0.3)" }}>
+      ROAS {roas}×
+    </span>
+  ) : null;
+
+  const leadsTopBadge = leadsGrowth != null ? (
+    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: leadsGrowth >= 0 ? "rgba(167,139,250,0.15)" : "rgba(239,68,68,0.15)", color: leadsGrowth >= 0 ? "#a78bfa" : "#ef4444" }}>
+      {leadsGrowth >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+      {leadsGrowth >= 0 ? "+" : ""}{leadsGrowth}%
+    </span>
+  ) : null;
 
   return (
     <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
@@ -767,32 +822,36 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
         {card(
           "Revenue Generated",
           rev != null ? `₹${rev.toLocaleString("en-IN")}` : "—",
+          "#eab308",
           effectiveAov != null ? `Avg Order Value: ₹${effectiveAov.toLocaleString("en-IN")}` : "No AOV data",
-          revPrev != null ? `vs ₹${revPrev.toLocaleString("en-IN")} last wk` : undefined,
-          revGrowth,
+          revPrev != null ? `₹${revPrev.toLocaleString("en-IN")} prev wk` : undefined,
+          revGrowth != null ? <GrowthBadge value={revGrowth} /> : undefined,
         )}
         {card(
           "Number of Orders",
           orders != null ? `${orders.toLocaleString("en-IN")} Orders` : "—",
+          "#ffffff",
           rto != null ? `RTO / Returns: ${rto}%` : "No RTO data",
           undefined,
-          ordersGrowth,
+          ordersGrowth != null ? <GrowthBadge value={ordersGrowth} /> : undefined,
           btoRisk && btoColor ? { text: btoRisk, color: btoColor } : null,
         )}
         {card(
           "Ad Budget Spent",
           adSpend != null ? `₹${adSpend.toLocaleString("en-IN")}` : "—",
+          "#ffffff",
           cac != null ? `Customer Acq Cost: ₹${cac.toLocaleString("en-IN")}` : "No CAC data",
-          roas != null ? `ROAS ${roas}×` : undefined,
-          null,
+          undefined,
+          roasTopBadge,
           roasLabel && roasColor ? { text: roasLabel, color: roasColor } : null,
         )}
         {card(
           "Organic Inbound Leads",
           leads != null ? `${leads.toLocaleString("en-IN")} Leads` : "—",
-          cr != null ? `Conversion Rate: ${cr}%` : "No CR data",
-          undefined,
-          leadsGrowth,
+          "#ffffff",
+          cr != null ? `${cr}%` : "No CR data",
+          crFlow ?? undefined,
+          leadsTopBadge,
           crFlow && crColor ? { text: crFlow, color: crColor } : null,
         )}
       </div>
@@ -1426,20 +1485,22 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           accentColor="#818cf8"
         />
         <KpiCard
-          label="Revenue Generated"
+          label={revenue?.numberOfOrders ? `Revenue Generated | ${revenue.numberOfOrders} Orders` : "Revenue Generated"}
           value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
           sub={revenue?.revenueGenerated != null && revenue?.numberOfOrders ? `Avg ₹${Math.round(revenue.revenueGenerated / revenue.numberOfOrders).toLocaleString("en-IN")} / order` : revenue?.revenueGenerated != null ? "No order count yet" : "No data yet"}
           growth={revGrowth}
           icon={BarChart3}
-          accentColor="#34d399"
+          accentColor="#eab308"
+          valueColor={revenue?.revenueGenerated != null ? "#eab308" : undefined}
         />
         <KpiCard
-          label="Organic Growth"
+          label="Organic Growth (Weekly)"
           value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
-          sub="Weekly vs prior week"
+          sub={revenue?.leadsPrev != null ? `Closed ${leadsGrowthVal != null ? Math.abs(leadsGrowthVal) : "—"}% Since Prev` : "Weekly vs prior week"}
           growth={leadsGrowthVal}
           icon={TrendingUp}
           accentColor="#f472b6"
+          valueColor={leadsGrowthVal != null && leadsGrowthVal >= 0 ? "#22c55e" : undefined}
         />
       </motion.div>
 
@@ -1450,7 +1511,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>
             Customer Journey
           </h2>
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
@@ -1461,19 +1522,48 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <JourneyTile
             label="Daily Usage"
-            used={Number(dailyHrs.toFixed(2))}
-            suffix="h"
+            used={`${Number(dailyHrs.toFixed(2))}h`}
             icon={Activity}
             pct={dailyGoal != null && dailyGoal > 0 ? (dailyHrs / dailyGoal) * 100 : null}
             noBar={dailyGoal == null}
+            sub={dailyGoal != null ? `avg: ${dailyGoal}h` : undefined}
           />
-          <JourneyTile label="Modules" used={stats.completedEpisodes} total={stats.totalEpisodes} icon={BookOpen} />
-          <JourneyTile label="Tasks" used={stats.tasksCompleted} total={stats.tasksTotal} icon={CheckCircle2} />
-          <JourneyTile label="Support Days" used={daysLeft} suffix="d left" icon={Target} noBar />
-          <JourneyTile label="Tier Access" used={daysElapsed} total={totalDays} suffix="d" icon={Star} />
+          <JourneyTile
+            label="Modules"
+            used={stats.completedEpisodes}
+            total={stats.totalEpisodes}
+            icon={BookOpen}
+            badge={stats.totalEpisodes > 0 ? `${Math.round((stats.completedEpisodes / stats.totalEpisodes) * 100)}%` : undefined}
+            badgeColor="#818cf8"
+          />
+          <JourneyTile
+            label="Tasks"
+            used={stats.tasksCompleted}
+            total={stats.tasksTotal}
+            icon={CheckCircle2}
+            badge={stats.tasksTotal > 0 ? `${Math.round((stats.tasksCompleted / stats.tasksTotal) * 100)}%` : undefined}
+            badgeColor="#34d399"
+          />
+          <JourneyTile
+            label="Support Days"
+            used={daysLeft}
+            suffix="d left"
+            icon={Target}
+            noBar
+            sub={totalDays > 0 ? `${totalDays}d total` : undefined}
+          />
+          <JourneyTile
+            label="Tier Access"
+            used={daysElapsed}
+            total={totalDays}
+            suffix="d"
+            icon={Star}
+            badge={totalDays >= 300 ? "Annual" : undefined}
+            badgeColor="#f472b6"
+          />
           <JourneyTile
             label="Leaderboard"
-            used={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}` : "#—"}
+            used={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)}` : "#—"}
             icon={Trophy}
             noBar
           />
@@ -1487,7 +1577,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
       >
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>
             Expert Support Calls
           </h2>
           <div className="flex items-center gap-2">
