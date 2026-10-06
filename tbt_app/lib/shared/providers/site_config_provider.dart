@@ -40,6 +40,11 @@ class SiteConfigNotifier extends _$SiteConfigNotifier {
       state = AsyncValue.data(await _fetch());
     } catch (_) {}
   }
+
+  /// Re-fetch the site config (e.g. when the app returns to the foreground)
+  /// so admin changes such as the Dark / Light Mode setting reach a running
+  /// app. On failure (offline) the last successfully fetched config is kept.
+  Future<void> refresh() => _backgroundRefresh();
 }
 
 @Riverpod(keepAlive: true)
