@@ -216,6 +216,7 @@ export interface SiteConfig {
   freeLifelinesPerSession?: number;
   earlyCompletionBonusXp?: number;
   coursesBannerUrl?: string | null;
+  themeMode?: "light" | "dark"; // admin-controlled (Admin → Navigation)
 }
 
 export interface NavItem {

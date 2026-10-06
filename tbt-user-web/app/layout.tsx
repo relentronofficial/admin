@@ -65,9 +65,13 @@ async function fetchPublicJson<T>(path: string): Promise<T | null> {
 }
 
 // Minified anti-flash script — runs synchronously before React hydration to apply
-// the saved theme class on <html> without a flash of the wrong theme.
-// Default: light. Only applies dark if user has explicitly saved "dark".
-const THEME_SCRIPT = `(function(){try{var s=localStorage.getItem('tbt_theme');var t=s==='light'||s==='dark'?s:'light';document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.classList.toggle('light',t==='light');var m=365*24*60*60;document.cookie='tbt_theme='+t+'; path=/; max-age='+m+'; SameSite=Lax';}catch(e){document.documentElement.classList.add('light');}})();`;
+// the theme class on <html> without a flash of the wrong theme.
+// The theme is set by the admin (Admin → Navigation → Dark / Light Mode) and
+// arrives as `themeMode` on the site config. `tbt_theme` (localStorage + cookie)
+// only caches the last admin value, used when the config fetch failed.
+function themeScript(serverMode: "light" | "dark" | null) {
+  return `(function(){try{var a=${JSON.stringify(serverMode)};var s=localStorage.getItem('tbt_theme');var t=a||(s==='light'||s==='dark'?s:'light');document.documentElement.classList.toggle('dark',t==='dark');document.documentElement.classList.toggle('light',t==='light');localStorage.setItem('tbt_theme',t);var m=365*24*60*60;document.cookie='tbt_theme='+t+'; path=/; max-age='+m+'; SameSite=Lax';}catch(e){document.documentElement.classList.add('light');}})();`;
+}
 
 export default async function RootLayout({
   children,
@@ -76,14 +80,16 @@ export default async function RootLayout({
 }) {
   const cookieStore = await cookies();
   const themeCookie = cookieStore.get("tbt_theme")?.value;
-  // Default to light. Only apply dark if the user has explicitly saved "dark".
-  const initialThemeClass = themeCookie === "dark" ? "dark" : "light";
 
   const [initialConfig, initialNav, initialUiStrings] = await Promise.all([
     fetchPublicJson<SiteConfig>("/api/pub/config/site"),
     fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
     fetchPublicJson<UiStrings>("/api/pub/config/ui-strings"),
   ]);
+
+  // Admin-selected mode wins; the cookie (last admin value) is only a fallback.
+  const adminThemeMode = initialConfig?.themeMode === "dark" || initialConfig?.themeMode === "light" ? initialConfig.themeMode : null;
+  const initialThemeClass = adminThemeMode ?? (themeCookie === "dark" ? "dark" : "light");
 
   // Inject theme CSS variables into <head> server-side — zero flash, zero layout shift.
   // In light mode, skip --color-bg-primary/surface (dark API values would override light CSS vars).
@@ -108,7 +114,7 @@ export default async function RootLayout({
     <html lang="en" className={initialThemeClass} suppressHydrationWarning>
       <head>
         {/* Anti-flash script must be first — runs before any CSS or React hydration */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: themeScript(adminThemeMode) }} />
         {themeCSS && <style dangerouslySetInnerHTML={{ __html: themeCSS }} />}
         {initialConfig?.faviconUrl && (
           <link rel="icon" href={initialConfig.faviconUrl} />

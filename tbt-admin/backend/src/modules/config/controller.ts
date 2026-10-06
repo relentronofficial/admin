@@ -16,10 +16,14 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
     'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
+  const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
+    'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
   return reply.send({
     success: true,
     data: {
       ...config,
+      themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
       taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
       freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
@@ -31,7 +35,7 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, coursesBannerUrl, ...prismaBody } = req.body as any;
+  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, coursesBannerUrl, themeMode, ...prismaBody } = req.body as any;
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({ data: prismaBody });
@@ -68,9 +72,15 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
       coursesBannerUrl || null, config.id
     );
   }
+  if (themeMode === 'light' || themeMode === 'dark') {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET theme_mode = $1 WHERE id = $2::uuid',
+      themeMode, config.id
+    );
+  }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null }, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────
