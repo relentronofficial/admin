@@ -13,6 +13,18 @@ export const useDashboardStats = () =>
     staleTime: 60 * 1000,
   });
 
+export const useMyStreak = () =>
+  useQuery({
+    queryKey: ["user", "streak"],
+    queryFn: async () => {
+      const res = await dashboardService.getStreak();
+      return res.data;
+    },
+    staleTime: 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
 export const useContinueLearning = () =>
   useQuery({
     queryKey: ["user", "dashboard", "continue-learning"],

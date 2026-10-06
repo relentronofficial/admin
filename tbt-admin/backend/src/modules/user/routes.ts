@@ -105,6 +105,7 @@ import {
   getMyPostsHandler,
   getSupportQuotaHandler,
   getMyStreakPointsHandler,
+  getMyStreakHandler,
   startEpisodeTimerHandler,
   getEpisodeTimerSessionHandler,
   heartbeatEpisodeTimerHandler,
@@ -177,6 +178,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/courses/:id/leaderboard', getUserCourseLeaderboardHandler);
   fastify.get('/badges', getUserBadgesHandler);
   fastify.get('/streak-points', getMyStreakPointsHandler);
+  fastify.get('/streak', getMyStreakHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);

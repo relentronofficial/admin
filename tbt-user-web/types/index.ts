@@ -284,6 +284,15 @@ export interface UiStrings {
   statCompleted?: string;
   statStreak?: string;
   statUpcomingEvents?: string;
+  streakTitle?: string;
+  streakDaysUnit?: string;
+  streakLongestLabel?: string;
+  streakActiveDaysLabel?: string;
+  streakLast7DaysLabel?: string;
+  streakActiveTodayMessage?: string;
+  streakAtRiskMessage?: string;
+  streakStartMessage?: string;
+  streakCtaLabel?: string;
   recentlyWatched?: string;
   recentlyWatchedEmpty?: string;
   recentlyWatchedEmptyDesc?: string;
@@ -771,6 +780,22 @@ export interface DashboardStats {
   currentStreak: number;
   upcomingEvents: number;
   unreadNotifications: number;
+}
+
+// GET /api/user/streak — header streak widget
+export interface StreakDay {
+  date: string; // YYYY-MM-DD (UTC)
+  active: boolean;
+  points: number;
+}
+
+export interface StreakSummary {
+  currentStreak: number;
+  longestStreak: number;
+  activeToday: boolean;
+  totalActiveDays: number;
+  pointsToday: number;
+  last7Days: StreakDay[]; // oldest → newest, last entry is today
 }
 
 export interface WatchHistoryItem {

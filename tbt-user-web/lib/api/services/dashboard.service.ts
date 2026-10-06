@@ -1,9 +1,12 @@
 import apiClient from "../client";
-import type { ApiResponse, DashboardStats, ContinueLearningItem, WatchHistoryItem, Notification, Message, DeviceSession } from "@/types";
+import type { ApiResponse, DashboardStats, StreakSummary, ContinueLearningItem, WatchHistoryItem, Notification, Message, DeviceSession } from "@/types";
 
 export const dashboardService = {
   getStats: () =>
     apiClient.get<never, ApiResponse<DashboardStats>>("/api/user/dashboard/stats"),
+
+  getStreak: () =>
+    apiClient.get<never, ApiResponse<StreakSummary>>("/api/user/streak"),
 
   getContinueLearning: () =>
     apiClient.get<never, ApiResponse<ContinueLearningItem[]>>("/api/user/dashboard/continue-learning"),
