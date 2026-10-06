@@ -1534,6 +1534,11 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
             icon={BookOpen}
             badge={stats.totalEpisodes > 0 ? `${Math.round((stats.completedEpisodes / stats.totalEpisodes) * 100)}%` : undefined}
             badgeColor="#818cf8"
+            sub={stats.totalEpisodes > 0
+              ? stats.completedEpisodes >= stats.totalEpisodes
+                ? "All Done"
+                : `${stats.totalEpisodes - stats.completedEpisodes} Left`
+              : undefined}
           />
           <JourneyTile
             label="Tasks"
@@ -1542,6 +1547,11 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
             icon={CheckCircle2}
             badge={stats.tasksTotal > 0 ? `${Math.round((stats.tasksCompleted / stats.tasksTotal) * 100)}%` : undefined}
             badgeColor="#34d399"
+            sub={stats.tasksTotal > 0
+              ? stats.tasksCompleted >= stats.tasksTotal
+                ? "All Done"
+                : `${stats.tasksTotal - stats.tasksCompleted} Left`
+              : undefined}
           />
           <JourneyTile
             label="Support Days"
