@@ -753,9 +753,9 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   const roasColor = roas != null
     ? (roas >= 3 ? "#22c55e" : roas >= 1.5 ? "#fb923c" : "#ef4444") : null;
   const btoRisk = btoRatio != null
-    ? (btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk") : null;
+    ? (btoRatio < 15 ? "Low Risk" : btoRatio < 30 ? "Moderate" : "High Risk") : null;
   const btoColor = btoRatio != null
-    ? (btoRatio < 5 ? "#22c55e" : btoRatio < 20 ? "#fb923c" : "#ef4444") : null;
+    ? (btoRatio < 15 ? "#22c55e" : btoRatio < 30 ? "#fb923c" : "#ef4444") : null;
   const crFlow = cr != null ? (cr >= 20 ? "High Converter" : cr >= 10 ? "Free Customer Flow" : "Needs Nurturing") : null;
   const crColor = cr != null ? (cr >= 20 ? "#22c55e" : cr >= 10 ? "#34d399" : "#fb923c") : null;
 
@@ -776,7 +776,7 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
         <span className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
         {topRight}
       </div>
-      <div className="text-2xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
+      <div className="text-3xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
       {badge && (
         <span className="self-start text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badge.color}26`, color: badge.color }}>
           {badge.text}
@@ -1497,10 +1497,9 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           label="Organic Growth (Weekly)"
           value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
           sub={revenue?.leadsPrev != null ? `Closed ${leadsGrowthVal != null ? Math.abs(leadsGrowthVal) : "—"}% Since Prev` : "Weekly vs prior week"}
-          growth={leadsGrowthVal}
           icon={TrendingUp}
-          accentColor="#f472b6"
-          valueColor={leadsGrowthVal != null && leadsGrowthVal >= 0 ? "#22c55e" : undefined}
+          accentColor="#22c55e"
+          valueColor={leadsGrowthVal != null && leadsGrowthVal >= 0 ? "#22c55e" : "#ef4444"}
         />
       </motion.div>
 
