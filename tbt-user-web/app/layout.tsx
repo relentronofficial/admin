@@ -47,14 +47,14 @@ export const metadata: Metadata = {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-async function fetchPublicJson<T>(path: string): Promise<T | null> {
+async function fetchPublicJson<T>(path: string, revalidate = 300): Promise<T | null> {
   try {
     // Public config changes rarely — 5-minute revalidate reduces TTFB by
     // serving from Next.js data cache instead of cold-fetching the backend
     // on every request. Next.js also deduplicates same-URL fetches within
     // a single render pass (e.g. workshops/page.tsx fetches ui-strings too).
     const res = await fetch(`${API_BASE}${path}`, {
-      next: { revalidate: 300 },
+      next: { revalidate },
     });
     if (!res.ok) return null;
     const json = await res.json();
@@ -82,7 +82,9 @@ export default async function RootLayout({
   const themeCookie = cookieStore.get("tbt_theme")?.value;
 
   const [initialConfig, initialNav, initialUiStrings] = await Promise.all([
-    fetchPublicJson<SiteConfig>("/api/pub/config/site"),
+    // Short revalidate: site config carries the admin-controlled themeMode, so a
+    // Dark/Light change in Admin must reach new page loads within seconds.
+    fetchPublicJson<SiteConfig>("/api/pub/config/site", 30),
     fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
     fetchPublicJson<UiStrings>("/api/pub/config/ui-strings"),
   ]);

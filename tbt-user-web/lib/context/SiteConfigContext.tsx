@@ -70,9 +70,9 @@ function setFavicon(url: string) {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-async function fetchJson<T>(path: string): Promise<T | null> {
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null> {
   try {
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${API_BASE}${path}`, init);
     if (!res.ok) return null;
     const json = await res.json();
     return (json?.data ?? null) as T | null;
@@ -136,6 +136,34 @@ export function SiteConfigProvider({
 
     bootstrap();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the admin-controlled theme current without a hard reload: re-read the
+  // site config shortly after load and whenever the tab becomes visible again.
+  // `no-store` bypasses the browser HTTP cache (the endpoint sends max-age=300);
+  // the backend clears its own cache when the admin saves. A failed fetch keeps
+  // the current theme rather than guessing one.
+  useEffect(() => {
+    let lastFetch = 0;
+    async function refresh() {
+      if (Date.now() - lastFetch < 15_000) return;
+      lastFetch = Date.now();
+      const cfg = await fetchJson<SiteConfig>("/api/pub/config/site", { cache: "no-store" });
+      if (!cfg) return;
+      setConfig((prev) => (JSON.stringify(prev) === JSON.stringify(cfg) ? prev : cfg));
+      applyAdminThemeMode(cfg);
+    }
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    const initial = setTimeout(() => void refresh(), 1500);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearTimeout(initial);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, []);
 
   // Re-apply theme vars whenever the admin theme mode or config refreshes
   useEffect(() => {
