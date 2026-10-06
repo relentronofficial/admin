@@ -14,7 +14,6 @@ import '../../../features/notifications/data/notifications_service.dart';
 import '../../../shared/api/services/members_service.dart';
 import '../../../shared/models/member.dart';
 import '../../../shared/providers/me_provider.dart';
-import '../../../shared/providers/theme_mode_provider.dart';
 import '../data/profile_extras_service.dart';
 import '../data/support_quota_service.dart';
 import '../providers/credits_provider.dart';
@@ -326,7 +325,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   label: 'Privacy Policy',
                   onTap: () => context.push(AppRoutes.legalPrivacy),
                 ),
-                _SettingsThemeRow(),
               ],
             ),
             const SizedBox(height: 16),
@@ -879,112 +877,6 @@ class _SettingsLinkRow extends StatelessWidget {
                 size: 14,
                 color: text.withValues(alpha: 0.7),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SettingsThemeRow extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final mode = ref.watch(themeModeProvider);
-    final isDark = mode == ThemeMode.dark;
-    final text = isDark ? Colors.white : Colors.black;
-    final subText = text.withValues(alpha: 0.6);
-    final screenW = MediaQuery.of(context).size.width;
-    final pillW = screenW * 0.13;
-    final pillH = screenW * 0.07;
-    final knobD = screenW * 0.055;
-    return InkWell(
-      onTap: () => ref
-          .read(themeModeProvider.notifier)
-          .setMode(isDark ? ThemeMode.light : ThemeMode.dark),
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        child: Row(
-          children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
-              child: Icon(
-                isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                key: ValueKey(isDark),
-                color: const Color(0xFFD30814),
-                size: 20,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isDark ? 'Dark mode' : 'Light mode',
-                    style: TextStyle(
-                      color: text,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Toggle app appearance',
-                    style: TextStyle(color: subText, fontSize: 11.5),
-                  ),
-                ],
-              ),
-            ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              width: pillW,
-              height: pillH,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xFFD30814)
-                    : const Color(0xFF9E9E9E),
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: (isDark
-                            ? const Color(0xFFD30814)
-                            : const Color(0xFF9E9E9E))
-                        .withValues(alpha: 0.30),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    left: isDark ? pillW - knobD - 4 : 4,
-                    child: Container(
-                      width: knobD,
-                      height: knobD,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        isDark
-                            ? Icons.nights_stay_rounded
-                            : Icons.wb_sunny_rounded,
-                        size: knobD * 0.6,
-                        color: const Color(0xFFD30814),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),

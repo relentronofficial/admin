@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Pencil, X, Loader2, GripVertical, Eye, EyeOff, AlertCircle, Navigation, Save } from "lucide-react";
+import { Plus, Trash2, Pencil, X, Loader2, GripVertical, Eye, EyeOff, AlertCircle, Navigation, Save, Sun, Moon } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListNavItems, useCreateNavItem, useUpdateNavItem, useDeleteNavItem, useReorderNavItems, useGetSiteConfig, useUpdateSiteConfig } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
@@ -33,6 +33,7 @@ export default function NavigationPage() {
   const [navShowNotifications, setNavShowNotifications] = useState(true);
   const [navShowMessages, setNavShowMessages] = useState(true);
   const [navShowProfile, setNavShowProfile] = useState(true);
+  const [themeMode, setThemeMode] = useState<"light" | "dark">("light");
   const [platformSaving, setPlatformSaving] = useState(false);
 
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function NavigationPage() {
       setNavShowNotifications(siteConfig.navShowNotifications ?? true);
       setNavShowMessages(siteConfig.navShowMessages ?? true);
       setNavShowProfile(siteConfig.navShowProfile ?? true);
+      setThemeMode(siteConfig.themeMode === "dark" ? "dark" : "light");
     }
   }, [siteConfig]);
 
@@ -58,6 +60,7 @@ export default function NavigationPage() {
         navShowNotifications,
         navShowMessages,
         navShowProfile,
+        themeMode,
       });
       toast.success("Platform menus saved");
     } catch (e: any) {
@@ -370,8 +373,38 @@ export default function NavigationPage() {
             </div>
           </div>
 
+          {/* Theme mode — single source of truth for web + mobile */}
+          <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+            <div className="p-4 border-b border-[#2a2a2a] bg-[#1a1a1a]/50 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani">Dark / Light Mode</span>
+              <span className="text-[10px] text-[#555] font-rajdhani uppercase tracking-widest">Web &amp; Mobile — Requires Save below</span>
+            </div>
+            <div className="flex items-center justify-between px-5 py-3.5">
+              <div>
+                <p className="text-sm font-medium text-[#f0f0f0]">App Theme</p>
+                <p className="text-[11px] text-[#777]">Members can&apos;t change this — the web and mobile apps follow it</p>
+              </div>
+              <div className="flex bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-1 gap-1">
+                {([
+                  { value: "dark", label: "Dark", Icon: Moon },
+                  { value: "light", label: "Light", Icon: Sun },
+                ] as const).map(({ value, label, Icon }) => (
+                  <button
+                    key={value}
+                    onClick={() => setThemeMode(value)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-rajdhani font-bold uppercase tracking-widest transition-all ${themeMode === value ? "bg-[#dc2626] text-white" : "text-[#a0a0a0] hover:text-white"}`}
+                    aria-pressed={themeMode === value}
+                  >
+                    <Icon size={13} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
-            <p className="text-[11px] text-[#555]">Custom nav links save instantly. Platform Sections &amp; Top-Bar Icons need the button below.</p>
+            <p className="text-[11px] text-[#555]">Custom nav links save instantly. Platform Sections, Top-Bar Icons &amp; Dark / Light Mode need the button below.</p>
             <button
               onClick={handleSavePlatformMenus}
               disabled={platformSaving}

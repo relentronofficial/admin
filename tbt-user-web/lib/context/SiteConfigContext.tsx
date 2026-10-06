@@ -49,6 +49,15 @@ function applyTheme(theme: SiteConfig["theme"], currentTheme: "light" | "dark") 
   }
 }
 
+// The admin's Dark / Light Mode choice (Admin → Navigation) is the only source
+// of the light/dark mode — members have no toggle.
+function applyAdminThemeMode(cfg: SiteConfig | null | undefined) {
+  const mode = cfg?.themeMode;
+  if ((mode === "light" || mode === "dark") && useUIStore.getState().theme !== mode) {
+    useUIStore.getState().setTheme(mode);
+  }
+}
+
 function setFavicon(url: string) {
   let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
   if (!link) {
@@ -97,6 +106,7 @@ export function SiteConfigProvider({
   useEffect(() => {
     // If server already provided full initial data, just apply theme and stop.
     if (initialConfig && initialNav && initialUiStrings) {
+      applyAdminThemeMode(initialConfig);
       if (initialConfig.theme) applyTheme(initialConfig.theme, useUIStore.getState().theme);
       if (initialConfig.faviconUrl) setFavicon(initialConfig.faviconUrl);
       setIsLoading(false);
@@ -113,6 +123,7 @@ export function SiteConfigProvider({
 
       if (cfg) {
         setConfig(cfg);
+        applyAdminThemeMode(cfg);
         applyTheme(cfg.theme, useUIStore.getState().theme);
         if (cfg.faviconUrl) setFavicon(cfg.faviconUrl);
       }
@@ -126,7 +137,7 @@ export function SiteConfigProvider({
     bootstrap();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-apply theme vars whenever user toggles or config refreshes
+  // Re-apply theme vars whenever the admin theme mode or config refreshes
   useEffect(() => {
     if (config?.theme) {
       applyTheme(config.theme, theme);

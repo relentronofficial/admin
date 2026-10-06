@@ -33,6 +33,9 @@ mixin _$SiteConfig {
   List<String>? get loginBgImages => throw _privateConstructorUsedError;
   int get taskTimerSeconds => throw _privateConstructorUsedError;
 
+  /// Admin-controlled light/dark mode (Admin → Navigation): 'light' | 'dark'.
+  String get themeMode => throw _privateConstructorUsedError;
+
   /// Serializes this SiteConfig to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
 
@@ -62,6 +65,7 @@ abstract class $SiteConfigCopyWith<$Res> {
     String? loginBgMobileUrl,
     List<String>? loginBgImages,
     int taskTimerSeconds,
+    String themeMode,
   });
 
   $SiteThemeCopyWith<$Res> get theme;
@@ -93,6 +97,7 @@ class _$SiteConfigCopyWithImpl<$Res, $Val extends SiteConfig>
     Object? loginBgMobileUrl = freezed,
     Object? loginBgImages = freezed,
     Object? taskTimerSeconds = null,
+    Object? themeMode = null,
   }) {
     return _then(
       _value.copyWith(
@@ -151,6 +156,11 @@ class _$SiteConfigCopyWithImpl<$Res, $Val extends SiteConfig>
                     ? _value.taskTimerSeconds
                     : taskTimerSeconds // ignore: cast_nullable_to_non_nullable
                         as int,
+            themeMode:
+                null == themeMode
+                    ? _value.themeMode
+                    : themeMode // ignore: cast_nullable_to_non_nullable
+                        as String,
           )
           as $Val,
     );
@@ -188,6 +198,7 @@ abstract class _$$SiteConfigImplCopyWith<$Res>
     String? loginBgMobileUrl,
     List<String>? loginBgImages,
     int taskTimerSeconds,
+    String themeMode,
   });
 
   @override
@@ -219,6 +230,7 @@ class __$$SiteConfigImplCopyWithImpl<$Res>
     Object? loginBgMobileUrl = freezed,
     Object? loginBgImages = freezed,
     Object? taskTimerSeconds = null,
+    Object? themeMode = null,
   }) {
     return _then(
       _$SiteConfigImpl(
@@ -277,6 +289,11 @@ class __$$SiteConfigImplCopyWithImpl<$Res>
                 ? _value.taskTimerSeconds
                 : taskTimerSeconds // ignore: cast_nullable_to_non_nullable
                     as int,
+        themeMode:
+            null == themeMode
+                ? _value.themeMode
+                : themeMode // ignore: cast_nullable_to_non_nullable
+                    as String,
       ),
     );
   }
@@ -297,6 +314,7 @@ class _$SiteConfigImpl implements _SiteConfig {
     this.loginBgMobileUrl,
     final List<String>? loginBgImages,
     this.taskTimerSeconds = 300,
+    this.themeMode = 'light',
   }) : _loginBgImages = loginBgImages;
 
   factory _$SiteConfigImpl.fromJson(Map<String, dynamic> json) =>
@@ -337,9 +355,14 @@ class _$SiteConfigImpl implements _SiteConfig {
   @JsonKey()
   final int taskTimerSeconds;
 
+  /// Admin-controlled light/dark mode (Admin → Navigation): 'light' | 'dark'.
+  @override
+  @JsonKey()
+  final String themeMode;
+
   @override
   String toString() {
-    return 'SiteConfig(siteName: $siteName, logoUrl: $logoUrl, faviconUrl: $faviconUrl, footerText: $footerText, theme: $theme, splashLogoUrl: $splashLogoUrl, splashDurationMs: $splashDurationMs, loginBgUrl: $loginBgUrl, loginBgMobileUrl: $loginBgMobileUrl, loginBgImages: $loginBgImages, taskTimerSeconds: $taskTimerSeconds)';
+    return 'SiteConfig(siteName: $siteName, logoUrl: $logoUrl, faviconUrl: $faviconUrl, footerText: $footerText, theme: $theme, splashLogoUrl: $splashLogoUrl, splashDurationMs: $splashDurationMs, loginBgUrl: $loginBgUrl, loginBgMobileUrl: $loginBgMobileUrl, loginBgImages: $loginBgImages, taskTimerSeconds: $taskTimerSeconds, themeMode: $themeMode)';
   }
 
   @override
@@ -368,7 +391,9 @@ class _$SiteConfigImpl implements _SiteConfig {
               _loginBgImages,
             ) &&
             (identical(other.taskTimerSeconds, taskTimerSeconds) ||
-                other.taskTimerSeconds == taskTimerSeconds));
+                other.taskTimerSeconds == taskTimerSeconds) &&
+            (identical(other.themeMode, themeMode) ||
+                other.themeMode == themeMode));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -386,6 +411,7 @@ class _$SiteConfigImpl implements _SiteConfig {
     loginBgMobileUrl,
     const DeepCollectionEquality().hash(_loginBgImages),
     taskTimerSeconds,
+    themeMode,
   );
 
   /// Create a copy of SiteConfig
@@ -415,6 +441,7 @@ abstract class _SiteConfig implements SiteConfig {
     final String? loginBgMobileUrl,
     final List<String>? loginBgImages,
     final int taskTimerSeconds,
+    final String themeMode,
   }) = _$SiteConfigImpl;
 
   factory _SiteConfig.fromJson(Map<String, dynamic> json) =
@@ -442,6 +469,10 @@ abstract class _SiteConfig implements SiteConfig {
   List<String>? get loginBgImages;
   @override
   int get taskTimerSeconds;
+
+  /// Admin-controlled light/dark mode (Admin → Navigation): 'light' | 'dark'.
+  @override
+  String get themeMode;
 
   /// Create a copy of SiteConfig
   /// with the given fields replaced by the non-null parameter values.

@@ -18,8 +18,13 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
       'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
     ).catch(() => []);
+    const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
+      'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
+    ).catch(() => []);
     return {
       siteName: config.siteName,
+      // Admin-controlled light/dark mode (Admin → Navigation) — web + mobile follow this.
+      themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
       logoUrl: config.logoUrl ?? null,
       faviconUrl: config.faviconUrl ?? null,
       footerText: config.footerText,

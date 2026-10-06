@@ -25,6 +25,7 @@ _$SiteConfigImpl _$$SiteConfigImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList(),
       taskTimerSeconds: (json['taskTimerSeconds'] as num?)?.toInt() ?? 300,
+      themeMode: json['themeMode'] as String? ?? 'light',
     );
 
 Map<String, dynamic> _$$SiteConfigImplToJson(_$SiteConfigImpl instance) =>
@@ -40,6 +41,7 @@ Map<String, dynamic> _$$SiteConfigImplToJson(_$SiteConfigImpl instance) =>
       'loginBgMobileUrl': instance.loginBgMobileUrl,
       'loginBgImages': instance.loginBgImages,
       'taskTimerSeconds': instance.taskTimerSeconds,
+      'themeMode': instance.themeMode,
     };
 
 _$SiteThemeImpl _$$SiteThemeImplFromJson(Map<String, dynamic> json) =>
