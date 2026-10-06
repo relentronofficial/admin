@@ -28,6 +28,8 @@ const USAGE_TYPES = [
   { value: "ad_support",   label: "Ad Support" },
   { value: "group_call",   label: "Group Call" },
   { value: "one_to_one",   label: "One-to-One" },
+  { value: "sales_support",   label: "Sales Call" },
+  { value: "content_support", label: "Content Call" },
 ] as const;
 
 type EntitlementRow = {
@@ -37,6 +39,8 @@ type EntitlementRow = {
   group_call_count: number;
   call_credit_count: number;
   one_to_one_enabled: boolean;
+  sales_call_count: number;
+  content_call_count: number;
 };
 
 function EntitlementCard({ row, onSave }: { row: EntitlementRow; onSave: (plan: string, data: any) => Promise<void> }) {
@@ -46,6 +50,8 @@ function EntitlementCard({ row, onSave }: { row: EntitlementRow; onSave: (plan: 
     groupCallCount:   row.group_call_count,
     callCreditCount:  row.call_credit_count,
     oneToOneEnabled:  row.one_to_one_enabled,
+    salesCallCount:   row.sales_call_count,
+    contentCallCount: row.content_call_count,
   });
   const [saving, setSaving] = useState(false);
 
@@ -56,6 +62,8 @@ function EntitlementCard({ row, onSave }: { row: EntitlementRow; onSave: (plan: 
       groupCallCount:   row.group_call_count,
       callCreditCount:  row.call_credit_count,
       oneToOneEnabled:  row.one_to_one_enabled,
+      salesCallCount:   row.sales_call_count,
+      contentCallCount: row.content_call_count,
     });
   }, [row]);
 
@@ -97,6 +105,8 @@ function EntitlementCard({ row, onSave }: { row: EntitlementRow; onSave: (plan: 
         {numInput("Ad Support Days", "adSupportDays")}
         {numInput("Group Call Count", "groupCallCount")}
         {numInput("Extra Call Credits", "callCreditCount")}
+        {numInput("Sales Call Count", "salesCallCount")}
+        {numInput("Content Call Count", "contentCallCount")}
       </div>
 
       <div className="flex items-center gap-2.5">

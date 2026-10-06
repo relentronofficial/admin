@@ -6,6 +6,8 @@ export interface PlanEntitlementRow {
   group_call_count: number;
   call_credit_count: number;
   one_to_one_enabled: boolean;
+  sales_call_count?: number;
+  content_call_count?: number;
 }
 
 export interface UsageCountRow {
@@ -30,6 +32,8 @@ export interface SupportQuota {
   adSupport: SupportQuotaBucket;
   groupCall: SupportQuotaBucket;
   callCredits: SupportQuotaBucket;
+  salesSupport: SupportQuotaBucket;
+  contentSupport: SupportQuotaBucket;
   oneToOne: boolean;
   lifelines: { total: number; used: number; remaining: number };
 }
@@ -68,6 +72,8 @@ export function computeSupportQuota(
     adSupport: bucket(ent.ad_support_days, usageMap['ad_support'] ?? 0),
     groupCall: bucket(ent.group_call_count, usageMap['group_call'] ?? 0),
     callCredits: bucket(ent.call_credit_count, usageMap['one_to_one'] ?? 0),
+    salesSupport: bucket(ent.sales_call_count ?? 0, usageMap['sales_support'] ?? 0),
+    contentSupport: bucket(ent.content_call_count ?? 0, usageMap['content_support'] ?? 0),
     oneToOne: !!ent.one_to_one_enabled,
     lifelines: { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
   };
