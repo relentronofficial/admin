@@ -1457,102 +1457,152 @@ function NowLearningSection() {
 
   if (!item) return null;
 
-  const progressPct  = item.progressPercent ?? (item.durationSeconds > 0 ? Math.round((item.lastWatchedSecs / item.durationSeconds) * 100) : 0);
-  const courseBase   = item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`;
-  const lessonHref   = item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase;
+  const progressPct = item.progressPercent ?? (item.durationSeconds > 0 ? Math.round((item.lastWatchedSecs / item.durationSeconds) * 100) : 0);
+  const courseBase  = item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`;
+  const lessonHref  = item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase;
+  const durationMin = item.durationSeconds > 0 ? Math.round((item.durationSeconds as number) / 60) : null;
+  const nextLesson  = (item.episodeOrder as number) < (item.episodeCount as number)
+    ? `Lesson ${(item.episodeOrder as number) + 1}`
+    : null;
 
   return (
-    <motion.div variants={fadeUp} className="space-y-3">
-      <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Now Learning</h2>
+    <motion.div variants={fadeUp}>
+      <h2 className="text-sm font-bold mb-4" style={{ color: "var(--color-text-normal)" }}>Now Learning</h2>
+
       <div
         className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
+        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.07)" }}
       >
-        <div className="flex flex-col sm:flex-row">
-          {/* ── Thumbnail ─────────────────────────────────────── */}
-          <div className="relative shrink-0 sm:w-52 h-36 sm:h-auto">
+        <div className="flex min-h-[11rem]">
+
+          {/* ── Thumbnail ─────────────────────────────────────────────── */}
+          <div className="relative shrink-0 w-[220px] self-stretch hidden sm:block">
             {item.thumbnailUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={item.thumbnailUrl as string} alt="" className="w-full h-full object-cover" />
+              <img
+                src={item.thumbnailUrl as string}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+              />
             ) : (
               <div
-                className="w-full h-full min-h-[9rem] flex items-center justify-center"
+                className="absolute inset-0 flex items-center justify-center"
                 style={{ background: "rgba(255,255,255,0.04)" }}
               >
-                <Play className="w-10 h-10" style={{ color: "var(--color-text-subtle)" }} />
+                <Play className="w-10 h-10" style={{ color: "rgba(255,255,255,0.15)" }} />
               </div>
             )}
+            {/* gradient overlay with course + lesson name */}
             <div
-              className="absolute inset-0 flex flex-col justify-end p-3"
-              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.3) 55%, transparent 100%)" }}
+              className="absolute inset-0 flex flex-col justify-end p-4"
+              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.45) 45%, transparent 100%)" }}
             >
-              <p className="text-[8px] font-bold uppercase tracking-wide overlay-meta mb-0.5 line-clamp-1">{item.title}</p>
-              <p className="text-xs font-black leading-tight overlay-text line-clamp-2">{item.lastLessonTitle}</p>
+              <p
+                className="text-[9px] font-bold uppercase tracking-wider mb-1 line-clamp-1"
+                style={{ color: "var(--color-accent)" }}
+              >
+                {item.title}
+              </p>
+              <p className="text-[11px] font-black leading-snug overlay-text line-clamp-3">
+                {item.lastLessonTitle}
+              </p>
             </div>
           </div>
 
-          {/* ── Center info ───────────────────────────────────── */}
-          <div className="flex-1 p-4 flex flex-col justify-between gap-3 min-w-0">
-            <div>
-              <p className="text-[10px] mb-1" style={{ color: "var(--color-text-subtle)" }}>
-                {item.title} &middot; Lesson {item.episodeOrder} of {item.episodeCount}
+          {/* ── Center info ───────────────────────────────────────────── */}
+          <div className="flex-1 flex flex-col justify-between p-5 gap-4 min-w-0">
+            {/* Top: breadcrumb + title + duration */}
+            <div className="space-y-1.5">
+              <p className="text-[10px] leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
+                {item.title} &nbsp;·&nbsp; Lesson {item.episodeOrder} of {item.episodeCount}
               </p>
-              <h3 className="text-lg font-black leading-tight" style={{ color: "var(--color-text-normal)" }}>
+              <h3
+                className="text-[1.05rem] font-black leading-snug"
+                style={{ color: "var(--color-text-normal)" }}
+              >
                 {item.lastLessonTitle}
               </h3>
-              {(item.durationSeconds as number) > 0 && (
-                <p className="text-[10px] mt-1" style={{ color: "var(--color-text-subtle)" }}>
-                  Duration &middot; {Math.round((item.durationSeconds as number) / 60)} min
+              {durationMin != null && (
+                <p className="text-[10px]" style={{ color: "var(--color-text-subtle)" }}>
+                  Duration &nbsp;·&nbsp; <span style={{ color: "var(--color-text-secondary)" }}>{durationMin} min</span>
                 </p>
               )}
             </div>
+
+            {/* Bottom: progress bar + CTA */}
             <div className="space-y-3">
-              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+              {/* progress bar */}
+              <div className="w-full h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
                 <div
-                  className="h-1.5 rounded-full"
+                  className="h-full rounded-full"
                   style={{
                     width: `${Math.min(100, progressPct)}%`,
                     background: "var(--color-accent)",
-                    transition: "width 1s ease",
+                    transition: "width 1.1s cubic-bezier(0.4,0,0.2,1)",
                   }}
                 />
               </div>
+
+              {/* CTA */}
               <Link href={lessonHref}>
                 <span
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black text-black hover:opacity-90 transition-opacity cursor-pointer"
-                  style={{ background: "#facc15" }}
+                  className="inline-flex items-center gap-2 rounded-xl text-sm font-black text-black transition-opacity hover:opacity-90"
+                  style={{ background: "#facc15", padding: "10px 24px" }}
                 >
-                  <span>→</span> Continue Learning
+                  → Continue Learning
                 </span>
               </Link>
             </div>
           </div>
 
-          {/* ── Next Lesson panel ─────────────────────────────── */}
+          {/* ── Next Lesson panel ─────────────────────────────────────── */}
           <div
-            className="hidden lg:flex shrink-0 w-40 flex-col gap-3 p-4"
+            className="hidden lg:flex shrink-0 w-44 flex-col gap-3 p-5"
             style={{ borderLeft: "1px solid rgba(255,255,255,0.06)" }}
           >
-            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Next Lesson</p>
+            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+              Next Lesson
+            </p>
+
+            {/* locked thumbnail box */}
             <div
-              className="flex-1 rounded-xl flex flex-col items-center justify-center gap-2 p-3"
-              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+              className="relative rounded-xl overflow-hidden flex-1"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", minHeight: "5rem" }}
             >
-              <Lock className="w-5 h-5" style={{ color: "rgba(255,255,255,0.2)" }} />
-              <p className="text-[9px] text-center leading-snug" style={{ color: "var(--color-text-subtle)" }}>
-                {(item.episodeOrder as number) < (item.episodeCount as number)
-                  ? `Lesson ${(item.episodeOrder as number) + 1}`
-                  : "Final Lesson"}
-              </p>
+              {item.thumbnailUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.thumbnailUrl as string}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover opacity-30"
+                />
+              )}
+              {/* lock overlay */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.15)" }}
+                >
+                  <Lock className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.7)" }} />
+                </div>
+              </div>
             </div>
+
+            {nextLesson && (
+              <p className="text-[9px] leading-snug" style={{ color: "var(--color-text-subtle)" }}>
+                {nextLesson}
+              </p>
+            )}
+
             <Link
               href={courseBase}
-              className="text-[10px] font-semibold hover:opacity-80 transition-opacity"
+              className="text-[10px] font-semibold hover:opacity-75 transition-opacity mt-auto"
               style={{ color: "#818cf8" }}
             >
               View Full Module
             </Link>
           </div>
+
         </div>
       </div>
     </motion.div>
