@@ -1069,6 +1069,20 @@ function DailyInputsGrid({
   );
 }
 
+// ─── Process status helper (shared by NowLearning + SocialGrowth) ───────────
+
+function calcProcessStatus(proc: any, programTasks: any[], mySubmissions: any[]): "completed" | "active" | "locked" {
+  const tasks = programTasks
+    .filter((t: any) => t.processId === proc.id)
+    .sort((a: any, b: any) => a.stagePosition - b.stagePosition);
+  if (tasks.length === 0) return "locked";
+  if (tasks[0]?.stageLocked) return "locked";
+  const allApproved = tasks.every((t: any) =>
+    mySubmissions.some((s: any) => s.taskId === t.id && s.status === "approved")
+  );
+  return allApproved ? "completed" : "active";
+}
+
 // ─── Part 2 — Social Media Organic Growth ────────────────────────────────────
 
 type SocialFormState = {
@@ -1094,7 +1108,7 @@ const EMPTY_SOCIAL: SocialFormState = {
   bioLinkClicks: "", bioLinkClicksPrev: "",
 };
 
-function SocialGrowthSection({ batchData }: { batchData: any }) {
+function SocialGrowthSection() {
   const upsert = useUpsertMentorshipSocial();
   const { data: social } = useMentorshipSocial();
 
@@ -1261,27 +1275,6 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
     );
   };
 
-  // ── Process-based task cards ─────────────────────────────────────────────────
-  const processes: any[]     = batchData?.processes ?? [];
-  const programTasks: any[]  = batchData?.programTasks ?? [];
-  const mySubmissions: any[] = batchData?.mySubmissions ?? [];
-
-  const getProcessStatus = (proc: any): "completed" | "active" | "locked" => {
-    const tasks = programTasks
-      .filter((t: any) => t.processId === proc.id)
-      .sort((a: any, b: any) => a.stagePosition - b.stagePosition);
-    if (tasks.length === 0) return "locked";
-    if (tasks[0]?.stageLocked) return "locked";
-    const allApproved = tasks.every((t: any) => mySubmissions.some((s: any) => s.taskId === t.id && s.status === "approved"));
-    return allApproved ? "completed" : "active";
-  };
-
-  const statusStyle = (s: "completed" | "active" | "locked") => {
-    if (s === "completed") return { bg: "rgba(34,197,94,0.12)",   border: "rgba(34,197,94,0.22)",    icon: "✓", color: "#22c55e",              label: "Completed" };
-    if (s === "active")    return { bg: "rgba(239,68,68,0.10)",   border: "rgba(239,68,68,0.22)",    icon: "!", color: "#ef4444",              label: "In Progress" };
-    return                        { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.09)", icon: "○", color: "rgba(255,255,255,0.25)", label: "Locked" };
-  };
-
   return (
     <motion.div variants={fadeUp} className="space-y-4">
       {/* ── Social Growth display card ──────────────────────────────── */}
@@ -1370,37 +1363,6 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
         </AnimatePresence>
       </div>
 
-      {/* ── Tasks (process stage cards) ─────────────────────────────── */}
-      {processes.length > 0 && (
-        <div>
-          <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Tasks</p>
-          <div className="flex gap-3 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-            {processes.map((proc: any) => {
-              const s  = getProcessStatus(proc);
-              const st = statusStyle(s);
-              return (
-                <div
-                  key={proc.id}
-                  className="shrink-0 rounded-2xl p-3.5 flex flex-col gap-2 w-44"
-                  style={{ background: st.bg, border: `1px solid ${st.border}` }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Tasks</span>
-                    <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0"
-                      style={{ background: st.border, color: st.color }}
-                    >
-                      {st.icon}
-                    </span>
-                  </div>
-                  <p className="text-sm font-bold leading-snug" style={{ color: "var(--color-text-normal)" }}>{proc.title}</p>
-                  <p className="text-[9px]" style={{ color: "var(--color-text-subtle)" }}>{st.label}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </motion.div>
   );
 }
@@ -1408,159 +1370,141 @@ function SocialGrowthSection({ batchData }: { batchData: any }) {
 // ─── Now Learning ─────────────────────────────────────────────────────────────
 
 function NowLearningSection() {
-  const { data: items } = useContinueLearning();
+  const { data: items }     = useContinueLearning();
+  const { data: batchData } = useMyBatchProgram();
+
   const item = (items as any[] | undefined)?.find((i: any) => !i.isCompleted) ?? (items as any[] | undefined)?.[0] ?? null;
 
-  if (!item) return null;
+  const processes: any[]     = batchData?.processes ?? [];
+  const programTasks: any[]  = batchData?.programTasks ?? [];
+  const mySubmissions: any[] = batchData?.mySubmissions ?? [];
 
-  const progressPct = item.progressPercent ?? (item.durationSeconds > 0 ? Math.round((item.lastWatchedSecs / item.durationSeconds) * 100) : 0);
-  const courseBase  = item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`;
-  const lessonHref  = item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase;
-  const durationMin = item.durationSeconds > 0 ? Math.round((item.durationSeconds as number) / 60) : null;
-  const nextLesson  = (item.episodeOrder as number) < (item.episodeCount as number)
-    ? `Lesson ${(item.episodeOrder as number) + 1}`
+  if (!item && processes.length === 0) return null;
+
+  const progressPct = item
+    ? (item.progressPercent ?? (item.durationSeconds > 0 ? Math.round((item.lastWatchedSecs / item.durationSeconds) * 100) : 0))
+    : 0;
+  const courseBase = item ? (item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`) : "#";
+  const lessonHref = item ? (item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase) : "#";
+  const nextLesson = item
+    ? ((item.episodeOrder as number) < (item.episodeCount as number) ? `Lesson ${(item.episodeOrder as number) + 1}` : null)
     : null;
 
   return (
     <motion.div variants={fadeUp}>
-      <h2 className="text-sm font-bold mb-4" style={{ color: "var(--color-text-normal)" }}>Now Learning</h2>
 
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.07)" }}
-      >
-        <div className="flex min-h-[11rem]">
-
-          {/* ── Thumbnail ─────────────────────────────────────────────── */}
-          <div className="relative shrink-0 w-[220px] self-stretch hidden sm:block">
-            {item.thumbnailUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.thumbnailUrl as string}
-                alt=""
-                className="absolute inset-0 w-full h-full object-cover"
-              />
-            ) : (
+      {/* ── Task cards row ────────────────────────────────────────────── */}
+      {processes.length > 0 && (
+        <div className="flex gap-[10px] overflow-x-auto mb-[25px]" style={{ scrollbarWidth: "none" }}>
+          {processes.map((proc: any) => {
+            const s = calcProcessStatus(proc, programTasks, mySubmissions);
+            const iconBg = s === "completed" ? "#48b653" : s === "active" ? "#ff2850" : "#55565d";
+            const icon   = s === "completed" ? "✓" : s === "active" ? "!" : "";
+            return (
               <div
-                className="absolute inset-0 flex items-center justify-center"
-                style={{ background: "rgba(255,255,255,0.04)" }}
+                key={proc.id}
+                className="shrink-0 flex items-center gap-[10px]"
+                style={{ height: 53, minWidth: 225, flex: "1 0 225px", padding: "9px 12px", background: "#242428", borderRadius: 7 }}
               >
-                <Play className="w-10 h-10" style={{ color: "rgba(255,255,255,0.15)" }} />
-              </div>
-            )}
-            {/* gradient overlay with course + lesson name */}
-            <div
-              className="absolute inset-0 flex flex-col justify-end p-4"
-              style={{ background: "linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.45) 45%, transparent 100%)" }}
-            >
-              <p
-                className="text-[9px] font-bold uppercase tracking-wider mb-1 line-clamp-1"
-                style={{ color: "var(--color-accent)" }}
-              >
-                {item.title}
-              </p>
-              <p className="text-[11px] font-black leading-snug overlay-text line-clamp-3">
-                {item.lastLessonTitle}
-              </p>
-            </div>
-          </div>
-
-          {/* ── Center info ───────────────────────────────────────────── */}
-          <div className="flex-1 flex flex-col justify-between p-5 gap-4 min-w-0">
-            {/* Top: breadcrumb + title + duration */}
-            <div className="space-y-1.5">
-              <p className="text-[10px] leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
-                {item.title} &nbsp;·&nbsp; Lesson {item.episodeOrder} of {item.episodeCount}
-              </p>
-              <h3
-                className="text-[1.05rem] font-black leading-snug"
-                style={{ color: "var(--color-text-normal)" }}
-              >
-                {item.lastLessonTitle}
-              </h3>
-              {durationMin != null && (
-                <p className="text-[10px]" style={{ color: "var(--color-text-subtle)" }}>
-                  Duration &nbsp;·&nbsp; <span style={{ color: "var(--color-text-secondary)" }}>{durationMin} min</span>
-                </p>
-              )}
-            </div>
-
-            {/* Bottom: progress bar + CTA */}
-            <div className="space-y-3">
-              {/* progress bar */}
-              <div className="w-full h-[5px] rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
                 <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.min(100, progressPct)}%`,
-                    background: "var(--color-accent)",
-                    transition: "width 1.1s cubic-bezier(0.4,0,0.2,1)",
-                  }}
-                />
-              </div>
-
-              {/* CTA */}
-              <Link href={lessonHref}>
-                <span
-                  className="inline-flex items-center gap-2 rounded-xl text-sm font-black text-black transition-opacity hover:opacity-90"
-                  style={{ background: "#facc15", padding: "10px 24px" }}
+                  className="shrink-0 flex items-center justify-center"
+                  style={{ width: 27, height: 27, borderRadius: "50%", background: iconBg, color: "white", fontSize: 15, fontWeight: 700 }}
                 >
-                  → Continue Learning
-                </span>
-              </Link>
-            </div>
-          </div>
-
-          {/* ── Next Lesson panel ─────────────────────────────────────── */}
-          <div
-            className="hidden lg:flex shrink-0 w-44 flex-col gap-3 p-5"
-            style={{ borderLeft: "1px solid rgba(255,255,255,0.06)" }}
-          >
-            <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-              Next Lesson
-            </p>
-
-            {/* locked thumbnail box */}
-            <div
-              className="relative rounded-xl overflow-hidden flex-1"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", minHeight: "5rem" }}
-            >
-              {item.thumbnailUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.thumbnailUrl as string}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover opacity-30"
-                />
-              )}
-              {/* lock overlay */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center"
-                  style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.15)" }}
-                >
-                  <Lock className="w-3.5 h-3.5" style={{ color: "rgba(255,255,255,0.7)" }} />
+                  {icon}
+                </div>
+                <div className="min-w-0">
+                  <div style={{ color: "#92929b", fontSize: 10, marginBottom: 2 }}>Tasks</div>
+                  <div className="truncate" style={{ fontSize: 15, fontWeight: 500, color: "#f5f5f7" }}>{proc.title}</div>
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Now Learning content ──────────────────────────────────────── */}
+      {item && (
+        <>
+          <h2 style={{ margin: "0 0 18px", fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>Now Learning</h2>
+
+          {/* 3-column grid: thumbnail | details | next lesson */}
+          <div
+            className="flex flex-col lg:grid gap-[19px]"
+            style={{ gridTemplateColumns: "271px minmax(300px, 1fr) 110px", alignItems: "start" }}
+          >
+            {/* ── Column 1: course cover thumbnail ─── */}
+            <div
+              className="relative flex flex-col items-center justify-center text-center overflow-hidden"
+              style={{
+                height: 160,
+                padding: 12,
+                borderRadius: 13,
+                background: "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
+              }}
+            >
+              {/* grid pattern */}
+              <div style={{ position: "absolute", inset: 0, opacity: 0.22, background: "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)" }} />
+              {/* brand */}
+              <div style={{ position: "absolute", top: 8, right: 9, zIndex: 1, color: "white", fontSize: 7, fontWeight: 800 }}>
+                ✦ TBT BUSINESS
+              </div>
+              {/* chapter */}
+              <div style={{ position: "relative", zIndex: 1, width: 79, padding: 3, marginBottom: 14, background: "#321b1d", border: "1px solid #49292c", borderRadius: 5, color: "#ddd", fontSize: 6, textAlign: "center" }}>
+                Lesson {item.episodeOrder}
+              </div>
+              {/* course title */}
+              <div style={{ position: "relative", zIndex: 1, color: "white", fontSize: 20, fontWeight: 500, lineHeight: 1.12, letterSpacing: "-0.6px", padding: "0 8px" }}>
+                {item.title}
+              </div>
+              {/* website */}
+              <div style={{ position: "relative", zIndex: 1, marginTop: 13, color: "#c5cbd0", fontSize: 5, letterSpacing: "1.5px" }}>
+                WWW.TAMILBUSINESSTRIBE.COM
+              </div>
             </div>
 
-            {nextLesson && (
-              <p className="text-[9px] leading-snug" style={{ color: "var(--color-text-subtle)" }}>
-                {nextLesson}
-              </p>
-            )}
+            {/* ── Column 2: course details ─── */}
+            <div className="min-w-0" style={{ paddingTop: 3 }}>
+              <div style={{ marginBottom: 9, color: "#b3b3bb", fontSize: 11 }}>
+                {item.title} · Lesson {item.episodeOrder} of {item.episodeCount}
+              </div>
+              <div style={{ marginBottom: 12, fontSize: 15, fontWeight: 500, lineHeight: 1.4, color: "#f5f5f7" }}>
+                {item.lastLessonTitle ?? item.title}
+              </div>
+              <div style={{ marginBottom: 17 }}>
+                <div style={{ width: "100%", height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
+                  <div style={{ width: `${Math.min(100, progressPct)}%`, height: "100%", borderRadius: 12, background: "#d91019", transition: "width 1.1s cubic-bezier(0.4,0,0.2,1)" }} />
+                </div>
+              </div>
+              <Link href={lessonHref}>
+                <button style={{ height: 33, padding: "0 25px", border: "none", borderRadius: 9, background: "#ffe000", color: "#090909", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                  ► Continue Learning
+                </button>
+              </Link>
+            </div>
 
-            <Link
-              href={courseBase}
-              className="text-[10px] font-semibold hover:opacity-75 transition-opacity mt-auto"
-              style={{ color: "#818cf8" }}
-            >
-              View Full Module
-            </Link>
+            {/* ── Column 3: next lesson ─── */}
+            <div className="hidden lg:block" style={{ paddingTop: 20 }}>
+              <div style={{ marginBottom: 7, color: "#d9d900", fontSize: 11 }}>Next Lesson</div>
+              <div
+                style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: 91, height: 53, overflow: "hidden", marginBottom: 7, border: "1px solid #39393e", borderRadius: 9, background: "linear-gradient(135deg, #111114, #050506)" }}
+              >
+                {item.thumbnailUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={item.thumbnailUrl as string} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.3 }} />
+                )}
+                <Lock className="w-4 h-4" style={{ position: "relative", zIndex: 1, color: "rgba(255,255,255,0.5)" }} />
+              </div>
+              {nextLesson && (
+                <div style={{ marginBottom: 7, color: "#b9b9c0", fontSize: 9, lineHeight: 1.45 }}>{nextLesson}</div>
+              )}
+              <Link href={courseBase} style={{ color: "white", fontSize: 11, textDecoration: "underline" }}>
+                View Full Module
+              </Link>
+            </div>
+
           </div>
-
-        </div>
-      </div>
+        </>
+      )}
     </motion.div>
   );
 }
@@ -1789,8 +1733,8 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
       {/* ── F. Weekly Revenue & Order Trajectory (saved daily numbers) ──── */}
       <WeeklyChartSection revenue={revenue} />
 
-      {/* ── G. Social Media Organic Growth + Process Stage Tasks ─────────── */}
-      <SocialGrowthSection batchData={batchData} />
+      {/* ── G. Social Media Organic Growth ────────────────────────────────── */}
+      <SocialGrowthSection />
 
       {/* ── H. Now Learning ──────────────────────────────────────────────── */}
       <NowLearningSection />
