@@ -502,7 +502,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   type CatalogEntry = {
     id: string; title: string; slug: string; description: string | null;
     thumbnailUrl: string | null; level: string | null; durationHours: number | null;
-    durationDisplay: string | null; price: number | null; isPublished: boolean;
+    durationDisplay: string | null; taskDurationDisplay: string | null; price: number | null; isPublished: boolean;
     isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
     instructor: any; module: string | null;
     _count: { lessons: number; enrollments: number };
@@ -541,13 +541,15 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
           COALESCE(ea.total_secs, 0)::bigint AS total_secs,
+          COALESCE(ea.total_timer_secs, 0)::bigint AS total_timer_secs,
           COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
           COUNT(*) OVER () AS total_count
         FROM courses c
         LEFT JOIN admins a ON a.id = c.created_by
         LEFT JOIN (
           SELECT course_id, COUNT(*)::int AS episode_count,
-                 SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs
+                 SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs,
+                 SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs
           FROM course_episodes WHERE is_visible = true GROUP BY course_id
         ) ea ON ea.course_id = c.id
         LEFT JOIN (
@@ -576,13 +578,19 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         } else if (storedHours && storedHours > 0) {
           durationDisplay = `${storedHours}h`;
         }
+        const totalTimerSecs = Number(r.total_timer_secs);
+        let taskDurationDisplay: string | null = null;
+        if (totalTimerSecs > 0) {
+          const tmins = Math.ceil(totalTimerSecs / 60);
+          taskDurationDisplay = tmins < 60 ? `${tmins}m` : `${Math.round(tmins / 6) / 10}h`;
+        }
         const creator = r.creator_id ? {
           id: r.creator_id, fullName: r.creator_full_name,
           profilePhotoUrl: r.creator_profile_photo_url, designation: r.creator_designation,
         } : null;
         return {
           id: r.id, title: r.title, slug: r.slug, description: r.description,
-          thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay,
+          thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay, taskDurationDisplay,
           price: r.price ? Number(r.price) : null, isPublished: r.is_published,
           isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
           instructor: creator, module: r.module ?? null,
@@ -621,13 +629,15 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
         COALESCE(ea.total_secs, 0)::bigint AS total_secs,
+        COALESCE(ea.total_timer_secs, 0)::bigint AS total_timer_secs,
         COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
         COUNT(*) OVER () AS total_count
       FROM courses c
       LEFT JOIN admins a ON a.id = c.created_by
       LEFT JOIN (
         SELECT course_id, COUNT(*)::int AS episode_count,
-               SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs
+               SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs,
+               SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs
         FROM course_episodes WHERE is_visible = true GROUP BY course_id
       ) ea ON ea.course_id = c.id
       LEFT JOIN (
@@ -655,13 +665,19 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       } else if (storedHours && storedHours > 0) {
         durationDisplay = `${storedHours}h`;
       }
+      const totalTimerSecs = Number(r.total_timer_secs);
+      let taskDurationDisplay: string | null = null;
+      if (totalTimerSecs > 0) {
+        const tmins = Math.ceil(totalTimerSecs / 60);
+        taskDurationDisplay = tmins < 60 ? `${tmins}m` : `${Math.round(tmins / 6) / 10}h`;
+      }
       const creator = r.creator_id ? {
         id: r.creator_id, fullName: r.creator_full_name,
         profilePhotoUrl: r.creator_profile_photo_url, designation: r.creator_designation,
       } : null;
       return {
         id: r.id, title: r.title, slug: r.slug, description: r.description,
-        thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay,
+        thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay, taskDurationDisplay,
         price: r.price ? Number(r.price) : null, isPublished: r.is_published,
         isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
         instructor: creator, module: r.module ?? null,

@@ -60,6 +60,7 @@ export interface Course {
   level: CourseLevel;
   durationHours?: number | null;
   durationDisplay?: string | null;
+  taskDurationDisplay?: string | null;
   isPublished: boolean;
   isFeatured: boolean;
   createdAt: string;

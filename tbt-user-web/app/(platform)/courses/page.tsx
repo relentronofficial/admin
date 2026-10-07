@@ -156,9 +156,16 @@ function ModuleCard({
           className="relative flex flex-col justify-between"
           style={{ height: 96, padding: "10px 14px" }}
         >
-          {/* Duration */}
-          <div style={{ color: "#8b8b93", fontSize: 11 }}>
-            {course.durationDisplay ?? `${course._count?.lessons ?? 0} lessons`}
+          {/* Duration row */}
+          <div className="flex items-center gap-3" style={{ color: "#8b8b93", fontSize: 11 }}>
+            {course.durationDisplay ? (
+              <span>🎬 {course.durationDisplay} video</span>
+            ) : (
+              <span>{course._count?.lessons ?? 0} lessons</span>
+            )}
+            {course.taskDurationDisplay && (
+              <span>⏱ {course.taskDurationDisplay} tasks</span>
+            )}
           </div>
 
           {/* Price chip — visible on paid locked courses */}
