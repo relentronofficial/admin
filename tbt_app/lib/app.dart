@@ -691,10 +691,27 @@ class _TbtAppState extends ConsumerState<TbtApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// Last site-config refresh — throttles the resume-time re-fetch.
+  DateTime? _lastSiteConfigRefreshAt;
+  static const _kSiteConfigRefreshAfter = Duration(seconds: 30);
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
     _maybeProactiveRefresh();
+    _maybeRefreshSiteConfig();
+  }
+
+  /// Picks up admin changes (e.g. Dark / Light Mode) when the app returns to
+  /// the foreground. Cold starts already refresh in [SiteConfigNotifier].
+  void _maybeRefreshSiteConfig() {
+    final last = _lastSiteConfigRefreshAt;
+    if (last != null &&
+        DateTime.now().difference(last) < _kSiteConfigRefreshAfter) {
+      return;
+    }
+    _lastSiteConfigRefreshAt = DateTime.now();
+    ref.read(siteConfigNotifierProvider.notifier).refresh();
   }
 
   /// If the app has been idle long enough that the access token is close to
