@@ -843,6 +843,8 @@ export interface ContinueLearningItem {
   progressPercent: number;
   isCompleted?: boolean;
   updatedAt: number;
+  durationDisplay?: string | null;
+  taskDurationDisplay?: string | null;
 }
 
 // ─── Support / Helpdesk ───────────────────────────────────────────────────────

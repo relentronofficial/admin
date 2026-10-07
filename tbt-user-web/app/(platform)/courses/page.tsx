@@ -157,15 +157,16 @@ function ModuleCard({
           style={{ height: 96, padding: "10px 14px" }}
         >
           {/* Duration row */}
-          <div className="flex items-center gap-3" style={{ color: "#8b8b93", fontSize: 11 }}>
-            {course.durationDisplay ? (
-              <span>🎬 {course.durationDisplay} video</span>
-            ) : (
-              <span>{course._count?.lessons ?? 0} lessons</span>
-            )}
-            {course.taskDurationDisplay && (
-              <span>⏱ {course.taskDurationDisplay} tasks</span>
-            )}
+          <div style={{ color: "#8b8b93", fontSize: 13, lineHeight: 1.55 }}>
+            Video Duration -{" "}
+            <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
+              {course.durationDisplay ?? "—"}
+            </strong>
+            <br />
+            Task Duration -{" "}
+            <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
+              {course.taskDurationDisplay ?? "—"}
+            </strong>
           </div>
 
           {/* Price chip — visible on paid locked courses */}
@@ -186,9 +187,10 @@ function ModuleCard({
               width: 33,
               height: 33,
               borderRadius: "50%",
-              background: isCompleted ? "#22c55e" : isInProgress ? "#dc2626" : "#414146",
-              color: "white",
-              fontSize: 14,
+              background: "transparent",
+              border: "1px solid #a4a4aa",
+              color: isCompleted ? "#22c55e" : isInProgress ? "#dc2626" : "#a4a4aa",
+              fontSize: 18,
             }}
           >
             {isCompleted ? "⟲" : isInProgress ? "▶" : "!"}

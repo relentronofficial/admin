@@ -1470,6 +1470,10 @@ function NowLearningSection() {
               <div style={{ marginBottom: 12, fontSize: 15, fontWeight: 500, lineHeight: 1.4, color: "#f5f5f7" }}>
                 {item.lastLessonTitle ?? item.title}
               </div>
+              <div className="flex flex-wrap gap-[13px]" style={{ marginBottom: 17, color: "#85858e", fontSize: 13 }}>
+                <span>Module Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).durationDisplay ?? "—"}</strong></span>
+                <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).taskDurationDisplay ?? "—"}</strong></span>
+              </div>
               <div style={{ marginBottom: 17 }}>
                 <div style={{ width: "100%", height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
                   <div style={{ width: `${Math.min(100, progressPct)}%`, height: "100%", borderRadius: 12, background: "#d91019", transition: "width 1.1s cubic-bezier(0.4,0,0.2,1)" }} />

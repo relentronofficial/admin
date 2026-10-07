@@ -2142,10 +2142,12 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
   // from Continue Learning even though lesson 4 hadn't been started yet.
   const clCompletedMap = new Map<string, number>();
   const clNextEpMap = new Map<string, { id: string; title: string; order: number; durationSeconds: number | null; lastWatchedSecs: number }>();
+  const clDurMap = new Map<string, { durationDisplay: string | null; taskDurationDisplay: string | null }>();
   if (dedupedCourses.length > 0) {
     const courseIds = dedupedCourses.map(p => p.episode.courseId);
     const phs = courseIds.map((_, i) => `$${i + 2}::uuid`).join(', ');
-    const [clRows, nextRows] = await Promise.all([
+    const durPhs = courseIds.map((_, i) => `$${i + 1}::uuid`).join(', ');
+    const [clRows, nextRows, durRows] = await Promise.all([
       request.server.prisma.$queryRawUnsafe<Array<{ course_id: string; count: number }>>(
         `SELECT ce.course_id, COUNT(*)::int AS count
          FROM course_episode_progress cep
@@ -2177,6 +2179,22 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         request.memberId,
         ...courseIds,
       ),
+      request.server.prisma.$queryRawUnsafe<Array<{
+        course_id: string;
+        total_secs: bigint;
+        total_timer_secs: bigint;
+        duration_hours: number | null;
+      }>>(
+        `SELECT ce.course_id,
+                SUM(COALESCE(ce.duration_seconds, 0))::bigint AS total_secs,
+                SUM(COALESCE(ce.timer_seconds, 0))::bigint AS total_timer_secs,
+                c.duration_hours
+         FROM course_episodes ce
+         JOIN courses c ON c.id = ce.course_id
+         WHERE ce.course_id IN (${durPhs}) AND ce.is_visible = true
+         GROUP BY ce.course_id, c.duration_hours`,
+        ...courseIds,
+      ).catch(() => [] as any[]),
     ]);
     for (const r of clRows) clCompletedMap.set(r.course_id, Number(r.count));
     for (const r of nextRows) {
@@ -2187,6 +2205,28 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         durationSeconds: r.next_duration_seconds != null ? Number(r.next_duration_seconds) : null,
         lastWatchedSecs: Number(r.next_watched_secs),
       });
+    }
+    for (const r of durRows) {
+      const totalSecs = Number(r.total_secs);
+      const totalTimerSecs = Number(r.total_timer_secs);
+      const durationHours = r.duration_hours != null ? Number(r.duration_hours) : null;
+      let durationDisplay: string | null = null;
+      if (durationHours != null && durationHours > 0) {
+        durationDisplay = durationHours >= 1
+          ? `${durationHours}hr`
+          : `${Math.round(durationHours * 60)}min`;
+      } else if (totalSecs > 0) {
+        const h = Math.floor(totalSecs / 3600);
+        const m = Math.round((totalSecs % 3600) / 60);
+        durationDisplay = h > 0 ? `${h}hr${m > 0 ? ` ${m}min` : ''}` : `${m}min`;
+      }
+      let taskDurationDisplay: string | null = null;
+      if (totalTimerSecs > 0) {
+        const h = Math.floor(totalTimerSecs / 3600);
+        const m = Math.round((totalTimerSecs % 3600) / 60);
+        taskDurationDisplay = h > 0 ? `${h}hr${m > 0 ? ` ${m}min` : ''}` : `${m}min`;
+      }
+      clDurMap.set(r.course_id, { durationDisplay, taskDurationDisplay });
     }
   }
 
@@ -2204,6 +2244,7 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
       const targetId    = nextEp?.id    ?? p.episodeId;
       const targetTitle = nextEp?.title ?? p.episode.title;
       const targetOrder = nextEp?.order ?? p.episode.order;
+      const dur = clDurMap.get(p.episode.courseId);
       return {
         type: 'course' as const,
         id: p.episode.courseId,
@@ -2221,6 +2262,8 @@ export async function getContinueLearningHandler(request: FastifyRequest, reply:
         progressPercent: episodeCount > 0 ? Math.round((completedLessons / episodeCount) * 100) : 0,
         isCompleted: episodeCount > 0 && completedLessons >= episodeCount,
         updatedAt: p.updatedAt.toISOString(),
+        durationDisplay: dur?.durationDisplay ?? null,
+        taskDurationDisplay: dur?.taskDurationDisplay ?? null,
         _ms: p.updatedAt.getTime(),
       };
     }),
