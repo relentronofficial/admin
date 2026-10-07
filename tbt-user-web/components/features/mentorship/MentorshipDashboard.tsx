@@ -3,9 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
-  Flame, Heart, CheckCircle2, Clock, TrendingUp, TrendingDown,
-  BookOpen, BarChart3, Target, Phone, ChevronRight, Trophy, Star, Activity,
-  Play, Lock,
+  TrendingUp, TrendingDown, ChevronRight, Play, Lock,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
@@ -78,43 +76,31 @@ function MentorshipHeader({
   lifelinesTotal: number | null;
   lifelinesUsed: number | null;
 }) {
-  // Only draw hearts the member actually has — no padding, no assumed default.
   const totalHearts = lifelinesTotal ?? 0;
   const filledHearts = lifelinesTotal != null ? lifelinesTotal - (lifelinesUsed ?? 0) : 0;
 
   return (
-    <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3 mb-5">
-      <h1 className="text-xl font-bold flex-1 min-w-0 truncate" style={{ color: "var(--color-text-normal)" }}>
+    <motion.div variants={fadeUp} className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
+      <h2 className="flex-1 min-w-0 truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
         {programName ?? "Mentorship Program"}
-      </h1>
-      <div className="flex items-center gap-2 flex-wrap">
+      </h2>
+      <div className="flex items-center gap-2 flex-wrap shrink-0">
         {weeklyReportSubmitted && (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.25)" }}>
-            <CheckCircle2 className="w-3 h-3" /> Weekly Report Submitted
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#242428", color: "#f5f5f7" }}>
+            ✅ Weekly Report Submitted
           </span>
         )}
-        <span className="mentorship-streak-badge inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: "rgba(251,146,60,0.15)", color: "#fb923c", border: "1px solid rgba(251,146,60,0.3)" }}>
-          <Flame className="w-3 h-3" /> Streak {streakDays} Days
+        <span className="mentorship-streak-badge inline-flex items-center gap-1.5 rounded-full" style={{ background: "#ffffff", color: "#000", fontSize: 11, fontWeight: 700, padding: "6px 12px" }}>
+          🔥 Streak <span style={{ color: "#d70b1a" }}>{streakDays} Days</span>
         </span>
         {totalHearts > 0 && (
-          <span className="inline-flex items-center gap-1">
-            <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Lifelines</span>
-            <span className="inline-flex items-center gap-0.5 ml-0.5">
-              {Array.from({ length: totalHearts }).map((_, i) => (
-                <motion.span
-                  key={i}
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ delay: 0.6 + i * 0.08, type: "spring", stiffness: 400, damping: 16 }}
-                >
-                  <Heart
-                    className="w-4 h-4"
-                    style={{ color: i < filledHearts ? "#ef4444" : "rgba(255,255,255,0.2)" }}
-                    fill={i < filledHearts ? "#ef4444" : "none"}
-                  />
-                </motion.span>
-              ))}
-            </span>
+          <span className="inline-flex items-center gap-1 rounded-full" style={{ background: "#d70b1a", padding: "6px 12px" }}>
+            {Array.from({ length: filledHearts }).map((_, i) => (
+              <span key={i} style={{ fontSize: 12 }}>❤️</span>
+            ))}
+            {Array.from({ length: totalHearts - filledHearts }).map((_, i) => (
+              <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
+            ))}
           </span>
         )}
       </div>
@@ -124,125 +110,95 @@ function MentorshipHeader({
 
 function KpiCard({
   label,
+  rightLabel,
   value,
-  sub,
-  growth,
-  icon: Icon,
-  accentColor,
-  valueColor,
+  metricColor = "#f5f5f7",
+  note,
 }: {
   label: string;
+  rightLabel?: string;
   value: string;
-  sub: string;
-  growth?: number | null;
-  icon: React.ElementType;
-  accentColor?: string;
-  valueColor?: string;
+  metricColor?: string;
+  note?: string;
 }) {
   return (
     <motion.div
       variants={fadeUp}
-      className="mentorship-kpi-card relative rounded-2xl p-4 flex flex-col gap-2 overflow-hidden"
-      style={{
-        background: "var(--color-bg-surface, #141414)",
-        border: `1px solid color-mix(in srgb, ${accentColor ?? "var(--color-accent)"} 20%, transparent)`,
-      }}
-      whileHover={{ scale: 1.015, transition: { duration: 0.18 } }}
+      className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
+      style={{ background: "#242428", padding: 12, height: 63 }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
-        <Icon className="w-4 h-4 shrink-0" style={{ color: accentColor ?? "var(--color-accent)", opacity: 0.7 }} />
+      <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
+        <span className="truncate" style={{ color: "#d0cfd4", fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
+        {rightLabel && <span className="shrink-0 ml-1" style={{ color: "#d0cfd4", fontSize: 7, fontWeight: 500 }}>{rightLabel}</span>}
       </div>
-      <div className="text-2xl font-black tracking-tight leading-none" style={{ color: valueColor ?? "#ffffff" }}>{value}</div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{sub}</span>
-        {growth != null && <GrowthBadge value={growth} />}
+      <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.35, letterSpacing: "-0.5px", color: metricColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {value}
       </div>
+      {note && (
+        <span className="absolute" style={{ right: 10, bottom: 8, fontSize: 7, color: "#20d6a1", fontWeight: 500 }}>
+          {note}
+        </span>
+      )}
     </motion.div>
   );
 }
 
 function JourneyTile({
   label,
-  used,
-  total,
-  suffix,
-  icon: Icon,
-  noBar,
-  pct: pctOverride,
-  badge,
-  badgeColor,
-  sub,
+  rightLabel,
+  value,
+  muted,
+  metricColor = "#809ed5",
+  note,
+  leaderboard,
 }: {
   label: string;
-  used: number | string;
-  total?: number | string;
-  suffix?: string;
-  icon: React.ElementType;
-  noBar?: boolean;
-  pct?: number | null;
-  badge?: string;
-  badgeColor?: string;
-  sub?: string;
+  rightLabel?: string;
+  value: string;
+  muted?: string;
+  metricColor?: string;
+  note?: string;
+  leaderboard?: boolean;
 }) {
-  const pct = pctOverride != null
-    ? Math.min(100, pctOverride)
-    : typeof used === "number" && typeof total === "number" && total > 0
-      ? (used / total) * 100
-      : 0;
-  const bColor = badgeColor ?? "rgba(255,255,255,0.5)";
   return (
     <div
-      className="rounded-xl p-3 flex flex-col gap-1"
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+      className="relative rounded-[10px]"
+      style={{ background: leaderboard ? "#292812" : "#242428", padding: "9px 12px", height: 53 }}
     >
-      <div className="flex items-center justify-between gap-1 mb-1">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <Icon className="w-3 h-3 shrink-0" style={{ color: "var(--color-accent)", opacity: 0.7 }} />
-          <span className="text-[9px] font-bold uppercase tracking-widest truncate" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
-        </div>
-        {badge && (
-          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: `${bColor}20`, color: bColor, border: `1px solid ${bColor}30` }}>
-            {badge}
-          </span>
-        )}
+      <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
+        <span className="truncate" style={{ color: "#d0cfd4", fontSize: 9, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
+        {rightLabel && <span className="shrink-0 ml-1" style={{ color: "#ff313b", fontSize: 7, fontWeight: 600 }}>{rightLabel}</span>}
       </div>
-      <div className="flex items-baseline gap-1">
-        <span className="text-xl font-black text-white">{used}</span>
-        {total != null && <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>/{total}{suffix}</span>}
-        {!total && suffix && <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>{suffix}</span>}
+      <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.2, color: metricColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {value}
+        {muted && <span style={{ color: "#93939b", fontWeight: 400 }}>{muted}</span>}
       </div>
-      {sub && <p className="text-[9px] leading-tight" style={{ color: "var(--color-text-subtle)" }}>{sub}</p>}
-      {!noBar && <ProgressBar pct={pct} />}
+      {note && (
+        <span className="absolute" style={{ bottom: 9, right: 9, fontSize: 7, color: "#20d6a1", fontWeight: 500 }}>
+          {note}
+        </span>
+      )}
     </div>
   );
 }
 
 function SupportCallTile({ label, used, total }: { label: string; used: number; total: number }) {
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-  const isExhausted = total > 0 && used >= total;
-  const pctColor = isExhausted ? "#ef4444" : pct >= 75 ? "#fb923c" : "#818cf8";
   return (
     <div
-      className="rounded-xl p-3 flex flex-col gap-1"
-      style={{
-        background: "rgba(255,255,255,0.03)",
-        border: `1px solid ${isExhausted ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.07)"}`,
-      }}
+      className="relative rounded-[10px]"
+      style={{ background: "#242428", padding: "10px 12px", height: 53 }}
     >
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-[9px] font-bold uppercase tracking-widest truncate" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+      <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
+        <span className="truncate" style={{ color: "#d0cfd4", fontSize: 9, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
         {total > 0 && (
-          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: `${pctColor}20`, color: pctColor, border: `1px solid ${pctColor}30` }}>
-            {pct}%
-          </span>
+          <span className="shrink-0 ml-1" style={{ color: "#ff313b", fontSize: 7, fontWeight: 600 }}>{pct}%</span>
         )}
       </div>
-      <div className="flex items-baseline gap-0.5">
-        <span className="text-xl font-black" style={{ color: isExhausted ? "#ef4444" : "white" }}>{used}</span>
-        <span className="text-xs font-semibold" style={{ color: "var(--color-text-secondary)" }}>/{total}</span>
+      <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.2, color: "#809ed5" }}>
+        {used}
+        <span style={{ color: "#93939b", fontWeight: 400 }}>/{total}</span>
       </div>
-      <ProgressBar pct={pct} color={isExhausted ? "#ef4444" : pctColor} />
     </div>
   );
 }
@@ -1702,46 +1658,40 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <KpiCard
           label="Daily Time Spent"
           value={`${dailyHrsCount} hrs`}
-          sub={dailyGoal != null ? `vs ${dailyGoal}hr goal` : "Today"}
-          growth={dailyHrs > 0 ? dailyGrowth : null}
-          icon={Clock}
+          metricColor="#f5f5f7"
+          note={dailyGrowth != null ? `${dailyGrowth >= 0 ? "+" : ""}${dailyGrowth}% vs goal` : undefined}
         />
         <KpiCard
           label="Support Delivered"
           value={`${allCallsUsedCount} Calls`}
-          sub={`${allCallsAllocated} All-Time Calls`}
-          icon={Phone}
-          accentColor="#818cf8"
+          metricColor="#bd82ff"
+          note={allCallsAllocated > 0 ? `${allCallsUsed}/${allCallsAllocated} Total` : undefined}
         />
         <KpiCard
-          label={revenue?.numberOfOrders ? `Revenue Generated | ${revenue.numberOfOrders} Orders` : "Revenue Generated"}
+          label="Revenue Generated"
+          rightLabel={revenue?.numberOfOrders ? `${revenue.numberOfOrders}+ Orders` : undefined}
           value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
-          sub={revenue?.revenueGenerated != null && revenue?.numberOfOrders ? `Avg ₹${Math.round(revenue.revenueGenerated / revenue.numberOfOrders).toLocaleString("en-IN")} / order` : revenue?.revenueGenerated != null ? "No order count yet" : "No data yet"}
-          growth={revGrowth}
-          icon={BarChart3}
-          accentColor="#eab308"
-          valueColor={revenue?.revenueGenerated != null ? "#eab308" : undefined}
+          metricColor="#ffe600"
+          note={
+            revenue?.revenueGenerated != null && revenue?.numberOfOrders
+              ? `Avg ₹${Math.round(revenue.revenueGenerated / revenue.numberOfOrders).toLocaleString("en-IN")}/order`
+              : revGrowth != null
+                ? `${revGrowth >= 0 ? "+" : ""}${revGrowth}% vs prev`
+                : undefined
+          }
         />
         <KpiCard
-          label="Organic Growth (Weekly)"
+          label="Organic Growth"
           value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
-          sub={revenue?.leadsPrev != null ? `Closed ${leadsGrowthVal != null ? Math.abs(leadsGrowthVal) : "—"}% Since Prev` : "Weekly vs prior week"}
-          icon={TrendingUp}
-          accentColor="#22c55e"
-          valueColor={leadsGrowthVal != null ? (leadsGrowthVal >= 0 ? "#22c55e" : "#ef4444") : undefined}
+          metricColor={leadsGrowthVal != null ? (leadsGrowthVal >= 0 ? "#df72c9" : "#ff313b") : "#df72c9"}
+          note={revenue?.leadsPrev != null ? `prev: ${revenue.leadsPrev} leads` : undefined}
         />
       </motion.div>
 
       {/* ── Customer Journey ─────────────────────────────────────────── */}
-      <motion.div
-        variants={fadeUp}
-        className="rounded-2xl p-4"
-        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>
-            Customer Journey
-          </h2>
+      <motion.div variants={fadeUp}>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Customer Journey</h2>
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
             Live Update
@@ -1750,90 +1700,86 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <JourneyTile
             label="Daily Usage"
-            used={`${Number(dailyHrs.toFixed(2))}h`}
-            icon={Activity}
-            pct={dailyGoal != null && dailyGoal > 0 ? (dailyHrs / dailyGoal) * 100 : null}
-            noBar={dailyGoal == null}
-            sub={dailyGoal != null ? `avg: ${dailyGoal}h` : undefined}
+            value={String(Number(dailyHrs.toFixed(2)))}
+            muted="h"
+            metricColor="#809ed5"
+            note={dailyGoal != null ? `Goal: ${dailyGoal}h/day` : undefined}
           />
           <JourneyTile
             label="Modules"
-            used={stats.completedEpisodes}
-            total={stats.totalEpisodes}
-            icon={BookOpen}
-            badge={stats.totalEpisodes > 0 ? `${Math.round((stats.completedEpisodes / stats.totalEpisodes) * 100)}%` : undefined}
-            badgeColor="#818cf8"
-            sub={stats.totalEpisodes > 0
-              ? stats.completedEpisodes >= stats.totalEpisodes
-                ? "All Done"
-                : `${stats.totalEpisodes - stats.completedEpisodes} Left`
-              : undefined}
+            value={String(stats.completedEpisodes)}
+            muted={`/${stats.totalEpisodes}`}
+            metricColor="#35cb76"
+            note={
+              stats.totalEpisodes > 0
+                ? stats.completedEpisodes >= stats.totalEpisodes
+                  ? "All Done"
+                  : `${stats.totalEpisodes - stats.completedEpisodes} Left`
+                : undefined
+            }
           />
           <JourneyTile
             label="Tasks"
-            used={stats.tasksCompleted}
-            total={stats.tasksTotal}
-            icon={CheckCircle2}
-            badge={stats.tasksTotal > 0 ? `${Math.round((stats.tasksCompleted / stats.tasksTotal) * 100)}%` : undefined}
-            badgeColor="#34d399"
-            sub={stats.tasksTotal > 0
-              ? stats.tasksCompleted >= stats.tasksTotal
-                ? "All Done"
-                : `${stats.tasksTotal - stats.tasksCompleted} Left`
-              : undefined}
+            value={String(stats.tasksCompleted)}
+            muted={`/${stats.tasksTotal}`}
+            metricColor="#809ed5"
+            note={
+              stats.tasksTotal > 0
+                ? stats.tasksCompleted >= stats.tasksTotal
+                  ? "All Done"
+                  : `${stats.tasksTotal - stats.tasksCompleted} Left`
+                : undefined
+            }
           />
           <JourneyTile
             label="Support Days"
-            used={daysLeft}
-            suffix="d left"
-            icon={Target}
-            noBar
-            sub={totalDays > 0 ? `${totalDays}d total` : undefined}
+            value={String(daysLeft)}
+            muted="d left"
+            metricColor="#35cb76"
+            rightLabel={daysElapsed > 0 ? `Day ${daysElapsed}` : undefined}
           />
           <JourneyTile
             label="Tier Access"
-            used={daysElapsed}
-            total={totalDays}
-            suffix="d"
-            icon={Star}
-            badge={totalDays >= 300 ? "Annual" : undefined}
-            badgeColor="#f472b6"
+            value={String(daysElapsed)}
+            muted={totalDays > 0 ? `/${totalDays}d` : "d"}
+            metricColor="#809ed5"
+            note={totalDays >= 300 ? "Annual" : undefined}
           />
           <JourneyTile
             label="Leaderboard"
-            used={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)}` : "#—"}
-            icon={Trophy}
-            noBar
+            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "#—"}
+            metricColor="#35cb76"
+            leaderboard
           />
         </div>
       </motion.div>
 
       {/* ── Expert Support Calls ─────────────────────────────────────── */}
-      <motion.div
-        variants={fadeUp}
-        className="rounded-2xl p-4"
-        style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
-      >
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>
-            Expert Support Calls
-          </h2>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8" }}>
-              {allCallsUsed}/{allCallsAllocated} Completed
+      <motion.div variants={fadeUp}>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Expert Support Calls</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+              style={{ background: "#202024", color: "#f5f5f7" }}
+            >
+              🔴 {allCallsUsed}/{allCallsAllocated} Completed
             </span>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c" }}>
-              {allCallsRemaining} Quota Remaining
+            <span
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+              style={{ background: "#202024", color: "#f5f5f7" }}
+            >
+              🟣 {allCallsRemaining} Quota Remaining
             </span>
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
-          <SupportCallTile label="Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
-          <SupportCallTile label="Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
-          <SupportCallTile label="Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
-          <SupportCallTile label="Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
-          <SupportCallTile label="Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
+          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
+          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
+          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
+          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
+          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
+          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
         </div>
       </motion.div>
 
