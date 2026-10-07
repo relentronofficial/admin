@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
@@ -161,6 +161,15 @@ function ModuleCard({
             {course.durationDisplay ?? `${course._count?.lessons ?? 0} lessons`}
           </div>
 
+          {/* Price chip — visible on paid locked courses */}
+          {!course.hasAccess && !enrollment && course.price > 0 && (
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, background: "rgba(255,224,0,0.1)", border: "1px solid rgba(255,224,0,0.25)" }}>
+              <span style={{ color: "#ffe000", fontSize: 11, fontWeight: 700 }}>
+                ₹{(course.price as number).toLocaleString("en-IN")}
+              </span>
+            </div>
+          )}
+
           {/* Status circle (absolute, top-right) */}
           <div
             className="absolute flex items-center justify-center"
@@ -218,8 +227,13 @@ function ModuleCard({
                 lineHeight: 1.4,
               }}
             >
-              Complete previous module to unlock
+              {course.price > 0 ? "Purchase this module to unlock" : "Request access to unlock"}
             </div>
+            {course.price > 0 && (
+              <div style={{ marginTop: 4, color: "#ffe000", fontSize: 13, fontWeight: 700 }}>
+                ₹{(course.price as number).toLocaleString("en-IN")}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -232,8 +246,8 @@ function ModuleCard({
 function SavedVideoCard({ item }: { item: any }) {
   const href =
     item.type === "course"
-      ? `/learning/${item.id ?? item.courseId}${item.lessonId ? `?lesson=${item.lessonId}` : ""}`
-      : `/workshop/${item.id ?? item.workshopSlug}`;
+      ? `/learning/${item.courseId}?lesson=${item.episodeId}`
+      : `/workshop/${item.workshopSlug}`;
 
   return (
     <Link href={href} className="block">
@@ -322,7 +336,7 @@ function SavedVideoCard({ item }: { item: any }) {
             padding: "0 4px",
           }}
         >
-          {item.title ?? item.workshopTitle ?? item.courseTitle}
+          {item.episodeTitle ?? item.workshopTitle ?? item.courseTitle}
         </div>
       </div>
     </Link>
@@ -365,6 +379,11 @@ export default function CoursesPage() {
   const [category, setCategory] = useState("all");
   const [showAll, setShowAll]   = useState(false);
 
+  // CF-03 — reset pagination when any filter changes
+  useEffect(() => {
+    setShowAll(false);
+  }, [search, level, sort, category]);
+
   const { data: me }       = useMe();
   const updateProfile      = useUpdateProfile();
   const memberTrack        = (me as any)?.businessType as string | null | undefined;
@@ -379,7 +398,7 @@ export default function CoursesPage() {
     moduleTitle: memberTrack ?? undefined,
     limit: 24,
   });
-  const { data: enrollments }     = useMyEnrollments();
+  const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
   const { data: watchHistoryData } = useWatchHistory({ limit: 3 });
 
   const catalogCourses: any[]  = catalogData?.data ?? [];
@@ -405,20 +424,27 @@ export default function CoursesPage() {
         {/* Section header */}
         <div className="flex items-center justify-between mb-5">
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>Modules</h2>
-          <Link
-            href="/learning"
-            style={{
-              padding: "6px 16px",
-              border: "1px solid #77777e",
-              borderRadius: 9,
-              color: "#a0a0a8",
-              fontSize: 12,
-              fontWeight: 500,
-              textDecoration: "none",
-            }}
-          >
-            FAQs
-          </Link>
+          <div className="flex items-center gap-3">
+            {!catalogLoading && catalogCourses.length > 0 && (
+              <span style={{ fontSize: 11, color: "#92929b" }}>
+                {catalogCourses.length} modules
+              </span>
+            )}
+            <Link
+              href="/learning/badges"
+              style={{
+                padding: "6px 16px",
+                border: "1px solid #77777e",
+                borderRadius: 9,
+                color: "#a0a0a8",
+                fontSize: 12,
+                fontWeight: 500,
+                textDecoration: "none",
+              }}
+            >
+              My Badges
+            </Link>
+          </div>
         </div>
 
         {/* Track selector */}
@@ -599,7 +625,7 @@ export default function CoursesPage() {
         </div>
 
         {/* Module grid */}
-        {catalogLoading ? (
+        {catalogLoading || enrollLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
