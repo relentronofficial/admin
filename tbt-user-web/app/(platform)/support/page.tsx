@@ -7,13 +7,8 @@ import {
   ArrowRight,
   ChevronRight,
   HelpCircle,
-  Mail,
-  MessageCircle,
   MessageSquare,
-  Phone,
-  PhoneCall,
   Play,
-  Star,
   TicketCheck,
   Users,
   X,
@@ -125,91 +120,6 @@ function Modal({
         <div className="px-5 pb-5">{children}</div>
       </div>
     </div>
-  );
-}
-
-// ── Call Us modal ───────────────────────────────────────────────────────────
-
-function CallUsModal({
-  open,
-  onClose,
-  settings,
-}: {
-  open: boolean;
-  onClose: () => void;
-  settings: HelpdeskSettings | null | undefined;
-}) {
-  const rows: Array<{ icon: React.ReactNode; label: string; sub: string; href: string; color: string }> = [];
-  if (settings?.phoneNumber) {
-    rows.push({
-      icon: <Phone size={18} />,
-      label: "Call Helpline",
-      sub: settings.phoneNumber,
-      href: `tel:${settings.phoneNumber}`,
-      color: "#27AE60",
-    });
-  }
-  if (settings?.whatsappNumber) {
-    const digits = settings.whatsappNumber.replace(/[^\d]/g, "");
-    rows.push({
-      icon: <MessageCircle size={18} />,
-      label: "Chat on WhatsApp",
-      sub: settings.whatsappNumber,
-      href: `https://wa.me/${digits}`,
-      color: "#25D366",
-    });
-  }
-  if (settings?.email) {
-    rows.push({
-      icon: <Mail size={18} />,
-      label: "Email us",
-      sub: settings.email,
-      href: `mailto:${settings.email}`,
-      color: "var(--color-accent)",
-    });
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Contact Support"
-      subtitle={settings?.supportTiming || undefined}
-    >
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground text-center py-6">
-          No contact channels configured yet.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <a
-              key={r.href}
-              href={r.href}
-              target={r.href.startsWith("http") ? "_blank" : undefined}
-              rel="noreferrer"
-              onClick={onClose}
-              className="flex items-center gap-3 px-3 py-3 rounded-xl transition-colors hover:bg-[var(--color-surface-overlay)]"
-            >
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center"
-                style={{
-                  color: r.color,
-                  background: `color-mix(in srgb, ${r.color} 12%, transparent)`,
-                }}
-              >
-                {r.icon}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-foreground">{r.label}</div>
-                <div className="text-xs text-muted-foreground truncate">{r.sub}</div>
-              </div>
-              <ChevronRight size={16} className="text-muted-foreground" />
-            </a>
-          ))}
-        </div>
-      )}
-    </Modal>
   );
 }
 
@@ -327,7 +237,6 @@ function SupportPageInner() {
   const { data: tickets = [] } = useMyTickets();
   const { data: focusedFaq } = useFaqById(focusFaqId);
 
-  const [callOpen, setCallOpen] = useState(false);
   const [faqModal, setFaqModal] = useState<Faq | null>(null);
   const focusedRef = useRef<HTMLButtonElement>(null);
 
@@ -366,10 +275,8 @@ function SupportPageInner() {
       {/* Quick actions */}
       <div className="space-y-3">
         <SectionLabel>QUICK ACTIONS</SectionLabel>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <QuickTile icon={<TicketCheck size={22} />} label="Raise Ticket" href="/support/new" />
-          <QuickTile icon={<PhoneCall size={22} />} label="Call Us" onClick={() => setCallOpen(true)} />
-          <QuickTile icon={<Star size={22} />} label="Feedback" href="/support/feedback" />
         </div>
       </div>
 
@@ -465,7 +372,6 @@ function SupportPageInner() {
         )}
       </div>
 
-      <CallUsModal open={callOpen} onClose={() => setCallOpen(false)} settings={settings} />
       <FaqModal open={!!faqModal} onClose={() => setFaqModal(null)} faq={faqModal} />
     </div>
   );
