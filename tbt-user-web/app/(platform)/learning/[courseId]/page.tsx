@@ -760,7 +760,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const createOrder = useCreateRazorpayOrder();
   const verifyPayment = useVerifyRazorpayPayment();
   const { data: meData } = useMe();
-  const isCheckoutOpen = useRef(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const lessons = course.lessons ?? [];
 
   const hasPriceForRazorpay = course.price != null && Number(course.price) > 0 && !course.pendingPayment;
@@ -796,7 +796,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
         description: course.title,
         image: course.thumbnailUrl ?? undefined,
         handler: async (response: any) => {
-          isCheckoutOpen.current = false; // Fix #4: modal closed on payment
+          setCheckoutOpen(false);
           try {
             await verifyPayment.mutateAsync({
               courseId,
@@ -818,22 +818,20 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             );
           }
         },
-        // Fix #2: prefill member details to skip re-entry in checkout form
         prefill: {
           name: (meData as any)?.name ?? "",
           contact: (meData as any)?.phone ?? "",
         },
         theme: { color: "#dc2626" },
         modal: {
-          ondismiss: () => { isCheckoutOpen.current = false; }, // Fix #4
+          ondismiss: () => { setCheckoutOpen(false); },
         },
       };
 
       const rzp = new (window as any).Razorpay(options);
 
-      // Wire up card-decline / bank-rejection handler (#7)
       rzp.on("payment.failed", (resp: any) => {
-        isCheckoutOpen.current = false;
+        setCheckoutOpen(false);
         const reason =
           resp?.error?.description ??
           resp?.error?.reason ??
@@ -841,7 +839,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
         toast.error(reason, { duration: 6000 });
       });
 
-      isCheckoutOpen.current = true; // Fix #4: mark modal as open
+      setCheckoutOpen(true);
       rzp.open();
     } catch (e: any) {
       toast.error(e.message || "Could not initiate payment. Please try again.");
@@ -942,7 +940,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
             {course.pendingPayment.method === "razorpay" && course.pendingPayment.razorpayOrderId ? (
               <button
                 onClick={handleRazorpayPay}
-                disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+                disabled={createOrder.isPending || verifyPayment.isPending || checkoutOpen}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
                 style={{ background: "var(--color-accent)" }}
               >
@@ -965,7 +963,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
         ) : showRazorpay ? (
           <button
             onClick={handleRazorpayPay}
-            disabled={createOrder.isPending || verifyPayment.isPending || isCheckoutOpen.current}
+            disabled={createOrder.isPending || verifyPayment.isPending || checkoutOpen}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
             style={{ background: "var(--color-accent)" }}
           >
@@ -1526,7 +1524,7 @@ export default function CourseDetailPage({
   const COIN_PACKAGE_PRICE = 99; // INR
   const createCoinOrder = useCreateCoinOrder();
   const verifyCoinPayment = useVerifyCoinPayment();
-  const coinPurchaseOpenRef = useRef(false);
+  const [coinPurchaseOpen, setCoinPurchaseOpen] = useState(false);
   // Server-side timer session + per-episode lifeline persistence
   const startEpisodeTimerMutation = useStartEpisodeTimer();
   const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
@@ -1882,6 +1880,12 @@ export default function CourseDetailPage({
   useEffect(() => {
     const active = timerLessonRef.current;
     if (active && completedIdsRef.current.has(active)) {
+      // Only clear the running timer when completion was user-triggered.
+      // markCalledRef is set synchronously before the mutation in handleMarkComplete /
+      // handleVideoEnded / doMarkComplete. The 30s progress heartbeat never sets it,
+      // so a server-auto-completion via heartbeat won't kill a running timer 2 — tick()
+      // will fire at expiry and show the lifeline/coin dialog as intended.
+      if (!markCalledRef.current) return;
       clearInterval(timerIntervalRef.current);
       timerLessonRef.current = null;
       setLessonTimers(prev => { const n = { ...prev }; delete n[active]; return n; });
@@ -2460,6 +2464,11 @@ export default function CourseDetailPage({
       startEpisodeTimerRef.current({ episodeId: lessonId, durationSeconds: duration });
     }
 
+    // Snapshot completion state at timer-start. If the lesson auto-completes via the
+    // 30s progress heartbeat during this timer session, the live ref will turn true but
+    // we still want tick() to pause the video and show the lifeline dialog.
+    const wasAlreadyCompleted = completedIdsRef.current.has(lessonId);
+
     function tick() {
       const secsLeft = Math.max(0, Math.ceil((timerEndTimeRef.current - Date.now()) / 1000));
       setLessonTimers(prev => ({ ...prev, [lessonId]: secsLeft }));
@@ -2467,7 +2476,7 @@ export default function CourseDetailPage({
 
       clearInterval(timerIntervalRef.current);
       timerLessonRef.current = null;
-      if (completedIdsRef.current.has(lessonId)) return;
+      if (wasAlreadyCompleted) return; // lesson was already done before this timer started
 
       // Pause the video and lock the lesson — user must manually choose to use a lifeline
       pausePlayerRef.current();
@@ -2570,8 +2579,7 @@ export default function CourseDetailPage({
       toast.error("Payment system loading, please try again in a moment.");
       return;
     }
-    if (coinPurchaseOpenRef.current) return;
-    coinPurchaseOpenRef.current = true;
+    if (coinPurchaseOpen) return;
     const lesson = coinDialog?.lesson;
     const duration = coinDialog?.duration ?? 0;
     try {
@@ -2585,7 +2593,7 @@ export default function CourseDetailPage({
         name: "Tamil Business Tribe",
         description: `${coins} TBT Coins`,
         handler: async (response: any) => {
-          coinPurchaseOpenRef.current = false;
+          setCoinPurchaseOpen(false);
           try {
             const result = await verifyCoinPayment.mutateAsync({
               razorpayOrderId: orderId,
@@ -2610,16 +2618,17 @@ export default function CourseDetailPage({
               setCoinDialog(null);
             }
           } catch {
-            coinPurchaseOpenRef.current = false;
+            setCoinPurchaseOpen(false);
             toast.error("Payment received but verification failed. Contact support.", { duration: 8000 });
           }
         },
-        modal: { ondismiss: () => { coinPurchaseOpenRef.current = false; } },
+        modal: { ondismiss: () => { setCoinPurchaseOpen(false); } },
       });
-      rzp.on("payment.failed", () => { coinPurchaseOpenRef.current = false; });
+      rzp.on("payment.failed", () => { setCoinPurchaseOpen(false); });
+      setCoinPurchaseOpen(true);
       rzp.open();
     } catch {
-      coinPurchaseOpenRef.current = false;
+      setCoinPurchaseOpen(false);
       toast.error("Could not open payment — please try again.");
     }
   };
@@ -2854,7 +2863,7 @@ export default function CourseDetailPage({
                 {showGetCoinsPath ? (
                   <button
                     onClick={handleGetTbtCoins}
-                    disabled={createCoinOrder.isPending || verifyCoinPayment.isPending}
+                    disabled={createCoinOrder.isPending || verifyCoinPayment.isPending || coinPurchaseOpen}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
                     style={{ background: "var(--color-accent)" }}
                   >

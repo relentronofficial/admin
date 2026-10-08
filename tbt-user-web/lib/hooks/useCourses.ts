@@ -175,6 +175,7 @@ export const useVerifyRazorpayPayment = () => {
     onSuccess: (_data, { courseId }) => {
       queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
     },
   });
 };
