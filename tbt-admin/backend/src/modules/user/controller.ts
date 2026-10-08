@@ -4775,18 +4775,23 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
   if (type === 'free') {
     const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
     if (freeRemaining <= 0) return fail(reply, 400, 'No free lifelines remaining');
-    await request.server.prisma.$executeRawUnsafe(
+    // WHERE guard makes the increment atomic — concurrent requests (double-click) can't
+    // push free_used past lifeline_count.
+    const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
       `INSERT INTO episode_lifeline_state (member_id, episode_id, free_used, total_used, updated_at)
        VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
        ON CONFLICT (member_id, episode_id) DO UPDATE SET
          free_used = episode_lifeline_state.free_used + 1,
          total_used = episode_lifeline_state.total_used + 1,
-         updated_at = NOW()`,
-      memberId, episodeId,
+         updated_at = NOW()
+       WHERE episode_lifeline_state.free_used < $3
+       RETURNING free_used AS "freeUsed", total_used AS "totalUsed"`,
+      memberId, episodeId, cfg.lifelineCount,
     );
+    if (!rows[0]) return fail(reply, 400, 'No free lifelines remaining');
     return reply.send({
       success: true,
-      data: { freeRemaining: freeRemaining - 1, totalUsed: state.totalUsed + 1 },
+      data: { freeRemaining: Math.max(0, cfg.lifelineCount - Number(rows[0].freeUsed)), totalUsed: Number(rows[0].totalUsed) },
       error: null,
     });
   }
