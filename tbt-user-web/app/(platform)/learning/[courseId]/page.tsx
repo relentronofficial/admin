@@ -1494,6 +1494,10 @@ export default function CourseDetailPage({
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [coinDialog, setCoinDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [lifelineDialog, setLifelineDialog] = useState<{ lesson: any; duration: number } | null>(null);
+  // Single in-flight guard for every lifeline/coin request — the ref blocks a rapid
+  // double-click synchronously (before React re-renders); the state disables the buttons.
+  const lifelineInFlightRef = useRef(false);
+  const [lifelineBusy, setLifelineBusy] = useState(false);
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const timerLessonRef = useRef<string | null>(null);
@@ -2523,54 +2527,92 @@ export default function CourseDetailPage({
     setFocusDialog({ lesson, duration });
   };
 
-  const handleUseLifeline = async (lesson: any, duration: number) => {
-    if (lifelinesLeft > 0) {
-      // Program-wide: persist to DB first; session-only: update locally
+  // Spends one free lifeline on the server. Local count/lock state change only after the
+  // server confirms — returns "ok", "exhausted" (caller opens the coin dialog) or "failed"
+  // (error toast already shown). Every lifeline toast shares one id so repeats replace
+  // each other instead of stacking.
+  const consumeFreeLifeline = async (lesson: any): Promise<"ok" | "exhausted" | "failed"> => {
+    try {
       if (isProgramLifeline && batchId) {
-        try {
-          const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
-          setLifelinesLeft(res.lifelinesRemaining);
-          lifelinesLeftRef.current = res.lifelinesRemaining;
-        } catch (err: any) {
-          if (err?.response?.data?.error === 'exhausted') {
-            setCoinDialog({ lesson, duration });
-            return;
-          }
-          toast.error("Failed to use lifeline — try again");
-          return;
-        }
+        const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
+        setLifelinesLeft(res.lifelinesRemaining);
+        lifelinesLeftRef.current = res.lifelinesRemaining;
       } else {
-        const remaining = lifelinesLeft - 1;
+        // Call the service with the target lesson's id so clicking a focus-locked lesson
+        // from the sidebar (while another lesson is selected) charges the right episode.
+        await coursesService.useEpisodeLifeline(lesson.id, 'free');
+        const remaining = Math.max(0, lifelinesLeftRef.current - 1);
         setLifelinesLeft(remaining);
         lifelinesLeftRef.current = remaining;
-        // Non-batch: call directly with the target lesson's id so that clicking a
-        // focus-locked lesson from the sidebar (when a different lesson is selected)
-        // doesn't decrement the wrong episode's lifeline count.
-        coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
       }
-      setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
-      startLessonTimer(lesson.id, duration);
+      return "ok";
+    } catch (err: any) {
+      const code = err?.code ?? err?.response?.data?.error;
+      if (code === 'exhausted' || code === 'No free lifelines remaining') {
+        setLifelinesLeft(0);
+        lifelinesLeftRef.current = 0;
+        return "exhausted";
+      }
+      console.error("[lifeline] free lifeline request failed", err);
+      toast.error(
+        err?.response?.status
+          ? `Couldn't use lifeline (${code ?? `HTTP ${err.response.status}`}). Please try again.`
+          : "Couldn't reach the server to use your lifeline. Check your connection and try again.",
+        { id: "lifeline" },
+      );
+      return "failed";
+    }
+  };
+
+  const unlockAfterLifeline = (lesson: any, duration: number) => {
+    setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
+    startLessonTimer(lesson.id, duration);
+  };
+
+  const handleUseLifeline = async (lesson: any, duration: number) => {
+    if (lifelineInFlightRef.current) return;
+    if (lifelinesLeftRef.current <= 0) {
+      setCoinDialog({ lesson, duration });
+      return;
+    }
+    lifelineInFlightRef.current = true;
+    setLifelineBusy(true);
+    try {
+      const result = await consumeFreeLifeline(lesson);
+      if (result === "exhausted") { setCoinDialog({ lesson, duration }); return; }
+      if (result === "failed") return;
+      unlockAfterLifeline(lesson, duration);
       handleSelectLesson(lesson);
       const remaining = lifelinesLeftRef.current;
-      toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
-    } else {
-      setCoinDialog({ lesson, duration });
+      toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`, { id: "lifeline" });
+    } finally {
+      lifelineInFlightRef.current = false;
+      setLifelineBusy(false);
     }
   };
 
   const handleSpendCoinsForLesson = async (lesson: any, duration: number) => {
+    if (lifelineInFlightRef.current) return;
+    lifelineInFlightRef.current = true;
+    setLifelineBusy(true);
     try {
       // Call the service directly so the coin deduction always targets lesson.id regardless
       // of which lesson is currently selected (avoids stale hook binding for cross-episode clicks)
       const res = await coursesService.useEpisodeLifeline(lesson.id, 'coin');
-      setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
-      startLessonTimer(lesson.id, duration);
+      unlockAfterLifeline(lesson, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${(res as any).data?.remainingCoins ?? '?'} coins.`);
+      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${(res as any).data?.remainingCoins ?? '?'} coins.`, { id: "lifeline" });
     } catch (err: any) {
+      console.error("[lifeline] coin lifeline request failed", err);
       setCoinDialog(null);
-      toast.error(err?.response?.data?.error ?? "Not enough TBT coins");
+      toast.error(
+        err?.response?.data?.error ?? "Couldn't reach the server to buy a lifeline. Check your connection and try again.",
+        { id: "lifeline" },
+      );
+    } finally {
+      lifelineInFlightRef.current = false;
+      setLifelineBusy(false);
     }
   };
 
@@ -2634,31 +2676,23 @@ export default function CourseDetailPage({
   };
 
   const handleManualUseLifeline = async (lesson: any, duration: number) => {
-    setLifelineDialog(null);
-    if (isProgramLifeline && batchId) {
-      try {
-        const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
-        setLifelinesLeft(res.lifelinesRemaining);
-        lifelinesLeftRef.current = res.lifelinesRemaining;
-      } catch (err: any) {
-        if (err?.response?.data?.error === 'exhausted') {
-          setCoinDialog({ lesson, duration });
-          return;
-        }
-        toast.error("Failed to use lifeline — try again");
-        return;
-      }
-    } else {
-      const remaining = lifelinesLeft - 1;
-      setLifelinesLeft(remaining);
-      lifelinesLeftRef.current = remaining;
-      coursesService.useEpisodeLifeline(lesson.id, 'free').catch(() => {});
+    if (lifelineInFlightRef.current) return;
+    lifelineInFlightRef.current = true;
+    setLifelineBusy(true);
+    try {
+      const result = await consumeFreeLifeline(lesson);
+      // On "failed" keep the dialog open so the re-enabled button can retry.
+      if (result === "failed") return;
+      setLifelineDialog(null);
+      if (result === "exhausted") { setCoinDialog({ lesson, duration }); return; }
+      unlockAfterLifeline(lesson, duration);
+      resumePlayerRef.current();
+      const remaining = lifelinesLeftRef.current;
+      toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`, { id: "lifeline" });
+    } finally {
+      lifelineInFlightRef.current = false;
+      setLifelineBusy(false);
     }
-    setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
-    startLessonTimer(lesson.id, duration);
-    resumePlayerRef.current();
-    const remaining = lifelinesLeftRef.current;
-    toast.success(`Lifeline used! ${remaining} lifeline${remaining !== 1 ? "s" : ""} remaining.`);
   };
 
   const handleRewatch = () => {
@@ -2873,11 +2907,11 @@ export default function CourseDetailPage({
                 ) : (
                   <button
                     onClick={() => handleSpendCoinsForLesson(coinDialog.lesson, coinDialog.duration)}
-                    disabled={spendCoins.isPending || !hasEnoughCoins}
+                    disabled={lifelineBusy || !hasEnoughCoins}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
                     style={{ background: "#d97706" }}
                   >
-                    {spendCoins.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+                    {lifelineBusy ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
                     Spend {LIFELINE_COIN_COST} Coins
                   </button>
                 )}
@@ -2920,7 +2954,9 @@ export default function CourseDetailPage({
               </button>
               <button
                 onClick={() => handleManualUseLifeline(lifelineDialog.lesson, lifelineDialog.duration)}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                disabled={lifelineBusy}
+                aria-busy={lifelineBusy}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
                 style={{ background: "var(--color-accent)" }}
               >
                 <Heart size={14} />
@@ -3635,7 +3671,9 @@ export default function CourseDetailPage({
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleUseLifeline(lesson, focusTimerDuration); }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80"
+                        disabled={lifelineBusy}
+                        aria-busy={lifelineBusy}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
                         style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
                       >
                         <Zap size={11} />

@@ -153,6 +153,13 @@ export const useUseProgramLifeline = () => {
   return useMutation({
     mutationFn: async (body: { batchId: string; taskId?: string; episodeId?: string; context: 'task' | 'episode' }) => {
       const res: any = await apiClient.post('/api/user-batch/lifeline/use', body);
+      // The backend answers "exhausted" with HTTP 200 + success:false, which the response
+      // interceptor resolves — surface it as a rejection carrying the error code.
+      if (!res?.success || !res.data) {
+        const err: any = new Error(res?.error ?? 'Failed to use lifeline');
+        err.code = res?.error;
+        throw err;
+      }
       return res.data as { lifelinesRemaining: number; lifelinesTotal: number; lifelinesUsed: number };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['my-batch'] }),

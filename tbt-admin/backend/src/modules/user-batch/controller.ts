@@ -1210,18 +1210,32 @@ export async function useLifelineHandler(req: FastifyRequest, reply: FastifyRepl
     return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
   }
 
-  await req.server.prisma.$executeRawUnsafe(
-    `UPDATE member_batch_settings SET lifelines_used = lifelines_used + 1 WHERE member_id=$1::uuid AND batch_id=$2::uuid`,
-    memberId, batchId,
-  );
+  // Conditional increment + usage log in one transaction: a rapid double-click can't
+  // spend past lifelines_total, and a failed log insert can't leave a lifeline consumed
+  // without the member getting it. task_id/episode_id are UUID columns — the ::uuid casts
+  // are required (Prisma binds JS strings as text).
+  const updated = await req.server.prisma.$transaction(async (tx) => {
+    const res = await tx.$queryRawUnsafe<any[]>(
+      `UPDATE member_batch_settings SET lifelines_used = lifelines_used + 1
+       WHERE member_id=$1::uuid AND batch_id=$2::uuid AND lifelines_used < lifelines_total
+       RETURNING lifelines_total, lifelines_used`,
+      memberId, batchId,
+    );
+    if (!res[0]) return null;
+    await tx.$executeRawUnsafe(
+      `INSERT INTO lifeline_usages (member_id, batch_id, task_id, episode_id, context, coins_spent)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, 0)`,
+      memberId, batchId, taskId ?? null, episodeId ?? null, context,
+    );
+    return res[0];
+  });
 
-  await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, episode_id, context, coins_spent)
-     VALUES ($1::uuid, $2::uuid, $3, $4, $5, 0)`,
-    memberId, batchId, taskId ?? null, episodeId ?? null, context,
-  );
+  if (!updated) {
+    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
+  }
 
-  const remaining = Math.max(0, total - used - 1);
-  return reply.send({ success: true, data: { lifelinesRemaining: remaining, lifelinesTotal: total, lifelinesUsed: used + 1 }, error: null });
+  const newTotal = Number(updated.lifelines_total);
+  const newUsed  = Number(updated.lifelines_used);
+  return reply.send({ success: true, data: { lifelinesRemaining: Math.max(0, newTotal - newUsed), lifelinesTotal: newTotal, lifelinesUsed: newUsed }, error: null });
 }
 
