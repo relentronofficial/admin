@@ -55,13 +55,14 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
   const redis = req.server.redis ?? null;
   const CACHE_KEY = 'pub:nav';
   const data = await cacheGetOrCompute<object>(redis, CACHE_KEY, 300, async () => {
-    const [items, config] = await Promise.all([
-      req.server.prisma.navItem.findMany({
-        where: { isVisible: true },
-        orderBy: { order: 'asc' },
-      }),
+    const [allItems, config] = await Promise.all([
+      req.server.prisma.navItem.findMany({ orderBy: { order: 'asc' } }),
       req.server.prisma.siteConfig.findFirst(),
     ]);
+    // `items` stays visible-only (web + mobile render it as-is). `hiddenHrefs` lists the
+    // paths of admin-disabled items so clients can block direct visits to those pages.
+    const items = allItems.filter((i) => i.isVisible);
+    const hiddenHrefs = allItems.filter((i) => !i.isVisible).map((i) => i.href);
     const rawCols = config
       ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
           'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
@@ -75,6 +76,7 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
         profile: config?.navShowProfile ?? true,
       },
       hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
+      hiddenHrefs,
     };
   });
   return reply.send({ success: true, data, error: null });

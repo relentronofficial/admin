@@ -117,18 +117,23 @@ export async function createNavItemHandler(req: FastifyRequest, reply: FastifyRe
   const item = await req.server.prisma.navItem.create({
     data: { label: body.label, href: body.href, order: body.order ?? count, isVisible: body.isVisible ?? true },
   });
+  // Nav items feed /api/pub/config/nav — without this a visibility/order change only
+  // reaches members after the 5-minute pub:nav cache expires.
+  void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
   return reply.status(201).send({ success: true, data: item, error: null });
 }
 
 export async function updateNavItemHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const item = await req.server.prisma.navItem.update({ where: { id }, data: req.body as any });
+  void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
   return reply.send({ success: true, data: item, error: null });
 }
 
 export async function deleteNavItemHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   await req.server.prisma.navItem.delete({ where: { id } });
+  void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -139,6 +144,7 @@ export async function reorderNavItemsHandler(req: FastifyRequest, reply: Fastify
       req.server.prisma.navItem.update({ where: { id }, data: { order: i } })
     )
   );
+  void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
   return reply.send({ success: true, data: null, error: null });
 }
 

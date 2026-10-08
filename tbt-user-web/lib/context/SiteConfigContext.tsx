@@ -10,11 +10,21 @@ export interface RightIcons {
   profile: boolean;
 }
 
+// GET /api/pub/config/nav payload. `items` is visible nav_items only; `hiddenHrefs`
+// lists the paths of admin-hidden nav_items (used to block direct visits).
+export interface NavConfigPayload {
+  items: NavItem[];
+  rightIcons: RightIcons;
+  hiddenMenuKeys?: string[];
+  hiddenHrefs?: string[];
+}
+
 interface SiteConfigContextValue {
   config: SiteConfig | null;
   nav: NavItem[];
   rightIcons: RightIcons;
   hiddenMenuKeys: string[];
+  hiddenHrefs: string[];
   uiStrings: UiStrings | null;
   isLoading: boolean;
 }
@@ -26,6 +36,7 @@ export const SiteConfigContext = createContext<SiteConfigContextValue>({
   nav: [],
   rightIcons: DEFAULT_RIGHT_ICONS,
   hiddenMenuKeys: [],
+  hiddenHrefs: [],
   uiStrings: null,
   isLoading: true,
 });
@@ -84,7 +95,7 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T | null>
 interface SiteConfigProviderProps {
   children: React.ReactNode;
   initialConfig?: SiteConfig | null;
-  initialNav?: { items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] } | null;
+  initialNav?: NavConfigPayload | null;
   initialUiStrings?: UiStrings | null;
 }
 
@@ -98,10 +109,21 @@ export function SiteConfigProvider({
   const [nav, setNav] = useState<NavItem[]>(initialNav?.items ?? []);
   const [rightIcons, setRightIcons] = useState<RightIcons>(initialNav?.rightIcons ?? DEFAULT_RIGHT_ICONS);
   const [hiddenMenuKeys, setHiddenMenuKeys] = useState<string[]>(initialNav?.hiddenMenuKeys ?? []);
+  const [hiddenHrefs, setHiddenHrefs] = useState<string[]>(initialNav?.hiddenHrefs ?? []);
   const [uiStrings, setUiStrings] = useState<UiStrings | null>(initialUiStrings ?? null);
   const [isLoading, setIsLoading] = useState(!(initialConfig && initialNav && initialUiStrings));
 
   const theme = useUIStore((s) => s.theme);
+
+  // Replace state only when the value changed, so a refresh that returns the same
+  // nav doesn't re-render every consumer.
+  function applyNav(navData: NavConfigPayload) {
+    const keep = <T,>(next: T) => (prev: T) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+    if (Array.isArray(navData.items)) setNav(keep(navData.items));
+    if (navData.rightIcons) setRightIcons(keep(navData.rightIcons));
+    setHiddenMenuKeys(keep(Array.isArray(navData.hiddenMenuKeys) ? navData.hiddenMenuKeys : []));
+    setHiddenHrefs(keep(Array.isArray(navData.hiddenHrefs) ? navData.hiddenHrefs : []));
+  }
 
   useEffect(() => {
     // If server already provided full initial data, just apply theme and stop.
@@ -117,7 +139,7 @@ export function SiteConfigProvider({
     async function bootstrap() {
       const [cfg, navData, strings] = await Promise.all([
         fetchJson<SiteConfig>("/api/pub/config/site"),
-        fetchJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
+        fetchJson<NavConfigPayload>("/api/pub/config/nav"),
         fetchJson<UiStrings>("/api/pub/config/ui-strings"),
       ]);
 
@@ -127,9 +149,7 @@ export function SiteConfigProvider({
         applyTheme(cfg.theme, useUIStore.getState().theme);
         if (cfg.faviconUrl) setFavicon(cfg.faviconUrl);
       }
-      if (navData?.items?.length) setNav(navData.items);
-      if (navData?.rightIcons) setRightIcons(navData.rightIcons);
-      if (navData?.hiddenMenuKeys) setHiddenMenuKeys(navData.hiddenMenuKeys);
+      if (navData) applyNav(navData);
       if (strings) setUiStrings(strings);
       setIsLoading(false);
     }
@@ -137,17 +157,21 @@ export function SiteConfigProvider({
     bootstrap();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep the admin-controlled theme current without a hard reload: re-read the
-  // site config shortly after load and whenever the tab becomes visible again.
-  // `no-store` bypasses the browser HTTP cache (the endpoint sends max-age=300);
-  // the backend clears its own cache when the admin saves. A failed fetch keeps
-  // the current theme rather than guessing one.
+  // Keep the admin-controlled theme and navigation current without a hard reload:
+  // re-read the site config + nav shortly after load and whenever the tab becomes
+  // visible again. `no-store` bypasses the browser HTTP cache (the endpoints send
+  // max-age=300); the backend clears its own cache when the admin saves. A failed
+  // fetch keeps the current values rather than guessing.
   useEffect(() => {
     let lastFetch = 0;
     async function refresh() {
       if (Date.now() - lastFetch < 15_000) return;
       lastFetch = Date.now();
-      const cfg = await fetchJson<SiteConfig>("/api/pub/config/site", { cache: "no-store" });
+      const [cfg, navData] = await Promise.all([
+        fetchJson<SiteConfig>("/api/pub/config/site", { cache: "no-store" }),
+        fetchJson<NavConfigPayload>("/api/pub/config/nav", { cache: "no-store" }),
+      ]);
+      if (navData) applyNav(navData);
       if (!cfg) return;
       setConfig((prev) => (JSON.stringify(prev) === JSON.stringify(cfg) ? prev : cfg));
       applyAdminThemeMode(cfg);
@@ -163,7 +187,7 @@ export function SiteConfigProvider({
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-apply theme vars whenever the admin theme mode or config refreshes
   useEffect(() => {
@@ -173,7 +197,7 @@ export function SiteConfigProvider({
   }, [theme, config]);
 
   return (
-    <SiteConfigContext.Provider value={{ config, nav, rightIcons, hiddenMenuKeys, uiStrings, isLoading }}>
+    <SiteConfigContext.Provider value={{ config, nav, rightIcons, hiddenMenuKeys, hiddenHrefs, uiStrings, isLoading }}>
       {children}
     </SiteConfigContext.Provider>
   );
