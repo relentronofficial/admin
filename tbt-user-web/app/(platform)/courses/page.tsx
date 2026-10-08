@@ -457,47 +457,6 @@ export default function CoursesPage() {
         </div>
 
         {/* Track selector */}
-        {me && !memberTrack && (
-          <div
-            className="flex flex-col sm:flex-row sm:items-center gap-4 px-5 py-4 mb-5"
-            style={{
-              borderRadius: 12,
-              background: "rgba(220,38,38,0.08)",
-              border: "1px solid rgba(220,38,38,0.2)",
-            }}
-          >
-            <div className="flex-1">
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: "#f5f5f7" }}>
-                Select your business track
-              </p>
-              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92929b" }}>
-                We&apos;ll show you the most relevant courses.
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {(["Product", "Service", "Coaching"] as const).map((track) => (
-                <button
-                  key={track}
-                  onClick={() => updateProfile.mutate({ businessType: track })}
-                  disabled={updateProfile.isPending}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 9,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: "#242428",
-                    border: "1px solid #414146",
-                    color: "#f5f5f7",
-                    cursor: "pointer",
-                    opacity: updateProfile.isPending ? 0.5 : 1,
-                  }}
-                >
-                  {track}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Active track badge + clear */}
         {memberTrack && (
