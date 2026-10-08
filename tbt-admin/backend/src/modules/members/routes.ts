@@ -28,6 +28,9 @@ import {
   exportMembersHandler,
   addMemberCoinsHandler,
   grantCoinsHandler,
+  getMemberRevenueAdminHandler,
+  getMemberRevenueHistoryAdminHandler,
+  upsertMemberRevenueAdminHandler,
 } from './controller.js';
 import { adminRevokeMemberSessions } from '../user-auth/controller.js';
 
@@ -70,4 +73,9 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/activity-timeline', getMemberActivityTimelineHandler);
   fastify.post('/:id/coins', addMemberCoinsHandler);
   fastify.post('/coins/grant', grantCoinsHandler);
+
+  // ARM-01: Admin revenue management for member mentorship dashboard
+  fastify.get('/:id/mentorship/revenue',         getMemberRevenueAdminHandler);
+  fastify.get('/:id/mentorship/revenue/history', getMemberRevenueHistoryAdminHandler);
+  fastify.put('/:id/mentorship/revenue',         upsertMemberRevenueAdminHandler);
 }

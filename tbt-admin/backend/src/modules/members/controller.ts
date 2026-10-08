@@ -1887,3 +1887,114 @@ export async function addMemberCoinsHandler(request: FastifyRequest, reply: Fast
     return reply.status(500).send({ success: false, error: { code: 'INTERNAL_SERVER_ERROR', message: err.message } });
   }
 }
+
+// ─── ARM-01: Admin Revenue Management ─────────────────────────────────────────
+
+function isoWeekAdminHelper(utcNow: Date): { isoWeek: number; isoYear: number } {
+  const ist = new Date(utcNow.getTime() + 5.5 * 60 * 60 * 1000);
+  const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const dow = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dow);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const isoWeek = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { isoWeek, isoYear: d.getUTCFullYear() };
+}
+
+function mapAdminRevenueRow(r: any, weekNumber: number, year: number) {
+  return {
+    weekNumber, year,
+    revenueGenerated:   r.revenue_generated   != null ? Number(r.revenue_generated) : null,
+    revenuePrev:        r.revenue_prev        != null ? Number(r.revenue_prev) : null,
+    numberOfOrders:     r.number_of_orders    != null ? Number(r.number_of_orders) : null,
+    ordersPrev:         r.orders_prev         != null ? Number(r.orders_prev) : null,
+    adBudgetSpent:      r.ad_budget_spent     != null ? Number(r.ad_budget_spent) : null,
+    roas:               r.roas               != null ? Number(r.roas) : null,
+    customerAcqCost:    r.customer_acq_cost   != null ? Number(r.customer_acq_cost) : null,
+    organicLeads:       r.organic_leads       != null ? Number(r.organic_leads) : null,
+    leadsPrev:          r.leads_prev          != null ? Number(r.leads_prev) : null,
+    avgOrderValue:      r.avg_order_value     != null ? Number(r.avg_order_value) : null,
+    rtoReturnsPercent:  r.rto_returns_percent != null ? Number(r.rto_returns_percent) : null,
+    conversionRate:     r.conversion_rate     != null ? Number(r.conversion_rate) : null,
+    platformBadge:      r.platform_badge      ?? null,
+    dailyRevenue:       r.daily_revenue       ?? null,
+    dailyOrders:        r.daily_orders        ?? null,
+    updatedAt:          r.updated_at ? new Date(r.updated_at).toISOString() : null,
+  };
+}
+
+export async function getMemberRevenueAdminHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const q = request.query as { week?: string; year?: string };
+  const { isoWeek: curWeek, isoYear: curYear } = isoWeekAdminHelper(new Date());
+  const weekNumber = q.week ? parseInt(q.week, 10) : curWeek;
+  const year       = q.year ? parseInt(q.year, 10) : curYear;
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM member_revenue_reports WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
+    id, weekNumber, year,
+  ).catch(() => []);
+
+  return reply.send({ success: true, data: rows.length ? mapAdminRevenueRow(rows[0], weekNumber, year) : null, error: null });
+}
+
+export async function getMemberRevenueHistoryAdminHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM member_revenue_reports WHERE member_id = $1::uuid ORDER BY year DESC, week_number DESC LIMIT 8`,
+    id,
+  ).catch(() => []);
+
+  const weeks = rows.map(r => mapAdminRevenueRow(r, Number(r.week_number), Number(r.year)));
+  return reply.send({ success: true, data: { weeks }, error: null });
+}
+
+export async function upsertMemberRevenueAdminHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const body = request.body as Record<string, any>;
+  const { isoWeek: curWeek, isoYear: curYear } = isoWeekAdminHelper(new Date());
+  const weekNumber = body.weekNumber ?? curWeek;
+  const year       = body.year       ?? curYear;
+
+  const dailyRevenue = Array.isArray(body.dailyRevenue) ? JSON.stringify(body.dailyRevenue) : null;
+  const dailyOrders  = Array.isArray(body.dailyOrders)  ? JSON.stringify(body.dailyOrders)  : null;
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO member_revenue_reports
+       (member_id, week_number, year,
+        revenue_generated, revenue_prev, number_of_orders, orders_prev,
+        ad_budget_spent, roas, customer_acq_cost, organic_leads, leads_prev, avg_order_value,
+        rto_returns_percent, conversion_rate, platform_badge, daily_revenue, daily_orders,
+        updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18::jsonb, now())
+     ON CONFLICT (member_id, week_number, year) DO UPDATE SET
+       revenue_generated   = EXCLUDED.revenue_generated,
+       revenue_prev        = EXCLUDED.revenue_prev,
+       number_of_orders    = EXCLUDED.number_of_orders,
+       orders_prev         = EXCLUDED.orders_prev,
+       ad_budget_spent     = EXCLUDED.ad_budget_spent,
+       roas                = EXCLUDED.roas,
+       customer_acq_cost   = EXCLUDED.customer_acq_cost,
+       organic_leads       = EXCLUDED.organic_leads,
+       leads_prev          = EXCLUDED.leads_prev,
+       avg_order_value     = EXCLUDED.avg_order_value,
+       rto_returns_percent = EXCLUDED.rto_returns_percent,
+       conversion_rate     = EXCLUDED.conversion_rate,
+       platform_badge      = EXCLUDED.platform_badge,
+       daily_revenue       = EXCLUDED.daily_revenue,
+       daily_orders        = EXCLUDED.daily_orders,
+       updated_at          = now()
+     RETURNING *`,
+    id, weekNumber, year,
+    body.revenueGenerated ?? null, body.revenuePrev ?? null,
+    body.numberOfOrders   ?? null, body.ordersPrev  ?? null,
+    body.adBudgetSpent    ?? null, body.roas        ?? null,
+    body.customerAcqCost  ?? null, body.organicLeads ?? null,
+    body.leadsPrev        ?? null, body.avgOrderValue ?? null,
+    body.rtoReturnsPercent ?? null, body.conversionRate ?? null,
+    body.platformBadge ?? null, dailyRevenue, dailyOrders,
+  );
+
+  const r = rows[0];
+  return reply.send({ success: true, data: mapAdminRevenueRow(r, weekNumber, year), error: null });
+}

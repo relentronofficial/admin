@@ -2505,3 +2505,55 @@ export const useRevenueByCourse = () =>
     },
     staleTime: 60_000,
   });
+
+// ─── ARM-02: Admin member revenue management ───────────────────────────────────
+
+export type AdminMemberRevenue = {
+  weekNumber: number; year: number;
+  revenueGenerated: number | null; revenuePrev: number | null;
+  numberOfOrders: number | null; ordersPrev: number | null;
+  adBudgetSpent: number | null; roas: number | null;
+  customerAcqCost: number | null; organicLeads: number | null;
+  leadsPrev: number | null; avgOrderValue: number | null;
+  rtoReturnsPercent: number | null; conversionRate: number | null;
+  platformBadge: string | null;
+  dailyRevenue: (number | null)[] | null;
+  dailyOrders: (number | null)[] | null;
+  updatedAt: string | null;
+};
+
+export const useAdminMemberRevenue = (memberId: string, weekNumber: number, year: number) =>
+  useQuery({
+    queryKey: ['members', memberId, 'revenue', weekNumber, year],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/members/${memberId}/mentorship/revenue`, {
+        params: { week: weekNumber, year },
+      });
+      return (res?.data ?? null) as AdminMemberRevenue | null;
+    },
+    enabled: !!memberId,
+    staleTime: 60_000,
+  });
+
+export const useAdminMemberRevenueHistory = (memberId: string) =>
+  useQuery({
+    queryKey: ['members', memberId, 'revenue-history'],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/members/${memberId}/mentorship/revenue/history`);
+      return ((res?.data?.weeks) ?? []) as AdminMemberRevenue[];
+    },
+    enabled: !!memberId,
+    staleTime: 300_000,
+  });
+
+export const useAdminUpsertMemberRevenue = (memberId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<AdminMemberRevenue>) =>
+      apiClient.put(`/api/members/${memberId}/mentorship/revenue`, data),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ['members', memberId, 'revenue', vars.weekNumber, vars.year] });
+      qc.invalidateQueries({ queryKey: ['members', memberId, 'revenue-history'] });
+    },
+  });
+};

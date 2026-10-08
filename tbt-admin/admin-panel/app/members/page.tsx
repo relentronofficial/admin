@@ -40,7 +40,7 @@ import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useAp
 import MembersFilterDrawer from "@/components/members/MembersFilterDrawer";
 import apiClient from "@/lib/api/apiClient";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
-import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches } from "@/lib/hooks/useTbt";
+import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches, useAdminMemberRevenue, useAdminMemberRevenueHistory, useAdminUpsertMemberRevenue, type AdminMemberRevenue } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { toast } from "react-hot-toast";
@@ -1487,6 +1487,465 @@ function InfoItem({ label, value, valueClassName = "text-white" }: { label: stri
   );
 }
 
+// ─── ARM-03: Revenue helpers + components ─────────────────────────────────────
+
+const REV_WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+type AdminRevForm = {
+  revenueGenerated: string; revenuePrev: string;
+  numberOfOrders: string; ordersPrev: string;
+  adBudgetSpent: string; roas: string;
+  customerAcqCost: string; organicLeads: string;
+  leadsPrev: string; avgOrderValue: string;
+  rtoReturnsPercent: string; conversionRate: string;
+  platformBadge: string;
+  dailyRevenue: string[];
+  dailyOrders: string[];
+};
+const EMPTY_REV_FORM: AdminRevForm = {
+  revenueGenerated: "", revenuePrev: "", numberOfOrders: "", ordersPrev: "",
+  adBudgetSpent: "", roas: "", customerAcqCost: "", organicLeads: "",
+  leadsPrev: "", avgOrderValue: "", rtoReturnsPercent: "", conversionRate: "",
+  platformBadge: "",
+  dailyRevenue: ["", "", "", "", "", "", ""],
+  dailyOrders:  ["", "", "", "", "", "", ""],
+};
+
+function getIsoWeekOffset(offsetWeeks: number): { weekNumber: number; year: number } {
+  const target = new Date(Date.now() + offsetWeeks * 7 * 24 * 60 * 60 * 1000);
+  // IST +5:30
+  const ist = new Date(target.getTime() + 5.5 * 60 * 60 * 1000);
+  const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+  const dow = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dow);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return { weekNumber, year: d.getUTCFullYear() };
+}
+
+function revGrowthPct(cur: number | null, prev: number | null): number | null {
+  if (cur == null || prev == null || prev === 0) return null;
+  return Math.round(((cur - prev) / prev) * 1000) / 10;
+}
+
+function AdminWeeklyRevenueChart({ dailyRevenue, dailyOrders }: { dailyRevenue: (number | null)[]; dailyOrders: (number | null)[] }) {
+  const W = 620, H = 160, PL = 50, PR = 10, PT = 14, PB = 26;
+  const PW = W - PL - PR, PH = H - PT - PB;
+  const nums = (a: (number | null)[]) => a.filter((v): v is number => v != null);
+  const maxRev = Math.max(...nums(dailyRevenue), 1);
+  const maxOrd = Math.max(...nums(dailyOrders), 1);
+  const xOf = (i: number) => PL + (i / 6) * PW;
+  const yRev = (v: number) => PT + (1 - v / maxRev) * PH;
+  const yOrd = (v: number) => PT + (1 - v / maxOrd) * PH;
+
+  const buildSegs = (a: (number | null)[], yFn: (v: number) => number) => {
+    const out: { idxs: number[] }[] = [];
+    let cur: number[] = [];
+    const flush = () => { if (cur.length) { out.push({ idxs: [...cur] }); cur = []; } };
+    a.forEach((v, i) => { if (v == null) flush(); else cur.push(i); });
+    flush();
+    return out.map(seg => ({
+      pts: seg.idxs.map(i => `${xOf(i).toFixed(1)},${yFn(a[i] as number).toFixed(1)}`).join(" "),
+      first: seg.idxs[0],
+      last: seg.idxs[seg.idxs.length - 1],
+    }));
+  };
+  const revSegs = buildSegs(dailyRevenue, yRev);
+  const ordSegs = buildSegs(dailyOrders, yOrd);
+  const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
+  const yTicks = [0, 0.33, 0.67, 1].map(p => ({ val: Math.round(maxRev * p), y: PT + (1 - p) * PH }));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }} preserveAspectRatio="xMidYMid meet" aria-label="Weekly revenue chart">
+      <defs>
+        <linearGradient id="adminRevGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#dc2626" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="#dc2626" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+      {yTicks.map(({ val, y }, i) => (
+        <g key={i}>
+          <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+          <text x={PL - 4} y={y + 4} textAnchor="end" fontSize="8" fill="rgba(255,255,255,0.25)">{fmtY(val)}</text>
+        </g>
+      ))}
+      {revSegs.map((seg, i) => (
+        <polygon key={i} points={`${xOf(seg.first).toFixed(1)},${(PT + PH).toFixed(1)} ${seg.pts} ${xOf(seg.last).toFixed(1)},${(PT + PH).toFixed(1)}`} fill="url(#adminRevGrad)" />
+      ))}
+      {ordSegs.map((seg, i) => (
+        <polyline key={i} points={seg.pts} fill="none" stroke="#eab308" strokeWidth="1.5" strokeDasharray="4 3" strokeLinejoin="round" />
+      ))}
+      {revSegs.map((seg, i) => (
+        <polyline key={i} points={seg.pts} fill="none" stroke="#dc2626" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      ))}
+      {dailyRevenue.map((v, i) => v != null && (
+        <circle key={i} cx={xOf(i)} cy={yRev(v)} r="2.5" fill="#dc2626" stroke="#1a1a1a" strokeWidth="1.5" />
+      ))}
+      {REV_WEEK_LABELS.map((label, i) => (
+        <text key={i} x={xOf(i)} y={H - 5} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.3)">{label}</text>
+      ))}
+    </svg>
+  );
+}
+
+function MemberRevenueDashboard({ memberId }: { memberId: string }) {
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [showEdit, setShowEdit] = useState(false);
+  const [form, setForm] = useState<AdminRevForm>(EMPTY_REV_FORM);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const { weekNumber, year } = getIsoWeekOffset(weekOffset);
+  const { data: revenue, isLoading } = useAdminMemberRevenue(memberId, weekNumber, year);
+  const { data: history } = useAdminMemberRevenueHistory(memberId);
+  const upsert = useAdminUpsertMemberRevenue(memberId);
+
+  useEffect(() => {
+    if (!revenue) { setForm(EMPTY_REV_FORM); setIsDirty(false); return; }
+    setForm({
+      revenueGenerated:  revenue.revenueGenerated?.toString()  ?? "",
+      revenuePrev:       revenue.revenuePrev?.toString()       ?? "",
+      numberOfOrders:    revenue.numberOfOrders?.toString()    ?? "",
+      ordersPrev:        revenue.ordersPrev?.toString()        ?? "",
+      adBudgetSpent:     revenue.adBudgetSpent?.toString()     ?? "",
+      roas:              revenue.roas?.toString()              ?? "",
+      customerAcqCost:   revenue.customerAcqCost?.toString()   ?? "",
+      organicLeads:      revenue.organicLeads?.toString()      ?? "",
+      leadsPrev:         revenue.leadsPrev?.toString()         ?? "",
+      avgOrderValue:     revenue.avgOrderValue?.toString()     ?? "",
+      rtoReturnsPercent: revenue.rtoReturnsPercent?.toString() ?? "",
+      conversionRate:    revenue.conversionRate?.toString()    ?? "",
+      platformBadge:     revenue.platformBadge ?? "",
+      dailyRevenue:      (revenue.dailyRevenue as any[])?.map(String) ?? ["", "", "", "", "", "", ""],
+      dailyOrders:       (revenue.dailyOrders  as any[])?.map(String) ?? ["", "", "", "", "", "", ""],
+    });
+    setIsDirty(false);
+  }, [weekNumber, year, revenue]);
+
+  const n = (v: string): number | null => (v === "" ? null : Number(v));
+  const rev = n(form.revenueGenerated);
+  const revPrev = n(form.revenuePrev);
+  const orders = n(form.numberOfOrders);
+  const ordersPrev = n(form.ordersPrev);
+  const adSpend = n(form.adBudgetSpent);
+  const roas = n(form.roas);
+  const cac = n(form.customerAcqCost);
+  const leads = n(form.organicLeads);
+  const leadsPrevVal = n(form.leadsPrev);
+  const aov = n(form.avgOrderValue);
+
+  const revGrowth = revGrowthPct(rev, revPrev);
+  const ordersGrowth = revGrowthPct(orders, ordersPrev);
+  const leadsGrowth = revGrowthPct(leads, leadsPrevVal);
+  const autoAov = rev != null && orders != null && orders > 0 ? Math.round(rev / orders) : null;
+  const effectiveAov = aov ?? autoAov;
+  const btoRatio = adSpend != null && rev != null && rev > 0 ? Math.round((adSpend / rev) * 1000) / 10 : null;
+  const roasLabel = roas != null ? (roas >= 3 ? "Highly Profitable" : roas >= 1.5 ? "Moderate" : "Watch Out") : null;
+  const roasColor = roas != null ? (roas >= 3 ? "#22c55e" : roas >= 1.5 ? "#fb923c" : "#ef4444") : null;
+
+  const dailyRevData = form.dailyRevenue.map(v => n(v));
+  const dailyOrdData = form.dailyOrders.map(v => { const x = n(v); return x != null ? Math.round(x) : null; });
+
+  const setField = (key: keyof AdminRevForm) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(f => ({ ...f, [key]: e.target.value }));
+    setIsDirty(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      await upsert.mutateAsync({
+        weekNumber, year,
+        revenueGenerated:  rev,
+        revenuePrev:       revPrev,
+        numberOfOrders:    orders   != null ? Math.round(orders)   : null,
+        ordersPrev:        ordersPrev != null ? Math.round(ordersPrev) : null,
+        adBudgetSpent:     adSpend,
+        roas,
+        customerAcqCost:   cac,
+        organicLeads:      leads    != null ? Math.round(leads)    : null,
+        leadsPrev:         leadsPrevVal != null ? Math.round(leadsPrevVal) : null,
+        avgOrderValue:     aov,
+        rtoReturnsPercent: n(form.rtoReturnsPercent),
+        conversionRate:    n(form.conversionRate),
+        platformBadge:     form.platformBadge || null,
+        dailyRevenue:      dailyRevData,
+        dailyOrders:       dailyOrdData,
+      });
+      setIsDirty(false);
+      toast.success("Revenue stats saved!");
+    } catch {
+      toast.error("Failed to save.");
+    }
+  };
+
+  const growthBadge = (pct: number | null) => {
+    if (pct === null) return null;
+    const pos = pct >= 0;
+    return (
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1 ${pos ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}`}>
+        {pos ? "+" : ""}{pct}%
+      </span>
+    );
+  };
+  const fmtINR = (v: number | null) => v != null ? `₹${v.toLocaleString("en-IN")}` : "—";
+
+  const inputCls = "w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg h-9 px-3 text-[#f0f0f0] text-sm outline-none focus:border-[#dc2626] transition-all";
+  const labelCls = "text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1 block";
+  const hasChartData = dailyRevData.some(v => v != null) || dailyOrdData.some(v => v != null);
+
+  return (
+    <div className="space-y-5">
+      {/* Week Selector */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setWeekOffset(w => w - 1)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#444] transition-all"
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <span className="text-sm font-semibold text-[#f0f0f0] px-3 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg font-rajdhani">
+            Week {weekNumber}, {year}
+          </span>
+          <button
+            onClick={() => setWeekOffset(w => Math.min(0, w + 1))}
+            disabled={weekOffset >= 0}
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-[#888] hover:text-white hover:border-[#444] transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+        {revenue?.updatedAt && (
+          <span className="text-[10px] text-[#606060]">
+            Updated {new Date(revenue.updatedAt).toLocaleDateString("en-IN")}
+          </span>
+        )}
+      </div>
+
+      {isLoading && (
+        <div className="flex justify-center py-8"><Loader2 size={22} className="animate-spin text-[#dc2626]" /></div>
+      )}
+
+      {!isLoading && (
+        <>
+          {/* Revenue Stats Cards 2×2 */}
+          <div className="grid grid-cols-2 gap-3">
+            {/* Revenue Generated */}
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3.5">
+              <p className={labelCls}>Revenue Generated</p>
+              <div className="flex items-baseline gap-0.5 flex-wrap">
+                <span className="text-xl font-bold text-[#f0f0f0]">{fmtINR(rev)}</span>
+                {growthBadge(revGrowth)}
+              </div>
+              {effectiveAov != null && (
+                <p className="text-[11px] text-[#606060] mt-0.5">
+                  AOV: ₹{effectiveAov.toLocaleString("en-IN")}
+                  {autoAov != null && aov == null && <span className="text-[9px] ml-1 opacity-40">auto</span>}
+                </p>
+              )}
+              {form.platformBadge && (
+                <span className="inline-block text-[9px] font-bold mt-1.5 px-2 py-0.5 rounded-full bg-[#dc2626]/10 text-[#dc2626] border border-[#dc2626]/20">
+                  {form.platformBadge}
+                </span>
+              )}
+            </div>
+
+            {/* Number of Orders */}
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3.5">
+              <p className={labelCls}>Number of Orders</p>
+              <div className="flex items-baseline gap-0.5 flex-wrap">
+                <span className="text-xl font-bold text-[#f0f0f0]">{orders ?? "—"}</span>
+                <span className="text-[#606060] text-xs ml-0.5">orders</span>
+                {growthBadge(ordersGrowth)}
+              </div>
+              {btoRatio != null && (
+                <p className="text-[11px] text-[#606060] mt-0.5 flex items-center gap-1">
+                  BTO: {btoRatio}%
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${btoRatio < 5 ? "bg-green-500/10 text-green-400" : btoRatio < 20 ? "bg-orange-400/10 text-orange-400" : "bg-red-500/10 text-red-400"}`}>
+                    {btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk"}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            {/* Ad Budget */}
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3.5">
+              <p className={labelCls}>Ad Budget Spent</p>
+              <span className="text-xl font-bold text-[#f0f0f0]">{fmtINR(adSpend)}</span>
+              <div className="mt-0.5 space-y-0.5">
+                {roasLabel && roasColor && (
+                  <p className="text-[11px] text-[#606060] flex items-center gap-1.5">
+                    ROAS: {roas?.toFixed(1)}×
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: `${roasColor}20`, color: roasColor }}>
+                      {roasLabel}
+                    </span>
+                  </p>
+                )}
+                {cac != null && <p className="text-[11px] text-[#606060]">CAC: ₹{cac.toLocaleString("en-IN")}</p>}
+              </div>
+            </div>
+
+            {/* Organic Leads */}
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3.5">
+              <p className={labelCls}>Organic Inbound Leads</p>
+              <div className="flex items-baseline gap-0.5 flex-wrap">
+                <span className="text-xl font-bold text-[#f0f0f0]">{leads ?? "—"}</span>
+                <span className="text-[#606060] text-xs ml-0.5">leads</span>
+                {growthBadge(leadsGrowth)}
+              </div>
+              {n(form.conversionRate) != null && (
+                <p className="text-[11px] text-[#606060] mt-0.5">Conv: {form.conversionRate}%</p>
+              )}
+              {n(form.rtoReturnsPercent) != null && (
+                <p className="text-[11px] text-[#606060]">RTO: {form.rtoReturnsPercent}%</p>
+              )}
+            </div>
+          </div>
+
+          {/* Weekly Revenue & Order Trajectory */}
+          {hasChartData && (
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-4">
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <p className={`${labelCls} mb-0`}>Weekly Revenue & Order Trajectory</p>
+                <div className="flex items-center gap-3 text-[9px] text-[#606060]">
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-5 h-0.5 bg-[#dc2626] rounded" /> Revenue
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-5 border-t border-dashed border-yellow-400" /> Orders
+                  </span>
+                </div>
+              </div>
+              <AdminWeeklyRevenueChart dailyRevenue={dailyRevData} dailyOrders={dailyOrdData} />
+            </div>
+          )}
+
+          {/* Empty state */}
+          {revenue === null && (
+            <div className="text-center py-8 bg-[#1a1a1a] border border-[#2a2a2a] border-dashed rounded-xl">
+              <p className="text-[#606060] text-sm">No revenue data for this week</p>
+              <button
+                onClick={() => setShowEdit(true)}
+                className="mt-3 px-4 py-2 bg-[#dc2626] hover:bg-red-700 text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all"
+              >
+                Add Stats
+              </button>
+            </div>
+          )}
+
+          {/* Edit toggle */}
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowEdit(v => !v)}
+              className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-all font-rajdhani uppercase tracking-widest ${showEdit ? "bg-[#dc2626]/10 border-[#dc2626] text-[#dc2626]" : "bg-transparent border-[#2a2a2a] text-[#888] hover:border-[#444] hover:text-[#a0a0a0]"}`}
+            >
+              {showEdit ? "Close Editor" : "Edit Stats"}
+            </button>
+          </div>
+
+          {/* Edit Form */}
+          {showEdit && (
+            <div className="bg-[#0f0f0f] border border-[#2a2a2a] rounded-xl p-4 space-y-4">
+              <h4 className={labelCls}>Weekly Revenue Metrics — Week {weekNumber}, {year}</h4>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div><label className={labelCls}>Revenue (₹)</label><input type="number" min={0} step="any" placeholder="0" value={form.revenueGenerated} onChange={setField("revenueGenerated")} className={inputCls} /></div>
+                <div><label className={labelCls}>Revenue Prev Week</label><input type="number" min={0} step="any" placeholder="0" value={form.revenuePrev} onChange={setField("revenuePrev")} className={inputCls} /></div>
+                <div><label className={labelCls}>Orders</label><input type="number" min={0} step="1" placeholder="0" value={form.numberOfOrders} onChange={setField("numberOfOrders")} className={inputCls} /></div>
+                <div><label className={labelCls}>Orders Prev Week</label><input type="number" min={0} step="1" placeholder="0" value={form.ordersPrev} onChange={setField("ordersPrev")} className={inputCls} /></div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div><label className={labelCls}>Ad Budget (₹)</label><input type="number" min={0} step="any" placeholder="0" value={form.adBudgetSpent} onChange={setField("adBudgetSpent")} className={inputCls} /></div>
+                <div><label className={labelCls}>ROAS (×)</label><input type="number" min={0} step="0.1" placeholder="0" value={form.roas} onChange={setField("roas")} className={inputCls} /></div>
+                <div><label className={labelCls}>CAC (₹)</label><input type="number" min={0} step="any" placeholder="0" value={form.customerAcqCost} onChange={setField("customerAcqCost")} className={inputCls} /></div>
+                <div><label className={labelCls}>Avg Order Value (₹)</label><input type="number" min={0} step="any" placeholder="auto" value={form.avgOrderValue} onChange={setField("avgOrderValue")} className={inputCls} /></div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div><label className={labelCls}>Organic Leads</label><input type="number" min={0} step="1" placeholder="0" value={form.organicLeads} onChange={setField("organicLeads")} className={inputCls} /></div>
+                <div><label className={labelCls}>Leads Prev Week</label><input type="number" min={0} step="1" placeholder="0" value={form.leadsPrev} onChange={setField("leadsPrev")} className={inputCls} /></div>
+                <div><label className={labelCls}>Conv. Rate (%)</label><input type="number" min={0} max={100} step="0.1" placeholder="0" value={form.conversionRate} onChange={setField("conversionRate")} className={inputCls} /></div>
+                <div><label className={labelCls}>RTO Returns (%)</label><input type="number" min={0} max={100} step="0.1" placeholder="0" value={form.rtoReturnsPercent} onChange={setField("rtoReturnsPercent")} className={inputCls} /></div>
+              </div>
+
+              <div className="max-w-xs">
+                <label className={labelCls}>Platform (e.g. Amazon, Meesho)</label>
+                <input type="text" placeholder="Platform name..." value={form.platformBadge} onChange={e => { setForm(f => ({ ...f, platformBadge: e.target.value })); setIsDirty(true); }} className={inputCls} />
+              </div>
+
+              <div>
+                <p className={labelCls}>Daily Revenue (₹) — Mon to Sun</p>
+                <div className="grid grid-cols-7 gap-2">
+                  {REV_WEEK_LABELS.map((day, i) => (
+                    <div key={day}>
+                      <div className="text-[9px] text-center text-[#606060] mb-1">{day}</div>
+                      <input type="number" min={0} step="any" placeholder="—" value={form.dailyRevenue[i]}
+                        onChange={e => { setForm(f => { const arr = [...f.dailyRevenue]; arr[i] = e.target.value; return { ...f, dailyRevenue: arr }; }); setIsDirty(true); }}
+                        className="w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg h-9 px-1 text-[#f0f0f0] text-xs text-center outline-none focus:border-[#dc2626] transition-all" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className={labelCls}>Daily Orders — Mon to Sun</p>
+                <div className="grid grid-cols-7 gap-2">
+                  {REV_WEEK_LABELS.map((day, i) => (
+                    <div key={day}>
+                      <div className="text-[9px] text-center text-[#606060] mb-1">{day}</div>
+                      <input type="number" min={0} step="1" placeholder="—" value={form.dailyOrders[i]}
+                        onChange={e => { setForm(f => { const arr = [...f.dailyOrders]; arr[i] = e.target.value; return { ...f, dailyOrders: arr }; }); setIsDirty(true); }}
+                        className="w-full bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg h-9 px-1 text-[#f0f0f0] text-xs text-center outline-none focus:border-[#dc2626] transition-all" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  onClick={handleSave}
+                  disabled={!isDirty || upsert.isPending}
+                  className="flex items-center gap-2 px-5 py-2 bg-[#dc2626] hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-rajdhani font-bold text-[12px] uppercase tracking-widest transition-all"
+                >
+                  {upsert.isPending && <Loader2 size={13} className="animate-spin" />}
+                  Save Stats
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* History Strip */}
+          {(history ?? []).length > 0 && (
+            <div>
+              <p className={labelCls}>Past Weeks</p>
+              <div className="space-y-1.5">
+                {(history ?? [])
+                  .filter(w => !(w.weekNumber === weekNumber && w.year === year))
+                  .slice(0, 6)
+                  .map(w => (
+                    <div
+                      key={`${w.year}-${w.weekNumber}`}
+                      className="flex items-center justify-between px-3 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg"
+                    >
+                      <span className="text-[11px] font-semibold text-[#a0a0a0] font-rajdhani">
+                        Week {w.weekNumber}, {w.year}
+                      </span>
+                      <div className="flex items-center gap-4 text-[10px] text-[#606060]">
+                        <span>₹{(w.revenueGenerated ?? 0).toLocaleString("en-IN")}</span>
+                        <span>{w.numberOfOrders ?? 0} orders</span>
+                        {w.adBudgetSpent != null && <span>Ad: ₹{w.adBudgetSpent.toLocaleString("en-IN")}</span>}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: string; allWorkshops: any[]; onClose: () => void }) {
   const { data, isLoading } = useMemberProgress(memberId);
   const progress = (data as any)?.data;
@@ -1501,7 +1960,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
   const removeEnrollment = useRemoveMemberEnrollment(memberId);
   const [selectedBadgeId, setSelectedBadgeId] = useState("");
   const [selectedWorkshopId, setSelectedWorkshopId] = useState("");
-  const [activeTab, setActiveTab] = useState<"info" | "enrollments" | "progress">("info");
+  const [activeTab, setActiveTab] = useState<"info" | "enrollments" | "progress" | "revenue">("info");
   const [expandedWorkshop, setExpandedWorkshop] = useState<string | null>(null);
   const [removingEnrollmentId, setRemovingEnrollmentId] = useState<string | null>(null);
 
@@ -1557,6 +2016,7 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
             { key: "info", label: "Info & Badges" },
             { key: "enrollments", label: `Enrollments${memberEnrollments.length ? ` (${memberEnrollments.length})` : ""}` },
             { key: "progress", label: "Progress" },
+            { key: "revenue", label: "Revenue" },
           ] as const).map(tab => (
             <button
               key={tab.key}
@@ -1782,6 +2242,11 @@ function MemberProgressModal({ memberId, allWorkshops, onClose }: { memberId: st
                 })
               )}
             </div>
+          )}
+
+          {/* REVENUE TAB */}
+          {activeTab === "revenue" && (
+            <MemberRevenueDashboard memberId={memberId} />
           )}
         </div>
 
