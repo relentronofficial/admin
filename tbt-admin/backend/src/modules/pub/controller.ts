@@ -68,6 +68,12 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
           'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
         ).catch(() => [])
       : [];
+    // Separate query so a missing nav_order column can't take hidden_menu_keys down with it.
+    const orderRows = config
+      ? await req.server.prisma.$queryRawUnsafe<Array<{ nav_order: unknown }>>(
+          'SELECT nav_order FROM site_configs WHERE id = $1::uuid', config.id
+        ).catch(() => [])
+      : [];
     return {
       items,
       rightIcons: {
@@ -77,6 +83,8 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
       },
       hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
       hiddenHrefs,
+      // Combined web nav order (nav item ids + "section:<key>" tokens); null = default.
+      navOrder: Array.isArray(orderRows[0]?.nav_order) ? (orderRows[0].nav_order as string[]) : null,
     };
   });
   return reply.send({ success: true, data, error: null });

@@ -162,6 +162,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS task_timer_seconds INT NOT NULL DEFAULT 300`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS free_lifelines_per_session INT NOT NULL DEFAULT 3`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS hidden_menu_keys JSONB DEFAULT '[]'::jsonb`).catch(() => {}),
+      // Combined web nav order (Admin → Navigation drag list): nav_items ids mixed with
+      // "section:<key>" tokens for Community / Ebooks / Podcasts. NULL = default order.
+      prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS nav_order JSONB`).catch(() => {}),
       // Admin-controlled light/dark mode for web + mobile (Admin → Navigation)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(10) NOT NULL DEFAULT 'light'`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`).catch(() => {}),

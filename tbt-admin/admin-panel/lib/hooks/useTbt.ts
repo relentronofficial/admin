@@ -473,7 +473,9 @@ export const useDeleteNavItem = () => {
 
 export const useReorderNavItems = () => {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: async (ids: string[]) => { await apiClient.put('/api/config/nav/reorder', { ids }); }, onSuccess: () => qc.invalidateQueries({ queryKey: ['nav-items'] }) });
+  // ids may include "section:<key>" tokens; the combined order is stored as
+  // site_configs.nav_order, so the site-config query is refreshed too.
+  return useMutation({ mutationFn: async (ids: string[]) => { await apiClient.put('/api/config/nav/reorder', { ids }); }, onSuccess: () => { qc.invalidateQueries({ queryKey: ['nav-items'] }); qc.invalidateQueries({ queryKey: ['site-config'] }); } });
 };
 
 // ── PRODUCTS PAGE CONFIG ──────────────────────────────────────────────

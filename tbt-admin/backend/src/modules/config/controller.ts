@@ -19,11 +19,15 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
     'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
+  const navOrderRows = await req.server.prisma.$queryRawUnsafe<Array<{ nav_order: unknown }>>(
+    'SELECT nav_order FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
   return reply.send({
     success: true,
     data: {
       ...config,
       themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
+      navOrder: Array.isArray(navOrderRows[0]?.nav_order) ? (navOrderRows[0].nav_order as string[]) : null,
       taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
       freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
@@ -137,13 +141,33 @@ export async function deleteNavItemHandler(req: FastifyRequest, reply: FastifyRe
   return reply.send({ success: true, data: null, error: null });
 }
 
+// Platform Sections that sit in the web nav bar and can be ordered among nav items.
+// (Support / Streak are top-bar icons, not nav links, so they are not orderable.)
+const ORDERABLE_NAV_SECTIONS = new Set(['section:community', 'section:ebooks', 'section:podcasts']);
+
+// Body: { ids: string[] } — the admin's full drag order. Entries are nav_items ids, and
+// may include "section:<key>" tokens for the orderable Platform Sections. nav_items.order
+// is rewritten from the ids alone (mobile reads it); the combined list, sections
+// included, is stored in site_configs.nav_order for the web nav bar.
 export async function reorderNavItemsHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { ids } = req.body as any;
+  const { ids } = req.body as { ids?: unknown };
+  if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) {
+    return reply.status(400).send({ success: false, data: null, error: 'ids must be an array of strings' });
+  }
+  const tokens = (ids as string[]).filter((id) => !id.startsWith('section:') || ORDERABLE_NAV_SECTIONS.has(id));
+  const itemIds = tokens.filter((id) => !id.startsWith('section:'));
   await req.server.prisma.$transaction(
-    ids.map((id: string, i: number) =>
+    itemIds.map((id: string, i: number) =>
       req.server.prisma.navItem.update({ where: { id }, data: { order: i } })
     )
   );
+  const config = await req.server.prisma.siteConfig.findFirst();
+  if (config) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET nav_order = $1::jsonb WHERE id = $2::uuid',
+      JSON.stringify(tokens), config.id,
+    );
+  }
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
   return reply.send({ success: true, data: null, error: null });
 }
