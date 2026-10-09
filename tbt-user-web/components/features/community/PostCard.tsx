@@ -45,6 +45,10 @@ export function PostCard({
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [viewerIdx, setViewerIdx] = useState<number | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  // Long posts collapse to a preview (like Skool's feed) so one post can't push the
+  // rest of the feed off-screen. Heuristic on length/lines — no DOM measuring.
+  const isLong = post.content.length > 420 || post.content.split("\n").length > 6;
 
   const isMine = me?.id === post.memberId;
   const authorName = memberDisplayName(post.member);
@@ -81,7 +85,7 @@ export function PostCard({
 
   return (
     <article
-      className="rounded-2xl p-4 sm:p-5 space-y-3"
+      className="rounded-2xl p-4 sm:p-5 space-y-3 transition-colors hover:border-[var(--color-border-medium)]"
       style={{
         background: "var(--color-bg-surface)",
         border: "1px solid var(--color-border-subtle)",
@@ -91,7 +95,7 @@ export function PostCard({
       <div className="flex items-start gap-3">
         <MemberAvatar
           member={post.member}
-          size={44}
+          size={40}
           onClick={() => handlers.onOpenAuthor(post.memberId)}
           ringColor={post.isMentor ? "var(--color-accent)" : undefined}
         />
@@ -192,8 +196,24 @@ export function PostCard({
 
       {/* Body */}
       {post.content && (
-        <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">
-          <RichText text={post.content} />
+        <div>
+          <div
+            className={cn(
+              "text-[15px] text-foreground leading-relaxed whitespace-pre-wrap break-words",
+              isLong && !expanded && "line-clamp-6",
+            )}
+          >
+            <RichText text={post.content} />
+          </div>
+          {isLong && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1 text-sm font-semibold hover:underline"
+              style={{ color: "var(--color-accent)" }}
+            >
+              {expanded ? "See less" : "See more"}
+            </button>
+          )}
         </div>
       )}
 
@@ -273,6 +293,7 @@ export function PostCard({
           Icon={MessageCircle}
           label={post.commentsCount > 0 ? String(post.commentsCount) : "Comment"}
         />
+        <span className="flex-1" />
         <ActionBtn
           onClick={() => toggleBookmark.mutate(post.id)}
           active={post.isBookmarkedByMe}
@@ -342,7 +363,7 @@ function ActionBtn({
   return (
     <button
       onClick={onClick}
-      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
+      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
       style={{ color }}
     >
       <Icon size={16} fill={filled ? (activeColor ?? "currentColor") : "none"} />
