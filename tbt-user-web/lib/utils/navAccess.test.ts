@@ -60,10 +60,25 @@ describe("isPathDisabled", () => {
     expect(isPathDisabled("/tbt", cfg({ hiddenHrefs: ["/tbt"] }))).toBe(false);
   });
 
-  it("never blocks the account-flow pages SubscriptionGate redirects to", () => {
-    const c = cfg({ hiddenHrefs: ["/Products", "/onboarding"] });
+  it("never blocks the account pages (SubscriptionGate targets + avatar-menu profile)", () => {
+    const c = cfg({ hiddenHrefs: ["/Products", "/onboarding", "/profile"] });
     expect(isPathDisabled("/Products", c)).toBe(false);
     expect(isPathDisabled("/onboarding", c)).toBe(false);
+    expect(isPathDisabled("/profile", c)).toBe(false);
+    expect(isPathDisabled("/profile/settings", c)).toBe(false);
+  });
+
+  it("matches the live admin config: profile stays open, hidden task/workshop pages are blocked", () => {
+    // Shape of /api/pub/config/nav on 2026-10-09.
+    const c = cfg({
+      nav: [{ href: "/courses" }, { href: "/notifications" }, { href: "/messages" }],
+      hiddenHrefs: ["/discover", "/workshops", "/batch-program", "/Products", "/Resources", "/profile"],
+      hiddenMenuKeys: ["podcasts"],
+    });
+    expect(isPathDisabled("/profile", c)).toBe(false);
+    expect(isPathDisabled("/courses", c)).toBe(false);
+    expect(isPathDisabled("/batch-program", c)).toBe(true);
+    expect(isPathDisabled("/podcasts", c)).toBe(true);
   });
 });
 

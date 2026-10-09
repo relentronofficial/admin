@@ -11,10 +11,13 @@ export const FIXED_SECTION_ROUTES: Record<string, string> = {
   support: "/support",
 };
 
-// Pages SubscriptionGate force-redirects members to (expired subscription → /Products,
-// pending KYC → /onboarding). Hiding their nav item removes the link but must not
-// block the page, or the two guards would bounce the member back and forth.
-export const ACCOUNT_FLOW_PATHS = ["/Products", "/onboarding"];
+// Account pages that must stay reachable even when their nav item is hidden:
+// - /Products, /onboarding — SubscriptionGate force-redirects members there
+//   (expired subscription, pending KYC); blocking them would bounce between guards.
+// - /profile — always reachable from the navbar avatar menu, and exempt in
+//   SubscriptionGate; admins hide its nav link to avoid a duplicate entry.
+// Hiding their nav item removes the link only.
+export const ACCOUNT_FLOW_PATHS = ["/Products", "/onboarding", "/profile"];
 
 export interface NavAccessConfig {
   /** Visible nav_items, in admin order. */
