@@ -1427,7 +1427,7 @@ function NowLearningSection() {
           {/* 3-column grid: thumbnail | details | next lesson */}
           <div
             className="flex flex-col lg:grid gap-[19px]"
-            style={{ gridTemplateColumns: "271px minmax(300px, 1fr) 110px", alignItems: "start" }}
+            style={{ gridTemplateColumns: "271px minmax(180px, 1fr) 110px", alignItems: "start" }}
           >
             {/* ── Column 1: course cover thumbnail ─── */}
             <div
