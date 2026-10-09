@@ -17,6 +17,8 @@ export interface NavConfigPayload {
   rightIcons: RightIcons;
   hiddenMenuKeys?: string[];
   hiddenHrefs?: string[];
+  /** Admin's combined nav bar order (nav item ids + "section:<key>"); null = default. */
+  navOrder?: string[] | null;
 }
 
 interface SiteConfigContextValue {
@@ -25,6 +27,7 @@ interface SiteConfigContextValue {
   rightIcons: RightIcons;
   hiddenMenuKeys: string[];
   hiddenHrefs: string[];
+  navOrder: string[] | null;
   uiStrings: UiStrings | null;
   isLoading: boolean;
 }
@@ -37,6 +40,7 @@ export const SiteConfigContext = createContext<SiteConfigContextValue>({
   rightIcons: DEFAULT_RIGHT_ICONS,
   hiddenMenuKeys: [],
   hiddenHrefs: [],
+  navOrder: null,
   uiStrings: null,
   isLoading: true,
 });
@@ -110,6 +114,7 @@ export function SiteConfigProvider({
   const [rightIcons, setRightIcons] = useState<RightIcons>(initialNav?.rightIcons ?? DEFAULT_RIGHT_ICONS);
   const [hiddenMenuKeys, setHiddenMenuKeys] = useState<string[]>(initialNav?.hiddenMenuKeys ?? []);
   const [hiddenHrefs, setHiddenHrefs] = useState<string[]>(initialNav?.hiddenHrefs ?? []);
+  const [navOrder, setNavOrder] = useState<string[] | null>(initialNav?.navOrder ?? null);
   const [uiStrings, setUiStrings] = useState<UiStrings | null>(initialUiStrings ?? null);
   const [isLoading, setIsLoading] = useState(!(initialConfig && initialNav && initialUiStrings));
 
@@ -123,6 +128,7 @@ export function SiteConfigProvider({
     if (navData.rightIcons) setRightIcons(keep(navData.rightIcons));
     setHiddenMenuKeys(keep(Array.isArray(navData.hiddenMenuKeys) ? navData.hiddenMenuKeys : []));
     setHiddenHrefs(keep(Array.isArray(navData.hiddenHrefs) ? navData.hiddenHrefs : []));
+    setNavOrder(keep(Array.isArray(navData.navOrder) ? navData.navOrder : null));
   }
 
   useEffect(() => {
@@ -197,7 +203,7 @@ export function SiteConfigProvider({
   }, [theme, config]);
 
   return (
-    <SiteConfigContext.Provider value={{ config, nav, rightIcons, hiddenMenuKeys, hiddenHrefs, uiStrings, isLoading }}>
+    <SiteConfigContext.Provider value={{ config, nav, rightIcons, hiddenMenuKeys, hiddenHrefs, navOrder, uiStrings, isLoading }}>
       {children}
     </SiteConfigContext.Provider>
   );
