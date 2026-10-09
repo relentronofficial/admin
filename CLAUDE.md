@@ -54,6 +54,7 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
 | `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
+| `COURSES_PAGE_PERSONALIZATION_SPECKIT.md` | repo root | Personalized `/courses` page — program-driven module access (CP-01–CP-10); three page states (new member / program member / direct access); `programs.allowed_modules` data model — **not started** |
 | `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
 | `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
 | `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
@@ -124,6 +125,8 @@ npx prisma db seed                   # Run from backend/ — creates super admin
 | `seed-community.mjs` | Create 3 approved community posts + comments for QA (idempotent) |
 | `seed-chat-group.mjs` | Create sample chat groups with realistic messages for QA (idempotent — deletes and recreates by name) |
 | `seed-episode-resources-tasks.mjs` | Attach dummy resources + tasks to course episodes; skips episodes that already have them |
+| `seed-leaderboard.mjs` | Grant dummy points to up to 10 active members for `/wins` leaderboard QA (idempotent — skips members with activity in last hour) |
+| `send-test-push.mjs` | Send a test FCM push notification to the first active member with a registered token |
 
 **Throwaway scripts in `tbt-admin/backend/scripts/`** — One-off debugging scripts (underscore-prefixed, named after specific people, or hackathon-course-specific) such as `_check-pandiyan.mjs`, `get-nandhini.mjs`, `seed-manoj.mjs`, `list-hackathon-course.mjs`, `setup-hackathon-sections.mjs`, `seed-hackathon-content.mjs`, `seed-hackathon-quiz-tasks-timer.mjs` are dev artifacts. Do not commit them or treat them as canonical tools.
 
@@ -218,8 +221,9 @@ app/
   (auth)/           # Clerk-hosted sign-in/sign-up pages — DO NOT MODIFY
   (marketing)/      # Public unauthenticated pages: landing, /events, /programs
   (platform)/       # All member pages — wrapped by Navbar + SubscriptionGate
-    dashboard/      # Member home
-    tbt/            # Content catalog
+    community/      # Home page (default landing after login as of 2026-10)
+    dashboard/      # Member dashboard
+    discover/       # Content catalog (previously /tbt)
     workshops/      # Workshop list
     workshop/[id]/  # Workshop detail + flow + Q&A + live calls
     learning/       # Course progress; /learning/badges, /learning/[courseId]
@@ -246,7 +250,7 @@ app/
 ```
 `(platform)/layout.tsx` renders `<Navbar>`, `<SubscriptionGate>`, and `<Footer>`. All platform pages sit inside `max-w-7xl mx-auto`.
 
-`/eiflix` and `/eiflix/:path*` permanently redirect to `/tbt` and `/tbt/:path*` (see `next.config.ts`).
+`/eiflix` and `/tbt` (and their `:path*` variants) permanently redirect to `/discover` (see `next.config.ts`).
 
 ### API Client (`lib/api/client.ts`)
 - Axios instance pointing to `NEXT_PUBLIC_API_URL`, **`withCredentials: true`** — auth via HttpOnly cookies
@@ -258,9 +262,10 @@ app/
 **Critical env vars for user-web Clerk** (values override `ClerkProvider` props — wrong values silently redirect logins to the wrong page):
 ```
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login
-NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/tbt
-NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community
 ```
+Note: `.env.example` still shows `/tbt` but that redirects to `/discover`. Prefer `/community` (the current home page) in actual deployments.
 
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
 Fetches 3 unauthenticated endpoints in parallel on app load:
@@ -304,7 +309,7 @@ Additional semantic tokens from `globals.css` (not API-injected — safe to use 
 - `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
 - `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`, `useUserSupportQuota` (GET `/api/user/support-quota` — MG-01; returns `{ techSupport, adSupport, groupCall, callCredits, oneToOne }` with `allocated/used/remaining` per type), `useCreditPricing` (GET `/api/user/credits/pricing`), `usePurchaseCredit` (POST `/api/user/credits/purchase` — MG-05), `useMyCreditPurchases` (GET `/api/user/credits/purchases`)
 - `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + attendance + breaks + `lifelinesTotal/Used/Remaining`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`), `useRequestBreak` (POST `/api/user-batch/break`), `useSpendCoins` (POST `/api/user-batch/spend-coins` — coin-based lifeline purchases; invalidates `["user","me"]` query key), `useUseProgramLifeline` (POST `/api/user-batch/lifeline/use` — MG-02 program-wide lifeline deduction; returns `{ lifelinesRemaining, lifelinesTotal, lifelinesUsed }`), `useDownloadBatchCertificate` (GET `/api/user-batch/certificate` — returns PDF blob, triggers browser download)
-- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`), `useLessonFeedback(courseId)` (GET `/api/user/courses/:id/lesson-feedback` — member's 1–10 ratings for all lessons in a course), `useSaveLessonFeedback(courseId)` (PUT — upserts rating + optional text; shown inline below video once lesson is completed); backed by `lib/api/services/courses.service.ts`
+- `lib/hooks/useCourses.ts` — course platform hooks (user-facing): `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (has optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories` (GET `/api/user/courses/categories`), `useCourseModuleTabs` (GET `/api/user/courses/module-tabs` — returns `[{ title }]` for active module tabs), `useReflections(courseId)` (GET reflections from backend), `useSaveReflection(courseId)` (POST reflection to backend — backs the `ReflectionModal`), `useLessonFeedback(courseId)` (GET `/api/user/courses/:id/lesson-feedback` — member's 1–10 ratings for all lessons in a course), `useSaveLessonFeedback(courseId)` (PUT — upserts rating + optional text; shown inline below video once lesson is completed), `useGetMyStreakPoints` (GET `/api/user/streak-points` — returns `{ total, videoTotal, taskTotal, history }`); backed by `lib/api/services/courses.service.ts`
 - `lib/hooks/useEvents.ts` — events hooks; backed by `lib/api/services/events.service.ts`
 - `lib/hooks/useAds.ts` — ad display logic: `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Backed by `lib/api/services/ads.service.ts`. Ad triggers live in `lib/ads/adTriggers.ts`; media pre-loading in `lib/ads/mediaRegistry.ts`; per-session frequency cap in `lib/ads/session.ts`; event batching in `lib/ads/trackingQueue.ts`.
 - `lib/hooks/useRituals.ts` — `useRitualHabits` (GET `/api/rituals/habits`), `useRitualsButtonsConfig` (GET `/api/rituals/buttons`); backed by `lib/api/services/rituals.service.ts`
@@ -609,6 +614,8 @@ course_episodes:
   bunny_drm_token TEXT
   timer_seconds INT            -- per-lesson focus timer (null = use global taskTimerSeconds from site config)
   section_id UUID FK           -- NULL = no section (legacy); FK to course_sections(id) ON DELETE SET NULL
+  description TEXT             -- episode description (added via startup ALTER)
+  streak_points INT DEFAULT 0  -- bonus streak points awarded on episode completion (separate from XP)
 
 products:
   price DECIMAL(10,2)
@@ -625,6 +632,10 @@ site_configs:
   login_bg_images JSONB        -- array of background image URLs for login page
   hidden_menu_keys JSONB       -- array of menu key strings to hide (managed via /settings/navigation)
   early_completion_bonus_xp INT DEFAULT 5  -- MG-04: XP bonus for finishing before focus timer expires
+  task_timer_seconds INT DEFAULT 300  -- global fallback timer duration for tasks/episodes where timer_seconds=null
+  free_lifelines_per_session INT DEFAULT 3  -- free episode-level lifelines available per timer session
+  theme_mode VARCHAR(10) DEFAULT 'light'  -- admin-controlled light/dark mode (admin → Navigation settings page)
+  courses_banner_url TEXT      -- optional banner image for the /courses catalog page
 
 member_episode_progress:
   watched_segments TEXT        -- serialized segment ranges for DRM tracking
@@ -635,14 +646,34 @@ member_episode_progress:
 tasks:
   timer_seconds INT            -- per-task focus timer (null = use global taskTimerSeconds from site config)
   course_episode_id UUID FK    -- links task to a specific course episode (ON DELETE CASCADE)
+  member_id UUID FK            -- when set, task is member-specific (null = global, visible to all batch members)
 
 -- New raw SQL tables (no Prisma model):
--- course_sections: id, course_id FK, title, description, sort_order, created_at
+-- course_sections: id, course_id FK, title, description, sort_order, created_at, timer_seconds INT
 --   Sections (chapters) for two-level course structure. Episodes link to sections via course_episodes.section_id.
 --   Episodes with section_id=NULL belong to a synthetic "General" group.
 -- lesson_feedback: id, member_id FK, course_id TEXT, lesson_id TEXT, rating INT (1–10), feedback_text TEXT, UNIQUE(member_id,course_id,lesson_id)
 --   Member's per-lesson rating + written feedback. Distinct from video_feedback_* (admin-authored questions)
 --   and course_reflections (private journal). Upserted on resubmit. Shown inline below video post-completion.
+-- lesson_timer_sessions: id, member_id FK, episode_id UUID, status ('ACTIVE'|'COMPLETED'|'EXPIRED'), duration_seconds, started_at, expires_at, last_heartbeat_at, completed_at
+--   Server-enforced episode timer sessions. Distinct from member_episode_progress.timer_started_at (MG-04 client hint).
+--   API: POST /api/user/episodes/:id/timer/start (start/reset), GET /api/user/episodes/:id/timer/session (survives refresh), POST /api/user/episodes/:id/timer/heartbeat ({ completed?: bool })
+-- episode_lifeline_state: id, member_id FK, episode_id UUID, free_used, purchased_used, total_used
+--   Per-episode lifeline tracking. Distinct from program-wide batch lifelines (member_batch_settings.lifelines_total/used).
+-- psychometric_questions / psychometric_responses
+--   Member psychometric assessment. Member routes at /api/user/psychometric (GET /questions, POST /submit, GET /result). 5 default questions seeded at startup.
+-- legal_pages: slug PK, title, body_markdown, updated_at
+--   T&C and Privacy Policy. Served via GET /api/pub/legal/:slug (unauthenticated). Default rows seeded at startup.
+-- ai_conversations / ai_messages / saved_ai_content / ai_usage_counters
+--   Member-facing AI Content Buddy. Distinct from admin-only AI generation (/api/ai). Rate-limited: 30/day + 10/min per member.
+-- cities / states / business_types
+--   Master data for member profile autocomplete (admin-managed via /api/masters). Members store values as plain strings (no FK).
+-- lifeline_usages
+--   Per-episode lifeline spend audit trail. member_id, batch_id, task_id, day_number, coins_spent, used_at.
+-- helpdesk_ticket_activity_log
+--   Immutable audit trail for ticket actions (assign, status change, etc.). Written via helpdeskActivityLog.ts; no Prisma model.
+-- onboarding_buttons
+--   Admin-managed CTA buttons for the onboarding wizard welcome step. Toggle active/inactive.
 ```
 
 ### Admin Hooks (`useTbt.ts`)
@@ -741,7 +772,7 @@ PUT /api/courses/sections/:sectionId/episodes/reorder
 25. **`batches.xp_per_day` is a raw SQL column** — not in Prisma schema; added via idempotent `ALTER TABLE batches ADD COLUMN IF NOT EXISTS xp_per_day INT NOT NULL DEFAULT 50` in `prisma.ts` startup. Reading: after `prisma.batch.findMany/findUnique`, run a supplementary `$queryRawUnsafe` and merge `xpPerDay` via object map. Writing (create/update): **destructure `xpPerDay` out of the body before spreading into `prisma.batch.create/update`** (Prisma throws "Unknown field" otherwise), then persist via `$executeRawUnsafe('UPDATE batches SET xp_per_day=$1 WHERE id=$2', xpPerDay, id)`. Default fallback: `xpRow?.xp_per_day ?? 50`. On approve, `approveDayHandler` / `bulkApproveDaysHandler` fetch `xp_per_day` from the DB (once, before any loop) and use it for `pointsLedger` + socket emit `batch:day_approved` + notification text. Similarly, `batches.status` (VARCHAR, default `'active'`) and `batches.snapshot_days` (INT, nullable) are raw SQL columns added at startup — destructure them before spreading into Prisma and persist separately.
 26. **`task_steps` table does not exist in production** — do NOT include `step: true` or `steps: true` in any Prisma `task.findMany/findUnique` `include` block. The `task_steps` table has no startup `CREATE TABLE` SQL and was never migrated, so a JOIN against it causes a Postgres error → 500 on any task endpoint. The `Task` model has a `stepId` foreign-key field (nullable) but the related table is absent; treat steps as a soft reference only.
 27. **Uploaded images are auto-converted to WebP** — `backend/src/modules/upload/controller.ts` uses `sharp` to convert JPEG/PNG/WebP/GIF to WebP (quality 85, animated GIF preserved) before writing to R2. The stored filename gets a `.webp` extension regardless of the original. Body limit for image endpoints is 50 MB. No client-side format guard is needed — accept `accept="image/*"` in file inputs; the backend normalises everything.
-28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications`, `course_sections`, `lesson_feedback` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt `prisma.memberAttendance.findMany()` — it will fail with "does not exist on type PrismaClient".
+28. **Several tables exist only as raw SQL — not in Prisma schema** — `member_attendance`, `batch_break_requests`, `member_batch_settings`, `product_inquiries`, `admin_notifications`, `course_sections`, `lesson_feedback`, `lesson_timer_sessions`, `episode_lifeline_state`, `lifeline_usages`, `psychometric_questions`, `psychometric_responses`, `legal_pages`, `ai_conversations`, `ai_messages`, `saved_ai_content`, `ai_usage_counters`, `cities`, `states`, `business_types`, `helpdesk_ticket_activity_log`, `onboarding_buttons`, `helpdesk_ticket_replies`, `onboarding_meetings`, `onboarding_meeting_participants`, `onboarding_content` are created entirely via `$executeRawUnsafe` in `prisma.ts` startup. There are no Prisma models for them; all reads/writes must use `$queryRawUnsafe` / `$executeRawUnsafe`. Never attempt Prisma model accessors (e.g. `prisma.memberAttendance.findMany()`) — it will fail with "does not exist on type PrismaClient".
 29. **Task unification — `tasks.batch_id` now nullable FK** — the startup SQL added `batch_id UUID REFERENCES batches(id)` to `tasks` and made `program_id` nullable. `task_submissions` gained `batch_id`, `day_progress_id`, `day_number` columns. The old global unique constraint `(member_id, task_id)` was replaced by two day-scoped partial indexes: one for batch tasks `(member_id, task_id, batch_id, day_number)` and one for program tasks `(member_id, task_id) WHERE batch_id IS NULL`. Batch-inline tasks (batch_id set, program_id null) and program tasks (program_id set, batch_id null) are differentiated by which FK is populated.
 30. **Gamification route prefix is `/api/tbt`** — the `gamification` module registers under `/api/tbt`, not `/api/gamification`. Reads for leaderboards, points, tier/badge/level all live there. Do not create a parallel `/api/gamification` prefix.
 31. **`chat-groups` raw SQL requires `::uuid` casts on every UUID param** — see commit `e3a5590f`. Missing the cast throws a Postgres type error at runtime. Example: `$queryRawUnsafe('SELECT ... WHERE id = $1::uuid', groupId)`.
@@ -756,6 +787,11 @@ PUT /api/courses/sections/:sectionId/episodes/reorder
 40. **MG-03 `task_processes` and stage locking** — tasks with `process_id` set are process stages. `stage_position = 1` is always unlocked; stage N requires an approved `task_submissions` row for stage N-1. Batch day response includes a `processes` array with `stageLocked` per task. Admin routes: `GET/POST /api/batches/:id/processes`, `PUT/DELETE /api/batches/processes/:pid`, `PUT /api/batches/processes/:pid/reorder`.
 41. **MG-04 early completion bonus** — `useMarkLessonComplete` now accepts optional `timerStartedAt: number` (epoch ms) and `timerSeconds: number`. When the elapsed time is less than `timerSeconds`, the backend awards `site_configs.early_completion_bonus_xp` (default 5) bonus XP and returns `{ bonusXpAwarded, completedEarly }`. New raw SQL columns on `member_episode_progress`: `timer_started_at`, `timer_seconds`, `completed_early`.
 42. **MG-05 credit purchase flow** — member requests `POST /api/user/credits/purchase` (`creditType`, optional `paymentRef`). Admin reviews at `/credits` page (Pending tab). On approve: `lifeline` type increments `member_batch_settings.lifelines_total`; support types insert into `support_usage`. Socket events: `admin:credit_purchase` → `'admin'` room on new request; `credit_approved`/`credit_rejected` → `user:{memberId}` on decision. `credit_pricing` table is editable in admin Pricing tab.
+43. **Server-side episode timer (`lesson_timer_sessions`)** — A separate server-enforced timer layer exists on top of the MG-04 client-side timer hint. `lesson_timer_sessions` raw SQL table tracks status `'ACTIVE' | 'COMPLETED' | 'EXPIRED'`. Three API endpoints: `POST /api/user/episodes/:id/timer/start` (start or reset — idempotent, invalidates prior session), `GET /api/user/episodes/:id/timer/session` (returns `{ status, remainingSeconds, ... }` — survives page refresh so the countdown resumes), `POST /api/user/episodes/:id/timer/heartbeat` (send `{ completed: true }` to mark done, omit to keep-alive). Service helpers are `startEpisodeTimer`, `getEpisodeTimerSession`, `heartbeatEpisodeTimer` in `tbt-user-web/lib/api/services/courses.service.ts`. Do NOT conflate with `member_episode_progress.timer_started_at` (that's the MG-04 early-completion bonus hint, not the enforcement layer).
+44. **Per-episode lifelines vs. program-wide lifelines** — Two distinct lifeline systems: (1) **Program-wide** (`member_batch_settings.lifelines_total/used` — MG-02; `useUseProgramLifeline()`); (2) **Per-episode** (`episode_lifeline_state` raw SQL table; `GET /api/user/episodes/:id/lifelines` → `{ lifelineEnabled, lifelineCount, lifelineCoinCost, freeRemaining, freeUsed, purchasedUsed, totalUsed }`; `POST /api/user/episodes/:id/lifelines/use` with body `{ type: 'free' | 'coin' }`). Episode-level free lifelines are configured by `site_configs.free_lifelines_per_session` (default 3); coin-based lifelines deduct TBT coins and update `episode_lifeline_state.purchased_used`. Never merge the two systems.
+45. **Razorpay course and coin purchase flows** — Course payment: `POST /api/user/courses/:id/razorpay/create-order` → returns `{ orderId, amount, currency, keyId, paymentRecordId }`; `POST /api/user/courses/:id/razorpay/verify` (client verifies payment and gets access). Webhook at `POST /api/user/courses/razorpay/webhook` is **unauthenticated** (requires raw body for HMAC signature verification — do not add auth middleware to this route). TBT Coin purchase: `POST /api/user/coins/razorpay/create-order` → `{ orderId, amount, currency, keyId, coins }`; `POST /api/user/coins/razorpay/verify`. Razorpay client is initialised via `getRazorpay()` from `backend/src/lib/razorpay.ts`.
+46. **Streak points on episodes** — `course_episodes.streak_points INT DEFAULT 0` is a raw SQL column. Each episode in the course detail response carries `streakPoints: number`. Awarded asynchronously on lesson completion via `awardVideoStreakPoints()` (called with `void` — non-blocking). Member totals are at `GET /api/user/streak-points` → `{ total, videoTotal, taskTotal, history }`. Streak points are separate from XP (`MemberXP` Prisma table) and activity log points (`tbt_activity_log`). User-web hook: `useGetMyStreakPoints` in `lib/hooks/useCourses.ts`.
+47. **`tasks.member_id` — member-specific task assignments** — `tasks.member_id UUID` is a nullable raw SQL FK to `members(id)`. When `null`, the task is global (shown to all batch/program members). When set, the task is a personal assignment visible only to that member. The admin tasks page supports per-member assignment via the `memberId` form field. Always destructure before spreading into Prisma creates/updates (same pattern as `batches.xp_per_day`).
 
 ## Socket Events
 
@@ -863,3 +899,12 @@ Backend `onboarding` and `onboarding-meetings` modules merged. Frontend wizard (
 - **Weekly course reports** — sibling to Batch reports, but for the VOD Course Platform (`CourseEnrollment`/`CourseEpisode`, not the Batch day-task program) and two-directional: admin → member weekly progress report AND member → admin weekly feedback, both over WhatsApp, continuing every week until `CourseEnrollment.completedAt` is set. New Prisma models `CourseWeeklyReport` / `CourseWeeklyFeedback` (`@@unique([memberId, courseId, weekNumber])`, WhatsApp delivery status stored inline). Backend: pure logic in `backend/src/lib/courseReportLogic.ts` (unit-tested); orchestration in `courseReports.ts` (`generateMemberCourseReport`, `deliverMemberCourseReport` — same function used by both the cron and the admin manual-send endpoint, `runWeeklyCourseReports`, `deliverMemberFeedbackToAdmin`); BullMQ cron queue `tbt-course-reports` (weekly Sun 20:30 IST = `0 15 * * 0` UTC, offset from `tbt-batch-reports` to avoid contention); HTTP fallback `POST /api/cron/weekly-course-report`. Module `backend/src/modules/course-reports/` follows the Helpdesk two-subscope pattern: `/api/course-reports/admin/*` (Clerk) for admin list/filter/send/remarks/feedback-status, `/api/course-reports/*` (JWT cookie, `req.memberId`-scoped) for the member's own current report, report history, feedback submission (upsert by member+course+week), and feedback history. Admin page: `admin-panel/app/course-weekly-reports/` (Reports + Feedback tabs). Admin hooks in `useTbt.ts`: `useListCourseWeeklyReports`, `useCreateOrSendCourseReport`, `useUpdateCourseReportRemarks`, `useListCourseWeeklyFeedback`, `useUpdateCourseFeedbackStatus`. User-web: `tbt-user-web/lib/hooks/useCourseReports.ts` + `lib/api/services/courseReports.service.ts`, surfaced at `/learning/[courseId]/weekly` (linked from the course detail page). Optional env var: `ADMIN_WHATSAPP_NUMBER` (member → admin feedback WhatsApp destination; if unset, feedback still saves + raises an in-app `admin_notifications`/`admin:course_weekly_feedback` socket alert, just isn't WhatsApp'd). Socket event `admin:course_weekly_feedback` added to the `'admin'` room table below; `resolveNotificationRoute` routes it to `/course-weekly-reports?tab=feedback&open=<id>`.
 
   **Per-episode feedback (1–10 rating + free-text)** — a parallel feedback track on the same `course-reports` module but scoped to individual episodes rather than weekly course-level feedback. Member routes: `POST /api/course-reports/episode-feedback` (upsert by member+episode), `GET /api/course-reports/episode-feedback/mine`. Admin routes: `GET/PATCH /api/course-reports/admin/episode-feedback[/:id]/status` (status: `new|reviewed`). Admin hooks: `useListCourseEpisodeFeedback`, `useUpdateCourseEpisodeFeedbackStatus` in `useTbt.ts`. User-web hooks: `useMyEpisodeFeedback(episodeId)`, `useSubmitEpisodeFeedback()` in `lib/hooks/useCourseReports.ts`. Socket event: `admin:course_episode_feedback` → `'admin'` room. Admin page: `admin-panel/app/course-weekly-reports/` — new "Video Feedback" tab (alongside Reports and Feedback). `resolveNotificationRoute` maps `course_episode_feedback` → `/course-weekly-reports?tab=video-feedback&open=<id>`.
+- **Razorpay payment integration** — Course purchase (`POST /api/user/courses/:id/razorpay/create-order` + verify) and TBT Coin purchase (`POST /api/user/coins/razorpay/create-order` + verify). Unauthenticated webhook at `POST /api/user/courses/razorpay/webhook` (raw body required for HMAC). See pitfall #45.
+- **Server-side episode timer + per-episode lifelines** — `lesson_timer_sessions` table enforces timers server-side via heartbeat API; `episode_lifeline_state` table tracks per-episode free/paid lifelines (configured by `site_configs.free_lifelines_per_session`). See pitfalls #43, #44.
+- **Streak points** — `course_episodes.streak_points` column; awarded async on completion; member totals at `GET /api/user/streak-points`. See pitfall #46.
+- **Psychometric Assessment** — member-facing quiz at `/api/user/psychometric` (`GET /questions`, `POST /submit`, `GET /result`). Five default questions seeded at startup. Raw SQL tables: `psychometric_questions`, `psychometric_responses`.
+- **Mentorship Profile (stats/revenue/social)** — member-facing at `/api/user/mentorship/*` (`GET/POST /stats`, `GET/PUT /revenue`, `GET/PUT /social`). Tracks member's own business stats and social metrics; distinct from admin-facing MG mentorship gamification.
+- **Legal Pages** — T&C and Privacy Policy via `GET /api/pub/legal/:slug` (unauthenticated). Backed by `legal_pages` raw SQL table (slug PK). Default rows seeded at startup.
+- **AI Content Buddy (member-facing)** — member AI chat (text/voice/image) at `/api/user/ai/*`. Rate-limited 30/day + 10/min per member. Raw SQL tables: `ai_conversations`, `ai_messages`, `saved_ai_content`, `ai_usage_counters`. Distinct from admin-only AI generation (`/api/ai`).
+- **Extended member profile** — multiple new raw SQL columns on `members` table: `business_type`, `role`, `team_size`, `registered_office`, `target_network_description` (Business tab); `has_website`, `weekly_website_orders`, skill ratings (`skill_business_foundation`, `skill_content`, `skill_funnels`, `skill_ads`, `skill_sales`, `skill_overall_marketing`), `weekly_learning_hours`; `business_started_from`, `instagram_stats`, `facebook_stats`, `website_url`, `revenue_goal_after_tbt`; `watched_video_steps JSONB DEFAULT '[]'` (onboarding video tracking).
+- **Master data** — `cities`, `states`, `business_types` raw SQL tables for admin-managed autocomplete data. Members store values as plain strings (no FK referential integrity). Admin-managed via `/api/masters`; used in member profile editing.

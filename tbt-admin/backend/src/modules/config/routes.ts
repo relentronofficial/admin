@@ -5,6 +5,7 @@ import {
   listNavItemsHandler, createNavItemHandler, updateNavItemHandler, deleteNavItemHandler, reorderNavItemsHandler,
   getProductsPageConfigHandler, updateProductsPageConfigHandler,
   getResourcesPageConfigHandler, updateResourcesPageConfigHandler,
+  listModuleConfigsHandler, updateModuleConfigHandler,
 } from './controller.js';
 
 export async function configRoutes(fastify: FastifyInstance) {
@@ -27,4 +28,7 @@ export async function configRoutes(fastify: FastifyInstance) {
 
   fastify.get('/resources-page', getResourcesPageConfigHandler);
   fastify.put('/resources-page', updateResourcesPageConfigHandler);
+
+  fastify.get('/modules', listModuleConfigsHandler);
+  fastify.put('/modules/:name', updateModuleConfigHandler);
 }

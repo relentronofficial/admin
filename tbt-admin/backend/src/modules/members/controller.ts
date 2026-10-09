@@ -297,6 +297,21 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
     request.server.prisma.member.count({ where: where as any }),
   ]);
 
+  // CP-14: augment with allowed_modules (raw SQL column)
+  if (members.length > 0) {
+    const ids = members.map(m => m.id);
+    const modRows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string; allowed_modules: any }>>(
+      `SELECT id::text, allowed_modules FROM members WHERE id = ANY($1::uuid[])`,
+      ids,
+    ).catch(() => []);
+    const modMap = new Map(modRows.map(r => [r.id, r.allowed_modules]));
+    for (const m of members as any[]) {
+      const raw = modMap.get(m.id);
+      m.allowedModules = raw === undefined || raw === null ? null
+        : Array.isArray(raw) ? raw : JSON.parse(raw);
+    }
+  }
+
   return reply.send({ success: true, data: members, meta: { total, page, limit }, error: null });
 }
 
@@ -587,6 +602,8 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       facebookStats,
       websiteUrl,
       revenueGoalAfterTbt,
+      overrideModules,
+      allowedModules,
       ...restBody
     } = body as any;
 
@@ -701,6 +718,22 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       weeklyLearningHours,
       teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
     });
+
+    // CP-14: per-member course module override
+    if (overrideModules !== undefined || allowedModules !== undefined) {
+      let newValue: string | null;
+      if (overrideModules === false) {
+        newValue = null; // remove override — fall back to program default
+      } else {
+        newValue = JSON.stringify(Array.isArray(allowedModules) ? allowedModules : []);
+      }
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE members SET allowed_modules = $1::jsonb WHERE id = $2::uuid`,
+        newValue,
+        id,
+      );
+      void invalidateCache(request.server.redis ?? null, `courses:personalization:${id}`);
+    }
 
     // Same master-mirror as createMember. Only fires when the field
     // was actually included in the update payload — untouched fields

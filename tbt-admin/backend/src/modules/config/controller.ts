@@ -208,3 +208,54 @@ export async function updateResourcesPageConfigHandler(req: FastifyRequest, repl
   else config = await req.server.prisma.resourcesPageConfig.update({ where: { id: config.id }, data: body });
   return reply.send({ success: true, data: config, error: null });
 }
+
+// ── MODULE CONFIG (CP-15) ─────────────────────────────────────────────
+
+export async function listModuleConfigsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order
+     FROM module_config ORDER BY sort_order`
+  ).catch(() => []);
+  return reply.send({
+    success: true,
+    data: rows.map(r => ({
+      moduleName: r.module_name,
+      displayName: r.display_name ?? null,
+      tagline: r.tagline ?? null,
+      description: r.description ?? null,
+      bannerUrl: r.banner_url ?? null,
+      iconUrl: r.icon_url ?? null,
+      accentColor: r.accent_color ?? null,
+      sortOrder: Number(r.sort_order ?? 0),
+    })),
+    error: null,
+  });
+}
+
+export async function updateModuleConfigHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { name } = req.params as { name: string };
+  const { displayName, tagline, description, bannerUrl, iconUrl, accentColor, sortOrder } = req.body as any;
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO module_config (module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+     ON CONFLICT (module_name) DO UPDATE SET
+       display_name = EXCLUDED.display_name,
+       tagline = EXCLUDED.tagline,
+       description = EXCLUDED.description,
+       banner_url = EXCLUDED.banner_url,
+       icon_url = EXCLUDED.icon_url,
+       accent_color = EXCLUDED.accent_color,
+       sort_order = EXCLUDED.sort_order,
+       updated_at = now()`,
+    name,
+    displayName ?? null,
+    tagline ?? null,
+    description ?? null,
+    bannerUrl ?? null,
+    iconUrl ?? null,
+    accentColor ?? null,
+    Number(sortOrder ?? 0),
+  );
+  void invalidateCache(req.server.redis ?? null, 'courses:module-configs');
+  return reply.send({ success: true, data: { moduleName: name }, error: null });
+}

@@ -40,7 +40,7 @@ import { useListMembers, useUpdateMember, useDeleteMember, useGetManagers, useAp
 import MembersFilterDrawer from "@/components/members/MembersFilterDrawer";
 import apiClient from "@/lib/api/apiClient";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
-import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches, useAdminMemberRevenue, useAdminMemberRevenueHistory, useAdminUpsertMemberRevenue, type AdminMemberRevenue } from "@/lib/hooks/useTbt";
+import { useMemberProgress, useListMemberBadges, useListAllBadges, useAssignBadge, useRemoveBadge, useListTiers, useListWorkshops, useMemberEnrollments, useEnrollMemberInWorkshop, useRemoveMemberEnrollment, useListBatches, useAdminMemberRevenue, useAdminMemberRevenueHistory, useAdminUpsertMemberRevenue, useModuleConfigs, type AdminMemberRevenue } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
 import { format, isValid } from "date-fns";
 import { toast } from "react-hot-toast";
@@ -138,6 +138,10 @@ export default function MembersListPage() {
   // FIX-12: batch selected during approval (separate from edit form)
   const [approveBatchId, setApproveBatchId] = useState<string>("");
 
+  // CP-14: per-member course module override state
+  const [editModuleOverride, setEditModuleOverride] = useState<boolean>(false);
+  const [editAllowedModules, setEditAllowedModules] = useState<string[]>([]);
+
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
   const editPhotoRef = useRef<HTMLInputElement>(null);
@@ -155,6 +159,7 @@ export default function MembersListPage() {
   const allWorkshops = (workshopsData as any)?.data || [];
   const { data: batchesData } = useListBatches();
   const batches = (batchesData as any)?.data || [];
+  const { data: moduleConfigs = [] } = useModuleConfigs();
 
   const members = data?.data || [];
   const total = data?.meta?.total || 0;
@@ -413,6 +418,15 @@ export default function MembersListPage() {
         const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
         payload.kycDocumentUrl = publicUrl;
       }
+      // CP-14: send module override only if the admin explicitly changed it
+      const originalMods = (editingMember as any).allowedModules;
+      const hadOverride = Array.isArray(originalMods);
+      if (editModuleOverride) {
+        payload.overrideModules = true;
+        payload.allowedModules = editAllowedModules;
+      } else if (hadOverride) {
+        payload.overrideModules = false;
+      }
       await updateMember.mutateAsync({ id: editingMember.id, data: payload });
       toast.success("Member updated successfully");
       setEditingMember(null);
@@ -670,9 +684,12 @@ export default function MembersListPage() {
                               >
                                 <Trophy size={14} className="text-yellow-500" /> View Progress
                               </button>
-                              <button 
+                              <button
                                 onClick={() => {
                                     setEditingMember(member);
+                                    const mods = (member as any).allowedModules;
+                                    setEditModuleOverride(Array.isArray(mods));
+                                    setEditAllowedModules(Array.isArray(mods) ? mods : []);
                                     setActiveMenuId(null);
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-[12px] text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a] transition-colors font-bold uppercase tracking-wider font-rajdhani"
@@ -1345,6 +1362,56 @@ export default function MembersListPage() {
                       )}
                     </div>
                   </div>
+                </section>
+
+                {/* CP-14: Course Module Access Override */}
+                <section className="px-8 py-6 border-b border-[#2a2a2a]">
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-4">
+                    Course Module Access
+                  </h3>
+                  <p className="text-[#606060] text-xs mb-4">
+                    By default, this member sees modules based on their assigned program. Enable an override to grant or restrict specific modules regardless of the program.
+                  </p>
+                  <label className="flex items-center gap-3 mb-4 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={editModuleOverride}
+                      onChange={e => setEditModuleOverride(e.target.checked)}
+                      className="w-4 h-4 accent-[#dc2626]"
+                    />
+                    <span className="text-sm text-[#a0a0a0]">Override program module access for this member</span>
+                  </label>
+                  {editModuleOverride && (
+                    <div className="ml-7">
+                      <p className="text-[#606060] text-xs mb-3">Select which modules this member can access (empty = all modules):</p>
+                      <div className="flex flex-wrap gap-3">
+                        {(moduleConfigs.length > 0 ? moduleConfigs : [{ moduleName: 'Product' }, { moduleName: 'Service' }, { moduleName: 'Coaching' }]).map((mc: any) => {
+                          const name = mc.moduleName;
+                          const checked = editAllowedModules.includes(name);
+                          return (
+                            <label key={name} className="flex items-center gap-2 cursor-pointer select-none bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-2">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setEditAllowedModules(prev => [...prev, name]);
+                                  } else {
+                                    setEditAllowedModules(prev => prev.filter(m => m !== name));
+                                  }
+                                }}
+                                className="w-4 h-4 accent-[#dc2626]"
+                              />
+                              <span className="text-sm text-[#f0f0f0]">{mc.displayName || name}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {editAllowedModules.length === 0 && (
+                        <p className="text-[#606060] text-xs mt-2">No modules selected — member will see all available modules.</p>
+                      )}
+                    </div>
+                  )}
                 </section>
 
               </div>

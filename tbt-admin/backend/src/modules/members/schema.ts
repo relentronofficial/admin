@@ -74,4 +74,7 @@ export const updateMemberSchema = createMemberSchema.partial().extend({
   verificationStatus: z.enum(['awaiting_kyc', 'under_review', 'verified', 'rejected', 'changes_requested']).optional().or(z.literal('')),
   password: z.string().min(8).optional().or(z.literal('')),
   subscriptionEndsAt: z.string().optional().or(z.literal('')),
+  // CP-14: per-member course module override
+  overrideModules: z.boolean().optional(),
+  allowedModules: z.array(z.string()).optional(),
 });

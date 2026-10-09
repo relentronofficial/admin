@@ -870,7 +870,7 @@ export const useListPrograms = () =>
 export const useCreateProgram = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { name: string; description?: string; durationDays?: number }) => {
+    mutationFn: async (data: { name: string; description?: string; durationDays?: number; allowedModules?: string[] }) => {
       const res: any = await apiClient.post('/api/batches/programs', data);
       return res.data || res;
     },
@@ -881,7 +881,7 @@ export const useCreateProgram = () => {
 export const useUpdateProgram = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; durationDays?: number } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { name?: string; description?: string; durationDays?: number; allowedModules?: string[] } }) => {
       const res: any = await apiClient.put(`/api/batches/programs/${id}`, data);
       return res.data || res;
     },
@@ -2556,6 +2556,42 @@ export const useAdminUpsertMemberRevenue = (memberId: string) => {
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ['members', memberId, 'revenue', vars.weekNumber, vars.year] });
       qc.invalidateQueries({ queryKey: ['members', memberId, 'revenue-history'] });
+    },
+  });
+};
+
+// ── MODULE CONFIG (CP-15) ─────────────────────────────────────────────
+
+export interface ModuleConfig {
+  moduleName: string;
+  displayName: string | null;
+  tagline: string | null;
+  description: string | null;
+  bannerUrl: string | null;
+  iconUrl: string | null;
+  accentColor: string | null;
+  sortOrder: number;
+}
+
+export const useModuleConfigs = () =>
+  useQuery<ModuleConfig[]>({
+    queryKey: ['config', 'modules'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/config/modules');
+      return (res?.data ?? []) as ModuleConfig[];
+    },
+    staleTime: 300_000,
+  });
+
+export const useUpdateModuleConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: Partial<ModuleConfig> & { moduleName: string }) => {
+      const { moduleName, ...rest } = payload;
+      return apiClient.put(`/api/config/modules/${moduleName}`, rest);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config', 'modules'] });
     },
   });
 };

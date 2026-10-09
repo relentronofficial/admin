@@ -2154,6 +2154,40 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       UPDATE plan_entitlements SET sales_call_count = 15, content_call_count = 15 WHERE plan = 'vip'      AND sales_call_count = 0
     `).catch(() => {});
 
+    // ── CP-01: Course page personalization — allowed modules per program ──────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE programs ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT '[]'::jsonb`
+    ).catch(() => {});
+
+    // ── CP-11: Per-member course module override (2026-10-09) ─────────────────
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`
+    ).catch(() => {});
+
+    // ── CP-12: Module config table — per-module branding (2026-10-09) ─────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS module_config (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        module_name VARCHAR(50) NOT NULL UNIQUE,
+        display_name VARCHAR(100),
+        tagline VARCHAR(255),
+        description TEXT,
+        banner_url TEXT,
+        icon_url TEXT,
+        accent_color VARCHAR(20),
+        sort_order INT NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO module_config (module_name, display_name, sort_order)
+      VALUES ('Product', 'Product Mastery', 1),
+             ('Service', 'Service Excellence', 2),
+             ('Coaching', 'Business Coaching', 3)
+      ON CONFLICT (module_name) DO NOTHING
+    `).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full

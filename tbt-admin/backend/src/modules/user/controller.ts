@@ -481,7 +481,7 @@ export async function listCourseModuleTabsHandler(request: FastifyRequest, reply
 }
 
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 24, search, level, sort, category, moduleTitle } = request.query as {
+  const { page = 1, limit = 24, search, level, sort, category, moduleTitle, modules } = request.query as {
     page?: number;
     limit?: number;
     search?: string;
@@ -489,14 +489,16 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     sort?: string;
     category?: string;
     moduleTitle?: string;
+    modules?: string | string[];
   };
+  const moduleArr = modules ? (Array.isArray(modules) ? modules : [modules]) : null;
 
   const redis = request.server.redis ?? null;
 
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
   const catalogKey = canCache
-    ? `courses:catalog:v2:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}`
+    ? `courses:catalog:v2:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
     : null;
 
   type CatalogEntry = {
@@ -522,6 +524,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       if (level) { sqlParams.push(level); conditions.push(`c.level = $${sqlParams.length}`); }
       if (category) { sqlParams.push(category); conditions.push(`c.category_id = $${sqlParams.length}::uuid`); }
       if (moduleTitle) { sqlParams.push(moduleTitle); conditions.push(`c.module = $${sqlParams.length}`); }
+      if (moduleArr && moduleArr.length > 0) { sqlParams.push(moduleArr); conditions.push(`c.module = ANY($${sqlParams.length})`); }
 
       const orderClause = sort === 'popular'
         ? 'COALESCE(enr.enrollment_count, 0) DESC, c.is_featured DESC, c.created_at DESC'
@@ -615,6 +618,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       const p = searchParams.length;
       searchConds.push(`(c.title ILIKE $${p} OR c.description ILIKE $${p})`);
     }
+    if (moduleArr && moduleArr.length > 0) { searchParams.push(moduleArr); searchConds.push(`c.module = ANY($${searchParams.length})`); }
     searchParams.push(Number(limit));
     const searchLimit = searchParams.length;
     searchParams.push((Number(page) - 1) * Number(limit));
@@ -707,7 +711,92 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     hasAccess: isAccessValid(accessMap.get(c.id) ?? null),
   }));
 
-  return ok(reply, data, { total, page: Number(page), limit: Number(limit) });
+  // CP-04/CP-13: Compute per-member personalization context (member override takes priority)
+  let personalizationState: 'program' | 'direct' | 'new' = 'new';
+  let allowedModules: string[] = [];
+  let programName: string | null = null;
+
+  const personKey = `courses:personalization:${request.memberId}`;
+  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none' };
+  const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
+    // Fetch batch_id + allowed_modules (member override) in one raw SQL call
+    const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT batch_id, allowed_modules FROM members WHERE id = $1::uuid`,
+      request.memberId
+    ).catch(() => []);
+    const memberRow = memberRows[0];
+
+    // CP-11: member-level override takes priority over program
+    const memberModuleOverride = memberRow?.allowed_modules;
+    if (memberModuleOverride !== null && memberModuleOverride !== undefined) {
+      const parsed: string[] = Array.isArray(memberModuleOverride)
+        ? memberModuleOverride
+        : JSON.parse(memberModuleOverride);
+      const overrideState: PersonCtx['state'] = parsed.length > 0 ? 'program' : 'direct';
+      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const };
+    }
+
+    if (memberRow?.batch_id) {
+      const batchRow = await request.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT b.program_id::text, p.name, p.allowed_modules
+         FROM batches b
+         LEFT JOIN programs p ON p.id = b.program_id
+         WHERE b.id = $1::uuid`,
+        memberRow.batch_id
+      ).catch(() => []);
+      const b = batchRow[0];
+      if (b) {
+        const raw = b.allowed_modules;
+        const mods: string[] = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+        if (mods.length > 0) {
+          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const };
+        }
+      }
+      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const };
+    }
+
+    const anyAccess = await (request.server.prisma as any).courseAccess.findFirst({
+      where: { memberId: request.memberId, isActive: true },
+      select: { id: true },
+    }).catch(() => null);
+    return anyAccess
+      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const }
+      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const };
+  });
+
+  personalizationState = personCtx.state;
+  allowedModules = personCtx.modules;
+  programName = personCtx.name;
+
+  // CP-12/CP-13: Fetch module configs (shared across all members, longer TTL)
+  const moduleConfigKey = 'courses:module-configs';
+  type ModuleConfig = { moduleName: string; displayName: string | null; tagline: string | null; description: string | null; bannerUrl: string | null; iconUrl: string | null; accentColor: string | null; sortOrder: number };
+  const moduleConfigs = await cacheGetOrCompute<ModuleConfig[]>(redis, moduleConfigKey, 300, () =>
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order
+       FROM module_config ORDER BY sort_order`
+    ).then(rows => rows.map(r => ({
+      moduleName: r.module_name,
+      displayName: r.display_name ?? null,
+      tagline: r.tagline ?? null,
+      description: r.description ?? null,
+      bannerUrl: r.banner_url ?? null,
+      iconUrl: r.icon_url ?? null,
+      accentColor: r.accent_color ?? null,
+      sortOrder: Number(r.sort_order ?? 0),
+    }))).catch(() => [] as ModuleConfig[])
+  );
+
+  return ok(reply, data, {
+    total,
+    page: Number(page),
+    limit: Number(limit),
+    personalizationState,
+    allowedModules,
+    programName,
+    sourceType: personCtx.sourceType,
+    moduleConfigs,
+  });
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

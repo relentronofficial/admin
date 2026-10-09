@@ -2,11 +2,24 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Search, Lock, Play, BookOpen, Star } from "lucide-react";
 import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
-import { useMe, useUpdateProfile } from "@/lib/hooks/useUser";
+import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ModuleConfig {
+  moduleName: string;
+  displayName: string | null;
+  tagline: string | null;
+  description: string | null;
+  bannerUrl: string | null;
+  iconUrl: string | null;
+  accentColor: string | null;
+  sortOrder: number;
+}
 
 // ── Filter config ─────────────────────────────────────────────────────────────
 
@@ -24,20 +37,31 @@ const SORT_OPTIONS = [
 
 // ── ModuleCard ────────────────────────────────────────────────────────────────
 
+type LockReason = "not_enrolled" | "plan_required" | "module_not_allowed" | "purchase_required" | null;
+
 function ModuleCard({
   course,
   enrollment,
   index,
+  lockReason,
 }: {
   course: any;
   enrollment?: any;
   index: number;
+  lockReason?: LockReason;
 }) {
   const hasAccess = course.hasAccess;
-  const isLocked = !hasAccess && !enrollment;
+  const isLocked = lockReason != null || (!hasAccess && !enrollment);
   const progressPct = enrollment?.progressPercent ?? 0;
   const isCompleted = enrollment?.completedAt != null;
   const isInProgress = !!enrollment && !isCompleted && progressPct > 0;
+
+  const lockMessages: Record<NonNullable<LockReason>, string> = {
+    module_not_allowed: "Not included in your program",
+    purchase_required: course.price > 0 ? `Purchase to unlock — ₹${(course.price as number).toLocaleString("en-IN")}` : "Request access to unlock",
+    plan_required: "Upgrade your plan to access",
+    not_enrolled: "Enroll to get started",
+  };
 
   return (
     <Link href={`/learning/${course.id}`} className="block">
@@ -62,7 +86,6 @@ function ModuleCard({
               "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
           }}
         >
-          {/* Grid pattern */}
           <div
             style={{
               position: "absolute",
@@ -72,7 +95,6 @@ function ModuleCard({
                 "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
             }}
           />
-          {/* Brand */}
           <div
             style={{
               position: "absolute",
@@ -86,7 +108,6 @@ function ModuleCard({
           >
             ✦ TBT BUSINESS
           </div>
-          {/* Chapter */}
           <div
             style={{
               position: "relative",
@@ -104,7 +125,6 @@ function ModuleCard({
           >
             Chapter {index + 1}
           </div>
-          {/* Module label */}
           {course.module && (
             <div
               style={{
@@ -121,7 +141,6 @@ function ModuleCard({
               {course.module}
             </div>
           )}
-          {/* Course title */}
           <div
             className="line-clamp-2"
             style={{
@@ -136,7 +155,6 @@ function ModuleCard({
           >
             {course.title}
           </div>
-          {/* Website */}
           <div
             style={{
               position: "relative",
@@ -156,7 +174,6 @@ function ModuleCard({
           className="relative flex flex-col justify-between"
           style={{ height: 96, padding: "10px 14px" }}
         >
-          {/* Duration row */}
           <div style={{ color: "#8b8b93", fontSize: 13, lineHeight: 1.55 }}>
             Video Duration -{" "}
             <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
@@ -169,7 +186,6 @@ function ModuleCard({
             </strong>
           </div>
 
-          {/* Price chip — visible on paid locked courses */}
           {!course.hasAccess && !enrollment && course.price > 0 && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, background: "rgba(255,224,0,0.1)", border: "1px solid rgba(255,224,0,0.25)" }}>
               <span style={{ color: "#ffe000", fontSize: 11, fontWeight: 700 }}>
@@ -178,7 +194,6 @@ function ModuleCard({
             </div>
           )}
 
-          {/* Status circle (absolute, top-right) */}
           <div
             className="absolute flex items-center justify-center"
             style={{
@@ -196,7 +211,6 @@ function ModuleCard({
             {isCompleted ? "⟲" : isInProgress ? "▶" : "!"}
           </div>
 
-          {/* Progress bar */}
           <div>
             <div
               style={{
@@ -226,7 +240,7 @@ function ModuleCard({
             className="absolute inset-0 flex flex-col items-center justify-center gap-2"
             style={{ background: "rgba(19,19,19,0.87)", zIndex: 10 }}
           >
-            <div style={{ fontSize: 24 }}>🔒</div>
+            <Lock size={24} style={{ color: "#a0a0a0" }} />
             <div
               style={{
                 color: "#a0a0a0",
@@ -236,9 +250,9 @@ function ModuleCard({
                 lineHeight: 1.4,
               }}
             >
-              {course.price > 0 ? "Purchase this module to unlock" : "Request access to unlock"}
+              {lockReason ? lockMessages[lockReason] : (course.price > 0 ? "Purchase this module to unlock" : "Request access to unlock")}
             </div>
-            {course.price > 0 && (
+            {lockReason !== "module_not_allowed" && course.price > 0 && (
               <div style={{ marginTop: 4, color: "#ffe000", fontSize: 13, fontWeight: 700 }}>
                 ₹{(course.price as number).toLocaleString("en-IN")}
               </div>
@@ -247,6 +261,117 @@ function ModuleCard({
         )}
       </div>
     </Link>
+  );
+}
+
+// ── ModuleHero (single-module dedicated banner) ───────────────────────────────
+
+function ModuleHero({ cfg, programName, courseCount }: { cfg: ModuleConfig; programName: string | null; courseCount: number }) {
+  const accent = cfg.accentColor ?? "var(--color-accent)";
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl mb-8"
+      style={{ minHeight: 180 }}
+    >
+      {cfg.bannerUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={cfg.bannerUrl}
+          alt=""
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+        />
+      ) : (
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(135deg, ${accent}33 0%, #0a0a0a 70%)` }} />
+      )}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 100%)" }} />
+      <div className="relative p-8 flex flex-col justify-center" style={{ minHeight: 180 }}>
+        {programName && (
+          <div
+            style={{
+              display: "inline-block",
+              marginBottom: 10,
+              padding: "3px 12px",
+              borderRadius: 999,
+              background: `${accent}22`,
+              border: `1px solid ${accent}55`,
+              color: accent,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "1px",
+              textTransform: "uppercase",
+            }}
+          >
+            {programName}
+          </div>
+        )}
+        <h1 className="overlay-text" style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, maxWidth: 480 }}>
+          {cfg.displayName ?? cfg.moduleName}
+        </h1>
+        {cfg.tagline && (
+          <p className="overlay-meta" style={{ fontSize: 14, maxWidth: 380, marginBottom: 16 }}>
+            {cfg.tagline}
+          </p>
+        )}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5" style={{ color: "#ccc", fontSize: 12 }}>
+            <BookOpen size={13} />
+            <span>{courseCount} {courseCount === 1 ? "course" : "courses"}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ModuleProgressBar ─────────────────────────────────────────────────────────
+
+function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledMap: Map<string, any> }) {
+  const total = courses.length;
+  const completed = courses.filter(c => enrolledMap.get(c.id)?.completedAt).length;
+  const inProgress = courses.filter(c => {
+    const e = enrolledMap.get(c.id);
+    return e && !e.completedAt && (e.progressPercent ?? 0) > 0;
+  }).length;
+  if (total === 0) return null;
+  const pct = Math.round((completed / total) * 100);
+
+  return (
+    <div
+      className="flex items-center gap-4 p-4 rounded-xl mb-6"
+      style={{ background: "#1a1a1e", border: "1px solid #2a2a2e" }}
+    >
+      <div style={{ flex: 1 }}>
+        <div className="flex justify-between items-center mb-2">
+          <span style={{ fontSize: 12, fontWeight: 600, color: "#a0a0a8" }}>Your Progress</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f7" }}>{pct}%</span>
+        </div>
+        <div style={{ height: 6, background: "#2a2a2e", borderRadius: 6, overflow: "hidden" }}>
+          <div
+            style={{
+              width: `${pct}%`,
+              height: "100%",
+              borderRadius: 6,
+              background: "var(--color-accent)",
+              transition: "width 1s ease",
+            }}
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-4 text-center" style={{ fontSize: 11, color: "#a0a0a8" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#22c55e", lineHeight: 1 }}>{completed}</div>
+          <div>Done</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-accent)", lineHeight: 1 }}>{inProgress}</div>
+          <div>Active</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", lineHeight: 1 }}>{total}</div>
+          <div>Total</div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -272,7 +397,6 @@ function SavedVideoCard({ item }: { item: any }) {
             "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
         }}
       >
-        {/* Thumbnail */}
         {item.thumbnailUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -288,9 +412,7 @@ function SavedVideoCard({ item }: { item: any }) {
             }}
           />
         )}
-        {/* Dark overlay */}
         <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} />
-        {/* Grid (no thumb) */}
         {!item.thumbnailUrl && (
           <div
             style={{
@@ -302,7 +424,6 @@ function SavedVideoCard({ item }: { item: any }) {
             }}
           />
         )}
-        {/* Brand */}
         <div
           style={{
             position: "absolute",
@@ -316,7 +437,6 @@ function SavedVideoCard({ item }: { item: any }) {
         >
           ✦ TBT BUSINESS
         </div>
-        {/* Play icon */}
         <div
           className="relative flex items-center justify-center"
           style={{
@@ -331,9 +451,8 @@ function SavedVideoCard({ item }: { item: any }) {
             fontSize: 14,
           }}
         >
-          ▶
+          <Play size={14} />
         </div>
-        {/* Title */}
         <div
           className="line-clamp-2 relative"
           style={{
@@ -352,28 +471,285 @@ function SavedVideoCard({ item }: { item: any }) {
   );
 }
 
-// ── Footer ─────────────────────────────────────────────────────────────────────
+// ── Search + Filter bar ───────────────────────────────────────────────────────
 
-function PageFooter() {
+function FilterBar({
+  search, setSearch,
+  level, setLevel,
+  sort, setSort,
+  category, setCategory,
+  categories,
+  uiStrings,
+}: {
+  search: string; setSearch: (v: string) => void;
+  level: string; setLevel: (v: string) => void;
+  sort: "newest" | "popular"; setSort: (v: "newest" | "popular") => void;
+  category: string; setCategory: (v: string) => void;
+  categories: any[];
+  uiStrings: any;
+}) {
   return (
-    <div style={{ paddingTop: 32, paddingBottom: 16, borderTop: "1px solid #2a2a2e" }}>
-      <div className="flex flex-col sm:flex-row sm:items-start gap-6 justify-between">
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
-            ✦ Tamil Business Tribe
-          </div>
-          <div style={{ fontSize: 12, color: "#92929b", maxWidth: 280, lineHeight: 1.6 }}>
-            India&apos;s premier business mentorship community. Grow your business with expert
-            guidance.
-          </div>
+    <div className="flex flex-col sm:flex-row gap-3 mb-5">
+      <div className="relative" style={{ flex: 1, maxWidth: 320 }}>
+        <Search
+          size={14}
+          style={{
+            position: "absolute",
+            left: 12,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "#92929b",
+          }}
+        />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={uiStrings?.coursesSearchPlaceholder ?? "Search modules..."}
+          style={{
+            width: "100%",
+            paddingLeft: 36,
+            paddingRight: 16,
+            height: 40,
+            fontSize: 13,
+            color: "#f5f5f7",
+            background: "#242428",
+            border: "1px solid #414146",
+            borderRadius: 9,
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+          onFocus={(e) => (e.target.style.borderColor = "var(--color-accent)")}
+          onBlur={(e) => (e.target.style.borderColor = "#414146")}
+        />
+      </div>
+      <div className="flex gap-1.5 flex-wrap items-center">
+        {LEVELS.map(({ value, label }) => (
+          <button
+            key={value}
+            onClick={() => setLevel(value)}
+            style={{
+              height: 40,
+              padding: "0 14px",
+              borderRadius: 9,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              background: level === value ? "var(--color-accent)" : "#242428",
+              color: level === value ? "white" : "#92929b",
+              border: `1px solid ${level === value ? "transparent" : "#414146"}`,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        {categories.length > 0 && (
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            style={{
+              height: 40,
+              padding: "0 12px",
+              borderRadius: 9,
+              fontSize: 12,
+              fontWeight: 600,
+              background: "#242428",
+              border: "1px solid #414146",
+              color: "#92929b",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="all">{uiStrings?.coursesCategoryAll ?? "All Categories"}</option>
+            {categories.map((c: any) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        )}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as "newest" | "popular")}
+          style={{
+            height: 40,
+            padding: "0 12px",
+            borderRadius: 9,
+            fontSize: 12,
+            fontWeight: 600,
+            background: "#242428",
+            border: "1px solid #414146",
+            color: "#92929b",
+            outline: "none",
+            cursor: "pointer",
+          }}
+        >
+          {SORT_OPTIONS.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+// ── CourseGrid ────────────────────────────────────────────────────────────────
+
+function CourseGrid({
+  courses,
+  enrolledMap,
+  allowedModules,
+  isLoading,
+  uiStrings,
+  onClearFilters,
+  hasFilters,
+}: {
+  courses: any[];
+  enrolledMap: Map<string, any>;
+  allowedModules: string[];
+  isLoading: boolean;
+  uiStrings: any;
+  onClearFilters: () => void;
+  hasFilters: boolean;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  useEffect(() => { setShowAll(false); }, [courses]);
+
+  const visibleCourses = showAll ? courses : courses.slice(0, 6);
+
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={i}
+            className="animate-pulse"
+            style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (courses.length === 0) {
+    return (
+      <div
+        style={{
+          textAlign: "center",
+          padding: "60px 20px",
+          background: "#242428",
+          borderRadius: 12,
+          border: "1px solid #414146",
+        }}
+      >
+        <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
+        <p style={{ color: "#92929b", fontSize: 14 }}>{uiStrings?.coursesEmptyState ?? "No modules found"}</p>
+        {hasFilters && (
+          <button
+            onClick={onClearFilters}
+            style={{
+              marginTop: 12,
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--color-accent)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+            }}
+          >
+            {uiStrings?.coursesClearFilters ?? "Clear filters"}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {visibleCourses.map((course: any, i) => {
+          let lockReason: LockReason = null;
+          if (allowedModules.length > 0 && course.module && !allowedModules.includes(course.module)) {
+            lockReason = "module_not_allowed";
+          } else if (!course.hasAccess && !enrolledMap.has(course.id)) {
+            lockReason = course.price > 0 ? "purchase_required" : "not_enrolled";
+          }
+          return (
+            <ModuleCard
+              key={course.id}
+              course={course}
+              enrollment={enrolledMap.get(course.id)}
+              index={i}
+              lockReason={lockReason}
+            />
+          );
+        })}
+      </div>
+      {!showAll && courses.length > 6 && (
+        <div style={{ textAlign: "center", marginTop: 24 }}>
+          <button
+            onClick={() => setShowAll(true)}
+            style={{
+              padding: "10px 32px",
+              borderRadius: 9,
+              background: "#242428",
+              border: "1px solid #414146",
+              color: "#f5f5f7",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            {uiStrings?.coursesLoadMore ?? "Load more"} ({courses.length - 6} more)
+          </button>
         </div>
-        <div style={{ fontSize: 12, color: "#92929b" }}>
-          <div style={{ marginBottom: 6 }}>📞 +91 80151 39542</div>
-          <div style={{ marginBottom: 12 }}>✉ helpdesk@tamilbusinesstribe.com</div>
-          <div style={{ fontSize: 10, color: "#55555b" }}>
-            © {new Date().getFullYear()} Tamil Business Tribe. All rights reserved.
-          </div>
-        </div>
+      )}
+    </>
+  );
+}
+
+// ── NewMemberCoursesView ──────────────────────────────────────────────────────
+
+function NewMemberCoursesView({ uiStrings }: { uiStrings: any }) {
+  return (
+    <div
+      className="rounded-2xl p-8 text-center"
+      style={{ background: "linear-gradient(135deg, #1a1a2e 0%, #0a0a0f 100%)", border: "1px solid #2a2a3a" }}
+    >
+      <div style={{ fontSize: 48, marginBottom: 16 }}>🚀</div>
+      <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f5f5f7", marginBottom: 10 }}>
+        {uiStrings?.coursesNewMemberTitle ?? "Your Learning Journey Starts Here"}
+      </h2>
+      <p style={{ fontSize: 14, color: "#92929b", maxWidth: 400, margin: "0 auto 24px" }}>
+        {uiStrings?.coursesNewMemberDesc ?? "Join a program or purchase a course to access our library of business modules."}
+      </p>
+      <div className="flex gap-3 justify-center flex-wrap">
+        <Link
+          href="/programs"
+          style={{
+            padding: "10px 24px",
+            borderRadius: 10,
+            background: "var(--color-accent)",
+            color: "white",
+            fontSize: 13,
+            fontWeight: 700,
+            textDecoration: "none",
+          }}
+        >
+          {uiStrings?.coursesExplorePrograms ?? "Explore Programs"}
+        </Link>
+        <Link
+          href="/Products"
+          style={{
+            padding: "10px 24px",
+            borderRadius: 10,
+            background: "#242428",
+            border: "1px solid #414146",
+            color: "#f5f5f7",
+            fontSize: 13,
+            fontWeight: 700,
+            textDecoration: "none",
+          }}
+        >
+          {uiStrings?.coursesViewPlans ?? "View Plans"}
+        </Link>
       </div>
     </div>
   );
@@ -386,33 +762,34 @@ export default function CoursesPage() {
   const [level, setLevel]       = useState("all");
   const [sort, setSort]         = useState<"newest" | "popular">("newest");
   const [category, setCategory] = useState("all");
-  const [showAll, setShowAll]   = useState(false);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+
+  const { uiStrings } = useSiteConfig();
 
   // CF-03 — reset pagination when any filter changes
-  useEffect(() => {
-    setShowAll(false);
-  }, [search, level, sort, category]);
-
-  const { data: me }       = useMe();
-  const updateProfile      = useUpdateProfile();
-  const memberTrack        = (me as any)?.businessType as string | null | undefined;
+  useEffect(() => { /* no-op: CourseGrid manages its own showAll */ }, [search, level, sort, category]);
 
   const { data: categories } = useCourseCategories();
-
-  const { data: catalogData, isLoading: catalogLoading } = useCourses({
-    search:      search || undefined,
-    level:       level !== "all" ? level : undefined,
-    sort,
-    category:    category !== "all" ? category : undefined,
-    moduleTitle: memberTrack ?? undefined,
-    limit: 24,
-  });
-  const { data: enrollments, isLoading: enrollLoading } = useMyEnrollments();
+  const { data: enrollments } = useMyEnrollments();
   const { data: watchHistoryData } = useWatchHistory({ limit: 3 });
 
-  const catalogCourses: any[]  = catalogData?.data ?? [];
-  const myEnrollments: any[]   = enrollments ?? [];
-  const savedVideos: any[]     = (watchHistoryData as any)?.data ?? [];
+  const { data: catalogData, isLoading: catalogLoading } = useCourses({
+    search:   search || undefined,
+    level:    level !== "all" ? level : undefined,
+    sort,
+    category: category !== "all" ? category : undefined,
+    limit: 100,
+  });
+
+  const allCourses: any[]    = catalogData?.data ?? [];
+  const meta: any            = (catalogData as any)?.meta ?? {};
+  const personalizationState: "new" | "program" | "direct" = meta.personalizationState ?? "new";
+  const allowedModules: string[]     = meta.allowedModules ?? [];
+  const programName: string | null   = meta.programName ?? null;
+  const moduleConfigs: ModuleConfig[] = meta.moduleConfigs ?? [];
+
+  const myEnrollments: any[]  = enrollments ?? [];
+  const savedVideos: any[]    = (watchHistoryData as any)?.data ?? [];
 
   const enrolledMap = useMemo(() => {
     const m = new Map<string, any>();
@@ -420,7 +797,45 @@ export default function CoursesPage() {
     return m;
   }, [myEnrollments]);
 
-  const visibleCourses = showAll ? catalogCourses : catalogCourses.slice(0, 6);
+  // Module tabs — when program has multiple allowed modules
+  const availableModules = useMemo(() => {
+    if (allowedModules.length <= 1) return [];
+    return allowedModules.map(name => {
+      const cfg = moduleConfigs.find(m => m.moduleName === name);
+      return { name, displayName: cfg?.displayName ?? name };
+    });
+  }, [allowedModules, moduleConfigs]);
+
+  // Initialize active tab when modules load
+  useEffect(() => {
+    if (availableModules.length > 0 && activeTab === null) {
+      setActiveTab(availableModules[0].name);
+    }
+  }, [availableModules, activeTab]);
+
+  // Filter courses by active tab (multi-module) or allowed module (single-module)
+  const filteredCourses = useMemo(() => {
+    if (availableModules.length > 1 && activeTab) {
+      return allCourses.filter(c => c.module === activeTab);
+    }
+    if (allowedModules.length === 1) {
+      return allCourses.filter(c => c.module === allowedModules[0] || !c.module);
+    }
+    return allCourses;
+  }, [allCourses, availableModules, activeTab, allowedModules]);
+
+  const hasFilters = !!(search || level !== "all" || category !== "all");
+  const clearFilters = () => { setSearch(""); setLevel("all"); setSort("newest"); setCategory("all"); };
+
+  const catList: any[] = (categories as any) ?? [];
+
+  // Single-module config (used when allowedModules.length === 1)
+  const singleModuleCfg = useMemo(() => {
+    if (allowedModules.length !== 1) return null;
+    return moduleConfigs.find(m => m.moduleName === allowedModules[0]) ?? null;
+  }, [allowedModules, moduleConfigs]);
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-8 pb-8">
@@ -428,259 +843,175 @@ export default function CoursesPage() {
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
       <MentorshipDashboard />
 
-      {/* ── Modules ──────────────────────────────────────────────────── */}
-      <section>
-        {/* Section header */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>Modules</h2>
-          <div className="flex items-center gap-3">
-            {!catalogLoading && catalogCourses.length > 0 && (
-              <span style={{ fontSize: 11, color: "#92929b" }}>
-                {catalogCourses.length} modules
-              </span>
-            )}
-            <Link
-              href="/learning/badges"
-              style={{
-                padding: "6px 16px",
-                border: "1px solid #77777e",
-                borderRadius: 9,
-                color: "#a0a0a8",
-                fontSize: 12,
-                fontWeight: 500,
-                textDecoration: "none",
-              }}
-            >
-              My Badges
-            </Link>
-          </div>
-        </div>
+      {/* ── New Member State ─────────────────────────────────────────── */}
+      {personalizationState === "new" && !catalogLoading && allCourses.length === 0 && (
+        <NewMemberCoursesView uiStrings={uiStrings} />
+      )}
 
-        {/* Track selector */}
+      {/* ── Single-Module Dedicated View (CP-16) ─────────────────────── */}
+      {personalizationState === "program" && allowedModules.length === 1 && singleModuleCfg && (
+        <section>
+          <ModuleHero
+            cfg={singleModuleCfg}
+            programName={programName}
+            courseCount={filteredCourses.length}
+          />
+          <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
+          <FilterBar
+            search={search} setSearch={setSearch}
+            level={level} setLevel={setLevel}
+            sort={sort} setSort={setSort}
+            category={category} setCategory={setCategory}
+            categories={catList}
+            uiStrings={uiStrings}
+          />
+          <CourseGrid
+            courses={filteredCourses}
+            enrolledMap={enrolledMap}
+            allowedModules={[]}
+            isLoading={catalogLoading}
+            uiStrings={uiStrings}
+            onClearFilters={clearFilters}
+            hasFilters={hasFilters}
+          />
+        </section>
+      )}
 
-        {/* Active track badge + clear */}
-        {memberTrack && (
-          <div className="flex items-center gap-2 mb-4">
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                padding: "3px 10px",
-                borderRadius: 999,
-                background: "rgba(220,38,38,0.12)",
-                border: "1px solid rgba(220,38,38,0.28)",
-                color: "#dc2626",
-              }}
-            >
-              {memberTrack} Track
-            </span>
-            <button
-              onClick={() => updateProfile.mutate({ businessType: null })}
-              disabled={updateProfile.isPending}
-              style={{
-                fontSize: 11,
-                textDecoration: "underline",
-                color: "#92929b",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                opacity: updateProfile.isPending ? 0.5 : 1,
-              }}
-            >
-              Show all
-            </button>
-          </div>
-        )}
-
-        {/* Search + filters */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
-          <div className="relative" style={{ flex: 1, maxWidth: 320 }}>
-            <Search
-              size={14}
-              style={{
-                position: "absolute",
-                left: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                color: "#92929b",
-              }}
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search modules..."
-              style={{
-                width: "100%",
-                paddingLeft: 36,
-                paddingRight: 16,
-                height: 40,
-                fontSize: 13,
-                color: "#f5f5f7",
-                background: "#242428",
-                border: "1px solid #414146",
-                borderRadius: 9,
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-              onFocus={(e) => (e.target.style.borderColor = "#dc2626")}
-              onBlur={(e) => (e.target.style.borderColor = "#414146")}
-            />
-          </div>
-          <div className="flex gap-1.5 flex-wrap items-center">
-            {LEVELS.map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => setLevel(value)}
-                style={{
-                  height: 40,
-                  padding: "0 14px",
-                  borderRadius: 9,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  background: level === value ? "#dc2626" : "#242428",
-                  color: level === value ? "white" : "#92929b",
-                  border: `1px solid ${level === value ? "transparent" : "#414146"}`,
-                }}
-              >
-                {label}
-              </button>
-            ))}
-            {categories && (categories as any[]).length > 0 && (
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                style={{
-                  height: 40,
-                  padding: "0 12px",
-                  borderRadius: 9,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: "#242428",
-                  border: "1px solid #414146",
-                  color: "#92929b",
-                  outline: "none",
-                  cursor: "pointer",
-                }}
-              >
-                <option value="all">All Categories</option>
-                {(categories as any[]).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            )}
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as "newest" | "popular")}
-              style={{
-                height: 40,
-                padding: "0 12px",
-                borderRadius: 9,
-                fontSize: 12,
-                fontWeight: 600,
-                background: "#242428",
-                border: "1px solid #414146",
-                color: "#92929b",
-                outline: "none",
-                cursor: "pointer",
-              }}
-            >
-              {SORT_OPTIONS.map(({ value, label }) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Module grid */}
-        {catalogLoading || enrollLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {Array.from({ length: 6 }).map((_, i) => (
+      {/* ── Multi-Module Program View ─────────────────────────────────── */}
+      {personalizationState === "program" && allowedModules.length > 1 && (
+        <section>
+          {programName && (
+            <div className="mb-6">
               <div
-                key={i}
-                className="animate-pulse"
-                style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }}
-              />
-            ))}
-          </div>
-        ) : catalogCourses.length === 0 ? (
-          <div
-            style={{
-              textAlign: "center",
-              padding: "60px 20px",
-              background: "#242428",
-              borderRadius: 12,
-              border: "1px solid #414146",
-            }}
-          >
-            <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
-            <p style={{ color: "#92929b", fontSize: 14 }}>No modules found</p>
-            {(search || level !== "all" || category !== "all") && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setLevel("all");
-                  setSort("newest");
-                  setCategory("all");
-                }}
                 style={{
-                  marginTop: 12,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "#dc2626",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
+                  display: "inline-block",
+                  padding: "4px 14px",
+                  borderRadius: 999,
+                  background: "rgba(220,38,38,0.1)",
+                  border: "1px solid rgba(220,38,38,0.25)",
+                  color: "var(--color-accent)",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: "1px",
+                  textTransform: "uppercase",
+                  marginBottom: 10,
                 }}
               >
-                Clear filters
-              </button>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {visibleCourses.map((course: any, i) => (
-                <ModuleCard
-                  key={course.id}
-                  course={course}
-                  enrollment={enrolledMap.get(course.id)}
-                  index={i}
-                />
-              ))}
+                {programName}
+              </div>
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "#f5f5f7" }}>
+                {uiStrings?.coursesProgramTitle ?? "Your Program Modules"}
+              </h2>
             </div>
-            {!showAll && catalogCourses.length > 6 && (
-              <div style={{ textAlign: "center", marginTop: 24 }}>
+          )}
+
+          {/* Module tabs */}
+          {availableModules.length > 1 && (
+            <div className="flex gap-2 mb-5 overflow-x-auto pb-1">
+              {availableModules.map(({ name, displayName }) => (
                 <button
-                  onClick={() => setShowAll(true)}
+                  key={name}
+                  onClick={() => setActiveTab(name)}
                   style={{
-                    padding: "10px 32px",
+                    padding: "8px 20px",
                     borderRadius: 9,
-                    background: "#242428",
-                    border: "1px solid #414146",
-                    color: "#f5f5f7",
                     fontSize: 13,
                     fontWeight: 600,
+                    whiteSpace: "nowrap",
                     cursor: "pointer",
+                    background: activeTab === name ? "var(--color-accent)" : "#242428",
+                    color: activeTab === name ? "white" : "#92929b",
+                    border: `1px solid ${activeTab === name ? "transparent" : "#414146"}`,
+                    transition: "all 0.15s",
                   }}
                 >
-                  Load more ({catalogCourses.length - 6} more)
+                  {displayName}
                 </button>
-              </div>
-            )}
-          </>
-        )}
-      </section>
+              ))}
+            </div>
+          )}
+
+          <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
+
+          <FilterBar
+            search={search} setSearch={setSearch}
+            level={level} setLevel={setLevel}
+            sort={sort} setSort={setSort}
+            category={category} setCategory={setCategory}
+            categories={catList}
+            uiStrings={uiStrings}
+          />
+          <CourseGrid
+            courses={filteredCourses}
+            enrolledMap={enrolledMap}
+            allowedModules={[]}
+            isLoading={catalogLoading}
+            uiStrings={uiStrings}
+            onClearFilters={clearFilters}
+            hasFilters={hasFilters}
+          />
+        </section>
+      )}
+
+      {/* ── Direct Access / General Catalog View ─────────────────────── */}
+      {(personalizationState === "direct" || (personalizationState === "new" && (allCourses.length > 0 || catalogLoading))) && (
+        <section>
+          <div className="flex items-center justify-between mb-5">
+            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
+              {uiStrings?.coursesCatalogTitle ?? "Modules"}
+            </h2>
+            <div className="flex items-center gap-3">
+              {!catalogLoading && allCourses.length > 0 && (
+                <span style={{ fontSize: 11, color: "#92929b" }}>
+                  {allCourses.length} {uiStrings?.coursesModuleCount ?? "modules"}
+                </span>
+              )}
+              <Link
+                href="/learning/badges"
+                style={{
+                  padding: "6px 16px",
+                  border: "1px solid #77777e",
+                  borderRadius: 9,
+                  color: "#a0a0a8",
+                  fontSize: 12,
+                  fontWeight: 500,
+                  textDecoration: "none",
+                }}
+              >
+                {uiStrings?.coursesMyBadges ?? "My Badges"}
+              </Link>
+            </div>
+          </div>
+
+          <FilterBar
+            search={search} setSearch={setSearch}
+            level={level} setLevel={setLevel}
+            sort={sort} setSort={setSort}
+            category={category} setCategory={setCategory}
+            categories={catList}
+            uiStrings={uiStrings}
+          />
+          <CourseGrid
+            courses={allCourses}
+            enrolledMap={enrolledMap}
+            allowedModules={[]}
+            isLoading={catalogLoading}
+            uiStrings={uiStrings}
+            onClearFilters={clearFilters}
+            hasFilters={hasFilters}
+          />
+        </section>
+      )}
 
       {/* ── Saved Videos ─────────────────────────────────────────────── */}
       {savedVideos.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
-              Saved Videos
+              {uiStrings?.coursesSavedVideos ?? "Saved Videos"}
             </h2>
             <Link href="/history" style={{ fontSize: 12, color: "#92929b", textDecoration: "underline" }}>
-              View All
+              {uiStrings?.coursesViewAll ?? "View All"}
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -692,7 +1023,25 @@ export default function CoursesPage() {
       )}
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
-      <PageFooter />
+      <div style={{ paddingTop: 32, paddingBottom: 16, borderTop: "1px solid #2a2a2e" }}>
+        <div className="flex flex-col sm:flex-row sm:items-start gap-6 justify-between">
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
+              ✦ Tamil Business Tribe
+            </div>
+            <div style={{ fontSize: 12, color: "#92929b", maxWidth: 280, lineHeight: 1.6 }}>
+              {uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance."}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "#92929b" }}>
+            <div style={{ marginBottom: 6 }}>📞 +91 80151 39542</div>
+            <div style={{ marginBottom: 12 }}>✉ helpdesk@tamilbusinesstribe.com</div>
+            <div style={{ fontSize: 10, color: "#55555b" }}>
+              © {new Date().getFullYear()} Tamil Business Tribe. All rights reserved.
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
