@@ -819,7 +819,8 @@ Two separate Cloud Run services per app (backend and user-web), two separate bra
 
 - **Admin Frontend → Vercel** — auto-deploy on push to `main`; root dir `tbt-admin/admin-panel`. The Vercel project's `NEXT_PUBLIC_API_URL` points to the **production** Cloud Run service. Still the only TBT frontend on Vercel.
 - **User Web → Google Cloud Run** (migrated off Vercel 2026-09-10) — custom domain `https://app.tamilbusinesstribe.com` now fronts the Cloud Run service. Built via `tbt-user-web/Dockerfile` (multi-stage Node 24 Alpine, Next.js `output: "standalone"`) deployed with `gcloud run deploy --source tbt-user-web`. CI jobs: `build-user-web` (typecheck + path-filter gate) → `deploy-user-web-staging` / `deploy-user-web-production` in `.github/workflows/ci-cd.yml`.
-- **To promote staging → production:** `git push origin main:production`
+- **To promote staging → production:** `git push origin main:production`, or one click: Actions → **Deploy to production (one click)** → Run workflow → type `deploy` (`.github/workflows/deploy-production.yml` fast-forwards `production` to `main`, then starts CI/CD on `production`; it refuses if `production` has commits not on `main`).
+- **One-click redeploy of a branch:** Actions → **CI/CD** → Run workflow → pick `main` (staging) or `production`. A manual run deploys backend + user-web regardless of which paths changed; build/typecheck/test gates still run first.
 - **`prisma db push`** runs against `PROD_DATABASE_URL` in **both** CI jobs (staging and production) — so the production DB schema always tracks `main` even before a production backend deploy.
 - CORS: `USER_WEB_URL` + `ADMIN_WEB_URL` + `CORS_EXTRA_ORIGINS` (comma-separated). Adding a new domain → add to `CORS_EXTRA_ORIGINS` in ci-cd.yml `--set-env-vars`.
 

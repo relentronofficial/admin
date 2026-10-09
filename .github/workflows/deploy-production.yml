@@ -1,0 +1,74 @@
+name: Deploy to production (one click)
+
+# Actions → "Deploy to production (one click)" → Run workflow → type "deploy".
+#
+# Promotes main to production and deploys it, replacing the manual
+# `git push origin main:production`:
+#   1. checks production can fast-forward to main (never rewrites production),
+#   2. moves the production branch to main,
+#   3. starts the CI/CD workflow on production, which runs every build/test gate
+#      and then deploys backend + user-web to the production Cloud Run services.
+#
+# The branch push uses GITHUB_TOKEN, which GitHub deliberately does not let start
+# push-triggered workflows — step 3 starts CI/CD explicitly, so production is
+# deployed exactly once.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "deploy" to promote main to production'
+        required: true
+
+permissions:
+  contents: write # move the production branch
+  actions: write # start the CI/CD workflow
+
+# One promotion at a time; a second click waits instead of racing the first.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.event.inputs.confirm == 'deploy'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check production can fast-forward to main
+        run: |
+          git fetch origin production main
+          if ! git merge-base --is-ancestor origin/production origin/main; then
+            echo "::error::production has commits that are not on main. Merge them into main first — this workflow never rewrites production."
+            git log --oneline origin/main..origin/production
+            exit 1
+          fi
+
+      - name: Summarise what will be deployed
+        run: |
+          {
+            echo "## Promoting main → production"
+            echo
+            echo "main: \`$(git rev-parse --short origin/main)\` · production before: \`$(git rev-parse --short origin/production)\`"
+            echo
+            if [ "$(git rev-parse origin/production)" = "$(git rev-parse origin/main)" ]; then
+              echo "production already matches main — redeploying the current code."
+            else
+              echo "### Commits going live"
+              git log --oneline --no-merges origin/production..origin/main | sed 's/^/- /'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Move production to main
+        run: git push origin "$(git rev-parse origin/main):refs/heads/production"
+
+      - name: Start the production deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run ci-cd.yml --ref production
+          echo "Started CI/CD on production — follow it under Actions → CI/CD." >> "$GITHUB_STEP_SUMMARY"
