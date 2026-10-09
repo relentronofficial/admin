@@ -261,7 +261,7 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
   const effectiveMethod = rzpRow?.razorpay_payment_id ? 'razorpay' : (rzpRow?.method ?? 'manual');
 
   await req.server.prisma.$executeRawUnsafe(
-    `UPDATE course_payments SET status='completed', method=$1, paid_at=NOW(), granted_by=$2, updated_at=NOW() WHERE id=$3::uuid`,
+    `UPDATE course_payments SET status='completed', method=$1::\"CoursePaymentMethod\", paid_at=NOW(), granted_by=$2, updated_at=NOW() WHERE id=$3::uuid`,
     effectiveMethod, adminId, paymentId,
   );
 

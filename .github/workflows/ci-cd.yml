@@ -5,6 +5,11 @@ on:
     branches: [main, production, develop]
   pull_request:
     branches: [main, production, develop]
+  # One-click deploy: Actions → CI/CD → "Run workflow" → pick a branch.
+  # main → staging, production → production. A manual run deploys every part
+  # (backend + user-web) instead of only what the last push changed, and still
+  # runs every build/typecheck/test gate first.
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -19,12 +24,14 @@ jobs:
       run:
         working-directory: tbt-admin
     outputs:
-      backend_changed: ${{ steps.filter.outputs.backend }}
+      # Manual runs (workflow_dispatch) always deploy; pushes deploy only what changed.
+      backend_changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.backend }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Detect changed paths
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@v3
         with:
           base: ${{ github.event.before }}
@@ -66,12 +73,13 @@ jobs:
   build-user-web:
     runs-on: ubuntu-latest
     outputs:
-      changed: ${{ steps.filter.outputs.user_web }}
+      changed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.user_web }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Detect changed paths
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         uses: dorny/paths-filter@v3
         with:
           base: ${{ github.event.before }}
@@ -80,7 +88,7 @@ jobs:
               - 'tbt-user-web/**'
 
       - name: Setup Node.js
-        if: steps.filter.outputs.user_web == 'true'
+        if: steps.filter.outputs.user_web == 'true' || github.event_name == 'workflow_dispatch'
         uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -88,12 +96,12 @@ jobs:
           cache-dependency-path: tbt-user-web/package-lock.json
 
       - name: Install dependencies
-        if: steps.filter.outputs.user_web == 'true'
+        if: steps.filter.outputs.user_web == 'true' || github.event_name == 'workflow_dispatch'
         working-directory: tbt-user-web
         run: npm ci
 
       - name: Typecheck
-        if: steps.filter.outputs.user_web == 'true'
+        if: steps.filter.outputs.user_web == 'true' || github.event_name == 'workflow_dispatch'
         working-directory: tbt-user-web
         env:
           NEXT_PUBLIC_API_URL: https://tbt-backend-464464507912.asia-south1.run.app

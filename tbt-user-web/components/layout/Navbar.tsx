@@ -409,7 +409,7 @@ export function Navbar() {
 
   const siteName = config?.siteName ?? "TBT";
   const logoUrl = config?.logoUrl ?? null;
-  const homeHref = nav[0]?.href ?? "/tbt";
+  const homeHref = nav[0]?.href ?? "/community";
 
   // Dark mode: use admin-configured logoUrl (white brand logo) or default white logo.
   // Light mode: always use the black logo — admin's logoUrl is the white version.

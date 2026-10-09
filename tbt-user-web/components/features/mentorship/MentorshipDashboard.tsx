@@ -1636,6 +1636,35 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         />
       </motion.div>
 
+      {/* ── Expert Support Calls ─────────────────────────────────────── */}
+      <motion.div variants={fadeUp}>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Expert Support Calls</h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+              style={{ background: "#202024", color: "#f5f5f7" }}
+            >
+              🔴 {allCallsUsed}/{allCallsAllocated} Completed
+            </span>
+            <span
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
+              style={{ background: "#202024", color: "#f5f5f7" }}
+            >
+              🟣 {allCallsRemaining} Quota Remaining
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
+          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
+          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
+          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
+          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
+          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
+        </div>
+      </motion.div>
+
       {/* ── Customer Journey ─────────────────────────────────────────── */}
       <motion.div variants={fadeUp}>
         <div className="flex items-center justify-between mb-3">
@@ -1699,35 +1728,6 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
             metricColor="#35cb76"
             leaderboard
           />
-        </div>
-      </motion.div>
-
-      {/* ── Expert Support Calls ─────────────────────────────────────── */}
-      <motion.div variants={fadeUp}>
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Expert Support Calls</h2>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-              style={{ background: "#202024", color: "#f5f5f7" }}
-            >
-              🔴 {allCallsUsed}/{allCallsAllocated} Completed
-            </span>
-            <span
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-              style={{ background: "#202024", color: "#f5f5f7" }}
-            >
-              🟣 {allCallsRemaining} Quota Remaining
-            </span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
-          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
-          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
-          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
-          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
-          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
         </div>
       </motion.div>
 

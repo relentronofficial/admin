@@ -11,7 +11,7 @@ export default function LoadingPage() {
   useEffect(() => {
     if (isLoading) return;
     const delay = config?.splashDurationMs ?? 1500;
-    const t = setTimeout(() => router.replace("/tbt"), delay);
+    const t = setTimeout(() => router.replace("/community"), delay);
     return () => clearTimeout(t);
   }, [isLoading, config, router]);
 

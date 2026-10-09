@@ -19,8 +19,10 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
-      { source: "/eiflix", destination: "/tbt", permanent: true },
-      { source: "/eiflix/:path*", destination: "/tbt/:path*", permanent: true },
+      { source: "/eiflix", destination: "/discover", permanent: true },
+      { source: "/eiflix/:path*", destination: "/discover/:path*", permanent: true },
+      { source: "/tbt", destination: "/discover", permanent: true },
+      { source: "/tbt/:path*", destination: "/discover/:path*", permanent: true },
       { source: "/sign-in", destination: "/login", permanent: false },
       { source: "/sign-up", destination: "/login", permanent: false },
     ];
