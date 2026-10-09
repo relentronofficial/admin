@@ -3,8 +3,8 @@ import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
-import type { SiteConfig, NavItem, UiStrings } from "@/types";
-import type { RightIcons } from "@/lib/context/SiteConfigContext";
+import type { SiteConfig, UiStrings } from "@/types";
+import type { NavConfigPayload } from "@/lib/context/SiteConfigContext";
 
 // Note: @livekit/components-styles is imported only in WorkshopLiveCall.tsx
 
@@ -85,7 +85,9 @@ export default async function RootLayout({
     // Short revalidate: site config carries the admin-controlled themeMode, so a
     // Dark/Light change in Admin must reach new page loads within seconds.
     fetchPublicJson<SiteConfig>("/api/pub/config/site", 30),
-    fetchPublicJson<{ items: NavItem[]; rightIcons: RightIcons; hiddenMenuKeys?: string[] }>("/api/pub/config/nav"),
+    // Short revalidate: nav carries the admin's page visibility, which also gates
+    // direct URL access — a Navigation change must reach new page loads quickly.
+    fetchPublicJson<NavConfigPayload>("/api/pub/config/nav", 30),
     fetchPublicJson<UiStrings>("/api/pub/config/ui-strings"),
   ]);
 

@@ -8,6 +8,15 @@ import { toast } from "react-hot-toast";
 
 const EMPTY = { label: "", href: "", isVisible: true };
 
+// Platform Sections that render as links in the web nav bar — they appear in the drag
+// list so the admin sets their position among the nav items. Visibility is still
+// toggled under "Platform Sections" below (hiddenMenuKeys).
+const ORDERABLE_SECTIONS = [
+  { key: "community", label: "Community", href: "/community" },
+  { key: "ebooks", label: "Ebooks", href: "/ebooks" },
+  { key: "podcasts", label: "Podcasts", href: "/podcasts" },
+];
+
 const FIXED_MENUS = [
   { key: "community", label: "Community Feed", desc: "Web nav + mobile drawer" },
   { key: "ebooks", label: "E-Book Library", desc: "Web nav + mobile drawer" },
@@ -76,10 +85,21 @@ export default function NavigationPage() {
   const [localItems, setLocalItems] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
 
+  // The drag list = nav items + the Platform Sections that render as web nav links,
+  // arranged by the saved combined order (site_configs.nav_order). Items not in the
+  // saved order keep the default position: nav items first, then sections.
   useEffect(() => {
-    setLocalItems(serverItems);
+    const sections = ORDERABLE_SECTIONS.map((s) => ({ id: `section:${s.key}`, label: s.label, href: s.href, isSection: true, sectionKey: s.key }));
+    const combined: any[] = [...serverItems, ...sections];
+    const savedOrder: string[] | null = Array.isArray(siteConfig?.navOrder) ? siteConfig.navOrder : null;
+    const rank = new Map((savedOrder ?? []).map((id, i) => [id, i]));
+    const ordered = combined
+      .map((item, i) => ({ item, i, r: rank.get(item.id) ?? Number.MAX_SAFE_INTEGER }))
+      .sort((a, b) => a.r - b.r || a.i - b.i)
+      .map(({ item }) => item);
+    setLocalItems(ordered);
     setIsDirty(false);
-  }, [data]);
+  }, [data, siteConfigData]);
 
   // Modal state
   const [showForm, setShowForm] = useState(false);
@@ -246,6 +266,17 @@ export default function NavigationPage() {
                     <p className="text-sm font-medium text-[#f0f0f0]">{item.label}</p>
                     <p className="text-[11px] text-[#777] font-mono truncate">{item.href}</p>
                   </div>
+                  {item.isSection ? (
+                    // Platform Section: position only — show/hide lives under "Platform Sections" below.
+                    <div className="flex items-center gap-2 shrink-0">
+                      {hiddenMenuKeys.includes(item.sectionKey) && (
+                        <span className="flex items-center gap-1 text-[10px] text-[#777] font-rajdhani uppercase tracking-widest" title="Hidden under Platform Sections">
+                          <EyeOff size={12} /> Hidden
+                        </span>
+                      )}
+                      <span className="text-[10px] text-[#888] border border-[#333] rounded px-1.5 py-0.5 font-rajdhani uppercase tracking-widest">Platform section</span>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => toggleVisible(item)}
@@ -261,6 +292,7 @@ export default function NavigationPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  )}
                 </div>
               ))}
             </div>

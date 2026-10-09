@@ -23,6 +23,7 @@ import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { StreakButton } from "./StreakButton";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
+import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
 
 // ── Notification dropdown ─────────────────────────────────────────────────────
@@ -305,8 +306,10 @@ export function Navbar() {
   routerRef.current = router;
 
   const { sidebarOpen, setSidebarOpen, toggleSidebar, theme } = useUIStore();
-  const { config, nav, rightIcons, hiddenMenuKeys } = useSiteConfig();
+  const { config, nav, rightIcons, hiddenMenuKeys, navOrder } = useSiteConfig();
   const queryClient = useQueryClient();
+  // Nav items + Community/Ebooks/Podcasts in the order set in Admin → Navigation.
+  const navMenu = buildNavMenu({ nav, hiddenMenuKeys, navOrder });
 
   const [notifOpen, setNotifOpen] = useState(false);
 
@@ -467,7 +470,7 @@ export function Navbar() {
 
         {/* Drawer nav items */}
         <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-          {nav.map(({ id, href, label }) => {
+          {navMenu.map(({ id, href, label }) => {
             const active =
               pathname === href ||
               pathname.startsWith(`${href}/`) ||
@@ -494,51 +497,9 @@ export function Navbar() {
             style={{ borderColor: "var(--color-border-subtle)" }}
           />
           {(() => {
-            const communityActive = pathname === "/community" || pathname.startsWith("/community/");
-            const ebooksActive = pathname === "/ebooks" || pathname.startsWith("/ebooks/");
-            const podcastsActive = pathname === "/podcasts" || pathname.startsWith("/podcasts/");
             const supportActive = pathname === "/support" || pathname.startsWith("/support/");
             return (
               <>
-                {!hiddenMenuKeys.includes("community") && (
-                  <Link
-                    href="/community"
-                    onClick={() => setSidebarOpen(false)}
-                    className={cn(
-                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                      communityActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <GlowBg active={communityActive} />
-                    <span className="relative z-10">Community</span>
-                  </Link>
-                )}
-                {!hiddenMenuKeys.includes("ebooks") && (
-                  <Link
-                    href="/ebooks"
-                    onClick={() => setSidebarOpen(false)}
-                    className={cn(
-                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                      ebooksActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <GlowBg active={ebooksActive} />
-                    <span className="relative z-10">Ebooks</span>
-                  </Link>
-                )}
-                {!hiddenMenuKeys.includes("podcasts") && (
-                  <Link
-                    href="/podcasts"
-                    onClick={() => setSidebarOpen(false)}
-                    className={cn(
-                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                      podcastsActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <GlowBg active={podcastsActive} />
-                    <span className="relative z-10">Podcasts</span>
-                  </Link>
-                )}
                 {!hiddenMenuKeys.includes("support") && (
                   <Link
                     href="/support"
@@ -593,14 +554,9 @@ export function Navbar() {
 
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
-          {[
-            // Messages and Notifications are already right-side icons;
-            // drop them here to avoid duplication.
-            ...nav.filter((n) => n.href !== "/messages" && n.href !== "/notifications"),
-            ...(!hiddenMenuKeys.includes("community") ? [{ id: "__community", href: "/community", label: "Community" }] : []),
-            ...(!hiddenMenuKeys.includes("ebooks") ? [{ id: "__ebooks", href: "/ebooks", label: "Ebooks" }] : []),
-            ...(!hiddenMenuKeys.includes("podcasts") ? [{ id: "__podcasts", href: "/podcasts", label: "Podcasts" }] : []),
-          ].map(({ id, href, label }) => {
+          {/* Messages and Notifications are already right-side icons;
+              drop them here to avoid duplication. */}
+          {navMenu.filter((n) => n.href !== "/messages" && n.href !== "/notifications").map(({ id, href, label }) => {
             const active =
               pathname === href ||
               pathname.startsWith(`${href}/`) ||
