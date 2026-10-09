@@ -2,8 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Search, Lock, Play, BookOpen, Star } from "lucide-react";
-import { useCourses, useMyEnrollments, useCourseCategories } from "@/lib/hooks/useCourses";
+import { Lock, Play, BookOpen } from "lucide-react";
+import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
@@ -20,20 +20,6 @@ interface ModuleConfig {
   accentColor: string | null;
   sortOrder: number;
 }
-
-// ── Filter config ─────────────────────────────────────────────────────────────
-
-const LEVELS = [
-  { value: "all",          label: "All" },
-  { value: "beginner",     label: "Beginner" },
-  { value: "intermediate", label: "Intermediate" },
-  { value: "advanced",     label: "Advanced" },
-] as const;
-
-const SORT_OPTIONS = [
-  { value: "newest",  label: "Newest" },
-  { value: "popular", label: "Popular" },
-] as const;
 
 // ── ModuleCard ────────────────────────────────────────────────────────────────
 
@@ -471,125 +457,6 @@ function SavedVideoCard({ item }: { item: any }) {
   );
 }
 
-// ── Search + Filter bar ───────────────────────────────────────────────────────
-
-function FilterBar({
-  search, setSearch,
-  level, setLevel,
-  sort, setSort,
-  category, setCategory,
-  categories,
-  uiStrings,
-}: {
-  search: string; setSearch: (v: string) => void;
-  level: string; setLevel: (v: string) => void;
-  sort: "newest" | "popular"; setSort: (v: "newest" | "popular") => void;
-  category: string; setCategory: (v: string) => void;
-  categories: any[];
-  uiStrings: any;
-}) {
-  return (
-    <div className="flex flex-col sm:flex-row gap-3 mb-5">
-      <div className="relative" style={{ flex: 1, maxWidth: 320 }}>
-        <Search
-          size={14}
-          style={{
-            position: "absolute",
-            left: 12,
-            top: "50%",
-            transform: "translateY(-50%)",
-            color: "#92929b",
-          }}
-        />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={uiStrings?.coursesSearchPlaceholder ?? "Search modules..."}
-          style={{
-            width: "100%",
-            paddingLeft: 36,
-            paddingRight: 16,
-            height: 40,
-            fontSize: 13,
-            color: "#f5f5f7",
-            background: "#242428",
-            border: "1px solid #414146",
-            borderRadius: 9,
-            outline: "none",
-            boxSizing: "border-box",
-          }}
-          onFocus={(e) => (e.target.style.borderColor = "var(--color-accent)")}
-          onBlur={(e) => (e.target.style.borderColor = "#414146")}
-        />
-      </div>
-      <div className="flex gap-1.5 flex-wrap items-center">
-        {LEVELS.map(({ value, label }) => (
-          <button
-            key={value}
-            onClick={() => setLevel(value)}
-            style={{
-              height: 40,
-              padding: "0 14px",
-              borderRadius: 9,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-              background: level === value ? "var(--color-accent)" : "#242428",
-              color: level === value ? "white" : "#92929b",
-              border: `1px solid ${level === value ? "transparent" : "#414146"}`,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-        {categories.length > 0 && (
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            style={{
-              height: 40,
-              padding: "0 12px",
-              borderRadius: 9,
-              fontSize: 12,
-              fontWeight: 600,
-              background: "#242428",
-              border: "1px solid #414146",
-              color: "#92929b",
-              outline: "none",
-              cursor: "pointer",
-            }}
-          >
-            <option value="all">{uiStrings?.coursesCategoryAll ?? "All Categories"}</option>
-            {categories.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-        )}
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as "newest" | "popular")}
-          style={{
-            height: 40,
-            padding: "0 12px",
-            borderRadius: 9,
-            fontSize: 12,
-            fontWeight: 600,
-            background: "#242428",
-            border: "1px solid #414146",
-            color: "#92929b",
-            outline: "none",
-            cursor: "pointer",
-          }}
-        >
-          {SORT_OPTIONS.map(({ value, label }) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-}
-
 // ── CourseGrid ────────────────────────────────────────────────────────────────
 
 function CourseGrid({
@@ -598,16 +465,12 @@ function CourseGrid({
   allowedModules,
   isLoading,
   uiStrings,
-  onClearFilters,
-  hasFilters,
 }: {
   courses: any[];
   enrolledMap: Map<string, any>;
   allowedModules: string[];
   isLoading: boolean;
   uiStrings: any;
-  onClearFilters: () => void;
-  hasFilters: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   useEffect(() => { setShowAll(false); }, [courses]);
@@ -641,22 +504,6 @@ function CourseGrid({
       >
         <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
         <p style={{ color: "#92929b", fontSize: 14 }}>{uiStrings?.coursesEmptyState ?? "No modules found"}</p>
-        {hasFilters && (
-          <button
-            onClick={onClearFilters}
-            style={{
-              marginTop: 12,
-              fontSize: 12,
-              fontWeight: 600,
-              color: "var(--color-accent)",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            {uiStrings?.coursesClearFilters ?? "Clear filters"}
-          </button>
-        )}
       </div>
     );
   }
@@ -758,26 +605,14 @@ function NewMemberCoursesView({ uiStrings }: { uiStrings: any }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CoursesPage() {
-  const [search, setSearch]     = useState("");
-  const [level, setLevel]       = useState("all");
-  const [sort, setSort]         = useState<"newest" | "popular">("newest");
-  const [category, setCategory] = useState("all");
   const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const { uiStrings } = useSiteConfig();
 
-  // CF-03 — reset pagination when any filter changes
-  useEffect(() => { /* no-op: CourseGrid manages its own showAll */ }, [search, level, sort, category]);
-
-  const { data: categories } = useCourseCategories();
   const { data: enrollments } = useMyEnrollments();
   const { data: watchHistoryData } = useWatchHistory({ limit: 3 });
 
   const { data: catalogData, isLoading: catalogLoading } = useCourses({
-    search:   search || undefined,
-    level:    level !== "all" ? level : undefined,
-    sort,
-    category: category !== "all" ? category : undefined,
     limit: 100,
   });
 
@@ -824,10 +659,8 @@ export default function CoursesPage() {
     return allCourses;
   }, [allCourses, availableModules, activeTab, allowedModules]);
 
-  const hasFilters = !!(search || level !== "all" || category !== "all");
-  const clearFilters = () => { setSearch(""); setLevel("all"); setSort("newest"); setCategory("all"); };
 
-  const catList: any[] = (categories as any) ?? [];
+
 
   // Single-module config (used when allowedModules.length === 1)
   const singleModuleCfg = useMemo(() => {
@@ -857,22 +690,12 @@ export default function CoursesPage() {
             courseCount={filteredCourses.length}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
-          <FilterBar
-            search={search} setSearch={setSearch}
-            level={level} setLevel={setLevel}
-            sort={sort} setSort={setSort}
-            category={category} setCategory={setCategory}
-            categories={catList}
-            uiStrings={uiStrings}
-          />
           <CourseGrid
             courses={filteredCourses}
             enrolledMap={enrolledMap}
             allowedModules={[]}
             isLoading={catalogLoading}
             uiStrings={uiStrings}
-            onClearFilters={clearFilters}
-            hasFilters={hasFilters}
           />
         </section>
       )}
@@ -933,22 +756,12 @@ export default function CoursesPage() {
 
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
 
-          <FilterBar
-            search={search} setSearch={setSearch}
-            level={level} setLevel={setLevel}
-            sort={sort} setSort={setSort}
-            category={category} setCategory={setCategory}
-            categories={catList}
-            uiStrings={uiStrings}
-          />
           <CourseGrid
             courses={filteredCourses}
             enrolledMap={enrolledMap}
             allowedModules={[]}
             isLoading={catalogLoading}
             uiStrings={uiStrings}
-            onClearFilters={clearFilters}
-            hasFilters={hasFilters}
           />
         </section>
       )}
@@ -956,49 +769,18 @@ export default function CoursesPage() {
       {/* ── Direct Access / General Catalog View ─────────────────────── */}
       {(personalizationState === "direct" || (personalizationState === "new" && (allCourses.length > 0 || catalogLoading))) && (
         <section>
-          <div className="flex items-center justify-between mb-5">
+          <div className="mb-5">
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
               {uiStrings?.coursesCatalogTitle ?? "Modules"}
             </h2>
-            <div className="flex items-center gap-3">
-              {!catalogLoading && allCourses.length > 0 && (
-                <span style={{ fontSize: 11, color: "#92929b" }}>
-                  {allCourses.length} {uiStrings?.coursesModuleCount ?? "modules"}
-                </span>
-              )}
-              <Link
-                href="/learning/badges"
-                style={{
-                  padding: "6px 16px",
-                  border: "1px solid #77777e",
-                  borderRadius: 9,
-                  color: "#a0a0a8",
-                  fontSize: 12,
-                  fontWeight: 500,
-                  textDecoration: "none",
-                }}
-              >
-                {uiStrings?.coursesMyBadges ?? "My Badges"}
-              </Link>
-            </div>
           </div>
 
-          <FilterBar
-            search={search} setSearch={setSearch}
-            level={level} setLevel={setLevel}
-            sort={sort} setSort={setSort}
-            category={category} setCategory={setCategory}
-            categories={catList}
-            uiStrings={uiStrings}
-          />
           <CourseGrid
             courses={allCourses}
             enrolledMap={enrolledMap}
             allowedModules={[]}
             isLoading={catalogLoading}
             uiStrings={uiStrings}
-            onClearFilters={clearFilters}
-            hasFilters={hasFilters}
           />
         </section>
       )}

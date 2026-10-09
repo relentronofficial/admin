@@ -90,9 +90,6 @@ function MentorshipHeader({
             ✅ Weekly Report Submitted
           </span>
         )}
-        <span className="mentorship-streak-badge inline-flex items-center gap-1.5 rounded-full" style={{ background: "#ffffff", color: "#000", fontSize: 11, fontWeight: 700, padding: "6px 12px" }}>
-          🔥 Streak <span style={{ color: "#d70b1a" }}>{streakDays} Days</span>
-        </span>
         {totalHearts > 0 && (
           <span className="inline-flex items-center gap-1 rounded-full" style={{ background: "#d70b1a", padding: "6px 12px" }}>
             {Array.from({ length: filledHearts }).map((_, i) => (
