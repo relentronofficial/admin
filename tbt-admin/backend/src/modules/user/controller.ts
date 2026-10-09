@@ -55,6 +55,11 @@ async function logActivity(prisma: any, memberId: string, action: string, metada
 // caller in the same tick awaits the same Promise.
 const _recalcInflight = new Map<string, Promise<void>>();
 
+// GET /api/user/streak caches each member's summary for 60 s (getMyStreakHandler).
+function invalidateStreakCache(redis: any, memberId: string) {
+  void invalidateCache(redis ?? null, `streak:${memberId}`);
+}
+
 // `markActive` is true for real member activity (lesson/episode/challenge/
 // assignment). A profile read (`GET /me`) passes false: viewing or refreshing
 // the page must not stamp `lastActiveAt`, which drives the Health recency
@@ -66,6 +71,11 @@ async function recalculateMemberStats(
   redis?: any,
   { markActive = true }: { markActive?: boolean } = {},
 ): Promise<void> {
+  // Real activity can start or extend today's streak — drop the cached header
+  // streak now (before the throttle below can return early) so the navbar flame
+  // reflects it on the next GET /api/user/streak instead of up to 60 s later.
+  if (markActive) invalidateStreakCache(redis, memberId);
+
   const flightKey = `${memberId}:${markActive ? 'activity' : 'view'}`;
   const existing = _recalcInflight.get(flightKey);
   if (existing) return existing;
@@ -4712,7 +4722,23 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
         }).catch(() => {});
       }
     }
-  } else {
+  }
+
+  // Daily streak: submitting a lesson task is a qualifying activity on the day the
+  // member does it (for ADMIN_CHECK too — approval can come days later). 0 points:
+  // tbt_activity_log's SUM is also the coin balance / leaderboard total, and task
+  // points already live in points_ledger, so this row only marks the day active.
+  // ON CONFLICT keeps resubmits of the same submission to one row; the same row
+  // is backfilled by syncLegacyPointsToLedger ('course_task').
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     VALUES ($1::uuid, 0, 'course_task', $2::uuid, NOW()::DATE)
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    memberId, submission.id,
+  ).catch((err: unknown) => request.log.warn({ err }, 'course_task streak activity insert failed'));
+  invalidateStreakCache(request.server.redis, memberId);
+
+  if (completionMode !== 'SELF_ASSESSMENT') {
     void createAdminNotification(request.server.prisma, {
       title: 'Task Submitted for Review',
       body: 'A member submitted a course task that needs your review.',

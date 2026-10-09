@@ -113,7 +113,10 @@ export const useSubmitBatchDay = () => {
       const res: any = await apiClient.post(`/api/user-batch/${dayNumber}/submit`);
       return res.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["my-batch"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["my-batch"] });
+      qc.invalidateQueries({ queryKey: ["user", "streak"] });
+    },
   });
 };
 

@@ -30,6 +30,19 @@ describe('computeStreakSummary', () => {
     expect(s.last7Days[6]).toEqual({ date: '2026-10-06', active: true, points: 15 });
   });
 
+  it('counts a 0-point activity day (course_task marker rows) as active', () => {
+    // Course lesson task submissions write 0-point rows; they must still extend
+    // the streak without adding points.
+    const s = computeStreakSummary(
+      [day('2026-10-06', 0), day('2026-10-05', 10), day('2026-10-04', 0)],
+      TODAY,
+    );
+    expect(s.currentStreak).toBe(3);
+    expect(s.activeToday).toBe(true);
+    expect(s.pointsToday).toBe(0);
+    expect(s.last7Days[6]).toEqual({ date: '2026-10-06', active: true, points: 0 });
+  });
+
   it('keeps the streak alive when today has no activity yet', () => {
     const s = computeStreakSummary([day('2026-10-05'), day('2026-10-04')], TODAY);
     expect(s.currentStreak).toBe(2);
