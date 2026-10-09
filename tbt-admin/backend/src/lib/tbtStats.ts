@@ -114,6 +114,21 @@ export async function syncLegacyPointsToLedger(
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
     memberId,
   );
+
+  // Course lesson task submissions (self-assessment or admin-check) — streak
+  // activity only, dated to when the member submitted. 0 points: their points
+  // are paid into points_ledger, and this ledger's SUM is the coin balance.
+  // Same row submitUserEpisodeTaskHandler writes live.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     SELECT $1::uuid, 0, 'course_task', ts.id, ts.created_at::date
+     FROM task_submissions ts
+     JOIN tasks t ON t.id = ts.task_id
+     WHERE ts.member_id = $1::uuid AND ts.batch_id IS NULL
+       AND t.course_episode_id IS NOT NULL AND ts.status <> 'rejected'
+     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
+    memberId,
+  );
 }
 
 export type MemberStats = {
