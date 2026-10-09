@@ -379,6 +379,24 @@ export interface UiStrings {
   adCloseLabel?: string;
   adUnmuteLabel?: string;
   adSponsoredLabel?: string;
+
+  // Courses page personalization (CP-17)
+  coursesSearchPlaceholder?: string;
+  coursesCategoryAll?: string;
+  coursesEmptyState?: string;
+  coursesClearFilters?: string;
+  coursesLoadMore?: string;
+  coursesNewMemberTitle?: string;
+  coursesNewMemberDesc?: string;
+  coursesExplorePrograms?: string;
+  coursesViewPlans?: string;
+  coursesProgramTitle?: string;
+  coursesCatalogTitle?: string;
+  coursesModuleCount?: string;
+  coursesMyBadges?: string;
+  coursesSavedVideos?: string;
+  coursesViewAll?: string;
+  footerTagline?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────
