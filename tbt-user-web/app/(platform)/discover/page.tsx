@@ -24,7 +24,7 @@ async function fetchPublicJson<T>(path: string): Promise<T | null> {
   }
 }
 
-export default async function TBTHomePage() {
+export default async function DiscoverPage() {
   // Fetch hero and default (tier-1) sections in parallel — pure public data, no auth needed.
   // Server-to-server calls hit Vercel edge cache after the first request.
   const [heroData, sectionsData] = await Promise.all([

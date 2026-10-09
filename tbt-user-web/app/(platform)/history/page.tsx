@@ -213,7 +213,7 @@ export default function HistoryPage() {
     <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/tbt" className="p-2 rounded-lg transition-colors hover:bg-[var(--color-surface-overlay)]">
+        <Link href="/discover" className="p-2 rounded-lg transition-colors hover:bg-[var(--color-surface-overlay)]">
           <ArrowLeft size={18} className="text-muted-foreground" />
         </Link>
         <div>
@@ -259,7 +259,7 @@ export default function HistoryPage() {
           </div>
           {filter === "all" && (
             <Link
-              href="/tbt"
+              href="/discover"
               className="text-sm font-bold px-5 py-2 rounded-lg transition-colors"
               style={{ background: "var(--color-accent)", color: "#fff" }}
             >

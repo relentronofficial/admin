@@ -11,7 +11,7 @@ import {
 export function normalizeNotifUrl(url: string): string {
   // /messages/{id} → /messages?conversation={id}  (no dedicated [id] route)
   if (/^\/messages\/[^/]+$/.test(url)) return url.replace(/^\/messages\/([^/]+)$/, "/messages?conversation=$1");
-  // /tbt/learning/{id} and /tbt/programs/{id} → /learning/{id}  (wrong /tbt prefix)
+  // /tbt/learning/{id} and /tbt/programs/{id} → /learning/{id}  (wrong /tbt prefix, now redirects to /discover)
   if (/^\/tbt\/(learning|programs)\//.test(url)) return url.replace(/^\/tbt\/(learning|programs)\//, "/learning/");
   return url;
 }

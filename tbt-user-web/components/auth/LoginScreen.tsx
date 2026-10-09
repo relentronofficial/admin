@@ -43,7 +43,7 @@ export function LoginScreen() {
   const { config } = useSiteConfig();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectUrl = searchParams.get("redirect_url") || "/tbt";
+  const redirectUrl = searchParams.get("redirect_url") || "/community";
 
   const slides: string[] = (() => {
     const imgs = config?.loginBgImages;

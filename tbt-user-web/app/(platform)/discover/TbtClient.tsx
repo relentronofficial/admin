@@ -810,7 +810,7 @@ export function RecentlyWatchedSection() {
           <Clock size={28} className="text-muted-foreground opacity-40" />
           <p className="text-sm text-muted-foreground">No watch history yet</p>
           <Link
-            href="/tbt"
+            href="/discover"
             className="text-xs font-bold px-4 py-1.5 rounded-lg transition-colors"
             style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
           >

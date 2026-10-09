@@ -35,7 +35,7 @@ export function Sidebar() {
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-border">
-          <Link href={nav[0]?.href ?? "/tbt"}>
+          <Link href={nav[0]?.href ?? "/community"}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={logoUrl || "/tbt_logo.png"} alt={siteName} className="h-8 w-auto object-contain" />
           </Link>

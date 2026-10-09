@@ -173,7 +173,7 @@ export default async function EbookPreviewPage({
             app.tamilbusinesstribe.com
           </span>
           <a
-            href="https://app.tamilbusinesstribe.com/tbt"
+            href="https://app.tamilbusinesstribe.com/community"
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition"
             style={{ background: "var(--color-accent)" }}
           >
