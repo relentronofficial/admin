@@ -1426,8 +1426,8 @@ function NowLearningSection() {
 
           {/* 3-column grid: thumbnail | details | next lesson */}
           <div
-            className="flex flex-col lg:grid gap-[19px]"
-            style={{ gridTemplateColumns: "271px minmax(180px, 1fr) 110px", alignItems: "start" }}
+            className="flex flex-col lg:grid gap-[24px]"
+            style={{ gridTemplateColumns: "200px 1fr 110px", alignItems: "center", maxWidth: 640, margin: "0 auto" }}
           >
             {/* ── Column 1: course cover thumbnail ─── */}
             <div
@@ -1460,7 +1460,7 @@ function NowLearningSection() {
             </div>
 
             {/* ── Column 2: course details ─── */}
-            <div className="min-w-0" style={{ paddingTop: 3, maxWidth: 240 }}>
+            <div className="min-w-0">
               <div style={{ marginBottom: 9, color: "#b3b3bb", fontSize: 11 }}>
                 {item.title} · Lesson {item.episodeOrder} of {item.episodeCount}
               </div>
@@ -1472,7 +1472,7 @@ function NowLearningSection() {
                 <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).taskDurationDisplay ?? "—"}</strong></span>
               </div>
               <div style={{ marginBottom: 17 }}>
-                <div style={{ width: "100%", maxWidth: 220, height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
+                <div style={{ width: "100%", height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
                   <div style={{ width: `${Math.min(100, progressPct)}%`, height: "100%", borderRadius: 12, background: "#d91019", transition: "width 1.1s cubic-bezier(0.4,0,0.2,1)" }} />
                 </div>
               </div>
@@ -1484,7 +1484,7 @@ function NowLearningSection() {
             </div>
 
             {/* ── Column 3: next lesson ─── */}
-            <div className="hidden lg:block" style={{ paddingTop: 20 }}>
+            <div className="hidden lg:block">
               <div style={{ marginBottom: 7, color: "#d9d900", fontSize: 11 }}>Next Lesson</div>
               <div
                 style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: 91, height: 53, overflow: "hidden", marginBottom: 7, border: "1px solid #39393e", borderRadius: 9, background: "linear-gradient(135deg, #111114, #050506)" }}
