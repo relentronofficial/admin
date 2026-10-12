@@ -740,6 +740,9 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
       onboardingCompleted: true,
       onboardingSubmittedAt: true,
       onboardingReviewNote: true,
+      currentTier: true,
+      membershipPlan: true,
+      batchId: true,
     } as any,
   });
 
