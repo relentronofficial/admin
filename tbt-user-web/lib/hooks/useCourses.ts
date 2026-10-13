@@ -86,6 +86,7 @@ export const useMarkLessonComplete = (courseId: string) => {
         queryClient.invalidateQueries({ queryKey: ["user", "dashboard"] });
         // Completing a lesson can start/extend the daily streak (navbar flame).
         queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
+        queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
         queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
         queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
         queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
@@ -103,6 +104,7 @@ export const useSubmitCourseQuiz = (courseId: string, episodeId: string) => {
       queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
       queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
     },
   });
 };
@@ -304,6 +306,7 @@ export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
       queryClient.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
       // Submitting a lesson task counts toward the daily streak.
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
     },
   });
 };

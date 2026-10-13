@@ -3,6 +3,11 @@ import { z } from 'zod';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl } from '../../lib/weekChecklistLogic.js';
+import { resolveProgramTimezone } from '../../lib/activityDays.js';
+
+// Program calendar for the daily-activity ledger (lib/activityDays.ts): a batch
+// day / task counts on the member's local submission day, not the UTC date.
+const PROGRAM_TZ = resolveProgramTimezone(process.env.PROGRAM_TIMEZONE);
 
 async function sendBatchNotif(
   server: { prisma: any; io: any },
@@ -532,7 +537,7 @@ export async function approveDayHandler(
   // don't inflate today's streak date.
   req.server.prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+     VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, ($4::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date)
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
     req.params.memberId,
     xpPerDay,
@@ -572,7 +577,7 @@ export async function approveDayHandler(
         // Also credit the gamification coin ledger
         await req.server.prisma.$executeRawUnsafe(
           `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-           VALUES ($1::uuid, $2::int, 'task_submission', $3::uuid, $4::date)
+           VALUES ($1::uuid, $2::int, 'task_submission', $3::uuid, ($4::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date)
            ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
           req.params.memberId, sub.basePoints, sub.id,
           (existing.submittedAt ?? new Date()),
@@ -825,7 +830,7 @@ export async function bulkApproveDaysHandler(
 
     req.server.prisma.$executeRawUnsafe(
       `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-       VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, $4::date)
+       VALUES ($1::uuid, $2::int, 'batch_day', $3::uuid, ($4::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date)
        ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
       memberId,
       xpPerDayBulk,
