@@ -8,6 +8,7 @@ import {
   Monitor, Activity, Clock, Shield, Coins,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { MemberDailyActivity } from "@/components/members/MemberDailyActivity";
 import { useGetMember } from "@/lib/hooks/useMembers";
 import {
   useMemberProgress, useListMemberBadges, useListAllBadges,
@@ -35,7 +36,7 @@ const statusCls = (s: string) => {
   return m[s] || "bg-[#222] text-[#888] border-[#333]";
 };
 
-const TABS = ["Info", "Enrollments", "Progress", "Analytics", "Support Usage"] as const;
+const TABS = ["Info", "Activity", "Enrollments", "Progress", "Analytics", "Support Usage"] as const;
 type Tab = typeof TABS[number];
 
 export default function MemberDetailPage() {
@@ -670,6 +671,9 @@ export default function MemberDetailPage() {
             )}
           </div>
         )}
+
+        {/* ── ACTIVITY TAB — Daily Time Spent ── */}
+        {activeTab === "Activity" && <MemberDailyActivity memberId={id} />}
 
         {/* ── SUPPORT USAGE TAB ── */}
         {activeTab === "Support Usage" && (

@@ -26,6 +26,8 @@ import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday, localDayK
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
+import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
+import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -850,6 +852,17 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, id);
   const hasAccess = isAccessValid(accessRecord);
 
+  // Unpublished (draft) courses are hidden from the catalog; also refuse them by
+  // direct link. Members who already have access or an enrollment keep it, so
+  // unpublishing a course never cuts off someone who paid for it.
+  if (!course.isPublished && !hasAccess) {
+    const enrolled = await request.server.prisma.courseEnrollment.findUnique({
+      where: { memberId_courseId: { memberId: request.memberId!, courseId: id } },
+      select: { id: true },
+    }).catch(() => null);
+    if (!enrolled) return fail(reply, 404, 'Course not found');
+  }
+
   // Check for a pending payment from this member (any method)
   const pendingPaymentRows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, method, razorpay_order_id FROM course_payments
@@ -1482,6 +1495,10 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }
   }
 
+  // Daily Time Spent: a validated progress post with real watched seconds is a
+  // server-side "watching" signal (see lib/memberActivity.ts).
+  if (Number(deltaSeconds) > 0) trackActivity(request.server.prisma, request.memberId, true);
+
   const now = new Date();
   
   // Safe increment of actualWatchedSecs (max 30s per heartbeat to prevent extreme skips)
@@ -2113,6 +2130,23 @@ export async function getMyStreakHandler(request: FastifyRequest, reply: Fastify
     return computeStreakSummary(rows, programToday(new Date(), PROGRAM_TZ));
   });
   return ok(reply, summary);
+}
+
+// Daily Time Spent heartbeat — sent about once a minute by the web app while
+// the member is using it. The client only reports facts (tab visible, recent
+// interaction, media playing); the server decides whether the minute counts
+// and takes the minute from its own clock. Duplicate heartbeats in the same
+// minute (retries, several tabs or devices) count once.
+export async function activityHeartbeatHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { active, media } = isActiveHeartbeat(request.body);
+  if (!active) return ok(reply, { recorded: false });
+  try {
+    await recordActiveMinute(request.server.prisma, request.memberId!, media);
+    return ok(reply, { recorded: true });
+  } catch (err) {
+    request.log.warn({ err }, 'activity heartbeat failed');
+    return ok(reply, { recorded: false });
+  }
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
@@ -4290,6 +4324,10 @@ export async function postEpisodeProgressHandler(request: FastifyRequest, reply:
     });
     if (!isEnrolled(progressEnrollment?.status)) return fail(reply, 403, 'Enrollment required to access this workshop');
   }
+
+  // Daily Time Spent: a validated progress post with real watched seconds is a
+  // server-side "watching" signal (covers iframe players and the mobile app).
+  if (Number(deltaSeconds) > 0) trackActivity(request.server.prisma, request.memberId, true);
 
   const existingProgress = await request.server.prisma.memberEpisodeProgress.findUnique({
     where: { memberId_episodeId: { memberId: request.memberId, episodeId } },

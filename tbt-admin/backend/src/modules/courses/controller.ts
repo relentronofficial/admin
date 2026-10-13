@@ -7,12 +7,13 @@ import { invalidateCache } from '../../lib/cache.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { validateCoursePrice } from '../../lib/coursePriceValidation.js';
 
-// Any course/episode edit can change what the home sections render
-// (thumbnail, title, episode count, visibility). Busting home:* is
-// cheap — a handful of keys — and cheaper than serving stale hero /
-// section data for up to 5 min.
+// Any course/episode edit can change what the home sections and the /courses
+// catalog render (thumbnail, title, price, publish state, episode count and
+// durations, visibility). Busting home:* and courses:catalog:* is cheap — a
+// handful of keys — and cheaper than serving stale data for up to 5 min.
 function bustHome(req: FastifyRequest): void {
   void invalidateCache(req.server.redis ?? null, 'home:*');
+  void invalidateCache(req.server.redis ?? null, 'courses:catalog:*');
 }
 
 // Admin controllers only get the Clerk subject string on req.user (there is
