@@ -36,7 +36,9 @@ const SERVICES = [
     url: 'https://app.tamilbusinesstribe.com',
     critical: true,
     timeoutMs: 8000,
-    okStatuses: null,
+    // Cloud Run load balancer may issue a 301/302 redirect (e.g. trailing-slash
+    // normalisation). Any response means the service is serving traffic.
+    okStatuses: [200, 301, 302, 307, 308],
   },
   {
     name: 'admin-panel',
