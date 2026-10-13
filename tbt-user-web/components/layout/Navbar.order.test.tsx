@@ -18,7 +18,8 @@ vi.mock("@/lib/hooks/useDashboard", () => ({
   useMarkNotificationRead: () => ({ mutate: vi.fn() }),
   useMarkAllNotificationsRead: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock("@/lib/hooks/useUser", () => ({ useMe: () => ({ data: null }) }));
+// A member with a tier set — the navbar must not render a "Tier N" badge.
+vi.mock("@/lib/hooks/useUser", () => ({ useMe: () => ({ data: { id: "me", currentTier: 1 } }) }));
 vi.mock("@/lib/socket/client", () => ({ getSocket: () => new Promise(() => {}) }));
 vi.mock("./StreakButton", () => ({ StreakButton: () => null }));
 vi.mock("@/lib/api/client", () => ({ default: { post: vi.fn() } }));
@@ -51,6 +52,12 @@ const desktopLabels = (c: HTMLElement) =>
   Array.from(c.querySelectorAll("header nav a")).map((a) => a.textContent?.trim());
 
 describe("Navbar — admin-controlled order", () => {
+  it("does not render the separate Tier badge", () => {
+    const { container } = renderNavbar(null);
+    expect(container.textContent).not.toMatch(/Tier\s*1/);
+    expect(container.querySelector('header a[href="/profile"]')).toBeNull();
+  });
+
   it("renders exactly Community | Mentorship | Ebooks | Home | Podcasts from the saved order", () => {
     const { container } = renderNavbar(["section:community", "mentorship-id", "section:ebooks", "home-id", "section:podcasts"]);
     expect(desktopLabels(container)).toEqual(["Community", "Mentorship", "Ebooks", "Home", "Podcasts"]);
