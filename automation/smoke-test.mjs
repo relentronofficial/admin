@@ -116,15 +116,13 @@ async function main() {
   if (failed.length > 0) {
     console.error('\n❌ SMOKE TEST FAILED:', failed.map(r => r.name).join(', '));
     await notify(
-      `🧪 *Smoke Test Failed* after deploy\n\n${failed.map(r => `• ${r.name}: ${r.reason ?? 'unexpected shape'}`).join('\n')}\n\n_${new Date().toISOString()}_`,
-      'MarkdownV2'
+      `🧪 Smoke Test FAILED after deploy\n\n${failed.map(r => `• ${r.name}: ${r.reason ?? 'unexpected shape'}`).join('\n')}\n\n${new Date().toISOString()}`
     ).catch(() => {});
     process.exit(1);
   } else {
     console.log('\n✅ All smoke tests passed.');
     await notify(
-      `✅ *Smoke Test Passed* — all ${results.length} checks healthy after deploy\\.\n\n_${new Date().toISOString()}_`,
-      'MarkdownV2'
+      `✅ Smoke Test Passed — all ${results.length} checks healthy after deploy.\n\n${new Date().toISOString()}`
     ).catch(() => {});
   }
 }

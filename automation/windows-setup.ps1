@@ -196,8 +196,10 @@ Write-Host "`n[5/5] Environment variable checklist..." -ForegroundColor Yellow
 
 $requiredVars = @(
     @{ Name = "GITHUB_TOKEN";        Purpose = "GitHub API access (task-intake.mjs, task-runner.mjs)" }
-    @{ Name = "TELEGRAM_BOT_TOKEN";  Purpose = "Telegram push notifications (optional — notify.mjs)" }
-    @{ Name = "TELEGRAM_CHAT_ID";    Purpose = "Telegram chat ID (optional — notify.mjs)" }
+    @{ Name = "WABA_API_BASE_URL";    Purpose = "WhatsApp BSP base URL (copy from backend/.env)" }
+    @{ Name = "WABA_ACCESS_TOKEN";   Purpose = "WhatsApp BSP token (copy from backend/.env)" }
+    @{ Name = "WABA_FROM_NUMBER";    Purpose = "Business WhatsApp number (copy from backend/.env)" }
+    @{ Name = "NOTIFY_TO_NUMBER";    Purpose = "Admin personal WhatsApp number for dev alerts" }
 )
 
 foreach ($v in $requiredVars) {
@@ -236,12 +238,12 @@ Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 30min" -ForegroundColo
 Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 60min" -ForegroundColor Gray
 Write-Host "  - TBT-SmokeTest: validates production after deploy" -ForegroundColor Gray
 Write-Host ""
-Write-Host "  Optional: Telegram push notifications (get alerts on your phone)" -ForegroundColor White
-Write-Host "  1. Message @BotFather on Telegram → /newbot → copy token" -ForegroundColor Gray
-Write-Host "  2. Visit https://api.telegram.org/bot<TOKEN>/getUpdates → copy chat.id" -ForegroundColor Gray
-Write-Host "  3. [System.Environment]::SetEnvironmentVariable('TELEGRAM_BOT_TOKEN','<token>','User')" -ForegroundColor Gray
-Write-Host "     [System.Environment]::SetEnvironmentVariable('TELEGRAM_CHAT_ID','<id>','User')" -ForegroundColor Gray
-Write-Host "  4. node automation/notify.mjs 'TBT test message'" -ForegroundColor Gray
+Write-Host "  WhatsApp dev alerts — copy WABA_* from backend/.env, then set your number:" -ForegroundColor White
+Write-Host "  [System.Environment]::SetEnvironmentVariable('WABA_API_BASE_URL','<url>','User')" -ForegroundColor Gray
+Write-Host "  [System.Environment]::SetEnvironmentVariable('WABA_ACCESS_TOKEN','<token>','User')" -ForegroundColor Gray
+Write-Host "  [System.Environment]::SetEnvironmentVariable('WABA_FROM_NUMBER','91XXXXXXXXXX','User')" -ForegroundColor Gray
+Write-Host "  [System.Environment]::SetEnvironmentVariable('NOTIFY_TO_NUMBER','91XXXXXXXXXX','User')" -ForegroundColor Gray
+Write-Host "  node automation/notify.mjs 'TBT test message'" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Run manually:" -ForegroundColor White
 Write-Host "  node automation/health-check.mjs" -ForegroundColor Gray

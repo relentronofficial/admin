@@ -330,8 +330,7 @@ async function main() {
       logSession({ event: 'task_review', taskId: task.id, prUrl, commits: newCommits.length });
       console.log(`\n✅ Task moved to review. PR: ${prUrl || '(none)'}`);
       await notify(
-        `✅ *TBT Task Complete*\n\n*${task.title}*\n\n${prUrl ? `PR: ${prUrl}` : `${newCommits.length} commit(s), no PR`}\n\nIssue: ${task.githubIssueUrl}`,
-        'MarkdownV2'
+        `✅ TBT Task Complete\n\n${task.title}\n\n${prUrl ? `PR: ${prUrl}` : `${newCommits.length} commit(s), no PR`}\n\nIssue: ${task.githubIssueUrl}`
       ).catch(() => {});
 
     } else {
@@ -367,8 +366,7 @@ async function main() {
       console.log(`\n${isLastAttempt ? '❌ Task blocked.' : '⚠️  Task requeued.'}`);
       if (isLastAttempt) {
         await notify(
-          `❌ *TBT Task Blocked*\n\n*${task.title}*\n\nFailed after ${task.attempts} attempt(s)\\. Human review needed\\.\n\nIssue: ${task.githubIssueUrl}`,
-          'MarkdownV2'
+          `❌ TBT Task Blocked\n\n${task.title}\n\nFailed after ${task.attempts} attempt(s). Human review needed.\n\nIssue: ${task.githubIssueUrl}`
         ).catch(() => {});
       }
     }

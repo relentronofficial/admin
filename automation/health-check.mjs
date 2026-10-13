@@ -113,8 +113,7 @@ async function main() {
   if (criticalDown.length > 0) {
     console.error('\n❌ CRITICAL: Services down:', criticalDown.map(r => r.name).join(', '));
     await notify(
-      `🚨 *TBT Critical Alert*\n\n${criticalDown.length} service(s) DOWN:\n${criticalDown.map(r => `• ${r.name}${r.error ? ` — ${r.error.slice(0, 80)}` : ''}`).join('\n')}\n\n_${new Date().toISOString()}_`,
-      'MarkdownV2'
+      `🚨 TBT Critical Alert\n\n${criticalDown.length} service(s) DOWN:\n${criticalDown.map(r => `• ${r.name}${r.error ? ` — ${r.error.slice(0, 80)}` : ''}`).join('\n')}\n\n${new Date().toISOString()}`
     ).catch(() => {});
     process.exit(1);
   }
