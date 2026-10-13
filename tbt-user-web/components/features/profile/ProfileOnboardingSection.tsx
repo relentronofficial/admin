@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, ClipboardCheck, FileText, Video, AlertCircle, Lock, RefreshCw } from "lucide-react";
-import { useOnboardingState } from "@/lib/hooks/useOnboarding";
+import { useOnboardingState, useOnboardingContent } from "@/lib/hooks/useOnboarding";
+import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import type { OnboardingState } from "@/lib/api/services/onboarding.service";
 import { cn } from "@/lib/utils/cn";
@@ -97,6 +98,47 @@ function SubHeading({ icon, children }: { icon: React.ReactNode; children: React
     <div className="flex items-center gap-2 mb-2">
       <span style={{ color: "var(--color-accent)" }}>{icon}</span>
       <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">{children}</h4>
+    </div>
+  );
+}
+
+// Same playback rule as the onboarding wizard (/onboarding): Admin uploads save a
+// Bunny embed URL (iframe player); HLS streams use the shared PlyrPlayer (hls.js);
+// direct files use a native <video>.
+function OnboardingVideoPlayer({ url, title }: { url: string; title: string }) {
+  const path = url.split("?")[0].toLowerCase();
+  return (
+    <div className="rounded-2xl overflow-hidden bg-black aspect-video w-full">
+      {path.endsWith(".m3u8") ? (
+        <PlyrPlayer hlsUrl={url} className="w-full h-full" />
+      ) : /\.(mp4|webm|ogg|mov)$/.test(path) ? (
+        // eslint-disable-next-line jsx-a11y/media-has-caption
+        <video src={url} controls playsInline preload="metadata" className="w-full h-full" />
+      ) : (
+        <iframe src={url} title={title} className="w-full h-full" loading="lazy" allow="autoplay; fullscreen; picture-in-picture" allowFullScreen />
+      )}
+    </div>
+  );
+}
+
+// Videos uploaded in Admin → Onboarding (active content steps, member-scoped
+// GET /api/onboarding/content). Renders nothing when no step has a video.
+function OnboardingVideos() {
+  const { data, refetch } = useOnboardingContent();
+  useEffect(() => { void refetch(); }, [refetch]);
+  const steps = (data ?? []).filter((s) => !!s.videoUrl);
+  if (steps.length === 0) return null;
+  return (
+    <div>
+      <SubHeading icon={<Video size={13} />}>Onboarding Video{steps.length > 1 ? "s" : ""}</SubHeading>
+      <div className="space-y-4">
+        {steps.map((s) => (
+          <div key={s.id} className="space-y-1.5">
+            {s.title && <p className="text-sm font-semibold text-foreground">{s.title}</p>}
+            <OnboardingVideoPlayer url={s.videoUrl as string} title={s.title || "Onboarding video"} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -200,6 +242,8 @@ export function ProfileOnboardingSection() {
               </div>
             )
           ) : !data ? null : notStarted ? (
+            <div className="space-y-5">
+            <OnboardingVideos />
             <div className="text-center py-4 space-y-3">
               <p className="text-sm text-muted-foreground">You haven&apos;t submitted your onboarding details yet.</p>
               <Link
@@ -209,6 +253,7 @@ export function ProfileOnboardingSection() {
               >
                 Start onboarding
               </Link>
+            </div>
             </div>
           ) : (
             <>
@@ -228,6 +273,9 @@ export function ProfileOnboardingSection() {
                   <p className="text-foreground whitespace-pre-line">{data.onboardingReviewNote}</p>
                 </div>
               )}
+
+              {/* Admin-uploaded onboarding video(s) */}
+              <OnboardingVideos />
 
               {/* Submitted Profile */}
               <div>
