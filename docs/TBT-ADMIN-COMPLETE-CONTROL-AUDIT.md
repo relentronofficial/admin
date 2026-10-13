@@ -180,7 +180,7 @@ A minute is also a **watching/listening minute** if media was playing (heartbeat
 ### 8.3 Accuracy rules
 - **Server clock only:** the minute and the date come from the **database clock**, never the browser, so a client cannot backdate or invent activity.
 - **No double counting:** each minute is one bit in a per-day map. Setting a bit twice has no effect, so retries, several tabs and several devices in the same minute count **once**.
-- **Timezone:** days are counted in **IST (Asia/Kolkata)**. Members have no stored timezone, and the platform already defaults to IST. Midnight IST starts a new day.
+- **Timezone:** days use the platform program calendar, `PROGRAM_TIMEZONE` (default **IST, Asia/Kolkata**), the same calendar as the daily streak and Tier Access days (PR #67). Members have no stored timezone. Midnight starts a new day.
 - **History:** activity before this feature went live was **never recorded**. Those days are shown as **"Not tracked"**, never as 0. Tracking start = the first day any activity was recorded.
 - **Privacy:** only member ID, date, a 1,440-bit minute map, a heartbeat count and first/last activity time are stored. No pages visited, no IP addresses, no content.
 - **Access:** only signed-in admins (Clerk) can read it (`/api/members/*`). Members cannot see other members' data (T8).

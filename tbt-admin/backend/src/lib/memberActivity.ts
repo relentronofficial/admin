@@ -7,9 +7,16 @@
 // several devices active in the same minute all count as one minute.
 
 import type { DailyActivityRow } from './memberActivityLogic.js';
+import { env } from '../config/env.js';
+import { resolveProgramTimezone } from './activityDays.js';
 
-/** All TBT members are India-based; daily totals use IST. */
-export const ACTIVITY_TIMEZONE = 'Asia/Kolkata';
+/**
+ * Same program calendar as the daily streak / Tier Access days
+ * (lib/activityDays.ts): PROGRAM_TIMEZONE, default Asia/Kolkata (IST).
+ * resolveProgramTimezone only returns a validated IANA name, so it is safe to
+ * embed in the SQL below.
+ */
+export const ACTIVITY_TIMEZONE = resolveProgramTimezone(env.PROGRAM_TIMEZONE);
 
 type PrismaLike = {
   $executeRawUnsafe: (...args: any[]) => Promise<any>;
