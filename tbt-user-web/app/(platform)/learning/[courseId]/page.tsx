@@ -753,6 +753,15 @@ function RelatedCourses({ courses, title }: { courses: any[]; title: string }) {
   );
 }
 
+// Razorpay is usable when the backend says so (course.razorpayEnabled — it holds
+// the keys and hands Checkout the keyId per order). NEXT_PUBLIC_RAZORPAY_KEY_ID is
+// only a fallback for older API responses: the Cloud Run `--source` build never
+// received it, which hid every Razorpay button in production.
+function isRazorpayEnabled(course: any): boolean {
+  if (typeof course?.razorpayEnabled === "boolean") return course.razorpayEnabled;
+  return Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
+}
+
 // ── Paywall View ──────────────────────────────────────────────────────────────
 function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: string }) {
   const course = courseRaw as any;
@@ -763,8 +772,14 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const lessons = course.lessons ?? [];
 
-  const hasPriceForRazorpay = course.price != null && Number(course.price) > 0 && !course.pendingPayment;
-  const showRazorpay = hasPriceForRazorpay && Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
+  const hasPrice = course.price != null && Number(course.price) > 0;
+  const razorpayOn = isRazorpayEnabled(course);
+  const hasPriceForRazorpay = hasPrice && !course.pendingPayment;
+  const showRazorpay = hasPriceForRazorpay && razorpayOn;
+  // A pending non-Razorpay request (an earlier "Get Access" / payment-link request
+  // waiting on an admin) must not block paying online — offer Razorpay there too.
+  const canPayPendingWithRazorpay =
+    !!course.pendingPayment && course.pendingPayment.method !== "razorpay" && hasPrice && razorpayOn;
 
   // Load Razorpay Checkout.js as soon as we know the course has a price
   useEffect(() => {
@@ -937,7 +952,7 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
               <Loader2 size={14} style={{ color: "var(--color-alert)" }} className="animate-spin" />
               <span style={{ color: "var(--color-text-normal)" }}>Payment pending — awaiting confirmation</span>
             </div>
-            {course.pendingPayment.method === "razorpay" && course.pendingPayment.razorpayOrderId ? (
+            {(course.pendingPayment.method === "razorpay" && course.pendingPayment.razorpayOrderId) || canPayPendingWithRazorpay ? (
               <button
                 onClick={handleRazorpayPay}
                 disabled={createOrder.isPending || verifyPayment.isPending || checkoutOpen}
@@ -1598,15 +1613,16 @@ export default function CourseDetailPage({
     return () => clearInterval(id);
   }, []);
   // Preload Razorpay Checkout.js for the coin purchase flow
+  const razorpayOn = isRazorpayEnabled(course);
   useEffect(() => {
-    if (!process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID) return;
+    if (!razorpayOn) return;
     if (document.getElementById("rzp-checkout-js")) return;
     const s = document.createElement("script");
     s.id = "rzp-checkout-js";
     s.src = "https://checkout.razorpay.com/v1/checkout.js";
     s.async = true;
     document.body.appendChild(s);
-  }, []);
+  }, [razorpayOn]);
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
@@ -2833,7 +2849,7 @@ export default function CourseDetailPage({
       {coinDialog && (() => {
         const hasEnoughCoins = (me?.totalPoints ?? 0) >= LIFELINE_COIN_COST;
         const allLifelinesUsed = lifelinesLeft === 0;
-        const showGetCoinsPath = allLifelinesUsed && !hasEnoughCoins && Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
+        const showGetCoinsPath = allLifelinesUsed && !hasEnoughCoins && razorpayOn;
         return (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.75)" }}>
             <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>

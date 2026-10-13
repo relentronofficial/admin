@@ -1036,6 +1036,11 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     createdAt: course.createdAt,
     instructor: course.creator ?? null,
     hasAccess,
+    // Whether this server can take Razorpay payments (same check as create-order).
+    // The web paywall decides on this instead of a build-time NEXT_PUBLIC key —
+    // the Cloud Run --source build never received that key, so the Pay button was
+    // hidden in production. Checkout gets keyId from the create-order response.
+    razorpayEnabled: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
     accessType: accessRecord?.accessType ?? null,
     accessExpiresAt: accessRecord?.expiresAt ?? null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
