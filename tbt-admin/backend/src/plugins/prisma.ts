@@ -1597,17 +1597,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       ON points_ledger (member_id, reference_id) WHERE reference_type = 'episode_completion'
     `).catch(() => {});
 
-    // Backfill: publish any active courses that were created before the admin
-    // Publish toggle existed (the create handler now defaults isPublished=true,
-    // but earlier rows are stuck at is_published=false and never appear on the
-    // user side). Idempotent — no-op once every active course is published.
-    await prisma
-      .$executeRawUnsafe(
-        `UPDATE courses SET is_published = true WHERE is_active = true AND is_published = false`,
-      )
-      .catch((err) => {
-        fastify.log.warn('⚠️ Course backfill (is_published) failed (non-fatal):', err);
-      });
+    // (Removed 2026-10-13) A one-time backfill from 2026-07-14 used to run here on
+    // every startup: `UPDATE courses SET is_published = true WHERE is_active =
+    // true AND is_published = false`. It completed long ago, and re-running it on
+    // each deploy silently re-published every course an admin had unpublished.
+    // Do not reintroduce data backfills into startup code — they run on every boot.
 
     // Master-data seed: harvest distinct city + state values from
     // existing members into the master tables. Idempotent — the
@@ -2187,6 +2181,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
              ('Coaching', 'Business Coaching', 3)
       ON CONFLICT (module_name) DO NOTHING
     `).catch(() => {});
+
+    // ── Member daily activity (Daily Time Spent) ─────────────────────────────
+    // One row per member per local day (lib/memberActivity.ts ACTIVITY_TIMEZONE).
+    // active_bits / media_bits hold one bit per minute of the day; setting a bit
+    // is idempotent, so duplicate heartbeats and multiple devices in the same
+    // minute count once. Minutes are taken from the server clock, never the client.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_daily_activity (
+        member_id       UUID        NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        activity_date   DATE        NOT NULL,
+        active_bits     BIT(1440)   NOT NULL DEFAULT repeat('0', 1440)::bit(1440),
+        media_bits      BIT(1440)   NOT NULL DEFAULT repeat('0', 1440)::bit(1440),
+        heartbeat_count INT         NOT NULL DEFAULT 0,
+        first_active_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_active_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (member_id, activity_date)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_member_daily_activity_date ON member_daily_activity (activity_date)`
+    ).catch(() => {});
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.

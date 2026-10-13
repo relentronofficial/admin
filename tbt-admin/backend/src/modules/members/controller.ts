@@ -8,6 +8,56 @@ import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { revokeAllForMember } from '../../plugins/jwt.js';
+import {
+  ACTIVITY_TIMEZONE,
+  getActivityToday,
+  getTrackingStartDate,
+  getMemberDailyRows,
+  getMemberLastActiveAt,
+} from '../../lib/memberActivity.js';
+import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
+
+// ── Daily Time Spent (admin view) ─────────────────────────────────────────────
+// GET /api/members/:id/daily-activity?days=30  (Clerk admin auth via route hook)
+// Days before tracking went live are returned with tracked=false — they are
+// "unknown", never reported as zero activity.
+export async function getMemberDailyActivityHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const days = clampDays((req.query as { days?: string }).days, 30, 366);
+  const prisma = req.server.prisma;
+
+  const member = await prisma.member.findUnique({ where: { id }, select: { id: true, lastSeenAt: true } }).catch(() => null);
+  if (!member) {
+    return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+  }
+
+  try {
+    const today = await getActivityToday(prisma);
+    const fromDate = new Date(Date.parse(`${today}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    const [rows, trackingStartDate, lastActiveAt] = await Promise.all([
+      getMemberDailyRows(prisma, id, fromDate),
+      getTrackingStartDate(prisma),
+      getMemberLastActiveAt(prisma, id),
+    ]);
+    const summary = summarizeDailyActivity(rows, { today, days, trackingStartDate });
+    return reply.send({
+      success: true,
+      data: {
+        timezone: ACTIVITY_TIMEZONE,
+        todayDate: today,
+        trackingStartDate,
+        lastActiveAt,
+        // Socket presence timestamp (connect/disconnect) — a separate, coarser signal.
+        lastSeenAt: member.lastSeenAt ? member.lastSeenAt.toISOString() : null,
+        ...summary,
+      },
+      error: null,
+    });
+  } catch (err: any) {
+    req.log.error({ err }, 'daily activity query failed');
+    return reply.status(500).send({ success: false, data: null, error: { code: 'ACTIVITY_UNAVAILABLE', message: 'Activity data is unavailable' } });
+  }
+}
 
 /**
  * Ensure a member-supplied city / state / businessType value is present
