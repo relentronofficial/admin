@@ -38,6 +38,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
+import { buildSectionGroups, completedLessonIds } from "@/lib/utils/sectionProgress";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import { FeedbackModal } from "@/components/features/video/FeedbackModal";
 import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
@@ -1016,17 +1017,19 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
           <div>
             {(() => {
               const previewSections: any[] = course.sections ?? [];
-              let lastSectionId: string | null = null;
-              return lessons.map((lesson: any, idx: number) => {
-                const sid = previewSections.length > 0 ? ((lesson as any).sectionId ?? null) : null;
-                const showHeader = previewSections.length > 0 && sid !== lastSectionId;
-                const sec = sid ? previewSections.find((s: any) => s.id === sid) : null;
-                lastSectionId = sid;
+              // Same grouping as the member sidebar (section sortOrder, then General);
+              // no progress here — the member has no access yet.
+              const rows = buildSectionGroups(lessons as any[], previewSections, []).flatMap((group) =>
+                group.lessons.map((lesson: any, i: number) => ({ lesson, group, first: i === 0 })),
+              );
+              return rows.map(({ lesson, group, first }, idx: number) => {
+                const showHeader = previewSections.length > 0 && first;
                 return (
                   <React.Fragment key={lesson.id}>
                     {showHeader && (
-                      <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
-                        {sec?.title ?? "General"}
+                      <div className="flex items-center gap-3 px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
+                        <span className="flex-1 truncate">{group.section?.title ?? "General"}</span>
+                        <span className="shrink-0 tabular-nums">{group.total}</span>
                       </div>
                     )}
                     <div
@@ -2777,24 +2780,20 @@ export default function CourseDetailPage({
   const courseSections: any[] = (course as any)?.sections ?? [];
   // Modules — topic-area tabs that filter the lesson sidebar
   const courseModules: any[] = (course as any)?.modules ?? [];
-  const visibleLessons = selectedModule
-    ? lessons.filter((l: any) => ((l as any).moduleIds ?? []).includes(selectedModule))
-    : lessons;
-  const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
-
-  // C-F-4: Auto-collapse all sections except the one containing the active lesson.
-  // Runs when course sections load or when the selected lesson changes.
-  useEffect(() => {
-    if (courseSections.length === 0) return;
-    const activeSectionId = (selectedLesson as any)?.sectionId ?? "__unsectioned__";
-    setCollapsedSections(
-      new Set<string>(
-        courseSections
-          .map((s: any) => s.id as string)
-          .filter((id) => id !== activeSectionId)
-      )
-    );
-  }, [courseSections.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Sidebar rows grouped by section (admin order: sections by sortOrder, then
+  // "General"). Each group's completed/total covers all of its lessons for
+  // this member, independent of the module filter. Without sections this is a
+  // single group in course order, i.e. the plain lesson list.
+  const sectionGroups = buildSectionGroups(
+    lessons as any[], courseSections, completedIds,
+    selectedModule ? (l: any) => ((l as any).moduleIds ?? []).includes(selectedModule) : undefined,
+  );
+  const sidebarRows = sectionGroups.flatMap((group) =>
+    group.visibleLessons.map((lesson: any, i: number) => ({ lesson: lesson as Lesson, group, isFirstInSection: i === 0 })),
+  );
+  // Course totals count only progress for lessons in this course response —
+  // progress rows for hidden episodes would otherwise push it past 100%.
+  const completedCount = completedLessonIds(lessons, completedIds).size;
 
   return (
     <div className="space-y-6 pb-12">
@@ -3356,7 +3355,7 @@ export default function CourseDetailPage({
                   </p>
                 )}
                 <p className="text-xs mt-2 overlay-meta">
-                  {completedIds.size} / {lessons.length} completed
+                  {completedCount} / {lessons.length} completed
                 </p>
               </div>
             </div>
@@ -3368,7 +3367,7 @@ export default function CourseDetailPage({
             {/* Gamification summary — only when no lesson playing */}
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { icon: <CheckCircle2 size={14} />, label: "Completed", value: `${completedIds.size} / ${lessons.length}` },
+                { icon: <CheckCircle2 size={14} />, label: "Completed", value: `${completedCount} / ${lessons.length}` },
                 { icon: <Zap size={14} />, label: "XP / Lesson", value: `+${(course as any).xpPerEpisode ?? 10}` },
                 { icon: <Trophy size={14} />, label: "Pass Score", value: `${(course as any).passingScorePercent ?? 70}%` },
                 { icon: <Award size={14} />, label: "Quizzes", value: lessons.filter((l: any) => l.hasQuiz).length },
@@ -3401,8 +3400,8 @@ export default function CourseDetailPage({
               const targetLesson = firstUnfinished ?? (lessons.find((l: any) => l.videoUrl) as any ?? null);
               if (!targetLesson) return null;
               const label =
-                completedIds.size === 0 ? "Start Learning"
-                : completedIds.size >= lessons.length ? "Review Course"
+                completedCount === 0 ? "Start Learning"
+                : completedCount >= lessons.length ? "Review Course"
                 : "Resume Course";
               return (
                 <button
@@ -3426,9 +3425,9 @@ export default function CourseDetailPage({
         >
           <div className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
             {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"}
-            {completedIds.size > 0 && (
+            {completedCount > 0 && (
               <span className="ml-2 text-xs font-normal" style={{ color: "var(--color-text-subtle)" }}>
-                · {completedIds.size} done
+                · {completedCount} done
               </span>
             )}
           </div>
@@ -3475,23 +3474,16 @@ export default function CourseDetailPage({
         </div>
 
         <div>
-          {visibleLessons.length === 0 ? (
+          {sidebarRows.length === 0 ? (
             <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
               No lessons in this module yet.
             </p>
           ) : (
-            visibleLessons.map((lesson, idx) => {
-              // Section grouping — prepend a header before the first lesson of each section
-              const lessonSectionId = courseSections.length > 0 ? ((lesson as any).sectionId ?? "__unsectioned__") : null;
-              const prevSectionId = courseSections.length > 0 && idx > 0 ? (((visibleLessons[idx - 1]) as any).sectionId ?? "__unsectioned__") : null;
-              const isFirstInSection = courseSections.length > 0 && (idx === 0 || lessonSectionId !== prevSectionId);
-              const section = lessonSectionId && lessonSectionId !== "__unsectioned__"
-                ? courseSections.find((s: any) => s.id === lessonSectionId) : null;
+            sidebarRows.map(({ lesson, group, isFirstInSection }, idx) => {
+              // Section grouping — a header precedes the first lesson of each group
+              const lessonSectionId = courseSections.length > 0 ? (group.id ?? "__unsectioned__") : null;
+              const section = group.section;
               const isSectionCollapsed = lessonSectionId !== null && collapsedSections.has(lessonSectionId);
-              const sectionLessons = section
-                ? visibleLessons.filter((l: any) => ((l as any).sectionId ?? null) === section.id)
-                : visibleLessons.filter((l: any) => !((l as any).sectionId));
-              const completedCount = sectionLessons.filter((l: any) => completedIds.has(l.id)).length;
               const isCompleted = completedIds.has(lesson.id);
               const isActive = selectedLesson?.id === lesson.id;
               const isLocked = (lesson as any).locked === true;
@@ -3527,13 +3519,26 @@ export default function CourseDetailPage({
                             {Math.round((section as any).timerSeconds / 60)}m
                           </span>
                         )}
-                        <span className="text-[10px] shrink-0 font-semibold" style={{ color: completedCount === sectionLessons.length ? "var(--color-success)" : "var(--color-text-disabled)" }}>
-                          {completedCount}/{sectionLessons.length}
+                        <span
+                          className="text-[10px] shrink-0 font-semibold tabular-nums"
+                          title={`${group.percent}%`}
+                          aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
+                          style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
+                        >
+                          {group.completed}/{group.total}
                         </span>
                       </button>
                     ) : (
-                      <div className="px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
-                        General
+                      <div className="flex items-center gap-3 px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
+                        <span className="flex-1">General</span>
+                        <span
+                          className="shrink-0 font-semibold tabular-nums normal-case"
+                          title={`${group.percent}%`}
+                          aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
+                          style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
+                        >
+                          {group.completed}/{group.total}
+                        </span>
                       </div>
                     )
                   )}
