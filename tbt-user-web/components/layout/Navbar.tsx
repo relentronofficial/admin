@@ -315,7 +315,6 @@ export function Navbar() {
 
   const { data: unreadCount = 0 } = useNotificationUnreadCount();
   const { data: unreadMsgCount = 0 } = useConversationUnreadCount();
-  const { data: me } = useMe();
 
   // ── Socket: invalidate + toast on new notification ────────────────────────
   useEffect(() => {
@@ -580,17 +579,6 @@ export function Navbar() {
 
         {/* Right icons */}
         <div className="flex items-center gap-1 ml-auto lg:ml-0">
-
-          {/* Tier badge */}
-          {(() => {
-            const tier = me?.currentTier ?? null;
-            if (!tier) return null;
-            return (
-              <Link href="/profile" className="flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold select-none" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)", border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)" }}>
-                <span style={{ fontSize: 10 }}>⬡</span> Tier {tier}
-              </Link>
-            );
-          })()}
 
           {/* Learning streak (dropdown) */}
           {!hiddenMenuKeys.includes("streak") && <StreakButton />}

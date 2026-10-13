@@ -3,10 +3,10 @@ import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { StreakButton } from "./StreakButton";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 
-// Navbar flame = daily streak (GET /api/user/streak). Dashboard Tier Access tile =
-// active program days / configured duration (GET /api/user/mentorship/stats). Both
-// come from the same backend activity-day ledger; here each hook is a shared mutable
-// fixture so the test can check what each place renders and that they update together.
+// Navbar flame label and the dashboard "Tier Access" tile both read
+// activeDays/totalDays from the same useMentorshipStats() query
+// (GET /api/user/mentorship/stats). Each hook is a shared mutable fixture here so
+// the test checks both places render the same value and change together.
 const state = vi.hoisted(() => ({ stats: {} as any, streak: {} as any }));
 
 vi.mock("@/lib/hooks/useMentorship", () => ({
@@ -42,69 +42,65 @@ const stats = (activeDays: number, totalDays: number, daysElapsed = 30) => ({
   },
   isLoading: false, isError: false, refetch: vi.fn(),
 });
-const streak = (currentStreak: number, activeToday = true) => ({
+const streak = (currentStreak: number, activeToday = false) => ({
   data: { currentStreak, longestStreak: currentStreak, activeToday, totalActiveDays: currentStreak, pointsToday: 0, last7Days: [] },
   isLoading: false,
 });
 
-const flame = () => screen.getByRole("button", { name: /Learning Streak:/ });
+const flame = () => screen.getByRole("button", { name: /^Tier Access:/ });
 const flameValue = () => flame().textContent!.replace(/\s+/g, "");
 const tierTile = () =>
   screen.getByText("Tier Access").closest("div")!.parentElement!.textContent!.replace(/\s+/g, "").replace("TierAccess", "");
+const both = () => <><StreakButton /><MentorshipDashboard /></>;
 
 beforeEach(() => {
-  state.stats = stats(12, 90);
-  state.streak = streak(3);
+  state.stats = stats(0, 90);
+  state.streak = streak(2);
 });
 afterEach(cleanup);
 
-describe("Navbar streak + dashboard Tier Access", () => {
-  it("navbar shows the daily streak; Tier Access shows active days / program duration", () => {
-    render(<><StreakButton /><MentorshipDashboard /></>);
-    expect(flameValue()).toBe("3");
-    expect(flame().getAttribute("aria-label")).toBe("Learning Streak: 3 days");
-    expect(tierTile()).toBe("12/90d");
-  });
-
-  it("Tier Access uses active days, not calendar days since the batch started", () => {
-    state.stats = stats(5, 90, 40); // 40 calendar days in, active on 5 of them
-    render(<MentorshipDashboard />);
-    expect(tierTile()).toBe("5/90d");
-  });
-
-  it("uses the configured duration (extended program)", () => {
-    state.stats = stats(12, 104);
-    render(<MentorshipDashboard />);
-    expect(tierTile()).toBe("12/104d");
-  });
-
-  it("both update after a new active day", () => {
-    const { rerender } = render(<><StreakButton /><MentorshipDashboard /></>);
-    state.streak = streak(4);
-    state.stats = stats(13, 90);
-    rerender(<><StreakButton /><MentorshipDashboard /></>);
-    expect(flameValue()).toBe("4");
-    expect(tierTile()).toBe("13/90d");
-  });
-
-  it("after a missed day the streak drops but Tier Access keeps its total", () => {
-    state.streak = streak(1);
-    state.stats = stats(13, 90);
-    render(<><StreakButton /><MentorshipDashboard /></>);
-    expect(flameValue()).toBe("1");
-    expect(tierTile()).toBe("13/90d");
-  });
-
-  it("older API responses without activeDays show 0, never calendar days", () => {
-    state.stats = stats(0, 90, 45);
-    delete state.stats.data.activeDays;
-    render(<MentorshipDashboard />);
+describe("Navbar flame shows Tier Access, same as the dashboard tile", () => {
+  it("0/90d in both places", () => {
+    render(both());
+    expect(flameValue()).toBe("0/90d");
     expect(tierTile()).toBe("0/90d");
   });
 
-  it("keeps the streak dropdown", () => {
+  it("changes to 15/90d in both places", () => {
+    const { rerender } = render(both());
+    state.stats = stats(15, 90);
+    rerender(both());
+    expect(flameValue()).toBe("15/90d");
+    expect(tierTile()).toBe("15/90d");
+  });
+
+  it("matches again after a refresh (fresh mount from the same data)", () => {
+    state.stats = stats(15, 90);
+    render(both());
+    const before = [flameValue(), tierTile()];
+    cleanup();
+    render(both());
+    expect([flameValue(), tierTile()]).toEqual(before);
+    expect(before).toEqual(["15/90d", "15/90d"]);
+  });
+
+  it("is active days, not calendar days, and follows the configured duration", () => {
+    state.stats = stats(5, 104, 60);
+    render(both());
+    expect(flameValue()).toBe("5/104d");
+    expect(tierTile()).toBe("5/104d");
+  });
+
+  it("shows a placeholder while loading", () => {
+    state.stats = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
+    render(<StreakButton />);
+    expect(flameValue()).toBe("–");
+  });
+
+  it("keeps the daily streak in the dropdown and accessible name", () => {
     state.streak = streak(5);
     render(<StreakButton />);
+    expect(flame().getAttribute("aria-label")).toBe("Tier Access: 0/90d. Learning Streak: 5 days");
     fireEvent.click(flame());
     expect(screen.getByRole("dialog").textContent!.replace(/\s+/g, "")).toContain("5days");
   });
