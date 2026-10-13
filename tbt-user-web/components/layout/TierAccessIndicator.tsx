@@ -18,13 +18,16 @@ export function TierAccessIndicator() {
   const label = (uiStrings as any)?.tierAccessLabel ?? "Tier Access";
   const active = stats?.activeDays ?? 0;
   const total = stats?.totalDays ?? 0;
-  const value = isLoading || !stats ? "–" : total > 0 ? `${active}/${total}d` : `${active}d`;
+  // Visible: the count only (e.g. 📅 12). Screen readers / tooltip get the full
+  // "Tier Access: 12/90d" context.
+  const value = isLoading || !stats ? "–" : String(active);
+  const fullText = isLoading || !stats ? "–" : total > 0 ? `${active}/${total}d` : `${active}d`;
 
   return (
     <div
       role="status"
-      aria-label={`${label}: ${value}`}
-      title={label}
+      aria-label={`${label}: ${fullText}`}
+      title={`${label}: ${fullText}`}
       className="flex items-center gap-1 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-xl flex-shrink-0 select-none text-muted-foreground"
       style={{
         background: "var(--color-surface-overlay-xs)",
@@ -32,18 +35,7 @@ export function TierAccessIndicator() {
       }}
     >
       <CalendarDays size={15} className="flex-shrink-0 hidden min-[380px]:block" style={{ color: "var(--color-accent)" }} />
-      <span className="hidden sm:inline text-[11px] font-semibold whitespace-nowrap">{label}</span>
-      {/* Phones stack "12" over "/90d" to save width; inline from `sm` up. */}
-      <span className="font-bold tabular-nums whitespace-nowrap text-foreground leading-none flex flex-col items-start sm:flex-row sm:items-baseline">
-        {isLoading || !stats ? (
-          <span className="text-xs">–</span>
-        ) : (
-          <>
-            <span className="text-[11px] sm:text-xs">{active}</span>
-            <span className="text-[9px] sm:text-xs opacity-80 sm:opacity-100">{total > 0 ? `/${total}d` : "d"}</span>
-          </>
-        )}
-      </span>
+      <span className="text-xs font-bold tabular-nums whitespace-nowrap text-foreground">{value}</span>
     </div>
   );
 }
