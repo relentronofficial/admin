@@ -32,7 +32,6 @@ export function StreakButton() {
   const flameColor = activeToday ? STREAK_GOLD : undefined;
   const daysUnit = uiStrings?.streakDaysUnit ?? "days";
   const title = uiStrings?.streakTitle ?? "Learning Streak";
-  const streakSuffix = (uiStrings as any)?.streakNavbarSuffix ?? "day streak";
 
 
 
@@ -66,11 +65,10 @@ export function StreakButton() {
           className={cn("relative z-10", activeToday && "drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]")}
           style={flameColor ? { color: flameColor, fill: flameColor } : undefined}
         />
-        {/* Streak count — this button shows only the streak; Tier Access is its own
-            navbar indicator (TierAccessIndicator). Phones show just the number. */}
+        {/* Streak count only (e.g. 🔥 0) — Tier Access is its own navbar indicator
+            (TierAccessIndicator). The full description is in the aria-label. */}
         <span className="relative z-10 text-xs font-bold tabular-nums whitespace-nowrap" style={flameColor ? { color: flameColor } : undefined}>
           {isLoading ? "–" : current}
-          <span className="hidden sm:inline font-semibold"> {streakSuffix}</span>
         </span>
         {atRisk && (
           <span

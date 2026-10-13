@@ -64,29 +64,33 @@ afterEach(cleanup);
 describe("Navbar: Streak and Tier Access are separate indicators", () => {
   it("renders two independent elements with their own label and value", () => {
     render(navbar());
-    expect(flat(streakEl())).toBe("5daystreak");
-    expect(flat(tierEl())).toBe("TierAccess12/90d");
+    expect(flat(streakEl())).toBe("5");
+    expect(flat(tierEl())).toBe("12");
     // Neither sits inside the other's container.
     expect(streakEl().contains(tierEl())).toBe(false);
     expect(tierEl().contains(streakEl())).toBe(false);
-    expect(flat(streakEl())).not.toContain("90d");
-    expect(flat(tierEl())).not.toContain("streak");
+    // Numbers only — no "day streak", "Tier Access" or "/90d" text is shown.
+    expect(streakEl().textContent).not.toMatch(/streak|Tier|\d+d/i);
+    expect(tierEl().textContent).not.toMatch(/streak|Tier|\/|\d+d/i);
+    // Full context stays available to screen readers / tooltip.
+    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 12/90d");
+    expect(streakEl().getAttribute("aria-label")).toBe("Learning Streak: 5 days");
   });
 
   it("changing the streak does not change Tier Access", () => {
     const { rerender } = render(navbar());
     state.streak = streak(9);
     rerender(navbar());
-    expect(flat(streakEl())).toBe("9daystreak");
-    expect(flat(tierEl())).toBe("TierAccess12/90d");
+    expect(flat(streakEl())).toBe("9");
+    expect(flat(tierEl())).toBe("12");
   });
 
   it("changing Tier Access does not change the streak", () => {
     const { rerender } = render(navbar());
     state.stats = stats(15, 90);
     rerender(navbar());
-    expect(flat(tierEl())).toBe("TierAccess15/90d");
-    expect(flat(streakEl())).toBe("5daystreak");
+    expect(flat(tierEl())).toBe("15");
+    expect(flat(streakEl())).toBe("5");
   });
 
   it("Tier Access matches the dashboard tile", () => {
@@ -100,8 +104,8 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     state.streak = { data: undefined, isLoading: true };
     state.stats = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
     render(navbar());
-    expect(flat(streakEl())).toBe("–daystreak");
-    expect(flat(tierEl())).toBe("TierAccess–");
+    expect(flat(streakEl())).toBe("–");
+    expect(flat(tierEl())).toBe("–");
   });
 
   it("streak dropdown still works", () => {
