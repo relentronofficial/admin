@@ -19,31 +19,52 @@ const SERVICES = [
     name: 'backend-prod',
     url: 'https://tbt-backend-464464507912.asia-south1.run.app/api/pub/config/site',
     critical: true,
+    timeoutMs: 8000,
+    // Any 2xx = up
+    okStatuses: null,
   },
   {
     name: 'backend-staging',
     url: 'https://tbt-backend-staging-nt77kcmmiq-el.a.run.app/api/pub/config/site',
     critical: false,
+    // Cloud Run staging cold-starts can take 15–20s
+    timeoutMs: 20000,
+    okStatuses: null,
   },
   {
     name: 'user-web',
     url: 'https://app.tamilbusinesstribe.com',
     critical: true,
+    timeoutMs: 8000,
+    // Cloud Run load balancer may issue a 301/302 redirect (e.g. trailing-slash
+    // normalisation). Any response means the service is serving traffic.
+    okStatuses: [200, 301, 302, 307, 308],
   },
   {
     name: 'admin-panel',
+    // Clerk-protected — unauthenticated requests get 302→Clerk sign-in.
+    // Any response (including 3xx/4xx) means Vercel is serving the app.
     url: 'https://v0-tbt-ott-admin.vercel.app',
     critical: true,
+    timeoutMs: 8000,
+    // 200, 302, 401, 403, 404 all mean "server is up"
+    okStatuses: [200, 302, 401, 403, 404],
   },
 ];
 
 async function checkService(service) {
   const start = Date.now();
   try {
-    const res = await fetch(service.url, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(service.url, {
+      signal: AbortSignal.timeout(service.timeoutMs ?? 8000),
+      redirect: 'manual', // don't follow redirects — a redirect IS a response
+    });
+    const ok = service.okStatuses
+      ? service.okStatuses.includes(res.status)
+      : res.ok;
     return {
       name: service.name,
-      status: res.ok ? 'up' : 'degraded',
+      status: ok ? 'up' : 'degraded',
       httpStatus: res.status,
       latencyMs: Date.now() - start,
       critical: service.critical,

@@ -104,6 +104,17 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     ),
   ]);
 
+  // CP-03: Fetch program's allowed course modules
+  let programAllowedModules: string[] = [];
+  if ((batch as any)?.programId) {
+    const pmRow = await req.server.prisma.$queryRawUnsafe<{ allowed_modules: any }[]>(
+      `SELECT allowed_modules FROM programs WHERE id = $1::uuid`,
+      (batch as any).programId
+    ).catch(() => []);
+    const raw = pmRow[0]?.allowed_modules;
+    programAllowedModules = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+  }
+
   const baseDays = (batch as any)?.snapshotDays ?? (batch as any)?.program?.durationDays ?? 90;
   const extendedDays = (settings[0] as any)?.extended_days ?? 0;
   const totalDays = baseDays + extendedDays;
@@ -204,6 +215,7 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     data: {
       batch,
       programName: (batch as any)?.program?.name ?? null,
+      programAllowedModules,
       totalDays,
       days,
       progress,

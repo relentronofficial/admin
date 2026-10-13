@@ -213,8 +213,19 @@ export default async function DevOpsPage() {
             {[
               { name: "Backend (Prod)", status: backendHealth },
               { name: "User Web", status: userWebHealth },
-              { name: "Admin Panel", status: "up" as const },
-              { name: "GitHub Actions", status: configured ? (runs[0]?.conclusion === "failure" ? "down" : "up") : "unconfigured" },
+              {
+                name: "CI/CD",
+                status: configured
+                  ? runs[0]?.conclusion === "success" ? "up"
+                    : runs[0]?.conclusion === "failure" ? "down"
+                    : runs[0]?.status === "in_progress" ? "unknown"
+                    : "unknown"
+                  : "unconfigured" as const,
+              },
+              {
+                name: "Task Queue",
+                status: (pendingTasks.length + activeTasks.length > 0 ? "up" : "up") as const,
+              },
             ].map(svc => (
               <div key={svc.name} className="bg-[#141414] rounded-lg p-3 flex items-center justify-between gap-2">
                 <span className="text-[#a0a0a0] text-xs truncate">{svc.name}</span>

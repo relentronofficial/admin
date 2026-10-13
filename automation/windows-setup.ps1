@@ -134,8 +134,31 @@ if (-not $nodeExe) {
         -Description "TBT GitHub Issues -> Local Queue Sync - runs every 30min" | Out-Null
 
     Write-Host "  ✅ Created: TBT-TaskIntake (every 30min)" -ForegroundColor Green
+
+    # Task runner — every 60 minutes (picks up tasks and invokes Claude Code)
+    $runnerAction = New-ScheduledTaskAction `
+        -Execute $nodeExe `
+        -Argument "$ROOT\automation\task-runner.mjs" `
+        -WorkingDirectory $ROOT
+
+    $runnerTrigger = New-ScheduledTaskTrigger `
+        -RepetitionInterval (New-TimeSpan -Minutes 60) `
+        -Once `
+        -At (Get-Date).Date.AddHours(9)
+
+    Unregister-ScheduledTask -TaskName "TBT-TaskRunner" -Confirm:$false -ErrorAction SilentlyContinue
+
+    Register-ScheduledTask `
+        -TaskName "TBT-TaskRunner" `
+        -Action $runnerAction `
+        -Trigger $runnerTrigger `
+        -Settings $taskSettings `
+        -RunLevel Highest `
+        -Description "TBT Autonomous Task Runner - picks up GitHub Issues and invokes Claude Code" | Out-Null
+
+    Write-Host "  ✅ Created: TBT-TaskRunner (every 60min)" -ForegroundColor Green
     Write-Host "  ⚠️  NOTE: Set GITHUB_TOKEN in System Environment Variables" -ForegroundColor DarkYellow
-    Write-Host "           for task-intake.mjs to authenticate with GitHub" -ForegroundColor DarkYellow
+    Write-Host "           for task-intake.mjs and task-runner.mjs to authenticate with GitHub" -ForegroundColor DarkYellow
 }
 
 # ──────────────────────────────────────────────────────────────────
@@ -180,7 +203,9 @@ Write-Host ""
 Write-Host "  Task Scheduler jobs created:" -ForegroundColor White
 Write-Host "  - TBT-HealthMonitor: runs every 2h" -ForegroundColor Gray
 Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 30min" -ForegroundColor Gray
+Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 60min" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Run manually:" -ForegroundColor White
 Write-Host "  node automation/health-check.mjs" -ForegroundColor Gray
 Write-Host "  node automation/task-intake.mjs" -ForegroundColor Gray
+Write-Host "  node automation/task-runner.mjs" -ForegroundColor Gray
