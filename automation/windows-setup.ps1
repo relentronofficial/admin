@@ -157,6 +157,34 @@ if (-not $nodeExe) {
         -Description "TBT Autonomous Task Runner - picks up GitHub Issues and invokes Claude Code" | Out-Null
 
     Write-Host "  ✅ Created: TBT-TaskRunner (every 60min)" -ForegroundColor Green
+
+    # Smoke test — daily 09:15 + 5min after logon (post-deploy validation)
+    $smokeAction = New-ScheduledTaskAction `
+        -Execute $nodeExe `
+        -Argument "$ROOT\automation\smoke-test.mjs" `
+        -WorkingDirectory $ROOT
+
+    $smokeTrigger1 = New-ScheduledTaskTrigger -Daily -At "09:15"
+    $smokeTrigger2 = New-ScheduledTaskTrigger -AtLogOn
+    $smokeTrigger2.Delay = "PT5M"
+
+    $smokeSettings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 5) `
+        -MultipleInstances IgnoreNew `
+        -RunOnlyIfNetworkAvailable `
+        -StartWhenAvailable
+
+    Unregister-ScheduledTask -TaskName "TBT-SmokeTest" -Confirm:$false -ErrorAction SilentlyContinue
+
+    Register-ScheduledTask `
+        -TaskName "TBT-SmokeTest" `
+        -Action $smokeAction `
+        -Trigger $smokeTrigger1, $smokeTrigger2 `
+        -Settings $smokeSettings `
+        -RunLevel Highest `
+        -Description "TBT Post-Deploy Smoke Tests — validates backend + user-web after deploy" | Out-Null
+
+    Write-Host "  ✅ Created: TBT-SmokeTest (daily 09:15 + 5min after logon)" -ForegroundColor Green
     Write-Host "  ⚠️  NOTE: Set GITHUB_TOKEN in System Environment Variables" -ForegroundColor DarkYellow
     Write-Host "           for task-intake.mjs and task-runner.mjs to authenticate with GitHub" -ForegroundColor DarkYellow
 }
@@ -167,7 +195,9 @@ if (-not $nodeExe) {
 Write-Host "`n[5/5] Environment variable checklist..." -ForegroundColor Yellow
 
 $requiredVars = @(
-    @{ Name = "GITHUB_TOKEN"; Purpose = "GitHub API access (task-intake.mjs)" }
+    @{ Name = "GITHUB_TOKEN";        Purpose = "GitHub API access (task-intake.mjs, task-runner.mjs)" }
+    @{ Name = "TELEGRAM_BOT_TOKEN";  Purpose = "Telegram push notifications (optional — notify.mjs)" }
+    @{ Name = "TELEGRAM_CHAT_ID";    Purpose = "Telegram chat ID (optional — notify.mjs)" }
 )
 
 foreach ($v in $requiredVars) {
@@ -204,8 +234,17 @@ Write-Host "  Task Scheduler jobs created:" -ForegroundColor White
 Write-Host "  - TBT-HealthMonitor: runs every 2h" -ForegroundColor Gray
 Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 30min" -ForegroundColor Gray
 Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 60min" -ForegroundColor Gray
+Write-Host "  - TBT-SmokeTest: validates production after deploy" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  Optional: Telegram push notifications (get alerts on your phone)" -ForegroundColor White
+Write-Host "  1. Message @BotFather on Telegram → /newbot → copy token" -ForegroundColor Gray
+Write-Host "  2. Visit https://api.telegram.org/bot<TOKEN>/getUpdates → copy chat.id" -ForegroundColor Gray
+Write-Host "  3. [System.Environment]::SetEnvironmentVariable('TELEGRAM_BOT_TOKEN','<token>','User')" -ForegroundColor Gray
+Write-Host "     [System.Environment]::SetEnvironmentVariable('TELEGRAM_CHAT_ID','<id>','User')" -ForegroundColor Gray
+Write-Host "  4. node automation/notify.mjs 'TBT test message'" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Run manually:" -ForegroundColor White
 Write-Host "  node automation/health-check.mjs" -ForegroundColor Gray
 Write-Host "  node automation/task-intake.mjs" -ForegroundColor Gray
 Write-Host "  node automation/task-runner.mjs" -ForegroundColor Gray
+Write-Host "  node automation/smoke-test.mjs" -ForegroundColor Gray

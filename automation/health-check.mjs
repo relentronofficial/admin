@@ -8,6 +8,7 @@
 import { readFileSync, appendFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { notify } from './notify.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -111,6 +112,10 @@ async function main() {
   // Exit with non-zero if critical services are down (useful for scheduled tasks)
   if (criticalDown.length > 0) {
     console.error('\n❌ CRITICAL: Services down:', criticalDown.map(r => r.name).join(', '));
+    await notify(
+      `🚨 *TBT Critical Alert*\n\n${criticalDown.length} service(s) DOWN:\n${criticalDown.map(r => `• ${r.name}${r.error ? ` — ${r.error.slice(0, 80)}` : ''}`).join('\n')}\n\n_${new Date().toISOString()}_`,
+      'MarkdownV2'
+    ).catch(() => {});
     process.exit(1);
   }
 }
