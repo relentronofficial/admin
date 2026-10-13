@@ -16,6 +16,7 @@ import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
+import { ProfileOnboardingSection } from "@/components/features/profile/ProfileOnboardingSection";
 import toast from "react-hot-toast";
 import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
 
@@ -1214,6 +1215,9 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Onboarding — member's own application, read-only (same data as Admin → Onboarding) */}
+      <ProfileOnboardingSection />
 
       {/* Stats strip — only rendered when new fields are present (guards old cached backend response) */}
       {profile.totalPoints != null && <StatsStrip profile={profile} />}
