@@ -495,7 +495,7 @@ export async function listCourseModuleTabsHandler(request: FastifyRequest, reply
   const rows = await request.server.prisma.$queryRawUnsafe<{ module: string }[]>(
     `SELECT DISTINCT module
      FROM courses
-     WHERE module IS NOT NULL AND is_published = true
+     WHERE module IS NOT NULL AND is_published = true AND is_active = true
      ORDER BY module`
   ).catch(() => [] as { module: string }[]);
   return ok(reply, rows.map(r => ({ title: r.module })));
@@ -519,7 +519,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
   const catalogKey = canCache
-    ? `courses:catalog:v2:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
+    ? `courses:catalog:v3:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
     : null;
 
   type CatalogEntry = {
@@ -527,7 +527,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     thumbnailUrl: string | null; level: string | null; durationHours: number | null;
     durationDisplay: string | null; taskDurationDisplay: string | null; price: number | null; isPublished: boolean;
     isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
-    instructor: any; module: string | null;
+    instructor: any; module: string | null; requiredTier: number;
     _count: { lessons: number; enrollments: number };
   };
   type CatalogCache = { entries: CatalogEntry[]; total: number };
@@ -541,7 +541,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     const result = await cacheGetOrCompute<CatalogCache>(redis, catalogKey, 300, async () => {
       // Fix B: single raw-SQL round-trip replaces count + findMany + modRows (3 → 1).
       const sqlParams: any[] = [];
-      const conditions: string[] = ['c.is_published = true'];
+      const conditions: string[] = ['c.is_published = true', 'c.is_active = true'];
       if (level) { sqlParams.push(level); conditions.push(`c.level = $${sqlParams.length}`); }
       if (category) { sqlParams.push(category); conditions.push(`c.category_id = $${sqlParams.length}::uuid`); }
       if (moduleTitle) { sqlParams.push(moduleTitle); conditions.push(`c.module = $${sqlParams.length}`); }
@@ -560,7 +560,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         SELECT
           c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
           c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-          c.xp_per_episode, c.module,
+          c.xp_per_episode, c.module, c.required_tier,
           a.id AS creator_id, a.full_name AS creator_full_name,
           a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -617,7 +617,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay, taskDurationDisplay,
           price: r.price ? Number(r.price) : null, isPublished: r.is_published,
           isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
-          instructor: creator, module: r.module ?? null,
+          instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
           _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
         };
       });
@@ -633,7 +633,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     // Search path: same single-query approach (no caching since results vary by query string).
     const searchTerm = search?.trim() ?? '';
     const searchParams: any[] = [];
-    const searchConds: string[] = ['c.is_published = true'];
+    const searchConds: string[] = ['c.is_published = true', 'c.is_active = true'];
     if (searchTerm) {
       searchParams.push(`%${searchTerm}%`);
       const p = searchParams.length;
@@ -649,7 +649,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       SELECT
         c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
         c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-        c.xp_per_episode, c.module,
+        c.xp_per_episode, c.module, c.required_tier,
         a.id AS creator_id, a.full_name AS creator_full_name,
         a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -705,7 +705,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         thumbnailUrl: r.thumbnail_url, level: r.level, durationHours, durationDisplay, taskDurationDisplay,
         price: r.price ? Number(r.price) : null, isPublished: r.is_published,
         isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
-        instructor: creator, module: r.module ?? null,
+        instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
         _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
       };
     });
@@ -727,7 +727,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     : [];
   const accessMap = new Map((accessRecords as any[]).map((a: any) => [a.courseId, a]));
 
-  const data = catalogEntries.map((c) => ({
+  let data = catalogEntries.map((c) => ({
     ...c,
     hasAccess: isAccessValid(accessMap.get(c.id) ?? null),
   }));
@@ -738,14 +738,15 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   let programName: string | null = null;
 
   const personKey = `courses:personalization:${request.memberId}`;
-  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none' };
+  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none'; memberTier: number };
   const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
-    // Fetch batch_id + allowed_modules (member override) in one raw SQL call
+    // Fetch batch_id + allowed_modules + current_tier (member override) in one raw SQL call
     const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT batch_id, allowed_modules FROM members WHERE id = $1::uuid`,
+      `SELECT batch_id, allowed_modules, current_tier FROM members WHERE id = $1::uuid`,
       request.memberId
     ).catch(() => []);
     const memberRow = memberRows[0];
+    const memberTier = Number(memberRow?.current_tier ?? 1);
 
     // CP-11: member-level override takes priority over program
     const memberModuleOverride = memberRow?.allowed_modules;
@@ -754,7 +755,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         ? memberModuleOverride
         : JSON.parse(memberModuleOverride);
       const overrideState: PersonCtx['state'] = parsed.length > 0 ? 'program' : 'direct';
-      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const };
+      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const, memberTier };
     }
 
     if (memberRow?.batch_id) {
@@ -770,10 +771,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         const raw = b.allowed_modules;
         const mods: string[] = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
         if (mods.length > 0) {
-          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const };
+          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const, memberTier };
         }
       }
-      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const };
+      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier };
     }
 
     const anyAccess = await (request.server.prisma as any).courseAccess.findFirst({
@@ -781,13 +782,19 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       select: { id: true },
     }).catch(() => null);
     return anyAccess
-      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const }
-      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const };
+      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier }
+      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const, memberTier };
   });
 
   personalizationState = personCtx.state;
   allowedModules = personCtx.modules;
   programName = personCtx.name;
+
+  // Filter out courses the member's tier cannot access yet (unless they have explicit access)
+  const memberTier = personCtx.memberTier ?? 1;
+  const beforeTierFilter = data.length;
+  data = data.filter((c) => (c.requiredTier ?? 1) <= memberTier || c.hasAccess);
+  total = Math.max(0, total - (beforeTierFilter - data.length));
 
   // CP-12/CP-13: Fetch module configs (shared across all members, longer TTL)
   const moduleConfigKey = 'courses:module-configs';
@@ -861,6 +868,19 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       select: { id: true },
     }).catch(() => null);
     if (!enrolled) return fail(reply, 404, 'Course not found');
+  }
+
+  // Deactivated courses are hidden from the catalog; refuse direct URL access as well.
+  if (!(course as any).isActive && !hasAccess) return fail(reply, 404, 'Course not found');
+
+  // Tier gate: members below the required tier cannot access without explicit access grant.
+  const requiredTier: number = (course as any).requiredTier ?? 1;
+  if (requiredTier > 1 && !hasAccess) {
+    const memberTierRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT current_tier FROM members WHERE id = $1::uuid`, request.memberId
+    ).catch(() => []);
+    const memberTier = Number(memberTierRows[0]?.current_tier ?? 1);
+    if (memberTier < requiredTier) return fail(reply, 403, 'This course requires a higher tier');
   }
 
   // Check for a pending payment from this member (any method)

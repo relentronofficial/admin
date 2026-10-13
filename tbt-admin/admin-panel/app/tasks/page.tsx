@@ -52,6 +52,7 @@ const emptyProgramForm = () => ({
   name: "",
   description: "",
   durationDays: 90,
+  allowedModules: [] as string[],
 });
 
 const emptyInlineTaskForm = () => ({
@@ -260,9 +261,10 @@ export default function TasksPage() {
   const openEditProgram = (prog: any) => {
     setEditingProgram(prog);
     setProgramForm({
-      name:        prog.name        || "",
-      description: prog.description || "",
-      durationDays: prog.durationDays ?? 90,
+      name:           prog.name           || "",
+      description:    prog.description    || "",
+      durationDays:   prog.durationDays   ?? 90,
+      allowedModules: Array.isArray(prog.allowedModules) ? prog.allowedModules : [],
     });
     setProgramModalOpen(true);
   };
@@ -1502,6 +1504,28 @@ export default function TasksPage() {
               <div>
                 <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Duration (days)</label>
                 <input type="number" min={1} max={365} value={programForm.durationDays} onChange={e => setProgramField("durationDays", parseInt(e.target.value) || 90)} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] text-sm" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Course Modules Included</label>
+                <div className="flex gap-5 mt-1">
+                  {(['Product', 'Service', 'Coach'] as const).map(mod => (
+                    <label key={mod} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={(programForm.allowedModules ?? []).includes(mod)}
+                        onChange={e => {
+                          const next = e.target.checked
+                            ? [...(programForm.allowedModules ?? []), mod]
+                            : (programForm.allowedModules ?? []).filter((m: string) => m !== mod);
+                          setProgramField("allowedModules", next);
+                        }}
+                        className="accent-[#dc2626] w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-[13px] text-[#e0e0e0]">{mod}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-[#555] mt-1.5">Leave all unchecked to include all modules.</p>
               </div>
             </div>
             <div className="px-7 py-5 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">

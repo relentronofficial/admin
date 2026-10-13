@@ -10,6 +10,7 @@ export interface ListCoursesParams {
   sort?: "newest" | "popular";
   category?: string;
   moduleTitle?: string;
+  modules?: string[];
 }
 
 export const coursesService = {

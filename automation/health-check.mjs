@@ -8,6 +8,7 @@
 import { readFileSync, appendFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { notify } from './notify.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -36,7 +37,9 @@ const SERVICES = [
     url: 'https://app.tamilbusinesstribe.com',
     critical: true,
     timeoutMs: 8000,
-    okStatuses: null,
+    // Cloud Run load balancer may issue a 301/302 redirect (e.g. trailing-slash
+    // normalisation). Any response means the service is serving traffic.
+    okStatuses: [200, 301, 302, 307, 308],
   },
   {
     name: 'admin-panel',
@@ -109,6 +112,9 @@ async function main() {
   // Exit with non-zero if critical services are down (useful for scheduled tasks)
   if (criticalDown.length > 0) {
     console.error('\n❌ CRITICAL: Services down:', criticalDown.map(r => r.name).join(', '));
+    await notify(
+      `🚨 TBT Critical Alert\n\n${criticalDown.length} service(s) DOWN:\n${criticalDown.map(r => `• ${r.name}${r.error ? ` — ${r.error.slice(0, 80)}` : ''}`).join('\n')}\n\n${new Date().toISOString()}`
+    ).catch(() => {});
     process.exit(1);
   }
 }

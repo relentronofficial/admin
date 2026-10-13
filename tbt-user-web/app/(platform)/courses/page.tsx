@@ -23,7 +23,7 @@ interface ModuleConfig {
 
 // ── ModuleCard ────────────────────────────────────────────────────────────────
 
-type LockReason = "not_enrolled" | "plan_required" | "module_not_allowed" | "purchase_required" | null;
+type LockReason = "join_program" | "not_enrolled" | "plan_required" | "module_not_allowed" | "purchase_required" | null;
 
 function ModuleCard({
   course,
@@ -42,11 +42,13 @@ function ModuleCard({
   const isCompleted = enrollment?.completedAt != null;
   const isInProgress = !!enrollment && !isCompleted && progressPct > 0;
 
+  const { uiStrings: lockStrings } = useSiteConfig();
   const lockMessages: Record<NonNullable<LockReason>, string> = {
-    module_not_allowed: "Not included in your program",
-    purchase_required: course.price > 0 ? `Purchase to unlock — ₹${(course.price as number).toLocaleString("en-IN")}` : "Request access to unlock",
+    join_program: lockStrings?.coursesLockJoinProgram ?? "Join a program to access this module",
+    module_not_allowed: lockStrings?.coursesLockNotInProgram ?? "Not included in your program",
+    purchase_required: course.price > 0 ? `${lockStrings?.coursesLockPurchase ?? "Purchase to unlock"} — ₹${(course.price as number).toLocaleString("en-IN")}` : (lockStrings?.coursesLockRequestAccess ?? "Request access to unlock"),
     plan_required: "Upgrade your plan to access",
-    not_enrolled: "Enroll to get started",
+    not_enrolled: lockStrings?.coursesLockRequestAccess ?? "Request access to unlock",
   };
 
   return (
@@ -465,12 +467,14 @@ function CourseGrid({
   allowedModules,
   isLoading,
   uiStrings,
+  isNewMember = false,
 }: {
   courses: any[];
   enrolledMap: Map<string, any>;
   allowedModules: string[];
   isLoading: boolean;
   uiStrings: any;
+  isNewMember?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
   useEffect(() => { setShowAll(false); }, [courses]);
@@ -513,7 +517,9 @@ function CourseGrid({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {visibleCourses.map((course: any, i) => {
           let lockReason: LockReason = null;
-          if (allowedModules.length > 0 && course.module && !allowedModules.includes(course.module)) {
+          if (isNewMember && !course.hasAccess && !enrolledMap.has(course.id)) {
+            lockReason = "join_program";
+          } else if (allowedModules.length > 0 && course.module && !allowedModules.includes(course.module)) {
             lockReason = "module_not_allowed";
           } else if (!course.hasAccess && !enrolledMap.has(course.id)) {
             lockReason = course.price > 0 ? "purchase_required" : "not_enrolled";
@@ -676,16 +682,16 @@ export default function CoursesPage() {
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
       <MentorshipDashboard />
 
-      {/* ── New Member State ─────────────────────────────────────────── */}
-      {personalizationState === "new" && !catalogLoading && allCourses.length === 0 && (
+      {/* ── New Member State — CTA banner (always visible for new members) ── */}
+      {personalizationState === "new" && !catalogLoading && (
         <NewMemberCoursesView uiStrings={uiStrings} />
       )}
 
       {/* ── Single-Module Dedicated View (CP-16) ─────────────────────── */}
-      {personalizationState === "program" && allowedModules.length === 1 && singleModuleCfg && (
+      {personalizationState === "program" && allowedModules.length === 1 && (
         <section>
           <ModuleHero
-            cfg={singleModuleCfg}
+            cfg={singleModuleCfg ?? { moduleName: allowedModules[0], displayName: allowedModules[0], tagline: null, description: null, bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: 0 }}
             programName={programName}
             courseCount={filteredCourses.length}
           />
@@ -767,13 +773,15 @@ export default function CoursesPage() {
       )}
 
       {/* ── Direct Access / General Catalog View ─────────────────────── */}
-      {(personalizationState === "direct" || (personalizationState === "new" && (allCourses.length > 0 || catalogLoading))) && (
+      {(personalizationState === "direct" || personalizationState === "new") && (allCourses.length > 0 || catalogLoading) && (
         <section>
-          <div className="mb-5">
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
-              {uiStrings?.coursesCatalogTitle ?? "Modules"}
-            </h2>
-          </div>
+          {personalizationState === "direct" && (
+            <div className="mb-5">
+              <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
+                {uiStrings?.coursesCatalogTitle ?? "Modules"}
+              </h2>
+            </div>
+          )}
 
           <CourseGrid
             courses={allCourses}
@@ -781,6 +789,7 @@ export default function CoursesPage() {
             allowedModules={[]}
             isLoading={catalogLoading}
             uiStrings={uiStrings}
+            isNewMember={personalizationState === "new"}
           />
         </section>
       )}

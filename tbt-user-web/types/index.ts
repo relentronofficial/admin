@@ -397,6 +397,11 @@ export interface UiStrings {
   coursesSavedVideos?: string;
   coursesViewAll?: string;
   footerTagline?: string;
+  // Course lock overlay copy (CP-09)
+  coursesLockJoinProgram?: string;
+  coursesLockNotInProgram?: string;
+  coursesLockPurchase?: string;
+  coursesLockRequestAccess?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────

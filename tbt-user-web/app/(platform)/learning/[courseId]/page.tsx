@@ -2782,6 +2782,20 @@ export default function CourseDetailPage({
     : lessons;
   const globalLessonIdx = new Map(lessons.map((l: any, i: number) => [l.id, i]));
 
+  // C-F-4: Auto-collapse all sections except the one containing the active lesson.
+  // Runs when course sections load or when the selected lesson changes.
+  useEffect(() => {
+    if (courseSections.length === 0) return;
+    const activeSectionId = (selectedLesson as any)?.sectionId ?? "__unsectioned__";
+    setCollapsedSections(
+      new Set<string>(
+        courseSections
+          .map((s: any) => s.id as string)
+          .filter((id) => id !== activeSectionId)
+      )
+    );
+  }, [courseSections.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-6 pb-12">
 

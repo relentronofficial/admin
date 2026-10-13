@@ -15,6 +15,7 @@ import { appendFileSync } from 'fs';
 import { execSync, spawnSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { notify } from './notify.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -328,6 +329,9 @@ async function main() {
 
       logSession({ event: 'task_review', taskId: task.id, prUrl, commits: newCommits.length });
       console.log(`\n✅ Task moved to review. PR: ${prUrl || '(none)'}`);
+      await notify(
+        `✅ TBT Task Complete\n\n${task.title}\n\n${prUrl ? `PR: ${prUrl}` : `${newCommits.length} commit(s), no PR`}\n\nIssue: ${task.githubIssueUrl}`
+      ).catch(() => {});
 
     } else {
       // Failure
@@ -360,6 +364,11 @@ async function main() {
 
       logSession({ event: `task_${nextStatus}`, taskId: task.id, attempts: task.attempts });
       console.log(`\n${isLastAttempt ? '❌ Task blocked.' : '⚠️  Task requeued.'}`);
+      if (isLastAttempt) {
+        await notify(
+          `❌ TBT Task Blocked\n\n${task.title}\n\nFailed after ${task.attempts} attempt(s). Human review needed.\n\nIssue: ${task.githubIssueUrl}`
+        ).catch(() => {});
+      }
     }
 
   } finally {
