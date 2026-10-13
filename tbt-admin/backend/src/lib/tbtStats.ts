@@ -26,6 +26,11 @@
  * in the gamification module (returns to the TBT Points screen).
  */
 
+import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday } from './activityDays.js';
+
+// Program calendar (lib/activityDays.ts) for backfilled rows and "today".
+const PROGRAM_TZ = resolveProgramTimezone(process.env.PROGRAM_TIMEZONE);
+
 type PrismaLike = {
   $executeRawUnsafe: (...args: any[]) => Promise<any>;
   $queryRawUnsafe: <T = any>(...args: any[]) => Promise<T>;
@@ -47,7 +52,7 @@ export async function syncLegacyPointsToLedger(
   // Workshop episodes — one point event per completed row.
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     SELECT $1::uuid, $2::int, 'workshop_episode', mep.id, COALESCE(mep.completed_at, mep.updated_at)::date
+     SELECT $1::uuid, $2::int, 'workshop_episode', mep.id, ((COALESCE(mep.completed_at, mep.updated_at))::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM member_episode_progress mep
      WHERE mep.member_id = $1::uuid AND mep.is_completed = true
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
@@ -58,7 +63,7 @@ export async function syncLegacyPointsToLedger(
   // Workshop challenges.
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     SELECT $1::uuid, $2::int, 'workshop_challenge', mcp.id, COALESCE(mcp.completed_at, mcp.updated_at, mcp.created_at)::date
+     SELECT $1::uuid, $2::int, 'workshop_challenge', mcp.id, ((COALESCE(mcp.completed_at, mcp.updated_at, mcp.created_at))::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM member_challenge_progress mcp
      WHERE mcp.member_id = $1::uuid AND mcp.status = 'completed'
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
@@ -69,7 +74,7 @@ export async function syncLegacyPointsToLedger(
   // Assignment submissions.
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     SELECT $1::uuid, $2::int, 'workshop_assignment', a.id, a.submitted_at::date
+     SELECT $1::uuid, $2::int, 'workshop_assignment', a.id, ((a.submitted_at)::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM assignment_submissions a
      WHERE a.member_id = $1::uuid
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
@@ -80,7 +85,7 @@ export async function syncLegacyPointsToLedger(
   // Course XP — carries its own point amount per row, so pass it through.
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     SELECT $1::uuid, x.amount, 'course_xp', x.id, x.earned_at::date
+     SELECT $1::uuid, x.amount, 'course_xp', x.id, ((x.earned_at)::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM member_xp x
      WHERE x.member_id = $1::uuid
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
@@ -93,7 +98,7 @@ export async function syncLegacyPointsToLedger(
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
      SELECT $1::uuid, COALESCE(b.xp_per_day, 50), 'batch_day', mdp.id,
-            COALESCE(mdp.submitted_at, mdp.completed_at, NOW())::date
+            ((COALESCE(mdp.submitted_at, mdp.completed_at, NOW()))::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM member_day_progress mdp
      JOIN batches b ON b.id = mdp.batch_id
      WHERE mdp.member_id = $1::uuid AND mdp.status = 'approved'
@@ -105,7 +110,7 @@ export async function syncLegacyPointsToLedger(
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
      SELECT $1::uuid, t.base_points, 'task_submission', ts.id,
-            COALESCE(mdp.submitted_at, ts.updated_at, NOW())::date
+            ((COALESCE(mdp.submitted_at, ts.updated_at, NOW()))::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM task_submissions ts
      JOIN tasks t ON t.id = ts.task_id
      LEFT JOIN member_day_progress mdp ON mdp.id = ts.day_progress_id
@@ -121,7 +126,7 @@ export async function syncLegacyPointsToLedger(
   // Same row submitUserEpisodeTaskHandler writes live.
   await prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     SELECT $1::uuid, 0, 'course_task', ts.id, ts.created_at::date
+     SELECT $1::uuid, 0, 'course_task', ts.id, ((ts.created_at)::timestamptz AT TIME ZONE '${PROGRAM_TZ}')::date
      FROM task_submissions ts
      JOIN tasks t ON t.id = ts.task_id
      WHERE ts.member_id = $1::uuid AND ts.batch_id IS NULL
@@ -179,10 +184,12 @@ export async function computeMemberStats(
   );
   const totalPoints = Number(sumRow?.sum ?? 0);
 
+  // Streak days: qualifying activity only (lib/activityDays.ts), same rule as the
+  // navbar streak — coin spends / purchases / admin grants don't mark a day.
   const dateRows = await prisma.$queryRawUnsafe<Array<{ activity_date: Date }>>(
     `SELECT DISTINCT activity_date
      FROM tbt_activity_log
-     WHERE member_id = $1::uuid
+     WHERE member_id = $1::uuid AND source IN (${QUALIFYING_SOURCES_SQL})
      ORDER BY activity_date DESC`,
     memberId,
   );
@@ -193,7 +200,7 @@ export async function computeMemberStats(
     }),
   );
 
-  const currentStreak = countConsecutiveStreak(dateKeys);
+  const currentStreak = countConsecutiveStreak(dateKeys, programToday(new Date(), PROGRAM_TZ));
 
   return { totalPoints, currentStreak };
 }

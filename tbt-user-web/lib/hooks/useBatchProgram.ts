@@ -116,6 +116,7 @@ export const useSubmitBatchDay = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["my-batch"] });
       qc.invalidateQueries({ queryKey: ["user", "streak"] });
+      qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
     },
   });
 };

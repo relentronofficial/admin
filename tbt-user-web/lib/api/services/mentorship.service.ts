@@ -12,6 +12,8 @@ export type MentorshipStats = {
   tasksTotal: number;
   leaderboardRank: number | null;
   daysElapsed: number;
+  /** Tier Access: distinct qualifying active days in the program window (≤ totalDays). */
+  activeDays?: number;
   totalDays: number;
   programName: string | null;
 };
