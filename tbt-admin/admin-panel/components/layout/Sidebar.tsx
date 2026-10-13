@@ -36,6 +36,7 @@ import {
   ShoppingCart,
   Coins,
   CreditCard,
+  Terminal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -117,6 +118,12 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     label: "Security",
     items: [
       { name: "Security Logs", href: "/security-logs", icon: ShieldAlert },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { name: "Dev Control", href: "/devops", icon: Terminal },
     ],
   },
 ];

@@ -1,0 +1,42 @@
+{
+  "github": {
+    "owner": "relentronofficial",
+    "repo": "admin",
+    "taskLabels": {
+      "pending": "devops:pending",
+      "active": "devops:active",
+      "review": "devops:review",
+      "done": "devops:done",
+      "blocked": "devops:blocked"
+    },
+    "taskLabelColor": "0075ca"
+  },
+  "services": {
+    "backend": {
+      "staging": "https://tbt-backend-staging-nt77kcmmiq-el.a.run.app",
+      "production": "https://tbt-backend-464464507912.asia-south1.run.app",
+      "healthEndpoint": "/api/pub/config/site"
+    },
+    "adminPanel": {
+      "production": "https://v0-tbt-ott-admin.vercel.app",
+      "healthEndpoint": "/"
+    },
+    "userWeb": {
+      "production": "https://app.tamilbusinesstribe.com",
+      "healthEndpoint": "/"
+    }
+  },
+  "automation": {
+    "healthCheckIntervalMinutes": 120,
+    "taskPollingIntervalMinutes": 30,
+    "maxRetries": 3,
+    "notifyOnBlocked": true,
+    "notifyOnComplete": true
+  },
+  "paths": {
+    "queue": "F:/admin/.claude/devops/queue.json",
+    "sessionLog": "F:/admin/.claude/devops/session.jsonl",
+    "auditLog": "F:/admin/.claude/devops/audit.jsonl",
+    "notifications": "F:/admin/.claude/devops/notifications.jsonl"
+  }
+}
