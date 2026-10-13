@@ -224,7 +224,7 @@ export default async function DevOpsPage() {
               },
               {
                 name: "Task Queue",
-                status: (pendingTasks.length + activeTasks.length > 0 ? "up" : "up") as const,
+                status: "up" as const, // both branches were "up"; `as const` on a ternary is TS1355
               },
             ].map(svc => (
               <div key={svc.name} className="bg-[#141414] rounded-lg p-3 flex items-center justify-between gap-2">
