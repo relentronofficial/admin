@@ -22,13 +22,13 @@ app/
   (auth)/           # Clerk-hosted sign-in/sign-up pages — DO NOT MODIFY
   (marketing)/      # Public unauthenticated pages: landing, /events, /programs
   (platform)/       # All member pages — Navbar + SubscriptionGate in layout
-    dashboard/      # Member home
-    tbt/            # Content catalog
+    community/      # Home page (default landing after login as of 2026-10)
+    dashboard/      # Member dashboard
+    discover/       # Content catalog (previously /tbt)
     workshops/      # Workshop list
     workshop/[id]/  # Workshop detail + flow + Q&A + live calls (monolithic page)
     learning/       # Course progress overview; /learning/badges
     learning/[courseId]/           # Course lesson list + player
-    learning/[courseId]/[lessonId] # (unused — lesson player is inline in [courseId])
     courses/        # Course catalog
     events/         # Events; /events/[id]
     programs/       # Programs; /programs/[id]
@@ -36,7 +36,7 @@ app/
     live/[webinarId]# In-session webinar
     search/         # Global search
     notifications/  # Notification center
-    messages/       # Chat messages
+    messages/       # Chat messages (DM + group chat unified)
     Products/       # Exempt from SubscriptionGate
     Resources/      # Downloadable resources
     history/        # Watch history
@@ -51,7 +51,7 @@ app/
   loading/          # Standalone splash
 ```
 
-`/eiflix` and `/eiflix/:path*` permanently redirect to `/tbt` and `/tbt/:path*` (see `next.config.ts`).
+`/eiflix` and `/tbt` (and their `:path*` variants) permanently redirect to `/discover` (see `next.config.ts`).
 
 ### Auth (custom JWT cookies)
 - `POST /api/user-auth/login` → phone + password → OTP (WhatsApp) → `POST /api/user-auth/verify-otp` → issues `tbt_access` (15 min) + `tbt_refresh` (30 day) HttpOnly cookies
@@ -59,12 +59,13 @@ app/
 - 401 interceptor calls `/api/user-auth/refresh` and retries (skipped for `/api/user-auth/` paths)
 - `initApiClient()` in `lib/api/client.ts` is a **no-op stub** — do not add bearer token logic
 - `@clerk/nextjs` is only used for the `(auth)/` route group and middleware auth-state detection; all actual login uses cookies
+- **No auto-logout** — never add "redirect to /login on 401/403" logic to interceptors. Sessions persist until manual sign-out.
 
 **Critical Clerk env vars** (wrong values silently redirect logins to the wrong page):
 ```
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login
-NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/tbt
-NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community
 ```
 
 ### API Client (`lib/api/client.ts`)
@@ -76,7 +77,7 @@ NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/tbt
 ### `SiteConfigProvider` (`lib/context/SiteConfigContext.tsx`)
 Fetches 3 unauthenticated endpoints in parallel on app load:
 - `GET /api/pub/config/site` → `SiteConfig` (theme, logos, splash)
-- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags
+- `GET /api/pub/config/nav` → `NavItem[]` + `RightIcons` flags + `hiddenMenuKeys: string[]`
 - `GET /api/pub/config/ui-strings` → `UiStrings`
 
 Injects theme as CSS custom properties on `document.documentElement`.
@@ -84,7 +85,7 @@ Injects theme as CSS custom properties on `document.documentElement`.
 **CRITICAL**: Every user-visible string must come from `uiStrings` (or `config`). Zero hardcoded label strings in `(platform)` pages.
 
 ### CSS Theme Tokens
-Supports **light and dark themes**. `globals.css` defines `:root` (light defaults, active when `.dark` class is absent on `html`) and `.dark` (dark overrides). `SiteConfigProvider` injects accent/alert/success in both modes; `--color-bg-primary/surface` are injected in dark mode but removed in light mode so CSS fallbacks apply.
+Supports **light and dark themes**. `globals.css` defines `:root` (light defaults) and `.dark` (dark overrides). `SiteConfigProvider` injects accent/alert/success in both modes.
 
 Runtime-injected — never hardcode:
 ```
@@ -116,14 +117,38 @@ Reads `useMe()`:
 Paths `["/Products", "/profile"]` are exempt.
 
 ### Hook Files
-- `lib/hooks/useConfig.ts` — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
-- `lib/hooks/useDashboard.ts` — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
-- `lib/hooks/useUser.ts` — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`
-- `lib/hooks/useBatchProgram.ts` — `useMyBatchProgram` (GET `/api/user-batch` — batch + days + progress + `totalDays` + `attendance` + `breaks`), `useSaveBatchDraft` (PUT `/api/user-batch/:dayNumber`), `useSubmitBatchDay` (POST `/api/user-batch/:dayNumber/submit`), `useMarkAttendance` (POST `/api/user-batch/attendance` — `{ dayNumber, notes? }`)
-- `lib/hooks/useCourses.ts` — `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`
-- `lib/hooks/useEvents.ts` — events hooks
 
-New hooks: create or extend a `lib/api/services/*.service.ts` file rather than calling `apiClient` directly from the hook.
+New hooks belong in a `lib/api/services/*.service.ts` file; hooks call the service, not `apiClient` directly.
+
+- **`lib/hooks/useConfig.ts`** — `useHomeHero`, `useHomeSections`, `useMyWorkshops`, `useWorkshopDetail`, `useWorkshopFlow`, `useWorkshopQa` (polls at 15s), `useWorkshopAssignments`, `useEpisodePlayback`, `usePostEpisodeProgress`, `useUserProducts`, `useUserResources`
+
+- **`lib/hooks/useDashboard.ts`** — `useDashboardStats`, `useContinueLearning`, `useWatchHistory` (accepts `{ page?, limit?, filter?: 'all'|'in_progress'|'completed' }`), `useNotifications`, `useMarkNotificationRead`, `useMarkAllNotificationsRead`, `useMessages`, `useMarkMessageRead`, `useMarkAllMessagesRead`
+
+- **`lib/hooks/useUser.ts`** — `useMe` (returns `{ id, name, firstName, lastName, batchId, membershipPlan, status, ... }`), `useUpdateProfile`, `useUserSupportQuota` (GET `/api/user/support-quota` — returns `{ techSupport, adSupport, groupCall, callCredits, oneToOne }` each with `allocated/used/remaining`), `useCreditPricing` (GET `/api/user/credits/pricing`), `usePurchaseCredit` (POST `/api/user/credits/purchase`), `useMyCreditPurchases` (GET `/api/user/credits/purchases`)
+
+- **`lib/hooks/useBatchProgram.ts`** — `useMyBatchProgram` (GET `/api/user-batch` — returns batch + days + progress + `totalDays` + `attendance[]` + `breaks[]` + `lifelinesTotal/Used/Remaining`), `useSaveBatchDraft`, `useSubmitBatchDay`, `useMarkAttendance`, `useRequestBreak`, `useSpendCoins` (coin-based lifeline purchase — invalidates `["user","me"]`), `useUseProgramLifeline` (POST `/api/user-batch/lifeline/use`), `useDownloadBatchCertificate`
+
+- **`lib/hooks/useCourses.ts`** — `useCourses`, `useCourse`, `useMyEnrollments`, `useEnrollCourse`, `useLessonProgress`, `useMarkLessonComplete` (optimistic `onMutate`), `useSubmitCourseQuiz`, `useCourseXp`, `useCourseLeaderboard`, `useUserBadges`, `useCertificateEligibility`, `useRequestCourseAccess`, `useCourseCategories`, `useCourseModuleTabs` (GET `/api/user/courses/module-tabs` → `[{ title }]`), `useReflections(courseId)`, `useSaveReflection(courseId)`, `useLessonFeedback(courseId)`, `useSaveLessonFeedback(courseId)`, `useGetMyStreakPoints` (GET `/api/user/streak-points` → `{ total, videoTotal, taskTotal, history }`)
+
+- **`lib/hooks/useEvents.ts`** — events hooks
+
+- **`lib/hooks/useAds.ts`** — `useAdEngine` (fetches eligible ad, tracks impression/click/skip/close/complete). Triggers: `app_launch` (1,200 ms delay on mount), `route_enter` (600 ms debounce on path change), `timed_interval` (every 30 s).
+
+- **`lib/hooks/useRituals.ts`** — `useRitualHabits`, `useRitualsButtonsConfig`
+
+- **`lib/hooks/useEbooks.ts`** — library, series, reader, bookmarks, highlights, progress, reviews, streak, author, bulk reading operations
+
+- **`lib/hooks/usePodcasts.ts`** — categories, episodes, series, continue-listening, progress
+
+- **`lib/hooks/useCommunity.ts`** — community feed hooks (posts, comments, follow)
+
+- **`lib/hooks/useChatGroups.ts`** — `useMyChatGroups`, `useChatGroup`, `useChatGroupMessages`, `useSendChatGroupMessage`, `useEditChatGroupMessage`, `useDeleteChatGroupMessage`; exports `chatGroupKeys`, `isLocallyMuted`, `getLocalMuteState`, `setLocalMuteState`
+
+- **`lib/hooks/useSupport.ts`** — helpdesk ticket hooks
+
+- **`lib/hooks/useOnboarding.ts`** — `useOnboardingState`, `useOnboardingContent`, `useSaveOnboardingProgress`, `usePresignOnboardingDocument`, `useRegisterOnboardingDocument`, `useDeleteOnboardingDocument`, `usePresignProfilePhoto`, `useSubmitOnboarding`
+
+- **`lib/hooks/useCourseReports.ts`** — `useMyEpisodeFeedback(episodeId)`, `useSubmitEpisodeFeedback()`
 
 ### Zustand Stores (`lib/stores/`)
 - `useAuthStore` — login state, OTP flow step
@@ -132,10 +157,10 @@ New hooks: create or extend a `lib/api/services/*.service.ts` file rather than c
 
 ### Video Player (HLS-first, iframe fallback)
 Both workshop (`workshop/[slug]/page.tsx`) and course (`learning/[courseId]/page.tsx`) use:
-- **`PlyrPlayer`** (`components/features/video/PlyrPlayer.tsx`) when `episode.hlsUrl` is set and HLS hasn't errored. Ref type: `PlyrPlayerHandle` (`{ currentTime: number; duration: number }`). Props: `hlsUrl`, `startAt`, `speed`, `autoplay`, `onReady(duration)`, `onTimeUpdate(currentTime)`, `onPlay`, `onPause`, `onEnded`, `onSpeedChange`, `onError`. Set `hlsFailed=true` in `onError` to fall through to iframe.
-- **Bunny iframe fallback** when `hlsUrl` is null or HLS failed. `timeupdate`, `pause`, `ended` fire automatically without subscribing. `play` does NOT fire on autoplay — detect via `getCurrentTime`/`isPaused` after `ready`. `value.seconds` = playhead; `value.duration` = real duration (use on first message).
+- **`PlyrPlayer`** (`components/features/video/PlyrPlayer.tsx`) when `episode.hlsUrl` is set and HLS hasn't errored. Ref type: `PlyrPlayerHandle`. Props: `hlsUrl`, `startAt`, `speed`, `autoplay`, `onReady(duration)`, `onTimeUpdate(currentTime)`, `onPlay`, `onPause`, `onEnded`, `onSpeedChange`, `onError`. Set `hlsFailed=true` in `onError` to fall through to iframe.
+- **Bunny iframe fallback** when `hlsUrl` is null or HLS failed. `timeupdate`, `pause`, `ended` fire automatically. `play` does NOT fire on autoplay — detect via `getCurrentTime`/`isPaused` after `ready`. `value.seconds` = playhead; `value.duration` = real duration (use on first message).
 
-Backend sets `videoType: 'hls' | 'iframe'` alongside `hlsUrl` to indicate the expected player.
+Backend sets `videoType: 'hls' | 'iframe'` alongside `hlsUrl`.
 
 ### Video Progress Pattern (30s periodic POST)
 ```typescript
@@ -165,11 +190,13 @@ useEffect(() => {
 6. **Login/signup pages are permanently off-limits** — never modify `app/login/page.tsx`, `app/(auth)/`, or `app/signup/page.tsx`
 7. **`useRef` requires an initial value** (React 19) — `useRef<T | undefined>(undefined)`, never `useRef<T>()`
 8. **`refetchQueries` predicate in TanStack Query v5** — `predicate: (q) => q.state.status === 'error'`, not `{ status: 'error' }`
-9. **`req.memberId` not `req.member`** — `fastify.authenticateUser` sets `request.memberId: string`; there is NO `request.member` object
-10. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both carry `type: "workshop" | "course"` as a discriminator. Don't fork the hook calls or filter by content type.
-15. **Batch program `totalDays` is dynamic** — `useMyBatchProgram` returns `totalDays` (base days + admin-granted extended days). Never hardcode 90. Response also includes `attendance[]` (`{ dayNumber, status, notes, markedAt }`) and `breaks[]`. Day objects have a `category` string field.
-11. **`lessonAlreadyDone` uses exactly 3 signals** — `completedIds.has(lessonId)`, `!!isCompleted`, `actualWatchedSecs >= durationSeconds * 0.85`. No position proximity heuristic. If it returns `true`, `markCalledRef.current` is pre-set, silently blocking all completion POSTs for the session.
-12. **`BUNNY_CDN_URL` env var lacks `https://`** — normalize with `` `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8` ``
-13. **Course `quizData` has two layers** — end-of-video quiz: `{ questions: [...] }` (gated by `quizUnlockPercent`); mid-video cues: `{ questions: [...], cues: [{ id, atSeconds, questions: [...] }] }`. `hasQuiz` is `true` only when `questions.length > 0`; cues alone do not set it. `Lesson` type in `types/index.ts` does NOT include `quizData` — access as `(lesson as any).quizData`.
-15. **Sequential lesson unlock is server-computed, not client logic** — each lesson in `course.lessons[]` carries a `locked: boolean` from `computeLessonLockStates` (`backend/src/lib/lessonProgression.ts`); the client only renders it. Never gate a lesson button with the HTML `disabled` attribute for the locked case — a disabled button never fires `onClick`, so a "locked" toast can't be shown. There is no auto-advance/auto-play to the next lesson (removed 2026-09) — completion only shows an "up next" banner with a manual "Play →" button.
-14. **Course player gamification is localStorage-only** — `ReflectionModal` fires 1.2 s after completion for lessons where `hasQuiz === false` and `justCompletedInSessionRef.current === true`. `PracticeArenaModal` is entirely client-side (shuffled questions from course data, no XP/backend). Cue quizzes: `firedCuesRef` tracks fired cue IDs (reset per lesson); `cueQuizActiveRef` blocks re-triggering. LocalStorage keys: `tbt_cr_${courseId}` (completion timestamps), `tbt_reflections` (global reflections keyed `courseId:lessonId`), `tbt_speed` (playback speed).
+9. **`WatchHistoryItem` and `ContinueLearningItem` are unified** — both carry `type: "workshop" | "course"` discriminator. Don't fork hook calls or filter by content type.
+10. **`totalDays` is dynamic** — `useMyBatchProgram` returns `totalDays` (base + extended). Never hardcode 90.
+11. **Sequential lesson unlock is server-computed** — each lesson in `course.lessons[]` carries `locked: boolean` from the backend. Never gate with HTML `disabled` attribute (disabled buttons can't fire `onClick` for a locked toast). No auto-advance/auto-play after completion (removed 2026-09).
+12. **`lessonAlreadyDone` uses exactly 3 signals** — `completedIds.has(lessonId)`, `!!isCompleted`, `actualWatchedSecs >= durationSeconds * 0.85`. No position proximity heuristic. If `true`, `markCalledRef.current` is pre-set, silently blocking all completion POSTs for the session.
+13. **`BUNNY_CDN_URL` env var lacks `https://`** — normalize: `` `${(env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')}/${bunnyId}/playlist.m3u8` ``
+14. **`quizData` has two layers** — end-of-video: `{ questions: [...] }` (gated by `quizUnlockPercent`); mid-video cues: `{ questions: [...], cues: [{ id, atSeconds, questions }] }`. `hasQuiz` is `true` only when `questions.length > 0`. `Lesson` type in `types/index.ts` does NOT include `quizData` — access as `(lesson as any).quizData`.
+15. **`useSpendCoins` query key** — must invalidate `["user","me"]` (not `['me']`) so coin balance refreshes after lifeline purchase.
+16. **Server-side episode timer vs MG-04 client hint** — `lesson_timer_sessions` (API: `/api/user/episodes/:id/timer/{start,session,heartbeat}`) is the enforcement layer. `member_episode_progress.timer_started_at` is only the early-completion bonus hint. Never conflate them.
+17. **Per-episode lifelines vs program-wide lifelines** — per-episode: `useEpisodeLifeline` / `GET /api/user/episodes/:id/lifelines`; program-wide: `useUseProgramLifeline` / `POST /api/user-batch/lifeline/use`. Two separate systems.
+18. **ReflectionModal saves to backend** (via `useSaveReflection`) — also cached in `localStorage["tbt_reflections"]`. Fires 1.2 s after completion when `!lesson.hasQuiz && justCompletedInSessionRef.current`. PracticeArena and cue quizzes are client-only.

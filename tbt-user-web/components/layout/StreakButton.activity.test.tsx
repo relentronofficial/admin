@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { StreakButton } from "./StreakButton";
+import { TierAccessIndicator } from "./TierAccessIndicator";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 
-// Navbar flame label and the dashboard "Tier Access" tile both read
-// activeDays/totalDays from the same useMentorshipStats() query
-// (GET /api/user/mentorship/stats). Each hook is a shared mutable fixture here so
-// the test checks both places render the same value and change together.
+// Two independent navbar indicators:
+//   StreakButton        → useMyStreak()        (GET /api/user/streak)
+//   TierAccessIndicator → useMentorshipStats() (GET /api/user/mentorship/stats)
+// The dashboard's Tier Access tile reads the same stats as TierAccessIndicator.
 const state = vi.hoisted(() => ({ stats: {} as any, streak: {} as any }));
 
 vi.mock("@/lib/hooks/useMentorship", () => ({
@@ -21,7 +22,6 @@ vi.mock("@/lib/hooks/useDashboard", () => ({
   useContinueLearning: () => ({ data: [], isLoading: false }),
 }));
 vi.mock("@/lib/hooks/useBatchProgram", () => ({ useMyBatchProgram: () => ({ data: null, isLoading: false }) }));
-// The dashboard renders its error view without quota data, so give it a real shape.
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: allocated - used });
 vi.mock("@/lib/hooks/useUser", () => ({
   useUserSupportQuota: () => ({
@@ -34,74 +34,83 @@ vi.mock("@/lib/hooks/useUser", () => ({
   }),
 }));
 
-const stats = (activeDays: number, totalDays: number, daysElapsed = 30) => ({
+const stats = (activeDays: number, totalDays: number) => ({
   data: {
     dailyTimeSpentHrs: 1, dailyTimeGoalHrs: 2, weeklyReportSubmitted: false, streakDays: 0,
     totalEpisodes: 4, completedEpisodes: 1, tasksCompleted: 0, tasksTotal: 0,
-    leaderboardRank: null, daysElapsed, activeDays, totalDays, programName: "TBT Program",
+    leaderboardRank: null, daysElapsed: 30, activeDays, totalDays, programName: "TBT Program",
   },
   isLoading: false, isError: false, refetch: vi.fn(),
 });
-const streak = (currentStreak: number, activeToday = false) => ({
-  data: { currentStreak, longestStreak: currentStreak, activeToday, totalActiveDays: currentStreak, pointsToday: 0, last7Days: [] },
+const streak = (currentStreak: number) => ({
+  data: { currentStreak, longestStreak: currentStreak, activeToday: true, totalActiveDays: currentStreak, pointsToday: 0, last7Days: [] },
   isLoading: false,
 });
 
-const flame = () => screen.getByRole("button", { name: /^Tier Access:/ });
-const flameValue = () => flame().textContent!.replace(/\s+/g, "");
+// Visual spacing comes from CSS gap between spans, so compare without whitespace.
+const flat = (el: Element) => el.textContent!.replace(/\s+/g, "");
+const streakEl = () => screen.getByRole("button", { name: /^Learning Streak:/ });
+const tierEl = () => screen.getByRole("status", { name: /^Tier Access:/ });
 const tierTile = () =>
-  screen.getByText("Tier Access").closest("div")!.parentElement!.textContent!.replace(/\s+/g, "").replace("TierAccess", "");
-const both = () => <><StreakButton /><MentorshipDashboard /></>;
+  screen.getByText("Tier Access", { selector: "span.truncate" }).closest("div")!.parentElement!.textContent!.replace(/\s+/g, "").replace("TierAccess", "");
+const navbar = () => <><StreakButton /><TierAccessIndicator /></>;
 
 beforeEach(() => {
-  state.stats = stats(0, 90);
-  state.streak = streak(2);
+  state.stats = stats(12, 90);
+  state.streak = streak(5);
 });
 afterEach(cleanup);
 
-describe("Navbar flame shows Tier Access, same as the dashboard tile", () => {
-  it("0/90d in both places", () => {
-    render(both());
-    expect(flameValue()).toBe("0/90d");
-    expect(tierTile()).toBe("0/90d");
+describe("Navbar: Streak and Tier Access are separate indicators", () => {
+  it("renders two independent elements with their own label and value", () => {
+    render(navbar());
+    expect(flat(streakEl())).toBe("5");
+    expect(flat(tierEl())).toBe("12");
+    // Neither sits inside the other's container.
+    expect(streakEl().contains(tierEl())).toBe(false);
+    expect(tierEl().contains(streakEl())).toBe(false);
+    // Numbers only — no "day streak", "Tier Access" or "/90d" text is shown.
+    expect(streakEl().textContent).not.toMatch(/streak|Tier|\d+d/i);
+    expect(tierEl().textContent).not.toMatch(/streak|Tier|\/|\d+d/i);
+    // Full context stays available to screen readers / tooltip.
+    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 12/90d");
+    expect(streakEl().getAttribute("aria-label")).toBe("Learning Streak: 5 days");
   });
 
-  it("changes to 15/90d in both places", () => {
-    const { rerender } = render(both());
+  it("changing the streak does not change Tier Access", () => {
+    const { rerender } = render(navbar());
+    state.streak = streak(9);
+    rerender(navbar());
+    expect(flat(streakEl())).toBe("9");
+    expect(flat(tierEl())).toBe("12");
+  });
+
+  it("changing Tier Access does not change the streak", () => {
+    const { rerender } = render(navbar());
     state.stats = stats(15, 90);
-    rerender(both());
-    expect(flameValue()).toBe("15/90d");
-    expect(tierTile()).toBe("15/90d");
+    rerender(navbar());
+    expect(flat(tierEl())).toBe("15");
+    expect(flat(streakEl())).toBe("5");
   });
 
-  it("matches again after a refresh (fresh mount from the same data)", () => {
-    state.stats = stats(15, 90);
-    render(both());
-    const before = [flameValue(), tierTile()];
-    cleanup();
-    render(both());
-    expect([flameValue(), tierTile()]).toEqual(before);
-    expect(before).toEqual(["15/90d", "15/90d"]);
+  it("Tier Access matches the dashboard tile", () => {
+    state.stats = stats(15, 104);
+    render(<>{navbar()}<MentorshipDashboard /></>);
+    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 15/104d");
+    expect(tierTile()).toBe("15/104d");
   });
 
-  it("is active days, not calendar days, and follows the configured duration", () => {
-    state.stats = stats(5, 104, 60);
-    render(both());
-    expect(flameValue()).toBe("5/104d");
-    expect(tierTile()).toBe("5/104d");
-  });
-
-  it("shows a placeholder while loading", () => {
+  it("each shows its own placeholder while loading", () => {
+    state.streak = { data: undefined, isLoading: true };
     state.stats = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
-    render(<StreakButton />);
-    expect(flameValue()).toBe("–");
+    render(navbar());
+    expect(flat(streakEl())).toBe("–");
+    expect(flat(tierEl())).toBe("–");
   });
 
-  it("keeps the daily streak in the dropdown and accessible name", () => {
-    state.streak = streak(5);
-    render(<StreakButton />);
-    expect(flame().getAttribute("aria-label")).toBe("Tier Access: 0/90d. Learning Streak: 5 days");
-    fireEvent.click(flame());
+  it("streak dropdown still works", () => {
+    render(navbar());
+    fireEvent.click(streakEl());
     expect(screen.getByRole("dialog").textContent!.replace(/\s+/g, "")).toContain("5days");
   });
 });

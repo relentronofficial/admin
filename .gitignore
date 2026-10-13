@@ -1,3 +1,10 @@
+# ── Autonomous dev system — logs only (config/queue are tracked) ─────────────
+.claude/devops/audit.jsonl
+.claude/devops/health.jsonl
+.claude/devops/notifications.jsonl
+.claude/devops/session.jsonl
+.claude/worktrees/
+
 # ── Backup & third-party snapshots ─────────────────────────────────────────────
 tbt-admin-safe/
 
