@@ -14,16 +14,16 @@ Discovered 2026-09-01 via static audit. No bug pre-dates the COURSE_UX_SPECKIT (
 | C-F-2 | BACKEND | High | Episode description always null in user API |
 | C-F-8 | MOBILE | High | Practice Arena shows questions from unfinished lessons |
 | C-F-5 | WEB | Medium | `useMarkLessonComplete` misses `enrollments` invalidation |
-| C-F-7 | WEB | Medium | Reflections viewer button dead tap on localStorage-only data |
+| C-F-7 | WEB | Medium | Reflections viewer button dead tap on localStorage-only data | ✅ DONE |
 | C-F-9 | MOBILE | Medium | Cue quizzes missed on seek-forward |
 | C-F-12 | MOBILE | Medium | Reflections are local-only on mobile |
-| C-F-3 | WEB | Low | QuizQuestions extracts via accidental double-nesting |
-| C-F-4 | WEB | Low | Section accordion starts all expanded |
-| C-F-6 | WEB | Low | End-of-video quiz can double-trigger on fast videos |
+| C-F-3 | WEB | Low | QuizQuestions extracts via accidental double-nesting | ✅ DONE |
+| C-F-4 | WEB | Low | Section accordion starts all expanded | ✅ DONE |
+| C-F-6 | WEB | Low | End-of-video quiz can double-trigger on fast videos | ✅ DONE |
 | C-F-11 | MOBILE | Low | `getCourseSections()` makes redundant network call |
 | C-F-13 | MOBILE | Low | Progress timer fires while paused |
-| C-F-14 | WEB | Low | PaywallView uses `undefined` as initial sectionId |
-| C-F-15 | WEB | Low | `startRef` set at select-time inflates elapsed fallback |
+| C-F-14 | WEB | Low | PaywallView uses `undefined` as initial sectionId | ✅ DONE |
+| C-F-15 | WEB | Low | `startRef` set at select-time inflates elapsed fallback | ✅ DONE |
 
 ---
 
@@ -252,7 +252,7 @@ onSuccess: (_data, { isCompleted }) => {
 
 ---
 
-## C-F-7 — [WEB] Reflections viewer button dead tap on localStorage-only data
+## C-F-7 — [WEB] Reflections viewer button dead tap on localStorage-only data ✅ DONE
 
 **Severity:** Medium  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx` ~L2722
@@ -379,7 +379,7 @@ Future<void> _saveReflection(String text) async {
 
 ---
 
-## C-F-3 — [WEB] QuizQuestions extracts via accidental double-nesting
+## C-F-3 — [WEB] QuizQuestions extracts via accidental double-nesting ✅ DONE
 
 **Severity:** Low  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx` ~L2831–2834
@@ -408,7 +408,7 @@ and remove the two-path extraction logic.
 
 ---
 
-## C-F-4 — [WEB] Section accordion starts all expanded
+## C-F-4 — [WEB] Section accordion starts all expanded ✅ DONE (2026-10-13)
 
 **Severity:** Low  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx`
@@ -442,7 +442,7 @@ remain unchanged — they add/remove from `collapsedSections` normally.
 
 ---
 
-## C-F-6 — [WEB] End-of-video quiz can double-trigger on fast videos
+## C-F-6 — [WEB] End-of-video quiz can double-trigger on fast videos ✅ DONE
 
 **Severity:** Low  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx` ~L1119–1132
@@ -556,7 +556,7 @@ If `_isMediaPlaying()` is already defined elsewhere in the file, reuse it.
 
 ---
 
-## C-F-14 — [WEB] PaywallView uses `undefined` as initial `lastSectionId`
+## C-F-14 — [WEB] PaywallView uses `undefined` as initial `lastSectionId` ✅ DONE
 
 **Severity:** Low  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx` ~L880
@@ -579,7 +579,7 @@ let lastSectionId: string | null = null;
 
 ---
 
-## C-F-15 — [WEB] `startRef` set at lesson-select time inflates elapsed fallback
+## C-F-15 — [WEB] `startRef` set at lesson-select time inflates elapsed fallback ✅ DONE
 
 **Severity:** Low  
 **File:** `tbt-user-web/app/(platform)/learning/[courseId]/page.tsx` ~L1297, ~L1457
