@@ -96,7 +96,22 @@ export async function listProgramsHandler(req: FastifyRequest, reply: FastifyRep
       _count: { select: { tasks: true } },
     },
   });
-  return reply.send({ success: true, data: programs, error: null });
+  // Fetch allowed_modules (raw SQL column, not in Prisma schema)
+  const ids = programs.map(p => p.id);
+  let modulesMap: Record<string, string[]> = {};
+  if (ids.length > 0) {
+    const phs = ids.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
+    const rows = await req.server.prisma.$queryRawUnsafe<{ id: string; allowed_modules: any }[]>(
+      `SELECT id::text, allowed_modules FROM programs WHERE id IN (${phs})`,
+      ...ids
+    ).catch(() => []);
+    for (const r of rows) {
+      const raw = r.allowed_modules;
+      modulesMap[r.id] = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+    }
+  }
+  const data = programs.map(p => ({ ...p, allowedModules: modulesMap[p.id] ?? [] }));
+  return reply.send({ success: true, data, error: null });
 }
 
 export async function createProgramHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -104,6 +119,7 @@ export async function createProgramHandler(req: FastifyRequest, reply: FastifyRe
   if (!body?.name?.trim()) {
     return reply.status(400).send({ success: false, data: null, error: 'Program name is required' });
   }
+  const allowedModules: string[] = Array.isArray(body.allowedModules) ? body.allowedModules : [];
   const program = await req.server.prisma.program.create({
     data: {
       name: body.name.trim(),
@@ -112,7 +128,12 @@ export async function createProgramHandler(req: FastifyRequest, reply: FastifyRe
     },
     select: { id: true, name: true, description: true, durationDays: true, createdAt: true },
   });
-  return reply.status(201).send({ success: true, data: program, error: null });
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE programs SET allowed_modules = $1::jsonb WHERE id = $2::uuid`,
+    JSON.stringify(allowedModules),
+    program.id
+  ).catch(() => {});
+  return reply.status(201).send({ success: true, data: { ...program, allowedModules }, error: null });
 }
 
 export async function updateProgramHandler(
@@ -129,7 +150,24 @@ export async function updateProgramHandler(
     },
     select: { id: true, name: true, description: true, durationDays: true, createdAt: true },
   });
-  return reply.send({ success: true, data: program, error: null });
+  let allowedModules: string[] = [];
+  if (body.allowedModules !== undefined) {
+    allowedModules = Array.isArray(body.allowedModules) ? body.allowedModules : [];
+    await req.server.prisma.$executeRawUnsafe(
+      `UPDATE programs SET allowed_modules = $1::jsonb WHERE id = $2::uuid`,
+      JSON.stringify(allowedModules),
+      program.id
+    ).catch(() => {});
+  } else {
+    // Read back current value
+    const row = await req.server.prisma.$queryRawUnsafe<{ allowed_modules: any }[]>(
+      `SELECT allowed_modules FROM programs WHERE id = $1::uuid`,
+      program.id
+    ).catch(() => []);
+    const raw = row[0]?.allowed_modules;
+    allowedModules = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
+  }
+  return reply.send({ success: true, data: { ...program, allowedModules }, error: null });
 }
 
 export async function deleteProgramHandler(
