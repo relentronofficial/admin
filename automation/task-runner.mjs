@@ -174,7 +174,7 @@ function runClaude(prompt, timeoutMs = 30 * 60 * 1000) {
 
   const result = spawnSync(
     claudeCmd,
-    ['--print', '--output-format', 'text', prompt],
+    ['--print', '--dangerously-skip-permissions', '--output-format', 'text', prompt],
     {
       cwd: ROOT,
       encoding: 'utf8',
