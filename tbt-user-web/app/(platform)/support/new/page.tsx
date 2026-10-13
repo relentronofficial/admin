@@ -20,12 +20,7 @@ import {
   ticketDisplayId,
 } from "@/lib/hooks/useSupport";
 import { uploadTicketAttachment } from "@/lib/api/services/support.service";
-import type {
-  SupportPreferredContact,
-  SupportTicket,
-  SupportTicketPriority,
-} from "@/types";
-import { cn } from "@/lib/utils/cn";
+import type { SupportTicket } from "@/types";
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_ATTACHMENT_COUNT = 5;
@@ -36,19 +31,6 @@ interface AttachmentSlot {
   uploading: boolean;
   uploadedUrl: string | null;
 }
-
-const PRIORITY_OPTIONS: Array<{ value: SupportTicketPriority; label: string }> = [
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "urgent", label: "Urgent" },
-];
-
-const REPLY_VIA_OPTIONS: Array<{ value: SupportPreferredContact; label: string }> = [
-  { value: "email", label: "Email" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "phone", label: "Phone" },
-];
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -73,10 +55,8 @@ export default function RaiseTicketPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
-  const [priority, setPriority] = useState<SupportTicketPriority>("medium");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [preferredContact, setPreferredContact] = useState<SupportPreferredContact | null>(null);
   const [slots, setSlots] = useState<AttachmentSlot[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
@@ -176,8 +156,10 @@ export default function RaiseTicketPage() {
         subject: subject.trim(),
         message: message.trim(),
         categoryId: categoryId || null,
-        priority,
-        preferredContact: preferredContact ?? null,
+        // Priority / reply-via pickers were removed from this form; send the
+        // same defaults the form used to start with (backend fields unchanged).
+        priority: "medium",
+        preferredContact: null,
         attachmentUrls: urls,
       });
       if (res.data) setSubmitted(res.data);
@@ -219,10 +201,11 @@ export default function RaiseTicketPage() {
           }}
         >
           <div className="text-sm font-bold text-foreground">{submitted.subject}</div>
-          <div className="text-[11px] text-muted-foreground tracking-wider mt-1">
-            PRIORITY: {submitted.priority.toUpperCase()}
-            {submitted.category ? ` · ${submitted.category.name}` : ""}
-          </div>
+          {submitted.category && (
+            <div className="text-[11px] text-muted-foreground tracking-wider mt-1">
+              {submitted.category.name}
+            </div>
+          )}
         </div>
         <div className="space-y-2">
           <Link
@@ -311,13 +294,6 @@ export default function RaiseTicketPage() {
           </>
         )}
 
-        <FieldLabel>PRIORITY</FieldLabel>
-        <ChipGroup
-          options={PRIORITY_OPTIONS}
-          value={priority}
-          onChange={(v) => setPriority(v as SupportTicketPriority)}
-        />
-
         <FieldLabel>SUBJECT</FieldLabel>
         <TextInput
           value={subject}
@@ -341,16 +317,6 @@ export default function RaiseTicketPage() {
         {errors.message && (
           <div className="text-xs text-red-500 -mt-3">{errors.message}</div>
         )}
-
-        <FieldLabel>REPLY VIA (OPTIONAL)</FieldLabel>
-        <ChipGroup
-          options={REPLY_VIA_OPTIONS}
-          value={preferredContact ?? ""}
-          allowClear
-          onChange={(v) =>
-            setPreferredContact((prev) => (prev === v ? null : (v as SupportPreferredContact)))
-          }
-        />
 
         {/* Attachments */}
         <div className="pt-2">
@@ -453,57 +419,6 @@ function TextInput({
         }}
       />
       {error && <div className="text-xs text-red-500 mt-1">{error}</div>}
-    </div>
-  );
-}
-
-function ChipGroup({
-  options,
-  value,
-  onChange,
-  allowClear = false,
-}: {
-  options: Array<{ value: string; label: string }>;
-  value: string;
-  onChange: (v: string) => void;
-  allowClear?: boolean;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {options.map((opt) => {
-        const selected = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "px-4 py-2 rounded-full text-xs transition-colors",
-              selected ? "font-bold" : "font-semibold text-muted-foreground",
-            )}
-            style={{
-              color: selected ? "var(--color-accent)" : undefined,
-              background: selected
-                ? "color-mix(in srgb, var(--color-accent) 10%, transparent)"
-                : "var(--color-bg-surface)",
-              border: `${selected ? 1.5 : 1}px solid ${
-                selected ? "var(--color-accent)" : "var(--color-border-subtle)"
-              }`,
-            }}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-      {allowClear && value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          className="px-3 py-2 rounded-full text-xs text-muted-foreground hover:text-foreground"
-        >
-          Clear
-        </button>
-      )}
     </div>
   );
 }
