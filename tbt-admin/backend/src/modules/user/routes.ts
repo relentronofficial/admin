@@ -106,6 +106,7 @@ import {
   getSupportQuotaHandler,
   getMyStreakPointsHandler,
   getMyStreakHandler,
+  activityHeartbeatHandler,
   startEpisodeTimerHandler,
   getEpisodeTimerSessionHandler,
   heartbeatEpisodeTimerHandler,
@@ -179,6 +180,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/badges', getUserBadgesHandler);
   fastify.get('/streak-points', getMyStreakPointsHandler);
   fastify.get('/streak', getMyStreakHandler);
+  fastify.post('/activity/heartbeat', activityHeartbeatHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);

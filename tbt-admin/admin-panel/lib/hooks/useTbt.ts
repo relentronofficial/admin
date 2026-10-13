@@ -2595,3 +2595,17 @@ export const useUpdateModuleConfig = () => {
     },
   });
 };
+
+// ── Member Daily Time Spent (GET /api/members/:id/daily-activity) ─────────────
+// Calculated from recorded activity minutes — read-only, never edited by admins.
+export const useMemberDailyActivity = (memberId: string, days = 30) =>
+  useQuery({
+    queryKey: ['member-daily-activity', memberId, days],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/members/${memberId}/daily-activity`, { params: { days } });
+      return res?.data ?? null;
+    },
+    enabled: !!memberId,
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+  });
