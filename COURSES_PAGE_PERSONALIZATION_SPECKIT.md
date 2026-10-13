@@ -1,7 +1,7 @@
 # COURSES_PAGE_PERSONALIZATION_SPECKIT.md
 
 **Feature:** Personalized Courses Page — Program-Driven Module Access + Dynamic Module Identity
-**Status:** Phase 1 backend done; Phase 2 not started
+**Status:** ✅ All CP-01 – CP-17 complete (2026-10-13)
 **Date:** 2026-10-09
 
 ---
@@ -30,16 +30,16 @@ The user's broader vision: when a member is enrolled in a single module (e.g. Pr
 | CP-05 Admin: program editor multi-checkbox for Course Modules | ✅ DONE |
 | CP-06 Admin hooks: `useCreateProgram`/`useUpdateProgram` include `allowedModules` | ✅ DONE |
 | CP-07 User-web: `useCourseModuleTabs` hook exists | ✅ DONE |
-| CP-08 User-web: three-state page layout | ❌ NOT DONE |
-| CP-09 User-web: lock overlay copy variants | ❌ NOT DONE |
-| CP-10 User-web: remove broken `businessType` track selector | ❌ NOT DONE |
-| CP-11 Backend: `members.allowed_modules` column (per-member override) | ❌ NOT DONE |
-| CP-12 Backend: `module_config` raw SQL table (per-module branding) | ❌ NOT DONE |
-| CP-13 Backend: `listUserCoursesHandler` reads member override + module config | ❌ NOT DONE |
-| CP-14 Admin: member edit modal — Course Module Access section | ❌ NOT DONE |
-| CP-15 Admin: Module Config page (banners, taglines, per-module display) | ❌ NOT DONE |
-| CP-16 User-web: dedicated single-module page mode | ❌ NOT DONE |
-| CP-17 User-web: dynamic string labels (no hardcoded text) | ❌ NOT DONE |
+| CP-08 User-web: three-state page layout | ✅ DONE |
+| CP-09 User-web: lock overlay copy variants | ✅ DONE |
+| CP-10 User-web: remove broken `businessType` track selector | ✅ DONE |
+| CP-11 Backend: `members.allowed_modules` column (per-member override) | ✅ DONE |
+| CP-12 Backend: `module_config` raw SQL table (per-module branding) | ✅ DONE |
+| CP-13 Backend: `listUserCoursesHandler` reads member override + module config | ✅ DONE |
+| CP-14 Admin: member edit modal — Course Module Access section | ✅ DONE |
+| CP-15 Admin: Module Config page (banners, taglines, per-module display) | ✅ DONE |
+| CP-16 User-web: dedicated single-module page mode | ✅ DONE |
+| CP-17 User-web: dynamic string labels (no hardcoded text) | ✅ DONE |
 
 ---
 
