@@ -1546,6 +1546,9 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const daysLeft = Math.max(0, (stats?.totalDays ?? 0) - (stats?.daysElapsed ?? 0));
   const totalDays = stats?.totalDays ?? 0;
   const daysElapsed = stats?.daysElapsed ?? 0;
+  // Tier Access counts days the member was actually active in the program (one per
+  // program calendar day), not calendar days since the batch started.
+  const activeDays = stats?.activeDays ?? 0;
 
   const dailyHrsCount = useCountUp(dailyHrs, 1200, 2);
   const allCallsUsedCount = useCountUp(allCallsUsed, 900);
@@ -1714,7 +1717,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           />
           <JourneyTile
             label="Tier Access"
-            value={String(daysElapsed)}
+            value={String(activeDays)}
             muted={totalDays > 0 ? `/${totalDays}d` : "d"}
             metricColor="#809ed5"
             note={totalDays >= 300 ? "Annual" : undefined}

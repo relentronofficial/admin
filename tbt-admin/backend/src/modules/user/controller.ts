@@ -22,6 +22,7 @@ import {
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats, syncLegacyPointsToLedger } from '../../lib/tbtStats.js';
 import { computeStreakSummary, type StreakActivityRow } from '../../lib/streakSummaryLogic.js';
+import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday, localDayKey, computeTierActiveDays } from '../../lib/activityDays.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
@@ -58,9 +59,17 @@ async function logActivity(prisma: any, memberId: string, action: string, metada
 const _recalcInflight = new Map<string, Promise<void>>();
 
 // GET /api/user/streak caches each member's summary for 60 s (getMyStreakHandler).
+// Both daily-activity readouts are cached per member for 60 s — the navbar streak
+// (getMyStreakHandler) and the dashboard Tier Access tile (getMentorshipStatsHandler).
 function invalidateStreakCache(redis: any, memberId: string) {
   void invalidateCache(redis ?? null, `streak:${memberId}`);
+  void invalidateCache(redis ?? null, `mentorship:stats:${memberId}`);
 }
+
+// Program calendar for daily activity (lib/activityDays.ts). New ledger rows are
+// dated on this calendar so a day boundary is local midnight, not UTC midnight.
+const PROGRAM_TZ = resolveProgramTimezone(env.PROGRAM_TIMEZONE);
+const ACTIVITY_DATE_SQL = `(NOW() AT TIME ZONE '${PROGRAM_TZ}')::DATE`;
 
 // `markActive` is true for real member activity (lesson/episode/challenge/
 // assignment). A profile read (`GET /me`) passes false: viewing or refreshing
@@ -1791,7 +1800,7 @@ async function awardEpisodeXp(prisma: any, memberId: string, courseId: string, e
     if (xpRow?.id) {
       await prisma.$executeRawUnsafe(
         `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-         VALUES ($1::uuid, $2, 'course_xp', $3::uuid, NOW()::DATE)
+         VALUES ($1::uuid, $2, 'course_xp', $3::uuid, ${ACTIVITY_DATE_SQL})
          ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
         memberId, xpAmount, xpRow.id,
       );
@@ -2109,14 +2118,16 @@ export async function getMyStreakHandler(request: FastifyRequest, reply: Fastify
   const prisma = request.server.prisma;
   const summary = await cacheGetOrCompute(request.server.redis ?? null, `streak:${memberId}`, 60, async () => {
     await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
+    // Only qualifying activity marks a day (lib/activityDays.ts) — coin spends,
+    // coin purchases, admin grants and bonuses are ledger bookkeeping, not activity.
     const rows = await prisma.$queryRawUnsafe<StreakActivityRow[]>(
       `SELECT activity_date, COALESCE(SUM(points), 0)::bigint AS points
        FROM tbt_activity_log
-       WHERE member_id = $1::uuid
+       WHERE member_id = $1::uuid AND source IN (${QUALIFYING_SOURCES_SQL})
        GROUP BY activity_date`,
       memberId,
     ).catch(() => [] as StreakActivityRow[]);
-    return computeStreakSummary(rows);
+    return computeStreakSummary(rows, programToday(new Date(), PROGRAM_TZ));
   });
   return ok(reply, summary);
 }
@@ -4775,7 +4786,7 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
   // is backfilled by syncLegacyPointsToLedger ('course_task').
   await request.server.prisma.$executeRawUnsafe(
     `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     VALUES ($1::uuid, 0, 'course_task', $2::uuid, NOW()::DATE)
+     VALUES ($1::uuid, 0, 'course_task', $2::uuid, ${ACTIVITY_DATE_SQL})
      ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING`,
     memberId, submission.id,
   ).catch((err: unknown) => request.log.warn({ err }, 'course_task streak activity insert failed'));
@@ -7119,6 +7130,25 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
       const totalDays = baseDays + extendedDays;
       const programName = (batchData as any)?.program?.name ?? (batchData as any)?.name ?? null;
 
+      // Tier Access = distinct qualifying activity days inside the program window
+      // [batch start, start + totalDays) on the program calendar, capped at
+      // totalDays (lib/activityDays.ts). Same ledger + sources as the navbar streak,
+      // so both move together; days with no ledger row are never inferred.
+      let activeDays = 0;
+      if (batchData && (batchData as any).startsAt) {
+        await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
+        const dayRows = await prisma.$queryRawUnsafe<{ activity_date: Date }[]>(
+          `SELECT DISTINCT activity_date FROM tbt_activity_log
+           WHERE member_id = $1::uuid AND source IN (${QUALIFYING_SOURCES_SQL})`,
+          memberId,
+        ).catch(() => [] as { activity_date: Date }[]);
+        activeDays = computeTierActiveDays({
+          activityDays: dayRows.map((r) => r.activity_date),
+          programStartDay: localDayKey(new Date((batchData as any).startsAt), PROGRAM_TZ),
+          totalDays,
+        });
+      }
+
       return {
         dailyTimeSpentHrs: Math.round(dailyTimeSpentHrs * 100) / 100,
         dailyTimeGoalHrs: 2.0,
@@ -7130,6 +7160,7 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         tasksTotal,
         leaderboardRank,
         daysElapsed,
+        activeDays,
         totalDays,
         programName,
       };

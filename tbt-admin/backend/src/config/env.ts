@@ -82,6 +82,9 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().or(z.literal('')),
   RAZORPAY_KEY_SECRET: z.string().optional().or(z.literal('')),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  // Program calendar timezone for daily activity (streak + Tier Access active days).
+  // IANA name; invalid/absent → Asia/Kolkata (see lib/activityDays.ts).
+  PROGRAM_TIMEZONE: z.string().optional().or(z.literal('')),
 });
 
 const _env = envSchema.safeParse(process.env);

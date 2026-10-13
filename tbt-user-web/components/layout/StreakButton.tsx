@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Flame, Trophy, CalendarCheck } from "lucide-react";
 import { useMyStreak } from "@/lib/hooks/useDashboard";
-import { useMentorshipStats } from "@/lib/hooks/useMentorship";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
 
@@ -16,11 +15,7 @@ function weekdayInitial(isoDate: string) {
 
 export function StreakButton() {
   const { uiStrings } = useSiteConfig();
-  const { data: streak } = useMyStreak();
-  // Tier Access progress shown beside the flame — the same query (same key, shared
-  // cache, one request) and the same daysElapsed/totalDays the dashboard's
-  // "Tier Access" tile renders, so the two always match.
-  const { data: tierStats, isLoading: tierLoading } = useMentorshipStats();
+  const { data: streak, isLoading } = useMyStreak();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -38,10 +33,6 @@ export function StreakButton() {
   const daysUnit = uiStrings?.streakDaysUnit ?? "days";
   const title = uiStrings?.streakTitle ?? "Learning Streak";
 
-  // Same formatting as the Tier Access tile: `${daysElapsed}` + `/${totalDays}d`.
-  const tierElapsed = tierStats?.daysElapsed ?? 0;
-  const tierTotal = tierStats?.totalDays ?? 0;
-  const tierLabel = tierStats ? (tierTotal > 0 ? `${tierElapsed}/${tierTotal}d` : `${tierElapsed}d`) : "–";
 
   const message = activeToday
     ? uiStrings?.streakActiveTodayMessage ?? "You're on fire! Today's activity is counted — see you tomorrow."
@@ -57,7 +48,7 @@ export function StreakButton() {
           "relative flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
           open ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         )}
-        aria-label={`${title}: ${current} ${daysUnit}. Tier Access: ${tierLabel}`}
+        aria-label={`${title}: ${current} ${daysUnit}`}
         aria-expanded={open}
         title={title}
       >
@@ -73,22 +64,8 @@ export function StreakButton() {
           className={cn("relative z-10", activeToday && "drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]")}
           style={flameColor ? { color: flameColor, fill: flameColor } : undefined}
         />
-        {/* Tier Access (e.g. 12/90d). Below `sm` it stacks "12" over "/90d" so the
-            navbar's right-side icons still fit on phones; inline from `sm` up. */}
-        <span
-          className="relative z-10 font-bold tabular-nums leading-none flex flex-col items-start sm:flex-row sm:items-baseline text-xs"
-          style={flameColor ? { color: flameColor } : undefined}
-        >
-          {tierLoading || !tierStats ? (
-            "–"
-          ) : (
-            <>
-              <span className="text-[11px] sm:text-xs">{tierElapsed}</span>
-              <span className="text-[9px] sm:text-xs opacity-80 sm:opacity-100">
-                {tierTotal > 0 ? `/${tierTotal}d` : "d"}
-              </span>
-            </>
-          )}
+        <span className="relative z-10 text-xs font-bold tabular-nums" style={flameColor ? { color: flameColor } : undefined}>
+          {isLoading ? "–" : current}
         </span>
         {atRisk && (
           <span
