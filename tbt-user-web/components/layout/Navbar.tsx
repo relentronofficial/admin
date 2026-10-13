@@ -22,6 +22,7 @@ import toast from "react-hot-toast";
 import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { StreakButton } from "./StreakButton";
+import { TierAccessIndicator } from "./TierAccessIndicator";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
@@ -522,7 +523,7 @@ export function Navbar() {
 
       {/* ── Floating top navbar ───────────────────────────────────────────── */}
       <header
-        className="fixed top-3 left-4 right-4 z-40 h-14 flex items-center px-3 gap-3 rounded-2xl supports-[backdrop-filter]:md:backdrop-blur-xl"
+        className="fixed top-3 left-4 right-4 z-40 h-14 flex items-center px-2 gap-2 sm:px-3 sm:gap-3 rounded-2xl supports-[backdrop-filter]:md:backdrop-blur-xl"
         style={{
           background: "var(--color-navbar-bg)",
           border: "1px solid var(--color-border-subtle)",
@@ -536,7 +537,7 @@ export function Navbar() {
         {/* Mobile: hamburger */}
         <button
           onClick={toggleSidebar}
-          className="lg:hidden relative p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors duration-200 flex-shrink-0 group overflow-hidden"
+          className="lg:hidden relative p-1.5 sm:p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors duration-200 flex-shrink-0 group overflow-hidden"
           aria-label="Toggle menu"
         >
           <GlowBg active={false} />
@@ -578,10 +579,14 @@ export function Navbar() {
         </nav>
 
         {/* Right icons */}
-        <div className="flex items-center gap-1 ml-auto lg:ml-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 ml-auto lg:ml-0">
 
           {/* Learning streak (dropdown) */}
-          {!hiddenMenuKeys.includes("streak") && <StreakButton />}
+          {/* Streak and Tier Access: two independent indicators with a clear gap. */}
+          <div className="flex items-center gap-1 sm:gap-2 sm:mr-1">
+            {!hiddenMenuKeys.includes("streak") && <StreakButton />}
+            <TierAccessIndicator />
+          </div>
 
           {/* ── Notifications (dropdown) ────────────────────────────── */}
           {rightIcons.notifications && (
@@ -589,7 +594,7 @@ export function Navbar() {
               <button
                 onClick={() => setNotifOpen((v) => !v)}
                 className={cn(
-                  "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+                  "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                   notifOpen || pathname === "/notifications" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
                 aria-label="Notifications"
@@ -614,7 +619,7 @@ export function Navbar() {
             <Link
               href="/messages"
               className={cn(
-                "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+                "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                 pathname === "/messages" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
               aria-label="Messages"
@@ -632,12 +637,13 @@ export function Navbar() {
             </Link>
           )}
 
-          {/* Support */}
+          {/* Support — top-bar icon from `sm` up; on phones it is in the drawer and profile menu,
+              so the streak + Tier Access indicators fit beside the other icons. */}
           {!hiddenMenuKeys.includes("support") && (
             <Link
               href="/support"
               className={cn(
-                "relative p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+                "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0 hidden sm:block",
                 pathname === "/support" || pathname.startsWith("/support/")
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"

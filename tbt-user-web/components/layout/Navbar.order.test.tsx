@@ -22,6 +22,7 @@ vi.mock("@/lib/hooks/useDashboard", () => ({
 vi.mock("@/lib/hooks/useUser", () => ({ useMe: () => ({ data: { id: "me", currentTier: 1 } }) }));
 vi.mock("@/lib/socket/client", () => ({ getSocket: () => new Promise(() => {}) }));
 vi.mock("./StreakButton", () => ({ StreakButton: () => null }));
+vi.mock("./TierAccessIndicator", () => ({ TierAccessIndicator: () => null }));
 vi.mock("@/lib/api/client", () => ({ default: { post: vi.fn() } }));
 
 const nav: NavItem[] = [
