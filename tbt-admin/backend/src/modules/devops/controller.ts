@@ -148,7 +148,8 @@ export async function whatsappIntakeHandler(
 
   const msg = parseIncomingMessage(body);
   if (!msg || !msg.text.trim()) {
-    // Status update / read receipt / unsupported type — acknowledge silently
+    // Log the raw body so we can identify the BSP payload format
+    fastify.log.warn({ bodyKeys: Object.keys(body ?? {}), body: JSON.stringify(body).slice(0, 500) }, '[devops] WhatsApp intake: could not parse message (status update or unknown format)');
     return reply.send({ ok: true });
   }
 
