@@ -26,7 +26,7 @@ Write-Host ("=" * 60)
 # ──────────────────────────────────────────────────────────────────
 # 1. Power Management — no sleep on AC power
 # ──────────────────────────────────────────────────────────────────
-Write-Host "`n[1/5] Configuring power settings..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Configuring power settings..." -ForegroundColor Yellow
 
 # Disable standby (sleep) on AC power
 powercfg /change standby-timeout-ac 0
@@ -44,7 +44,7 @@ Write-Host "  ⚠️  NOTE: Keep laptop plugged in for 24/7 operation" -Foregrou
 # ──────────────────────────────────────────────────────────────────
 # 2. Git credential caching (avoid re-auth prompts)
 # ──────────────────────────────────────────────────────────────────
-Write-Host "`n[2/5] Configuring Git credential caching..." -ForegroundColor Yellow
+Write-Host "`n[2/6] Configuring Git credential caching..." -ForegroundColor Yellow
 
 git config --global credential.helper manager
 git config --global core.autocrlf true
@@ -55,7 +55,7 @@ Write-Host "  ✅ Git credential manager configured" -ForegroundColor Green
 # ──────────────────────────────────────────────────────────────────
 # 3. GitHub CLI auth check
 # ──────────────────────────────────────────────────────────────────
-Write-Host "`n[3/5] Checking GitHub CLI..." -ForegroundColor Yellow
+Write-Host "`n[3/6] Checking GitHub CLI..." -ForegroundColor Yellow
 
 $ghInstalled = Get-Command gh -ErrorAction SilentlyContinue
 if ($ghInstalled) {
@@ -73,7 +73,7 @@ if ($ghInstalled) {
 # ──────────────────────────────────────────────────────────────────
 # 4. Windows Task Scheduler — Health Monitor (every 2 hours)
 # ──────────────────────────────────────────────────────────────────
-Write-Host "`n[4/5] Creating scheduled tasks..." -ForegroundColor Yellow
+Write-Host "`n[4/6] Creating scheduled tasks..." -ForegroundColor Yellow
 
 $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $nodeExe) {
@@ -190,9 +190,48 @@ if (-not $nodeExe) {
 }
 
 # ──────────────────────────────────────────────────────────────────
-# 5. Environment variable guidance
+# 5. GitHub Actions Runner — persistent startup at logon
 # ──────────────────────────────────────────────────────────────────
-Write-Host "`n[5/5] Environment variable checklist..." -ForegroundColor Yellow
+Write-Host "`n[5/6] Registering GitHub Actions self-hosted runner startup..." -ForegroundColor Yellow
+
+$runnerCmd = "C:\actions-runner\run.cmd"
+if (Test-Path $runnerCmd) {
+    $ghRunnerAction = New-ScheduledTaskAction `
+        -Execute "cmd.exe" `
+        -Argument "/c `"$runnerCmd`"" `
+        -WorkingDirectory "C:\actions-runner"
+
+    $ghRunnerTrigger = New-ScheduledTaskTrigger -AtLogOn
+
+    $ghRunnerSettings = New-ScheduledTaskSettingsSet `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -MultipleInstances IgnoreNew `
+        -RunOnlyIfNetworkAvailable `
+        -StartWhenAvailable
+
+    Unregister-ScheduledTask -TaskName "TBT-GHRunner" -Confirm:$false -ErrorAction SilentlyContinue
+
+    Register-ScheduledTask `
+        -TaskName "TBT-GHRunner" `
+        -Action $ghRunnerAction `
+        -Trigger $ghRunnerTrigger `
+        -Settings $ghRunnerSettings `
+        -RunLevel Highest `
+        -Description "GitHub Actions self-hosted runner — listens for TBT devops tasks immediately on label" | Out-Null
+
+    Write-Host "  ✅ Created: TBT-GHRunner (starts at logon, no timeout)" -ForegroundColor Green
+    Write-Host "  ℹ  Runner: $runnerCmd" -ForegroundColor Gray
+    Write-Host "  ℹ  Monitor: https://github.com/relentronofficial/admin/settings/actions/runners" -ForegroundColor Gray
+} else {
+    Write-Host "  ⚠️  C:\actions-runner\run.cmd not found — runner not configured" -ForegroundColor DarkYellow
+    Write-Host "     Download and configure from:" -ForegroundColor Gray
+    Write-Host "     https://github.com/relentronofficial/admin/settings/actions/runners/new" -ForegroundColor Gray
+}
+
+# ──────────────────────────────────────────────────────────────────
+# 6. Environment variable guidance
+# ──────────────────────────────────────────────────────────────────
+Write-Host "`n[6/6] Environment variable checklist..." -ForegroundColor Yellow
 
 $requiredVars = @(
     @{ Name = "GITHUB_TOKEN";        Purpose = "GitHub API access (task-intake.mjs, task-runner.mjs)" }
@@ -233,10 +272,11 @@ Write-Host "  4. Submit tasks by creating GitHub Issues with label 'devops:pendi
 Write-Host "     https://github.com/relentronofficial/admin/issues/new" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  Task Scheduler jobs created:" -ForegroundColor White
+Write-Host "  - TBT-GHRunner:      GitHub Actions self-hosted runner (starts at logon, event-driven)" -ForegroundColor Gray
 Write-Host "  - TBT-HealthMonitor: runs every 2h" -ForegroundColor Gray
-Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 10min" -ForegroundColor Gray
-Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 15min" -ForegroundColor Gray
-Write-Host "  - TBT-SmokeTest: validates production after deploy" -ForegroundColor Gray
+Write-Host "  - TBT-TaskIntake:    syncs GitHub Issues every 10min (fallback)" -ForegroundColor Gray
+Write-Host "  - TBT-TaskRunner:    executes tasks via Claude Code every 15min (fallback)" -ForegroundColor Gray
+Write-Host "  - TBT-SmokeTest:     validates production after deploy" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  WhatsApp dev alerts — copy WABA_* from backend/.env, then set your number:" -ForegroundColor White
 Write-Host "  [System.Environment]::SetEnvironmentVariable('WABA_API_BASE_URL','<url>','User')" -ForegroundColor Gray
