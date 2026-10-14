@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
 import { cacheGet, cacheSet, cacheGetOrCompute } from '../../lib/cache.js';
+import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
@@ -586,4 +587,109 @@ export async function pubLegalPageHandler(req: FastifyRequest, reply: FastifyRep
     },
     error: null,
   });
+}
+
+// ── WhatsApp → Autonomous Dev Pipeline ────────────────────────────────────────
+//
+// POST /api/pub/whatsapp-intake
+//
+// @zacx BSP fires this webhook when a message arrives on the business number.
+// We verify the sender is the admin, create a GitHub Issue with the message
+// as the task description, and reply to confirm.
+//
+// Webhook URL to register in @zacx dashboard:
+//   https://tbt-backend-464464507912.asia-south1.run.app/api/pub/whatsapp-intake
+
+function normalizeDigits(phone: string): string {
+  const d = phone.replace(/\D/g, '');
+  // Strip leading country code 91 for comparison (10-digit canonical)
+  return d.startsWith('91') && d.length === 12 ? d.slice(2) : d;
+}
+
+function extractMessage(body: any): { from: string; text: string } | null {
+  // @zacx primary shape: { wabaNumber, message: { from, type, text } }
+  if (body?.message?.from && typeof body?.message?.text === 'string') {
+    return { from: String(body.message.from), text: body.message.text.trim() };
+  }
+  // @zacx alt shape: { message: { from, type, text: { body } } }
+  if (body?.message?.from && typeof body?.message?.text?.body === 'string') {
+    return { from: String(body.message.from), text: body.message.text.body.trim() };
+  }
+  // Meta/Graph API webhook shape
+  const msg = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  if (msg?.from && (typeof msg?.text?.body === 'string' || typeof msg?.text === 'string')) {
+    return { from: String(msg.from), text: (msg.text?.body ?? msg.text ?? '').trim() };
+  }
+  return null;
+}
+
+async function createGithubIssue(title: string, body: string): Promise<number | null> {
+  if (!env.GITHUB_TOKEN) return null;
+  try {
+    const res = await fetch('https://api.github.com/repos/relentronofficial/admin/issues', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title, body, labels: ['devops:pending'] }),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[WA-intake] GitHub issue creation failed', res.status, err);
+      return null;
+    }
+    const issue = await res.json() as { number: number };
+    return issue.number;
+  } catch (err: any) {
+    console.error('[WA-intake] GitHub API error', err.message);
+    return null;
+  }
+}
+
+export async function whatsappIntakeHandler(req: FastifyRequest, reply: FastifyReply) {
+  // Always ACK the webhook immediately — @zacx retries on non-200
+  reply.status(200).send({ success: true });
+
+  try {
+    const parsed = extractMessage(req.body as any);
+    if (!parsed) {
+      req.server.log.warn({ body: req.body }, '[WA-intake] unrecognised webhook shape — logged for debugging');
+      return;
+    }
+
+    const { from, text } = parsed;
+    if (!text) return;
+
+    // Security: only accept messages from the configured admin number
+    const adminNumber = env.ADMIN_WHATSAPP_NUMBER || '';
+    if (adminNumber && normalizeDigits(from) !== normalizeDigits(adminNumber)) {
+      req.server.log.warn({ from, adminNumber }, '[WA-intake] rejected — not from admin number');
+      return;
+    }
+
+    req.server.log.info({ from, text: text.slice(0, 100) }, '[WA-intake] incoming task prompt');
+
+    if (!env.GITHUB_TOKEN) {
+      req.server.log.warn('[WA-intake] GITHUB_TOKEN not set — cannot create issue');
+      await sendWhatsappMessage(from, 'Setup incomplete: GITHUB_TOKEN not configured on the server. Ask the admin to add it to Cloud Run env vars.');
+      return;
+    }
+
+    // Title = first line or first 100 chars; body = full text + source note
+    const titleLine = text.split('\n')[0]!.slice(0, 100) + (text.length > 100 ? '…' : '');
+    const issueBody = `${text}\n\n---\n_Submitted via WhatsApp autonomous dev pipeline_`;
+
+    const issueNumber = await createGithubIssue(titleLine, issueBody);
+
+    const reply_text = issueNumber
+      ? `Got it! Task #${issueNumber} queued.\n\nClaude will start within 15 minutes. I'll WhatsApp you when it's done or if it needs help.`
+      : `Got it! But I couldn't create the GitHub Issue (check server logs). Please create it manually at github.com/relentronofficial/admin/issues with label devops:pending.`;
+
+    await sendWhatsappMessage(from, reply_text);
+  } catch (err: any) {
+    req.server.log.error({ err }, '[WA-intake] handler error');
+  }
 }

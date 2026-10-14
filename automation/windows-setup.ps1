@@ -119,7 +119,7 @@ if (-not $nodeExe) {
         -WorkingDirectory $ROOT
 
     $intakeTrigger = New-ScheduledTaskTrigger `
-        -RepetitionInterval (New-TimeSpan -Minutes 30) `
+        -RepetitionInterval (New-TimeSpan -Minutes 10) `
         -Once `
         -At (Get-Date).Date.AddHours(8)
 
@@ -131,9 +131,9 @@ if (-not $nodeExe) {
         -Trigger $intakeTrigger `
         -Settings $taskSettings `
         -RunLevel Highest `
-        -Description "TBT GitHub Issues -> Local Queue Sync - runs every 30min" | Out-Null
+        -Description "TBT GitHub Issues -> Local Queue Sync - runs every 10min" | Out-Null
 
-    Write-Host "  ✅ Created: TBT-TaskIntake (every 30min)" -ForegroundColor Green
+    Write-Host "  ✅ Created: TBT-TaskIntake (every 10min)" -ForegroundColor Green
 
     # Task runner — every 60 minutes (picks up tasks and invokes Claude Code)
     $runnerAction = New-ScheduledTaskAction `
@@ -142,7 +142,7 @@ if (-not $nodeExe) {
         -WorkingDirectory $ROOT
 
     $runnerTrigger = New-ScheduledTaskTrigger `
-        -RepetitionInterval (New-TimeSpan -Minutes 60) `
+        -RepetitionInterval (New-TimeSpan -Minutes 15) `
         -Once `
         -At (Get-Date).Date.AddHours(9)
 
@@ -156,7 +156,7 @@ if (-not $nodeExe) {
         -RunLevel Highest `
         -Description "TBT Autonomous Task Runner - picks up GitHub Issues and invokes Claude Code" | Out-Null
 
-    Write-Host "  ✅ Created: TBT-TaskRunner (every 60min)" -ForegroundColor Green
+    Write-Host "  ✅ Created: TBT-TaskRunner (every 15min)" -ForegroundColor Green
 
     # Smoke test — daily 09:15 + 5min after logon (post-deploy validation)
     $smokeAction = New-ScheduledTaskAction `
@@ -234,8 +234,8 @@ Write-Host "     https://github.com/relentronofficial/admin/issues/new" -Foregro
 Write-Host ""
 Write-Host "  Task Scheduler jobs created:" -ForegroundColor White
 Write-Host "  - TBT-HealthMonitor: runs every 2h" -ForegroundColor Gray
-Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 30min" -ForegroundColor Gray
-Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 60min" -ForegroundColor Gray
+Write-Host "  - TBT-TaskIntake: syncs GitHub Issues every 10min" -ForegroundColor Gray
+Write-Host "  - TBT-TaskRunner: executes tasks via Claude Code every 15min" -ForegroundColor Gray
 Write-Host "  - TBT-SmokeTest: validates production after deploy" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  WhatsApp dev alerts — copy WABA_* from backend/.env, then set your number:" -ForegroundColor White
