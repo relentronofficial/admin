@@ -306,7 +306,7 @@ export function Navbar() {
   const routerRef = useRef(router);
   routerRef.current = router;
 
-  const { sidebarOpen, setSidebarOpen, toggleSidebar, theme } = useUIStore();
+  const { sidebarOpen, setSidebarOpen, toggleSidebar } = useUIStore();
   const { config, nav, rightIcons, hiddenMenuKeys, navOrder } = useSiteConfig();
   const queryClient = useQueryClient();
   // Nav items + Community/Ebooks/Podcasts in the order set in Admin → Navigation.
@@ -414,13 +414,10 @@ export function Navbar() {
 
   // Dark mode: use admin-configured logoUrl (white brand logo) or default white logo.
   // Light mode: always use the black logo — admin's logoUrl is the white version.
+  // Both logos are always in the DOM; CSS dark:/light: classes show the correct one
+  // immediately based on the <html> theme class set server-side (no JS, no flash).
   const darkLogoSrc = logoUrl || "/tbt_logo.webp";
   const lightLogoSrc = "/tbt_logo_black.png";
-  // Use a mounted guard so the SSR-rendered dark logo doesn't flash during hydration
-  // when the saved theme is "light" (Zustand reads localStorage on client only).
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  const activeLogo = mounted && theme === "light" ? lightLogoSrc : darkLogoSrc;
 
   return (
     <>
@@ -459,7 +456,9 @@ export function Navbar() {
             onClick={() => setSidebarOpen(false)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={activeLogo} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).src = darkLogoSrc; }} />
+            <img src={lightLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain block dark:hidden" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={darkLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain hidden dark:block" />
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -544,10 +543,12 @@ export function Navbar() {
           <Menu size={18} className="relative z-10" />
         </button>
 
-        {/* Logo */}
+        {/* Logo — CSS-driven light/dark swap, no JS state, no flash */}
         <Link href={homeHref} className="flex-shrink-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={activeLogo} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain" fetchPriority="high" onError={(e) => { (e.target as HTMLImageElement).src = darkLogoSrc; }} />
+          <img src={lightLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain block dark:hidden" fetchPriority="high" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={darkLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain hidden dark:block" fetchPriority="high" />
         </Link>
 
         {/* Visual separator (desktop) */}

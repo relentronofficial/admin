@@ -49,7 +49,15 @@ function verifyWebhookSignature(rawBody: string, headers: Record<string, string 
 // Flexible parser — handles @zacx BSP format and Meta Cloud API format.
 // Returns null for non-text events (status updates, read receipts, etc.)
 function parseIncomingMessage(body: any): { from: string; text: string } | null {
-  // @zacx format: { data: { from, text, type } }
+  // @zacx format: { event_type, event_object: { from, to, message: { type, text } } }
+  if (body?.event_object?.from && body?.event_object?.message?.type === 'text') {
+    const text = body.event_object.message.text;
+    if (typeof text === 'string' && text) {
+      return { from: body.event_object.from, text };
+    }
+  }
+
+  // @zacx legacy: { data: { from, text, type } }
   if (body?.data?.from && typeof body?.data?.text === 'string' && body?.data?.type === 'text') {
     return { from: body.data.from, text: body.data.text };
   }
@@ -148,7 +156,8 @@ export async function whatsappIntakeHandler(
 
   const msg = parseIncomingMessage(body);
   if (!msg || !msg.text.trim()) {
-    // Status update / read receipt / unsupported type — acknowledge silently
+    // Log the raw body so we can identify the BSP payload format
+    fastify.log.warn({ bodyKeys: Object.keys(body ?? {}), body: JSON.stringify(body).slice(0, 500) }, '[devops] WhatsApp intake: could not parse message (status update or unknown format)');
     return reply.send({ ok: true });
   }
 
