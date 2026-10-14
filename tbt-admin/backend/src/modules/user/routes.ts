@@ -121,6 +121,8 @@ import {
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
   getMentorshipStatsHandler,
+  getMentorshipModulesHandler,
+  updateMentorshipModulesHandler,
   getMentorshipRevenueHandler,
   upsertMentorshipRevenueHandler,
   getMentorshipSocialHandler,
@@ -143,6 +145,8 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Mentorship Dashboard ───────────────────────────────────────────────────
   fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
+  fastify.get('/mentorship/modules', getMentorshipModulesHandler);
+  fastify.put('/mentorship/modules', updateMentorshipModulesHandler);
   fastify.get('/mentorship/revenue', getMentorshipRevenueHandler);
   fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
   fastify.get('/mentorship/social',  getMentorshipSocialHandler);

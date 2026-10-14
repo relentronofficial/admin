@@ -57,3 +57,33 @@ export const useUpsertMentorshipSocial = () => {
     },
   });
 };
+
+// ── Mentorship module selection (server is the source of truth) ─────────────
+export const mentorshipModulesKey = ["user", "mentorship-modules"] as const;
+
+export const useMentorshipModules = (enabled = true) =>
+  useQuery({
+    queryKey: mentorshipModulesKey,
+    queryFn: async () => {
+      const res = await mentorshipService.getModules();
+      return res.data;
+    },
+    enabled,
+    staleTime: 60_000,
+  });
+
+export const useUpdateMentorshipModules = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (modules: string[]) => {
+      const res = await mentorshipService.updateModules(modules);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData(mentorshipModulesKey, data);
+      // Catalog and course detail are filtered/gated server-side by the selection.
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      qc.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+};
