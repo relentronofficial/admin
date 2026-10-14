@@ -1372,6 +1372,19 @@ export default function MembersListPage() {
                   <p className="text-[#606060] text-xs mb-4">
                     By default, this member sees modules based on their assigned program. Enable an override to grant or restrict specific modules regardless of the program.
                   </p>
+                  <div className="mb-4 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3">
+                    <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Member's mentorship selection</p>
+                    <p className="text-sm text-[#f0f0f0]">
+                      {Array.isArray((editingMember as any)?.mentorshipModules)
+                        ? ((editingMember as any).mentorshipModules.length > 0
+                            ? (editingMember as any).mentorshipModules
+                                .map((n: string) => moduleConfigs.find((mc: any) => mc.moduleName === n)?.displayName || n)
+                                .join(', ')
+                            : 'None')
+                        : 'Not chosen yet'}
+                    </p>
+                    <p className="text-[#606060] text-xs mt-1">Chosen by the member during onboarding. It narrows what they see within the access set here; it never grants more.</p>
+                  </div>
                   <label className="flex items-center gap-3 mb-4 cursor-pointer select-none">
                     <input
                       type="checkbox"

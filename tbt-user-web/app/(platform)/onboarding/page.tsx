@@ -7,7 +7,7 @@ import {
   Video, Calendar, Camera, MessageCircle,
   Upload, Trash2, Building2, MapPin,
   TrendingUp, Instagram, Users, Shield, Megaphone,
-  CheckCircle2, Clock, XCircle,
+  CheckCircle2, Clock, XCircle, Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -21,6 +21,8 @@ import {
   usePresignProfilePhoto,
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
+import { useMentorshipModules, useUpdateMentorshipModules } from "@/lib/hooks/useMentorship";
+import { MentorshipModuleOptions } from "@/components/features/mentorship/MentorshipModulePicker";
 import { usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric } from "@/lib/hooks/useUser";
 import { Brain } from "lucide-react";
 import type { OnboardingContentStep } from "@/lib/api/services/onboarding.service";
@@ -28,7 +30,7 @@ import apiClient from "@/lib/api/client";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type FixedStep = "welcome" | "profile" | "skills" | "documents" | "psychometric" | "review";
+type FixedStep = "welcome" | "mentorship" | "profile" | "skills" | "documents" | "psychometric" | "review";
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
@@ -47,9 +49,9 @@ const ANNUAL_TURNOVER_OPTIONS = [
   "Under 10L", "10L - 25L", "25L - 50L", "50L - 1Cr", "1Cr - 5Cr", "5Cr+",
 ];
 
-function buildStepOrder(contentSteps: OnboardingContentStep[]): Step[] {
+function buildStepOrder(contentSteps: OnboardingContentStep[], includeMentorship: boolean): Step[] {
   const educationSteps: DynamicStep[] = contentSteps.map((c) => `education:${c.stepKey}` as DynamicStep);
-  return ["welcome", ...educationSteps, "profile", "skills", "documents", "psychometric", "review"];
+  return ["welcome", ...(includeMentorship ? ["mentorship" as const] : []), ...educationSteps, "profile", "skills", "documents", "psychometric", "review"];
 }
 
 const SKILL_FIELDS = [
@@ -141,6 +143,7 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
   const index = stepOrder.indexOf(step);
   const stepLabel =
     step === "welcome" ? "Welcome"
+    : step === "mentorship" ? "Mentorship"
     : step.startsWith("education:") ? "Learn"
     : step === "profile" ? "Profile"
     : step === "skills" ? "Skills"
@@ -479,7 +482,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const submitPsychometric = useSubmitPsychometric();
   const [psychoAnswers, setPsychoAnswers] = useState<Record<string, string>>({});
 
-  const stepOrder = useMemo(() => buildStepOrder(contentSteps ?? []), [contentSteps]);
+  // Mentorship module selection — persisted server-side (members.mentorship_modules),
+  // never only in component state. The step is skipped only when the server
+  // reports no modules on offer; while loading or on error it stays so the
+  // member cannot skip past it.
+  const mentorshipQuery = useMentorshipModules();
+  const updateMentorship = useUpdateMentorshipModules();
+  const mentorshipData = mentorshipQuery.data;
+  const includeMentorship = !mentorshipData || mentorshipData.options.length > 0;
+  const [mentorshipValue, setMentorshipValue] = useState<string[]>([]);
+  useEffect(() => {
+    if (!mentorshipData) return;
+    const available = new Set(mentorshipData.options.map((o) => o.moduleName));
+    setMentorshipValue((mentorshipData.selection ?? []).filter((m) => available.has(m)));
+  }, [mentorshipData]);
+  const mentorshipMissing = includeMentorship && !(mentorshipData && mentorshipData.selection !== null && !mentorshipData.selectionRequired);
+
+  const stepOrder = useMemo(() => buildStepOrder(contentSteps ?? [], includeMentorship), [contentSteps, includeMentorship]);
   const [step, setStep] = useState<Step>("welcome");
 
   const [watchedSteps, setWatchedSteps] = useState<Set<string>>(
@@ -583,7 +602,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   const missingFields = REQUIRED_FIELDS.filter((f) => !profile[f]);
   const unwatchedVideoSteps = (contentSteps ?? []).filter((c) => c.videoUrl && !watchedSteps.has(c.stepKey));
-  const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0 && unwatchedVideoSteps.length === 0;
+  const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0 && unwatchedVideoSteps.length === 0 && !mentorshipMissing;
   const currentIndex = stepOrder.indexOf(step);
   const prevStep = currentIndex > 0 ? stepOrder[currentIndex - 1] : undefined;
   const nextStep = currentIndex < stepOrder.length - 1 ? stepOrder[currentIndex + 1] : undefined;
@@ -651,6 +670,18 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     }
   };
 
+  const saveMentorshipAndAdvance = async () => {
+    const saved = mentorshipData?.selection ?? null;
+    const unchanged = saved !== null && !mentorshipData?.selectionRequired
+      && saved.length === mentorshipValue.length && saved.every((m) => mentorshipValue.includes(m));
+    try {
+      if (!unchanged) await updateMentorship.mutateAsync(mentorshipValue);
+      setStep(nextStep ?? "review");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not save your mentorship selection.");
+    }
+  };
+
   const handleSubmit = async () => {
     try {
       await submit.mutateAsync();
@@ -707,6 +738,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
           >
             <div className="space-y-3">
               {[
+                { icon: Layers, label: "Choose your mentorship modules" },
                 { icon: Users, label: "Personal & business details" },
                 { icon: TrendingUp, label: "Skills & learning goals" },
                 { icon: Upload, label: "Upload a KYC document" },
@@ -745,6 +777,36 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   </button>
                 ))}
               </div>
+            )}
+          </StepShell>
+        )}
+
+        {/* ── Mentorship module selection ── */}
+        {step === "mentorship" && (
+          <StepShell
+            title="Choose your mentorship"
+            subtitle="Select the mentorship modules you want to join. Your Mentorship page will show only these modules — you can change this later."
+            onBack={prevStep ? () => setStep(prevStep) : undefined}
+            onNext={saveMentorshipAndAdvance}
+            nextDisabled={!mentorshipData || mentorshipValue.length === 0}
+            saving={updateMentorship.isPending}
+          >
+            {mentorshipQuery.isLoading ? (
+              <ContentStepSkeleton />
+            ) : mentorshipQuery.isError || !mentorshipData ? (
+              <div className="flex items-center gap-3 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                <span>We couldn&apos;t load the mentorship modules.</span>
+                <button type="button" onClick={() => mentorshipQuery.refetch()} className="font-semibold" style={{ color: "var(--color-accent)" }}>
+                  Retry
+                </button>
+              </div>
+            ) : (
+              <MentorshipModuleOptions
+                options={mentorshipData.options}
+                value={mentorshipValue}
+                onChange={setMentorshipValue}
+                disabled={updateMentorship.isPending}
+              />
             )}
           </StepShell>
         )}
@@ -1560,6 +1622,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {!readyToSubmit && missingFields.length > 0 && (
                 <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
                   Please fill in: {missingFields.join(", ")}
+                </p>
+              )}
+              {mentorshipMissing && (
+                <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
+                  Please choose your mentorship modules before submitting
                 </p>
               )}
               {unwatchedVideoSteps.length > 0 && (

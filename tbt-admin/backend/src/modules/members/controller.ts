@@ -2,6 +2,8 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
+import { parseModuleList } from '../../lib/mentorshipModules.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
 import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
@@ -350,15 +352,18 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
   // CP-14: augment with allowed_modules (raw SQL column)
   if (members.length > 0) {
     const ids = members.map(m => m.id);
-    const modRows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string; allowed_modules: any }>>(
-      `SELECT id::text, allowed_modules FROM members WHERE id = ANY($1::uuid[])`,
+    const modRows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string; allowed_modules: any; mentorship_modules: any }>>(
+      `SELECT id::text, allowed_modules, mentorship_modules FROM members WHERE id = ANY($1::uuid[])`,
       ids,
     ).catch(() => []);
     const modMap = new Map(modRows.map(r => [r.id, r.allowed_modules]));
+    const selMap = new Map(modRows.map(r => [r.id, r.mentorship_modules]));
     for (const m of members as any[]) {
       const raw = modMap.get(m.id);
       m.allowedModules = raw === undefined || raw === null ? null
         : Array.isArray(raw) ? raw : JSON.parse(raw);
+      // Member-chosen mentorship modules (read-only for admins; null = not chosen yet)
+      m.mentorshipModules = parseModuleList(selMap.get(m.id));
     }
   }
 
@@ -784,6 +789,8 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       );
       void invalidateCache(request.server.redis ?? null, `courses:personalization:${id}`);
     }
+    // Override and batch (program ceiling) both feed the mentorship module verdict.
+    void invalidateMemberModuleAccess(request.server.redis ?? null, id);
 
     // Same master-mirror as createMember. Only fires when the field
     // was actually included in the update payload — untouched fields

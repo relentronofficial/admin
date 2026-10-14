@@ -28,6 +28,8 @@ import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../
 import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
+import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
+import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -790,6 +792,26 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   allowedModules = personCtx.modules;
   programName = personCtx.name;
 
+  // Mentorship module selection (lib/mentorshipModules.ts). Once a member has
+  // chosen, the catalog is filtered server-side to their effective modules —
+  // the client never receives courses from modules they did not select.
+  // Fail closed: if the selection cannot be read, refuse rather than return
+  // every module.
+  let moduleAccess: ModuleAccess;
+  try {
+    moduleAccess = await loadMemberModuleAccess(request.server.prisma, redis, request.memberId!);
+  } catch (err) {
+    request.log.error({ err }, 'mentorship module access lookup failed');
+    return fail(reply, 503, 'Could not load your mentorship modules');
+  }
+  if (moduleAccess.selection !== null) {
+    const beforeModuleFilter = data.length;
+    data = data.filter((c) => isCourseModuleAllowed(c.module, moduleAccess));
+    total = Math.max(0, total - (beforeModuleFilter - data.length));
+    personalizationState = 'program';
+    allowedModules = moduleAccess.effective;
+  }
+
   // Filter out courses the member's tier cannot access yet (unless they have explicit access)
   const memberTier = personCtx.memberTier ?? 1;
   const beforeTierFilter = data.length;
@@ -822,8 +844,14 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     personalizationState,
     allowedModules,
     programName,
-    sourceType: personCtx.sourceType,
+    sourceType: moduleAccess.selection !== null ? 'member_selection' : personCtx.sourceType,
     moduleConfigs,
+    mentorship: {
+      selection: moduleAccess.selection,
+      selectable: moduleAccess.selectable,
+      effective: moduleAccess.effective,
+      selectionRequired: moduleAccess.selectionRequired,
+    },
   });
 }
 
@@ -872,6 +900,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   // Deactivated courses are hidden from the catalog; refuse direct URL access as well.
   if (!(course as any).isActive && !hasAccess) return fail(reply, 404, 'Course not found');
+
+  if (!(await isCourseInMemberModules(request, id))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   // Tier gate: members below the required tier cannot access without explicit access grant.
   const requiredTier: number = (course as any).requiredTier ?? 1;
@@ -1175,6 +1205,7 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
   if (!isAccessValid(accessRecord)) {
     return fail(reply, 403, 'Purchase is required to enroll in this course. Contact support or purchase access.');
   }
+  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   const existing = await request.server.prisma.courseEnrollment.findUnique({
     where: { memberId_courseId: { memberId: request.memberId, courseId } },
@@ -1434,6 +1465,7 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
   if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
+  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   const progress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
     where: { memberId: request.memberId, episode: { courseId } },
@@ -1463,6 +1495,7 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
   if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
+  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: episodeId, courseId },
@@ -1791,6 +1824,25 @@ async function getCourseAccessRecord(prisma: any, memberId: string, courseId: st
   }).catch(() => null);
 }
 
+const MODULE_NOT_SELECTED = 'This course belongs to a mentorship module you have not selected';
+
+// Mentorship-module gate on course content (lib/mentorshipModules.ts). Applied
+// on top of CourseAccess wherever content is served, so hiding a module in the
+// UI is never the only barrier. Fails closed: a lookup error denies.
+async function isCourseInMemberModules(request: FastifyRequest, courseId: string): Promise<boolean> {
+  try {
+    const access = await loadMemberModuleAccess(request.server.prisma, request.server.redis ?? null, request.memberId!);
+    if (!access.restricted) return true;
+    const rows = await request.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
+      `SELECT module FROM courses WHERE id = $1::uuid`, courseId,
+    );
+    return isCourseModuleAllowed(rows[0]?.module ?? null, access);
+  } catch (err) {
+    request.log.error({ err, courseId }, 'mentorship module gate failed');
+    return false;
+  }
+}
+
 function isAccessValid(access: { isActive: boolean; accessType: string; expiresAt: Date | null } | null): boolean {
   if (!access || !access.isActive) return false;
   if (access.accessType === 'lifetime') return true;
@@ -1882,6 +1934,7 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
 
   const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
   if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
+  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   const episode = await request.server.prisma.courseEpisode.findFirst({
     where: { id: epId, courseId },
@@ -4210,6 +4263,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
 
     const courseAccessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseEp.courseId);
     if (!isAccessValid(courseAccessRecord)) return fail(reply, 403, 'Access required for this course');
+    if (!(await isCourseInMemberModules(request, courseEp.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
     const cdn = env.BUNNY_CDN_URL
       ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
@@ -4625,6 +4679,7 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
+  if (!(await isCourseInMemberModules(request, ep.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
   const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id, title, description, file_url AS "fileUrl", file_type AS "fileType",
             file_type_icon_url AS "fileTypeIconUrl", download_label AS "downloadLabel"
@@ -4638,6 +4693,7 @@ export async function getUserEpisodeResourcesHandler(request: FastifyRequest, re
 
 export async function getCourseAllEpisodeResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId } = request.params as { courseId: string };
+  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
   const resources = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT r.id, r.title, r.description, r.file_url AS "fileUrl", r.file_type AS "fileType",
             r.file_type_icon_url AS "fileTypeIconUrl", r.download_label AS "downloadLabel",
@@ -4664,6 +4720,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
+  if (!(await isCourseInMemberModules(request, ep.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT t.id, t.title, t.description, t.deliverables,
             t.estimated_minutes AS "estimatedMinutes",
@@ -4722,6 +4779,7 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
     select: { courseId: true },
   });
   if (!ep) return fail(reply, 404, 'Episode not found');
+  if (!(await isCourseInMemberModules(request, ep.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
 
   // Task must actually belong to this episode — prevents a client from
   // submitting against an arbitrary task ID that lives on a different episode.
@@ -7017,6 +7075,60 @@ function isoWeekPartsForDate(utcNow: Date): { isoWeek: number; isoYear: number }
   firstThursday.setUTCDate(firstThursday.getUTCDate() - firstThursdayDay + 3);
   const isoWeek = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400 * 1000));
   return { isoWeek, isoYear: d.getUTCFullYear() };
+}
+
+// ── Mentorship module selection ──────────────────────────────────────────────
+// GET/PUT /api/user/mentorship/modules — the member's own onboarding choice of
+// mentorship modules (lib/mentorshipModules.ts). Always scoped to
+// request.memberId; there is no member-id parameter to tamper with.
+
+async function buildMentorshipModulesPayload(request: FastifyRequest) {
+  const redis = request.server.redis ?? null;
+  const [access, options] = await Promise.all([
+    loadMemberModuleAccess(request.server.prisma, redis, request.memberId!),
+    loadActiveModuleOptions(request.server.prisma, redis),
+  ]);
+  return {
+    selection: access.selection,
+    effective: access.effective,
+    selectionRequired: access.selectionRequired,
+    options: options.filter((o) => access.selectable.includes(o.moduleName)),
+  };
+}
+
+export async function getMentorshipModulesHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    return ok(reply, await buildMentorshipModulesPayload(request));
+  } catch (err) {
+    request.log.error({ err }, 'mentorship modules read failed');
+    return fail(reply, 503, 'Could not load your mentorship modules');
+  }
+}
+
+export async function updateMentorshipModulesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const redis = request.server.redis ?? null;
+  const { modules } = (request.body ?? {}) as { modules?: unknown };
+
+  let selectable: string[];
+  try {
+    selectable = (await loadMemberModuleAccess(request.server.prisma, redis, memberId)).selectable;
+  } catch (err) {
+    request.log.error({ err }, 'mentorship modules lookup failed');
+    return fail(reply, 503, 'Could not load your mentorship modules');
+  }
+
+  const result = validateModuleSelection(modules, selectable);
+  if (!result.ok) return fail(reply, 400, result.error);
+
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE members SET mentorship_modules = $1::jsonb, updated_at = now() WHERE id = $2::uuid`,
+    JSON.stringify(result.modules), memberId,
+  );
+  await invalidateMemberModuleAccess(redis, memberId);
+  void invalidateCache(redis, `me:${memberId}`);
+
+  return ok(reply, await buildMentorshipModulesPayload(request));
 }
 
 export async function getMentorshipStatsHandler(request: FastifyRequest, reply: FastifyReply) {

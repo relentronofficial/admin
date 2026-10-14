@@ -2182,6 +2182,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       ON CONFLICT (module_name) DO NOTHING
     `).catch(() => {});
 
+    // ── Mentorship module selection (2026-10-14) ──────────────────────────────
+    // members.mentorship_modules — the member's own onboarding choice (NULL =
+    // never chosen). Narrows, never widens, allowed_modules / program ceiling.
+    // module_config.is_active — admin can withdraw a module from selection.
+    // See lib/mentorshipModules.ts.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`
+    ).catch(() => {});
+
     // ── Member daily activity (Daily Time Spent) ─────────────────────────────
     // One row per member per local day (lib/memberActivity.ts ACTIVITY_TIMEZONE).
     // active_bits / media_bits hold one bit per minute of the day; setting a bit
