@@ -1,0 +1,162 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { env } from '../../config/env.js';
+import { sendWhatsappMessage } from '../../lib/whatsapp.js';
+
+const GITHUB_OWNER = 'relentronofficial';
+const GITHUB_REPO = 'admin';
+const GITHUB_API = 'https://api.github.com';
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 12 && digits.startsWith('91')) return digits;
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+}
+
+// Flexible parser — handles @zacx BSP format and Meta Cloud API format.
+// Returns null for non-text events (status updates, read receipts, etc.)
+function parseIncomingMessage(body: any): { from: string; text: string } | null {
+  // @zacx format: { data: { from, text, type } }
+  if (body?.data?.from && typeof body?.data?.text === 'string' && body?.data?.type === 'text') {
+    return { from: body.data.from, text: body.data.text };
+  }
+
+  // @zacx alternate: { messages: [{ from, text, type }] }
+  if (Array.isArray(body?.messages) && body.messages.length > 0) {
+    const msg = body.messages[0];
+    if (msg?.from && msg?.type === 'text') {
+      const text = typeof msg.text === 'string' ? msg.text : (msg.text?.body ?? '');
+      if (text) return { from: msg.from, text };
+    }
+  }
+
+  // Meta Cloud API format
+  if (Array.isArray(body?.entry)) {
+    for (const entry of body.entry) {
+      for (const change of (entry.changes ?? [])) {
+        const messages = change?.value?.messages;
+        if (Array.isArray(messages) && messages.length > 0) {
+          const msg = messages[0];
+          if (msg?.type === 'text' && msg?.from && msg?.text?.body) {
+            return { from: msg.from, text: msg.text.body };
+          }
+        }
+      }
+    }
+  }
+
+  // Simple flat format: { from, text }
+  if (body?.from && typeof body?.text === 'string') {
+    return { from: body.from, text: body.text };
+  }
+
+  return null;
+}
+
+async function createGitHubIssue(
+  title: string,
+  body: string,
+  labels: string[],
+): Promise<{ number: number; html_url: string } | null> {
+  if (!env.GITHUB_TOKEN) {
+    console.warn('[devops] GITHUB_TOKEN not set — cannot create issue');
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${GITHUB_OWNER}/${GITHUB_REPO}/issues`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ title, body, labels }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[devops] GitHub issue creation failed', res.status, err);
+      return null;
+    }
+
+    return res.json() as any;
+  } catch (err: any) {
+    console.error('[devops] GitHub API network error', err.message);
+    return null;
+  }
+}
+
+export async function whatsappIntakeHandler(
+  fastify: FastifyInstance,
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const body = req.body as any;
+
+  // Some BSPs send hub.challenge via POST during webhook registration
+  if (body?.['hub.mode'] === 'subscribe' && body?.['hub.challenge']) {
+    return reply.send(body['hub.challenge']);
+  }
+
+  const msg = parseIncomingMessage(body);
+  if (!msg || !msg.text.trim()) {
+    // Status update / read receipt / unsupported type — acknowledge silently
+    return reply.send({ ok: true });
+  }
+
+  const senderNorm = normalizePhone(msg.from);
+  const adminNorm = normalizePhone(env.ADMIN_WHATSAPP_NUMBER ?? '');
+
+  if (!adminNorm || senderNorm !== adminNorm) {
+    fastify.log.warn({ from: senderNorm }, '[devops] WhatsApp intake: ignored message from non-admin number');
+    return reply.send({ ok: true });
+  }
+
+  const text = msg.text.trim();
+  const lines = text.split('\n');
+  const title = lines[0].trim();
+  const rawDescription = lines.slice(1).join('\n').trim();
+
+  // Extract scope tags from message: [backend], [admin], [mobile], [user-web]
+  const scopeMatches = [...text.matchAll(/\[(backend|admin|mobile|user-web)\]/gi)];
+  const scopeLabels = scopeMatches.map((m) => `scope:${m[1].toLowerCase()}`);
+  const labels = ['devops:pending', ...scopeLabels];
+
+  const issueParts: string[] = [];
+  if (rawDescription) issueParts.push(rawDescription);
+  issueParts.push(`---\n_Queued via WhatsApp at ${new Date().toISOString()}_`);
+  const issueBody = issueParts.join('\n\n');
+
+  const issue = await createGitHubIssue(title, issueBody, labels);
+
+  if (!issue) {
+    await sendWhatsappMessage(
+      msg.from,
+      `❌ Failed to queue task. Check GITHUB_TOKEN in Cloud Run env vars.`,
+    );
+    return reply.status(500).send({ error: 'failed to create GitHub issue' });
+  }
+
+  await sendWhatsappMessage(
+    msg.from,
+    `✅ Task queued!\n\n#${issue.number}: ${title}\n${issue.html_url}`,
+  );
+
+  fastify.log.info({ issueNumber: issue.number, title }, '[devops] WhatsApp intake: created GitHub issue');
+  return reply.send({ ok: true, issueNumber: issue.number });
+}
+
+// GET handler for Meta-style webhook verification (hub.challenge handshake)
+export async function whatsappIntakeVerifyHandler(
+  _fastify: FastifyInstance,
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const query = req.query as any;
+  if (query?.['hub.mode'] === 'subscribe' && query?.['hub.challenge']) {
+    return reply.send(query['hub.challenge']);
+  }
+  return reply.status(400).send({ error: 'invalid webhook verification request' });
+}

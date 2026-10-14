@@ -27,6 +27,7 @@ import { supportEntitlementsRoutes } from './modules/support-entitlements/routes
 import { creditsRoutes } from './modules/credits/routes.js';
 import { psychometricRoutes } from './modules/psychometric/routes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
+import { devopsRoutes } from './modules/devops/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
 import { webinarRoutes } from './modules/webinar/routes.js';
 import { dashboardRoutes } from './modules/dashboard/routes.js';
@@ -216,6 +217,7 @@ async function bootstrap() {
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
     await fastify.register(paymentRoutes, { prefix: '/api/payments' });
     await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
+    await fastify.register(devopsRoutes, { prefix: '/api/devops' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
     fastify.post('/api/workshops/cron/generate-recurring', generateRecurringHandler);
