@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { invalidateCache } from '../../lib/cache.js';
+import { invalidateModuleOptions } from '../../lib/memberModuleAccess.js';
 
 const PUB_SITE_CONFIG_CACHE_KEY = 'pub:site-config:v3';
 const PUB_NAV_CACHE_KEY = 'pub:nav';
@@ -213,7 +214,7 @@ export async function updateResourcesPageConfigHandler(req: FastifyRequest, repl
 
 export async function listModuleConfigsHandler(req: FastifyRequest, reply: FastifyReply) {
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order
+    `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active
      FROM module_config ORDER BY sort_order`
   ).catch(() => []);
   return reply.send({
@@ -227,6 +228,7 @@ export async function listModuleConfigsHandler(req: FastifyRequest, reply: Fasti
       iconUrl: r.icon_url ?? null,
       accentColor: r.accent_color ?? null,
       sortOrder: Number(r.sort_order ?? 0),
+      isActive: r.is_active !== false,
     })),
     error: null,
   });
@@ -234,10 +236,10 @@ export async function listModuleConfigsHandler(req: FastifyRequest, reply: Fasti
 
 export async function updateModuleConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   const { name } = req.params as { name: string };
-  const { displayName, tagline, description, bannerUrl, iconUrl, accentColor, sortOrder } = req.body as any;
+  const { displayName, tagline, description, bannerUrl, iconUrl, accentColor, sortOrder, isActive } = req.body as any;
   await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO module_config (module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+    `INSERT INTO module_config (module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::boolean, true), now())
      ON CONFLICT (module_name) DO UPDATE SET
        display_name = EXCLUDED.display_name,
        tagline = EXCLUDED.tagline,
@@ -246,6 +248,7 @@ export async function updateModuleConfigHandler(req: FastifyRequest, reply: Fast
        icon_url = EXCLUDED.icon_url,
        accent_color = EXCLUDED.accent_color,
        sort_order = EXCLUDED.sort_order,
+       is_active = COALESCE($9::boolean, module_config.is_active),
        updated_at = now()`,
     name,
     displayName ?? null,
@@ -255,7 +258,9 @@ export async function updateModuleConfigHandler(req: FastifyRequest, reply: Fast
     iconUrl ?? null,
     accentColor ?? null,
     Number(sortOrder ?? 0),
+    typeof isActive === 'boolean' ? isActive : null,
   );
-  void invalidateCache(req.server.redis ?? null, 'courses:module-configs');
+  // Also drops the mentorship selection options; per-member verdicts expire within 60 s.
+  void invalidateModuleOptions(req.server.redis ?? null);
   return reply.send({ success: true, data: { moduleName: name }, error: null });
 }

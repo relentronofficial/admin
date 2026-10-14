@@ -2571,6 +2571,8 @@ export interface ModuleConfig {
   iconUrl: string | null;
   accentColor: string | null;
   sortOrder: number;
+  /** Offered to members in the onboarding mentorship-module selection. */
+  isActive?: boolean;
 }
 
 export const useModuleConfigs = () =>

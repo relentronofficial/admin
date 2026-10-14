@@ -23,6 +23,11 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 - `form/` — standalone Next.js 16 app (port 3007) for an Office Assistant job application form. Separate Prisma schema, separate Vercel Blob storage. Not part of the TBT monorepo.
 - `co-worker/` — separate Flutter app with its own Supabase backend (community/AI content). Completely unrelated to TBT; has its own `CLAUDE.md`, `pubspec.yaml`, and `FULL_MIGRATION.sql`.
 - `tbt-admin-safe/` — frozen backup/reference snapshot of `tbt-admin/` taken before a risky refactor. Treat as read-only history; all active development is in `tbt-admin/`.
+- `admin/` — an untracked, nested git clone of this same repo (its own `.git`). Not part of the working tree; never edit files there by mistake — all edits go to the top-level `tbt-admin/`, `tbt-user-web/`, `tbt_app/`.
+
+**DevOps automation (`automation/` + `DEVOPS_SYSTEM.md`)** — GitHub-Issues-driven task queue (labels `devops:pending|active|review|done|blocked`, `priority:*`, `scope:*`). `node automation/task-intake.mjs` syncs issues into `.claude/devops/queue.json`; `health-check.mjs` / `smoke-test.mjs` check services; `notify.mjs` sends WhatsApp (WABA) notifications. Read `DEVOPS_SYSTEM.md` before working a queued task — it defines the label transitions and the PR-then-comment flow.
+
+**`docs/`** — admin audit reports (`TBT-ADMIN-COMPLETE-CONTROL-AUDIT.md`, `TBT-COURSES-ADMIN-AUDIT.md`).
 
 **`GEMINI.md` (repo root)** — engineering mandates (Clerk initialization guards, surgical-update-over-refactor rule, PowerShell-safe clean build) that complement this file. Read it before touching auth/routing or schema migrations.
 
@@ -55,7 +60,12 @@ tbt_app/         # Flutter mobile app (Android + iOS) — Riverpod + go_router +
 | `EBOOK_SPECKIT.md` | `tbt_app/` | Ebook feature gap-fix plan (2026-08-01 audit findings) |
 | `PERF_SPECKIT.md` | `tbt_app/` | Flutter app performance root-cause plan |
 | `COURSE_BUG_FIXES_SPECKIT.md` | repo root | 15 confirmed bugs (C-F-1–C-F-15) across web + mobile course features — discovered 2026-09-01 static audit; **in progress** |
-| `COURSES_PAGE_PERSONALIZATION_SPECKIT.md` | repo root | Personalized `/courses` page — program-driven module access (CP-01–CP-10); three page states (new member / program member / direct access); `programs.allowed_modules` data model — **not started** |
+| `COURSES_PAGE_PERSONALIZATION_SPECKIT.md` | repo root | Personalized `/courses` page — program-driven module access (CP-01–CP-17); three page states (new member / program member / direct access); `programs.allowed_modules` data model — **complete 2026-10-13** |
+| `COURSES_PAGE_FIX_SPECKIT.md` | repo root | `/courses` page audit fixes (2026-10-07 audit) |
+| `COURSE_BUSINESS_TYPE_SPECKIT.md` | repo root | Course ↔ member business-type targeting |
+| `ADMIN_REVENUE_MANAGEMENT_SPECKIT.md` | repo root | Admin revenue management (`payments` module) — **implemented 2026-10-08** |
+| `RAZORPAY_COURSE_PAYMENT_SPECKIT.md` / `RAZORPAY_PAYMENT_FIX_SPECKIT.md` / `RAZORPAY_DASHBOARD_SPECKIT.md` | repo root | Razorpay course checkout, 2026-10-08 audit fixes, admin payments dashboard — read before touching any payment code (see pitfall #45) |
+| `MENTORSHIP_DASHBOARD_SPECKIT.md` / `MENTORSHIP_DASHBOARD_VISUAL_SPECKIT.md` | repo root | Member mentorship dashboard page (additive; `/batch-program` stays unchanged) + 2026-10-06 visual audit |
 | `MENTORSHIP_GAMIFICATION_SPECKIT.md` | repo root | 5 mentorship gamification features (MG-01–MG-05): plan entitlements, program-wide lifelines, multi-stage processes, early completion bonus, buy extra credits — **complete and committed** |
 | `SOCKET_EVENTS.md` | `tbt-admin/` | Full Socket.IO event reference (event name, room, emitter, receiver, trigger, payload) — check before adding or renaming a socket event |
 | `LIVE_CALL_FEATURES_SPEC.md` | `tbt-admin/` | Workshop live-call feature spec — additive-only implementation groups ordered by risk |
@@ -88,8 +98,9 @@ npm run seed:tasks -w backend      # Seed task/initiative sample data
 npm run seed:batches -w backend    # Seed batch sample data
 
 # Tests (Vitest — narrowly scoped to pure, DB-free modules; no DB/network)
-npm test                           # Runs src/modules/ads/**/*.test.ts + src/lib/{batchReportLogic,onboardingLogic,onboardingMeetingLogic,weekChecklistLogic,chatMessageActionRules,lessonProgression}.test.ts
-# DO NOT add *.test.ts elsewhere without updating tbt-admin/backend/vitest.config.ts#include
+npm test                           # Runs ONLY the files listed explicitly in backend/vitest.config.ts#include
+                                   # (src/modules/ads/**/*.test.ts + ~18 pure src/lib/*.test.ts files)
+# A new *.test.ts is silently skipped until you add its path to tbt-admin/backend/vitest.config.ts#include
 
 # Run a single test file (from tbt-admin/)
 npx vitest run --reporter=verbose -w backend src/lib/batchReportLogic.test.ts
@@ -187,18 +198,19 @@ Root `package.json` also declares `percy:player`/`percy:all` scripts (`percy exe
 - **Plugins:** `backend/src/plugins/` — `prisma`, `redis`, `clerk`, `jwt`, `socket`, `supabase`, `sentry`; each decorates the Fastify instance. Optional plugins skip gracefully if env vars are missing.
 - **Modules:** `backend/src/modules/<name>/routes.ts` + `controller.ts` + `schema.ts` pattern
 - **Config:** `backend/src/config/env.ts` — Zod-validated env schema; app exits on missing required vars
-- **Route prefix convention:** `/api/<module>` — see `backend/src/server.ts:166–208` for the full ordered list. Non-obvious prefixes:
+- **Route prefix convention:** `/api/<module>` — see the `fastify.register(..., { prefix })` block in `backend/src/server.ts` for the full ordered list. Non-obvious prefixes:
   - `hero` → `/api/hero-slides`
   - `security` → `/api/security-logs`
   - **`gamification` → `/api/tbt`** (not `/api/gamification`) — leaderboards, points, level/tier/badge reads
   - `webinar` → `/api/webinars`
   - `messages` (DM) is separate from `chat-groups` (group chat)
   - `support-entitlements` → `/api/support-entitlements` (Clerk-protected; plan entitlement definitions + usage log)
+  - `psychometric` → `/api/psychometric/admin` (admin side only; member routes live in the `user` module at `/api/user/psychometric`)
   - `credits` → `/api/credits` (Clerk-protected admin routes; user routes live under `/api/user/credits/*` and `/api/user/support-quota` in the `user` module)
 - **`user` module** (`backend/src/modules/user/`) — monolithic handler for ALL user-facing authenticated API routes at `/api/user/*`. Covers courses (user-facing), events, webinars, workshops, notifications, messages, dashboard, products, resources, conversations, search, programs, and profile. When adding new user-web backend routes, handlers go in `user/controller.ts` and the route in `user/routes.ts`.
 - Backend uses ESM (`"type": "module"`), TypeScript compiled with `tsx` in dev and `tsc` for prod
 - **Two auth middlewares:** `fastify.authenticate` (Clerk — admin routes) vs `fastify.authenticateUser` (JWT cookie — user-web routes)
-- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `courses`, `credits`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `podcasts`, `products`, `pub`, `rituals`, `security`, `support-entitlements`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `video-feedback`, `webinar`, `workshops`
+- **Backend modules present:** `admin-notifications`, `admins`, `ads`, `ai`, `app-notifications`, `app-resources`, `auth`, `batches`, `chat-groups`, `community`, `config`, `content-sections`, `conversations`, `course-reports`, `courses`, `credits`, `dashboard`, `display-badges`, `ebooks`, `gamification`, `helpdesk`, `hero`, `location`, `masters`, `members`, `messages`, `notifications`, `onboarding`, `onboarding-meetings`, `payments`, `podcasts`, `products`, `psychometric`, `pub`, `rituals`, `security`, `support-entitlements`, `tasks`, `tiers`, `upload`, `user`, `user-auth`, `user-batch`, `video-feedback`, `webinar`, `workshops`
 - **Cache invalidation:** `backend/src/lib/cache.ts` exports `invalidateCache(redis, key)` — call after mutations that affect `useMe()` (e.g. member approve, plan change): `void invalidateCache(request.server.redis ?? null, \`me:${memberId}\`)`
 - **Cron endpoints** — `/api/workshops/cron/generate-recurring`, `/api/cron/course-expiry-reminder`, `/api/cron/weekly-report`, and `/api/cron/monthly-report` bypass Clerk/JWT auth and instead require `x-cron-secret: <CRON_SECRET>` header. All other backend routes use standard auth middleware.
 - **Public certificate verification** — `GET /api/pub/certificates/course/:certId` is unauthenticated; returns `{ memberName, courseTitle, completedAt }`. Served by the `pub` module and consumed by `app/verify/course/[certId]/page.tsx` (Server Component, `revalidate: 3600`).
@@ -793,6 +805,7 @@ PUT /api/courses/sections/:sectionId/episodes/reorder
 45. **Razorpay course and coin purchase flows** — Course payment: `POST /api/user/courses/:id/razorpay/create-order` → returns `{ orderId, amount, currency, keyId, paymentRecordId }`; `POST /api/user/courses/:id/razorpay/verify` (client verifies payment and gets access). Webhook at `POST /api/user/courses/razorpay/webhook` is **unauthenticated** (requires raw body for HMAC signature verification — do not add auth middleware to this route). TBT Coin purchase: `POST /api/user/coins/razorpay/create-order` → `{ orderId, amount, currency, keyId, coins }`; `POST /api/user/coins/razorpay/verify`. Razorpay client is initialised via `getRazorpay()` from `backend/src/lib/razorpay.ts`.
 46. **Streak points on episodes** — `course_episodes.streak_points INT DEFAULT 0` is a raw SQL column. Each episode in the course detail response carries `streakPoints: number`. Awarded asynchronously on lesson completion via `awardVideoStreakPoints()` (called with `void` — non-blocking). Member totals are at `GET /api/user/streak-points` → `{ total, videoTotal, taskTotal, history }`. Streak points are separate from XP (`MemberXP` Prisma table) and activity log points (`tbt_activity_log`). User-web hook: `useGetMyStreakPoints` in `lib/hooks/useCourses.ts`.
 47. **`tasks.member_id` — member-specific task assignments** — `tasks.member_id UUID` is a nullable raw SQL FK to `members(id)`. When `null`, the task is global (shown to all batch/program members). When set, the task is a personal assignment visible only to that member. The admin tasks page supports per-member assignment via the `memberId` form field. Always destructure before spreading into Prisma creates/updates (same pattern as `batches.xp_per_day`).
+48. **Mentorship module selection ≠ module access override** — three layers decide which course modules (`courses.module`: `Product` = E-commerce, `Service`, `Coaching` = CoachX; list lives in `module_config`) a member sees: admin override `members.allowed_modules` → program `programs.allowed_modules` (the ceiling, CP-11) → the member's own onboarding choice `members.mentorship_modules` (JSONB, `NULL` = never chosen), which only narrows the ceiling. All verdicts go through the pure `resolveModuleAccess` in `backend/src/lib/mentorshipModules.ts`, loaded via `lib/memberModuleAccess.ts` (60 s cache — call `invalidateMemberModuleAccess` after writing any of the three inputs or a member's batch). Course content endpoints (detail, enroll, progress, quiz, playback, episode resources/tasks) 403 via `isCourseInMemberModules` in `user/controller.ts` — fail closed. `module_config.is_active=false` withdraws a module from selection and access for members who chose it. Member API: `GET/PUT /api/user/mentorship/modules`. Unrelated to `onboarding_buttons` (free-text welcome CTAs) and to the per-course `course_modules` table.
 
 ## Socket Events
 

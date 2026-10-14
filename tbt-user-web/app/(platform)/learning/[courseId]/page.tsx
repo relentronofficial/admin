@@ -1,6 +1,7 @@
 "use client";
 
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronLeft, ChevronRight, CheckCircle2, Play, Loader2, X, Zap, Award,
@@ -1447,7 +1448,7 @@ export default function CourseDetailPage({
   const targetLessonId = searchParams.get("lesson");
   const { uiStrings, config } = useSiteConfig();
   const qc = useQueryClient();
-  const { data: course, isLoading } = useCourse(courseId);
+  const { data: course, isLoading, error: courseError } = useCourse(courseId);
   const { data: progressList } = useLessonProgress(courseId);
   const markComplete = useMarkLessonComplete(courseId);
   const { data: me } = useMe();
@@ -2423,10 +2424,17 @@ export default function CourseDetailPage({
 
   if (isLoading) return <PageLoader />;
   if (!course) {
+    // The server explains refusals (e.g. a course outside the member's selected
+    // mentorship modules); the modules can be changed from /courses.
     return (
-      <p className="text-center py-16 text-sm" style={{ color: "var(--color-text-subtle)" }}>
-        {uiStrings?.errorGeneric ?? "Course not found."}
-      </p>
+      <div className="text-center py-16 text-sm" style={{ color: "var(--color-text-subtle)" }}>
+        <p>{(courseError as Error | null)?.message || (uiStrings?.errorGeneric ?? "Course not found.")}</p>
+        {courseError && (
+          <Link href="/courses" className="inline-block mt-4 font-semibold" style={{ color: "var(--color-accent)" }}>
+            {uiStrings?.mentorshipModulesChange ?? "Change modules"}
+          </Link>
+        )}
+      </div>
     );
   }
 

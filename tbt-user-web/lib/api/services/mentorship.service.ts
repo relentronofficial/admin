@@ -56,6 +56,27 @@ export type MentorshipSocial = {
   updatedAt: string | null;
 };
 
+export type MentorshipModuleOption = {
+  moduleName: string;
+  displayName: string | null;
+  tagline: string | null;
+  description: string | null;
+  iconUrl: string | null;
+  accentColor: string | null;
+};
+
+/** GET/PUT /api/user/mentorship/modules — the member's own onboarding choice. */
+export type MentorshipModules = {
+  /** null = never chosen. */
+  selection: string[] | null;
+  /** Modules the member currently sees (selection ∩ available). */
+  effective: string[];
+  /** True when the member has nothing usable selected and should choose. */
+  selectionRequired: boolean;
+  /** Modules the member may choose from. */
+  options: MentorshipModuleOption[];
+};
+
 export type UpsertRevenueBody = Partial<Omit<MentorshipRevenue, "weekNumber" | "year" | "updatedAt">>;
 export type UpsertSocialBody = Partial<Omit<MentorshipSocial, "weekNumber" | "year" | "updatedAt">>;
 
@@ -74,4 +95,10 @@ export const mentorshipService = {
 
   upsertSocial: (data: UpsertSocialBody) =>
     apiClient.put<never, ApiResponse<MentorshipSocial>>("/api/user/mentorship/social", data),
+
+  getModules: () =>
+    apiClient.get<never, ApiResponse<MentorshipModules>>("/api/user/mentorship/modules"),
+
+  updateModules: (modules: string[]) =>
+    apiClient.put<never, ApiResponse<MentorshipModules>>("/api/user/mentorship/modules", { modules }),
 };

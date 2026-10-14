@@ -25,7 +25,7 @@ export default function ModuleConfigPage() {
     // Ensure all known modules have a form entry
     for (const name of MODULE_NAMES) {
       if (!init[name]) {
-        init[name] = { moduleName: name, displayName: '', tagline: '', description: '', bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: MODULE_NAMES.indexOf(name) + 1 };
+        init[name] = { moduleName: name, displayName: '', tagline: '', description: '', bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: MODULE_NAMES.indexOf(name) + 1, isActive: true };
       }
     }
     setForms(init);
@@ -178,6 +178,21 @@ export default function ModuleConfigPage() {
                         <span className="text-[#606060] text-xs truncate max-w-xs">{form.bannerUrl}</span>
                       )}
                     </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={form.isActive !== false}
+                        onChange={e => set(moduleName, 'isActive', e.target.checked)}
+                        style={{ accentColor: '#dc2626' }}
+                      />
+                      <span className="text-sm text-[#f0f0f0]">Offer in mentorship selection</span>
+                    </label>
+                    <p className="text-[#606060] text-xs mt-1">
+                      When off, members can no longer pick this module during onboarding, and members who picked it lose access to its courses until it is turned back on.
+                    </p>
                   </div>
 
                   <div className="mb-5">

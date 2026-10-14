@@ -402,6 +402,20 @@ export interface UiStrings {
   coursesLockNotInProgram?: string;
   coursesLockPurchase?: string;
   coursesLockRequestAccess?: string;
+  // Mentorship module selection (onboarding + /courses)
+  mentorshipModulesTitle?: string;
+  mentorshipModulesSubtitle?: string;
+  mentorshipModulesSave?: string;
+  mentorshipModulesCancel?: string;
+  mentorshipModulesChange?: string;
+  mentorshipModulesPromptTitle?: string;
+  mentorshipModulesPromptDesc?: string;
+  mentorshipModulesUnavailable?: string;
+  mentorshipModulesNoneAvailable?: string;
+  mentorshipModulesLoadError?: string;
+  mentorshipModulesRetry?: string;
+  mentorshipModulesSaved?: string;
+  mentorshipModulesNotSelected?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────
