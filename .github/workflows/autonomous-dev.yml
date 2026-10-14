@@ -1,0 +1,29 @@
+name: Autonomous Dev — Execute Task
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  execute-task:
+    # Only fire when the devops:pending label is added
+    if: github.event.label.name == 'devops:pending'
+
+    # Runs on the Windows laptop (self-hosted runner)
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync issue into queue
+        run: node automation/task-intake.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Execute task with Claude
+        run: node automation/task-runner.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

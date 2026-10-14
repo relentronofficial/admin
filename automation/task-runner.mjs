@@ -215,19 +215,43 @@ function getCurrentSha() {
   }
 }
 
-function createPr(task, branchNote) {
+function getCurrentBranch() {
   try {
-    // Push current branch first
-    execSync('git push origin HEAD', { cwd: ROOT, encoding: 'utf8' });
+    return execSync('git rev-parse --abbrev-ref HEAD', { cwd: ROOT, encoding: 'utf8' }).trim();
+  } catch {
+    return 'main';
+  }
+}
+
+function createTaskBranch(issueNumber) {
+  const branch = `devops/gh-${issueNumber}`;
+  try {
+    // Make sure we're on main and up to date first
+    execSync('git checkout main', { cwd: ROOT, encoding: 'utf8' });
+    execSync('git pull origin main --rebase', { cwd: ROOT, encoding: 'utf8' });
+    execSync(`git checkout -b ${branch}`, { cwd: ROOT, encoding: 'utf8' });
+    console.log(`  Created branch: ${branch}`);
+    return branch;
+  } catch (err) {
+    console.warn(`  Could not create branch ${branch}: ${err.message}`);
+    return getCurrentBranch();
+  }
+}
+
+function createPr(task) {
+  try {
+    const branch = getCurrentBranch();
+    execSync(`git push origin ${branch}`, { cwd: ROOT, encoding: 'utf8' });
 
     const body = `Closes #${task.githubIssueNumber}\n\nAutonomously implemented by Claude Code via the TBT dev task queue.\n\n**Task:** ${task.title}\n**Priority:** ${task.priority}\n**Scope:** ${task.scope.join(', ')}`;
 
     const result = execSync(
-      `gh pr create --title "[Auto] ${task.title}" --body "${body.replace(/"/g, '\\"')}" --base main`,
+      `gh pr create --title "[Auto] ${task.title}" --body "${body.replace(/"/g, '\\"')}" --head ${branch} --base main`,
       { cwd: ROOT, encoding: 'utf8' }
     );
     return result.trim();
   } catch (err) {
+    console.warn(`  PR creation failed: ${err.message}`);
     return null;
   }
 }
@@ -277,6 +301,9 @@ async function main() {
     );
 
     logSession({ event: 'task_started', taskId: task.id, title: task.title });
+
+    // Create a dedicated branch so the PR target is clear
+    createTaskBranch(task.githubIssueNumber);
 
     // Record HEAD sha so we can detect new commits
     const headBefore = getCurrentSha();
