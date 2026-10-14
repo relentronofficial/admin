@@ -84,6 +84,8 @@ const envSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
   // GitHub token for WhatsApp-intake → autonomous dev pipeline (creates Issues from WA messages)
   GITHUB_TOKEN: z.string().optional().or(z.literal('')),
+  // @zacx BSP webhook signing secret (whsec_... format) — verifies incoming webhook payloads
+  WABA_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
   // Program calendar timezone for daily activity (streak + Tier Access active days).
   // IANA name; invalid/absent → Asia/Kolkata (see lib/activityDays.ts).
   PROGRAM_TIMEZONE: z.string().optional().or(z.literal('')),

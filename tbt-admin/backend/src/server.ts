@@ -87,8 +87,10 @@ async function bootstrap() {
   });
 
   try {
-    // Allow empty JSON bodies on DELETE/GET — Axios always sends Content-Type: application/json
+    // Allow empty JSON bodies on DELETE/GET — Axios always sends Content-Type: application/json.
+    // Also stores raw string on req.rawBody for webhook HMAC verification (devops, Razorpay, etc.)
     fastify.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+      (_req as any).rawBody = typeof body === 'string' ? body : '';
       if (!body || (body as string).trim() === '') { done(null, {}); return; }
       try { done(null, JSON.parse(body as string)); }
       catch (_err: any) {

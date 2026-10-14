@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import crypto from 'crypto';
 import { env } from '../../config/env.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 
@@ -11,6 +12,38 @@ function normalizePhone(phone: string): string {
   if (digits.length === 12 && digits.startsWith('91')) return digits;
   if (digits.length === 10) return `91${digits}`;
   return digits;
+}
+
+// Verify @zacx BSP webhook signature.
+// Tries common HMAC-SHA256 header/format combinations since @zacx doesn't
+// publicly document which header name they use. The whsec_ secret is used
+// as-is (full string including prefix) as the HMAC key.
+function verifyWebhookSignature(rawBody: string, headers: Record<string, string | string[] | undefined>, secret: string): boolean {
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+
+  const candidateHeaders = [
+    'x-signature',
+    'x-hub-signature-256',
+    'x-zacx-signature',
+    'x-webhook-signature',
+    'x-waba-signature',
+  ];
+
+  for (const name of candidateHeaders) {
+    const raw = headers[name];
+    if (!raw) continue;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    // Strip common prefixes: "sha256=", "sha1=", etc.
+    const sig = value.replace(/^sha\d+=/, '');
+    if (crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // Flexible parser — handles @zacx BSP format and Meta Cloud API format.
@@ -94,10 +127,23 @@ export async function whatsappIntakeHandler(
   reply: FastifyReply,
 ) {
   const body = req.body as any;
+  const rawBody: string = (req as any).rawBody ?? '';
 
   // Some BSPs send hub.challenge via POST during webhook registration
   if (body?.['hub.mode'] === 'subscribe' && body?.['hub.challenge']) {
     return reply.send(body['hub.challenge']);
+  }
+
+  // HMAC signature verification — reject if secret is configured and sig is invalid.
+  // On first delivery, @zacx header name is logged so we can confirm the format.
+  if (env.WABA_WEBHOOK_SECRET) {
+    const valid = verifyWebhookSignature(rawBody, req.headers as any, env.WABA_WEBHOOK_SECRET);
+    if (!valid) {
+      const sigHeaders = Object.keys(req.headers).filter(h => h.includes('sig') || h.includes('signature'));
+      fastify.log.warn({ sigHeaders, headers: sigHeaders.map(h => ({ [h]: req.headers[h] })) },
+        '[devops] WhatsApp intake: HMAC verification failed');
+      return reply.status(401).send({ error: 'invalid signature' });
+    }
   }
 
   const msg = parseIncomingMessage(body);
