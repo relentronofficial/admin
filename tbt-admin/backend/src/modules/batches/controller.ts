@@ -7,6 +7,7 @@ import {
 } from './schema.js';
 import { deliverMemberReport, generateMemberReport } from '../../lib/batchReports.js';
 import { computeApprovalRate, getCurrentWeekNumber, getWeekDayRange, summarizeWeek } from '../../lib/weekChecklistLogic.js';
+import { mergeAudiences, notifyWeeklyGraphChanged, resolveTaskAudience } from '../../lib/weeklyGraphNotify.js';
 
 export async function listBatchesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { status } = req.query as { status?: string };
@@ -777,6 +778,7 @@ export async function upsertMemberProgressHandler(
       ...rest,
     },
   });
+  void notifyWeeklyGraphChanged(req.server, { memberIds: [req.params.memberId] }, 'progress_updated');
   return reply.send({ success: true, data: record, error: null });
 }
 
@@ -834,6 +836,7 @@ export async function createBatchTaskHandler(
       createdBy: adminId,
     },
   });
+  void notifyWeeklyGraphChanged(req.server, { batchIds: [req.params.id] }, 'task_created');
   return reply.status(201).send({ success: true, data: task, error: null });
 }
 
@@ -847,6 +850,7 @@ export async function updateBatchTaskHandler(
     basePoints, bonusPoints, proofType, estimatedMinutes,
     isMilestone, milestoneLabel, sortOrder, isRequired, isActive,
   } = req.body as any;
+  const audienceBefore = await resolveTaskAudience(req.server.prisma, [req.params.taskId]);
   const task = await req.server.prisma.task.update({
     where: { id: req.params.taskId },
     data: {
@@ -866,6 +870,10 @@ export async function updateBatchTaskHandler(
       ...(isActive !== undefined ? { isActive } : {}),
     },
   });
+  // A changed dayNumber moves the activity to another week; refresh everyone
+  // who could see it before or after the change.
+  void resolveTaskAudience(req.server.prisma, [task.id]).then((after) =>
+    notifyWeeklyGraphChanged(req.server, mergeAudiences(audienceBefore, after), 'task_updated'));
   return reply.send({ success: true, data: task, error: null });
 }
 
@@ -878,14 +886,17 @@ export async function deleteBatchTaskHandler(
   reply: FastifyReply,
 ) {
   const submissionCount = await req.server.prisma.taskSubmission.count({ where: { taskId: req.params.taskId } });
+  const audience = await resolveTaskAudience(req.server.prisma, [req.params.taskId]);
   if (submissionCount > 0) {
     const task = await req.server.prisma.task.update({
       where: { id: req.params.taskId },
       data: { isActive: false },
     });
+    void notifyWeeklyGraphChanged(req.server, audience, 'task_deactivated');
     return reply.send({ success: true, data: { deactivated: true, task }, error: null });
   }
   await req.server.prisma.task.delete({ where: { id: req.params.taskId } });
+  void notifyWeeklyGraphChanged(req.server, audience, 'task_deleted');
   return reply.send({ success: true, data: { deactivated: false }, error: null });
 }
 
@@ -901,6 +912,8 @@ export async function reorderBatchTasksHandler(
   await Promise.all(
     ids.map((id, idx) => req.server.prisma.task.update({ where: { id }, data: { sortOrder: idx } })),
   );
+  void resolveTaskAudience(req.server.prisma, ids).then((a) =>
+    notifyWeeklyGraphChanged(req.server, a, 'task_reordered'));
   return reply.send({ success: true, data: null, error: null });
 }
 

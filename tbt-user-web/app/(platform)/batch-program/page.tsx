@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { useMyBatchProgram, useRequestBreak, useDownloadBatchCertificate } from "@/lib/hooks/useBatchProgram";
+import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useSocket } from "@/lib/socket/useSocket";
 import {
@@ -412,13 +413,20 @@ export default function BatchProgramPage() {
       queryClient.invalidateQueries({ queryKey: ["my-batch"] });
       toast.success(uiStrings?.batchCompletedMsg ?? `Congratulations! You completed all ${payload.totalDays} days. 🏆`);
     };
+    // Admin added/moved/removed an activity or reviewed a task — refetch
+    // (the weekly graph is keyed under ["my-batch", ...] too).
+    const handleGraphUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ["my-batch"] });
+    };
     socket.on("batch:day_approved", handleApproved);
     socket.on("batch:day_rejected", handleRejected);
     socket.on("batch:completed", handleCompleted);
+    socket.on("batch:graph_updated", handleGraphUpdated);
     return () => {
       socket.off("batch:day_approved", handleApproved);
       socket.off("batch:day_rejected", handleRejected);
       socket.off("batch:completed", handleCompleted);
+      socket.off("batch:graph_updated", handleGraphUpdated);
     };
   }, [socket]);
 
@@ -984,6 +992,9 @@ export default function BatchProgramPage() {
           </div>
         </div>
       )}
+
+      {/* Weekly activity graph — per-task statuses from the backend */}
+      <WeeklyActivityGraph />
 
       {/* Day list */}
       <div>

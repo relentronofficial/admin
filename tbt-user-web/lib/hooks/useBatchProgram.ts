@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
+import { batchProgramService } from "@/lib/api/services/batchProgram.service";
 
 export type TaskSubmissionProof = { value?: string; url?: string; type: string };
 
@@ -59,6 +60,21 @@ export const useMyBatchProgram = () =>
           proofType?: string | null;
         }[];
       } | null;
+    },
+    staleTime: 30_000,
+  });
+
+// Keyed under ["my-batch", ...] so every mutation and socket handler that
+// already invalidates ["my-batch"] refreshes the graph too (prefix match).
+export const weeklyGraphQueryKey = ["my-batch", "weekly-graph"] as const;
+
+export const useMyWeeklyGraph = () =>
+  useQuery({
+    queryKey: weeklyGraphQueryKey,
+    queryFn: async () => {
+      const res = await batchProgramService.getMyWeeklyGraph();
+      if (!res?.success) throw new Error(res?.error?.message ?? "Failed to load weekly graph");
+      return res.data ?? null;
     },
     staleTime: 30_000,
   });

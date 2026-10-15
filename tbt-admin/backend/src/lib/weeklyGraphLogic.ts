@@ -1,0 +1,201 @@
+// Pure logic for the member's Weekly Activity Graph on the batch program
+// (WEEKLY_CHECKLIST_SPECKIT.md layer). No DB, no Fastify, no clock: every
+// input — tasks, the member's own submissions and day progress, and the
+// batch-relative current day — is passed in, so the graph can only ever be
+// drawn from real task statuses, never from placeholder data.
+//
+// Week number is derived (getWeekNumber = ceil(dayNumber/7)), never stored,
+// so moving a task to another day moves it to the right week on next read.
+
+import { getWeekNumber } from './weekChecklistLogic.js';
+
+export type ActivityStatus =
+  | 'completed'       // approved submission, or ticked on a day the admin approved
+  | 'submitted'       // in a day the member submitted; awaiting admin review
+  | 'needs_revision'  // submission or day rejected by the admin
+  | 'in_progress'     // draft proof saved or ticked, not yet submitted
+  | 'not_started'     // day is open (or past) and nothing recorded for this task
+  | 'upcoming';       // day has not opened yet
+
+export interface GraphTaskInput {
+  id: string;
+  title: string;
+  dayNumber: number;
+  sortOrder: number;
+  isRequired: boolean;
+  /** tasks.member_id — set for a member-specific assignment, null for everyone */
+  memberId: string | null;
+}
+
+export interface GraphSubmissionInput {
+  taskId: string;
+  dayNumber: number | null;
+  status: string; // SubmissionStatus: pending | approved | rejected | resubmission_required
+}
+
+export interface GraphDayProgressInput {
+  dayNumber: number;
+  status: string; // not_started | in_progress | pending_approval | approved | rejected
+  completedTaskIds: string[];
+}
+
+export interface GraphActivity {
+  taskId: string;
+  title: string;
+  dayNumber: number;
+  isRequired: boolean;
+  status: ActivityStatus;
+  completed: boolean;
+}
+
+export interface GraphWeek {
+  weekNumber: number;
+  startDay: number;
+  endDay: number;
+  isCurrent: boolean;
+  activities: GraphActivity[];
+  total: number;
+  completed: number;
+  requiredTotal: number;
+  requiredCompleted: number;
+  /** completed / total as a whole %, or null when the week has no activities (no point is plotted) */
+  completionPercent: number | null;
+}
+
+export interface WeeklyGraph {
+  totalDays: number;
+  currentDay: number;
+  currentWeek: number;
+  hasActivities: boolean;
+  weeks: GraphWeek[];
+  summary: { total: number; completed: number; completionPercent: number | null };
+}
+
+/**
+ * A member-specific task (tasks.member_id set) belongs to that member only.
+ * Every other member must never see it — not its title, not its status.
+ */
+export function isTaskVisibleToMember(task: { memberId: string | null }, memberId: string): boolean {
+  return task.memberId === null || task.memberId === memberId;
+}
+
+function percent(part: number, whole: number): number | null {
+  return whole > 0 ? Math.round((part / whole) * 100) : null;
+}
+
+/**
+ * Status of one activity for one member, from the records the existing
+ * checklist flow already writes. Only an admin approval (of the task, or of
+ * the day the task was ticked/submitted in) ever yields `completed` — a
+ * ticked or submitted-but-unreviewed task is never reported as completed.
+ */
+export function deriveActivityStatus(params: {
+  taskId: string;
+  dayNumber: number;
+  submission?: GraphSubmissionInput;
+  dayProgress?: GraphDayProgressInput;
+  currentDay: number;
+}): ActivityStatus {
+  const { taskId, dayNumber, submission, dayProgress, currentDay } = params;
+  const ticked = dayProgress?.completedTaskIds?.includes(taskId) ?? false;
+  const touched = !!submission || ticked;
+
+  if (submission?.status === 'approved') return 'completed';
+  if (submission?.status === 'rejected' || submission?.status === 'resubmission_required') return 'needs_revision';
+
+  switch (dayProgress?.status) {
+    case 'rejected':
+      // A rejected day sends every not-yet-approved task in it back for revision.
+      return touched ? 'needs_revision' : (dayNumber > currentDay ? 'upcoming' : 'not_started');
+    case 'approved':
+      // approveDayHandler approves every pending submission of an approved day,
+      // and ticked proof-less tasks were accepted with the day. A task the
+      // member never touched stays incomplete even though its day was approved.
+      return touched ? 'completed' : 'not_started';
+    case 'pending_approval':
+      return touched ? 'submitted' : 'not_started';
+    default:
+      if (touched) return 'in_progress';
+      return dayNumber > currentDay ? 'upcoming' : 'not_started';
+  }
+}
+
+export function buildWeeklyGraph(params: {
+  memberId: string;
+  tasks: GraphTaskInput[];
+  submissions: GraphSubmissionInput[];
+  dayProgress: GraphDayProgressInput[];
+  totalDays: number;
+  currentDay: number;
+}): WeeklyGraph {
+  const { memberId, submissions, dayProgress, totalDays, currentDay } = params;
+
+  const tasks = params.tasks
+    .filter((t) => isTaskVisibleToMember(t, memberId) && t.dayNumber >= 1)
+    .sort((a, b) => a.dayNumber - b.dayNumber || a.sortOrder - b.sortOrder);
+
+  // Batch tasks are unique per (member, task, batch, day); prefer the row for
+  // the task's current day, falling back to any row (a task moved to another
+  // day keeps its history rather than silently resetting to "not started").
+  const subByTaskDay = new Map<string, GraphSubmissionInput>();
+  const subByTask = new Map<string, GraphSubmissionInput>();
+  for (const s of submissions) {
+    subByTaskDay.set(`${s.taskId}:${s.dayNumber}`, s);
+    const prev = subByTask.get(s.taskId);
+    if (!prev || prev.status !== 'approved') subByTask.set(s.taskId, s);
+  }
+  const progressByDay = new Map(dayProgress.map((p) => [p.dayNumber, p]));
+
+  const lastDay = Math.max(totalDays, ...tasks.map((t) => t.dayNumber), 0);
+  const weekCount = lastDay > 0 ? getWeekNumber(lastDay) : 0;
+  const currentWeek = getWeekNumber(Math.min(Math.max(currentDay, 1), Math.max(lastDay, 1)));
+
+  const weeks: GraphWeek[] = Array.from({ length: weekCount }, (_, i) => {
+    const weekNumber = i + 1;
+    return {
+      weekNumber,
+      startDay: i * 7 + 1,
+      endDay: Math.min(weekNumber * 7, lastDay),
+      isCurrent: weekNumber === currentWeek,
+      activities: [],
+      total: 0, completed: 0, requiredTotal: 0, requiredCompleted: 0,
+      completionPercent: null,
+    };
+  });
+
+  for (const t of tasks) {
+    const status = deriveActivityStatus({
+      taskId: t.id,
+      dayNumber: t.dayNumber,
+      submission: subByTaskDay.get(`${t.id}:${t.dayNumber}`) ?? subByTask.get(t.id),
+      dayProgress: progressByDay.get(t.dayNumber),
+      currentDay,
+    });
+    const completed = status === 'completed';
+    const week = weeks[getWeekNumber(t.dayNumber) - 1];
+    week.activities.push({ taskId: t.id, title: t.title, dayNumber: t.dayNumber, isRequired: t.isRequired, status, completed });
+    week.total += 1;
+    if (completed) week.completed += 1;
+    if (t.isRequired) {
+      week.requiredTotal += 1;
+      if (completed) week.requiredCompleted += 1;
+    }
+  }
+
+  let total = 0;
+  let completed = 0;
+  for (const w of weeks) {
+    w.completionPercent = percent(w.completed, w.total);
+    total += w.total;
+    completed += w.completed;
+  }
+
+  return {
+    totalDays,
+    currentDay,
+    currentWeek,
+    hasActivities: total > 0,
+    weeks,
+    summary: { total, completed, completionPercent: percent(completed, total) },
+  };
+}
