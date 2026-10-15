@@ -256,7 +256,7 @@ function ModuleCard({
 
 // ── ModuleHero (single-module dedicated banner) ───────────────────────────────
 
-function ModuleHero({ cfg, programName, courseCount }: { cfg: ModuleConfig; programName: string | null; courseCount: number }) {
+function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg: ModuleConfig; programName: string | null; courseCount: number; memberBusinessType?: string | null }) {
   const accent = cfg.accentColor ?? "var(--color-accent)";
   return (
     <div
@@ -307,6 +307,12 @@ function ModuleHero({ cfg, programName, courseCount }: { cfg: ModuleConfig; prog
             <BookOpen size={13} />
             <span>{courseCount} {courseCount === 1 ? "course" : "courses"}</span>
           </div>
+          {memberBusinessType && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 999, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 11, fontWeight: 600 }}>
+              <span style={{ opacity: 0.7 }}>Filtered for:</span>
+              <span>{memberBusinessType}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -817,6 +823,7 @@ export default function CoursesPage() {
   // the catalog to it; this only drives the choose/change prompt.
   const mentorship: { selection: string[] | null; selectable: string[]; effective: string[]; selectionRequired: boolean } | null =
     meta.mentorship ?? null;
+  const memberBusinessType: string | null = meta.memberBusinessType ?? null;
   const showModuleSelector = !!mentorship && (mentorship.selectionRequired || editingModules);
 
   const myEnrollments: any[]  = enrollments ?? [];
@@ -930,6 +937,7 @@ export default function CoursesPage() {
             cfg={singleModuleCfg ?? { moduleName: allowedModules[0], displayName: allowedModules[0], tagline: null, description: null, bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: 0 }}
             programName={programName}
             courseCount={filteredCourses.length}
+            memberBusinessType={memberBusinessType}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
           <CourseGrid
@@ -967,6 +975,16 @@ export default function CoursesPage() {
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "#f5f5f7" }}>
                 {uiStrings?.coursesProgramTitle ?? "Your Program Modules"}
               </h2>
+            </div>
+          )}
+
+          {/* Business type filter badge */}
+          {memberBusinessType && (
+            <div className="flex items-center gap-2 mb-4">
+              <span style={{ fontSize: 12, color: "#92929b" }}>Filtered for:</span>
+              <span style={{ padding: "2px 10px", borderRadius: 999, background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)", color: "var(--color-accent)", fontSize: 12, fontWeight: 600 }}>
+                {memberBusinessType}
+              </span>
             </div>
           )}
 
@@ -1012,10 +1030,18 @@ export default function CoursesPage() {
       {(personalizationState === "direct" || personalizationState === "new") && (allCourses.length > 0 || catalogLoading) && (
         <section>
           {personalizationState === "direct" && (
-            <div className="mb-5">
+            <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
                 {uiStrings?.coursesCatalogTitle ?? "Modules"}
               </h2>
+              {memberBusinessType && (
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 12, color: "#92929b" }}>Filtered for:</span>
+                  <span style={{ padding: "2px 10px", borderRadius: 999, background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)", color: "var(--color-accent)", fontSize: 12, fontWeight: 600 }}>
+                    {memberBusinessType}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

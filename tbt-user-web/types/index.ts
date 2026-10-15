@@ -79,6 +79,7 @@ export interface Course {
     designation?: string | null;
   } | null;
   module?: string | null;
+  applicableBusinessTypes?: string[] | null;
   _count?: {
     lessons: number;
     enrollments: number;
