@@ -287,6 +287,11 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
       - name: Deploy admin panel to Cloud Run (staging)
         run: |
           gcloud run deploy tbt-admin-staging \
@@ -297,7 +302,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=0 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.ADMIN_CLERK_PUBLISHABLE_KEY }}" \
+            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
             --set-secrets="CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest" \
             --set-env-vars="NODE_ENV=production" \
             --quiet
@@ -319,6 +324,11 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
       - name: Deploy admin panel to Cloud Run (production)
         run: |
           gcloud run deploy tbt-admin \
@@ -329,7 +339,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.ADMIN_CLERK_PUBLISHABLE_KEY }}" \
+            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
             --set-secrets="CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest" \
             --set-env-vars="NODE_ENV=production" \
             --quiet
