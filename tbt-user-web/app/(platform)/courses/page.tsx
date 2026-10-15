@@ -389,7 +389,7 @@ function OnboardingVideosSection() {
       <section>
         <div className="mb-4">
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
-            Getting Started
+            Introduction
           </h2>
           <p style={{ margin: "4px 0 0", fontSize: 13, color: "#92929b" }}>
             Watch these to get the most from your membership
