@@ -36,6 +36,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
+import { useBusinessTypes } from "@/lib/hooks/useMasters";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
 import { getAdminSocket } from "@/lib/socket/client";
@@ -52,6 +53,7 @@ const EMPTY_COURSE = {
   completionThresholdPercent: "95",
   paymentLinkUrl: "",
   module: "" as string,
+  applicableBusinessTypes: [] as string[],
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
 };
@@ -152,6 +154,8 @@ export default function CoursesPage() {
   const { data, isLoading } = useListVodCourses({ search });
   const { data: tiersData } = useListTiers();
   const tiers: any[] = (tiersData as any)?.data || [];
+  const { data: businessTypesData } = useBusinessTypes();
+  const businessTypeOptions: string[] = (businessTypesData ?? []).map((b: any) => b.name);
   const createCourse = useCreateVodCourse();
   const updateCourse = useUpdateVodCourse();
   const deleteCourse = useDeleteVodCourse();
@@ -220,6 +224,7 @@ export default function CoursesPage() {
       crossSellCourseIds: c.crossSellCourseIds ?? [],
       paymentLinkUrl: c.paymentLinkUrl || "",
       module: c.module || "",
+      applicableBusinessTypes: c.applicableBusinessTypes ?? [],
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -240,6 +245,7 @@ export default function CoursesPage() {
     payload.maxEnrollments = courseForm.maxEnrollments !== "" ? Number(courseForm.maxEnrollments) : null;
     payload.paymentLinkUrl = courseForm.paymentLinkUrl.trim() || null;
     payload.module = courseForm.module || null;
+    payload.applicableBusinessTypes = courseForm.applicableBusinessTypes?.length ? courseForm.applicableBusinessTypes : null;
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
@@ -375,6 +381,7 @@ export default function CoursesPage() {
                         {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
                         {c.module && <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">{c.module}</span>}
+                        {c.applicableBusinessTypes?.length > 0 && <span className="text-[10px] text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded font-bold shrink-0" title={c.applicableBusinessTypes.join(", ")}>{c.applicableBusinessTypes.length} biz type{c.applicableBusinessTypes.length > 1 ? "s" : ""}</span>}
                       </div>
                       <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
                       <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episodes · {c.xpPerEpisode ?? 10} XP/ep</p>
@@ -440,6 +447,37 @@ export default function CoursesPage() {
                   <option value="Service">Service</option>
                   <option value="Coaching">Coaching</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Business Type Visibility</label>
+                <p className="text-[11px] text-[#606060] mb-2">Leave empty to show to all members. Select types to restrict.</p>
+                {businessTypeOptions.length === 0 ? (
+                  <p className="text-[11px] text-[#606060] italic">No business types configured yet — add them via Masters.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {businessTypeOptions.map((bt) => {
+                      const selected = courseForm.applicableBusinessTypes?.includes(bt);
+                      return (
+                        <button
+                          key={bt}
+                          type="button"
+                          onClick={() => {
+                            const current: string[] = courseForm.applicableBusinessTypes ?? [];
+                            setCourseField("applicableBusinessTypes",
+                              selected ? current.filter((x) => x !== bt) : [...current, bt]);
+                          }}
+                          className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border transition-all ${
+                            selected
+                              ? "bg-[#dc2626] border-[#dc2626] text-white"
+                              : "bg-transparent border-[#333] text-[#888] hover:border-[#dc2626] hover:text-white"
+                          }`}
+                        >
+                          {bt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Required Tier</label>
