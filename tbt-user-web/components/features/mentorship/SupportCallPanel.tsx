@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X, Loader2, CalendarClock, Users, Video, Check } from "lucide-react";
 import { toast } from "react-hot-toast";
+import { getServerNow } from "@/lib/api/client";
 import {
   useBookSupportCall,
   useCancelSupportCallBooking,
@@ -101,9 +102,14 @@ function SessionCard({
     }
   };
 
+  // The list includes sessions still in progress (so booked members can join);
+  // once a session has started it can no longer be booked (server rule too).
+  const live = new Date(session.startsAt).getTime() <= getServerNow();
+
   let blockedReason: string | null = null;
   if (!mine) {
-    if (notIncluded) blockedReason = "Not included in your plan";
+    if (live) blockedReason = "Booking closed — this session has started";
+    else if (notIncluded) blockedReason = "Not included in your plan";
     else if (full) blockedReason = "Session full";
     else if (!canBookMore) blockedReason = "No calls left in this category";
   }
@@ -115,11 +121,18 @@ function SessionCard({
           <p className="text-sm font-semibold leading-snug" style={{ color: TEXT }}>{session.title}</p>
           {session.hostName && <p className="text-[11px] mt-0.5" style={{ color: MUTED }}>with {session.hostName}</p>}
         </div>
-        {mine && (
-          <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: BLUE }}>
-            <Check size={11} /> Booked
-          </span>
-        )}
+        <div className="shrink-0 flex items-center gap-1.5">
+          {live && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: RED }}>
+              ● Live now
+            </span>
+          )}
+          {mine && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: BLUE }}>
+              <Check size={11} /> Booked
+            </span>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-3 flex-wrap text-[11px]" style={{ color: SOFT }}>
         <span className="inline-flex items-center gap-1"><CalendarClock size={12} /> {formatSlot(session.startsAt, session.durationMinutes)}</span>
@@ -224,14 +237,16 @@ export default function SupportCallPanel({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 sm:p-4"
+      className="fixed inset-0 z-[70] flex items-end sm:items-center justify-start sm:justify-center bg-black/60 sm:p-4"
       onClick={onClose}
     >
+      {/* Mobile sheet is pinned to the left edge and capped at the screen width so
+          the close button stays visible even if the page behind is wider than the screen. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="support-call-panel-title"
-        className="w-full sm:max-w-lg max-h-[88vh] flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
+        className="w-full max-w-[100vw] sm:max-w-lg max-h-[88vh] flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
         style={{ background: SURFACE, border: "1px solid #2a2a2e" }}
         onClick={(e) => e.stopPropagation()}
       >
