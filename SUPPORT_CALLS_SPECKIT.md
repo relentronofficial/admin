@@ -1,6 +1,6 @@
 # SUPPORT_CALLS_SPECKIT — Expert Support Call booking
 
-Status: **IMPLEMENTED — in review** (2026-10-15). Decisions in §7, known limitations in §10.
+Status: **IMPLEMENTED & VERIFIED LOCALLY — awaiting PR approval** (2026-10-15). Decisions in §7, limitations in §10, task status in §11.
 
 ## 1. Context — what exists today
 
@@ -133,3 +133,21 @@ One PR into `main` (backend + admin + website; reviewed). After approval/merge: 
 - Pre-existing, not changed: on a 375px screen `/courses` overflows by ~42px because of the Weekly Revenue chart's Daily/Cumulative toggle (`MentorshipDashboard.tsx` WeeklyChartSection, since 2dbec1f0). Mobile browsers then lay the page out wider than the screen (the site header is clipped too). The panel's mobile sheet is pinned left and capped at `100vw`, so it and its close button stay fully on screen regardless. Fixing that toggle is a separate change.
 - Sessions in progress stay listed (so booked members can join) and show "Live now"; booking them is closed in the UI and rejected by the server.
 - Pre-existing, not changed: 8 `MentorshipDashboard.test.tsx` tests fail on `main` ("No QueryClient set").
+
+## 11. Task status (updated 2026-10-15)
+
+| # | Task | Status | Where |
+|---|---|---|---|
+| T1 | Credit-purchase quota bug (Q3) | ✅ Done | PR #84 |
+| T2 | Startup DDL: `support_call_sessions`, `support_call_bookings` | ✅ Done | PR #85 |
+| T3 | Pure rules + 25 unit tests (`supportCallLogic`) | ✅ Done | PR #85 |
+| T4 | Member API: list / book / cancel / join | ✅ Done | PR #85 |
+| T5 | Admin/mentor API: sessions CRUD, cancel + notify, bookings, attendance | ✅ Done | PR #85 |
+| T6 | Admin page `/support-calls` + Sidebar entry | ✅ Done | PR #85 |
+| T7 | Website: six tiles → panel (sessions, book, cancel, join, quota, history, states) | ✅ Done | PR #85 |
+| T8 | Live-session state + mobile sheet fit | ✅ Done | PR #85 (`64d9d600`) |
+| T9 | Verification on latest `main` (be8558f3) + #84 + #85 | ✅ Done | backend tsc / 302 unit / build; integration all pass (booking + credit suites); admin tsc + prod build; website tsc + build; browser 60/60 (Edge, desktop + 375px); website vitest 73 pass, 8 fail — identical on `main` |
+| T10 | Independent approval of #84, then merge | ⏳ Blocked — needs a reviewer who is not the PR author | PR #84 |
+| T11 | Merge #84 → #85 retargets to `main` → CI → approval → merge | ⏳ Blocked on T10 | PR #85 |
+| T12 | Deploy: admin via Vercel from `main`; backend + website via `main → production` push | ⏳ Blocked on T11 | CI/CD |
+| T13 | Live verification (admin/mentor publishes; member books, cancels, joins; quota/attendance update) | ⏳ Blocked on T12 + needs an admin login and a member login | — |
