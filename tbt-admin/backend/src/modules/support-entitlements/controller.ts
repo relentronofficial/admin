@@ -1,6 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { computeSupportQuota } from '../../lib/supportQuota.js';
+import {
+  computeSupportQuota,
+  SUPPORT_USAGE_COUNTS_SQL,
+  APPROVED_CREDIT_PURCHASES_SQL,
+} from '../../lib/supportQuota.js';
 
 const updateEntitlementSchema = z.object({
   techSupportDays:  z.number().int().min(0),
@@ -161,26 +165,24 @@ export async function getMemberSupportQuotaHandler(
 
     const plan = (member.membershipPlan as string | null) ?? 'free';
 
-    const [entRows, usageRows, lifelineRows] = await Promise.all([
+    const [entRows, usageRows, lifelineRows, purchasedRows] = await Promise.all([
       req.server.prisma.$queryRawUnsafe<any[]>(
         `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
                 COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
          FROM plan_entitlements WHERE plan = $1`,
         plan,
       ),
-      req.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
-        memberId,
-      ),
+      req.server.prisma.$queryRawUnsafe<any[]>(SUPPORT_USAGE_COUNTS_SQL, memberId),
       member.batchId
         ? req.server.prisma.$queryRawUnsafe<any[]>(
             `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
             memberId, member.batchId,
           )
         : Promise.resolve([]),
+      req.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
     ]);
 
-    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows);
+    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows);
 
     return reply.send({ success: true, data, error: null });
   } catch (err: any) {

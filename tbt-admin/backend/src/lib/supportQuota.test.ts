@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { computeSupportQuota } from './supportQuota.js';
+import {
+  computeSupportQuota,
+  creditTypeToUsageType,
+  LEGACY_CREDIT_USAGE_NOTE_PREFIX,
+  SUPPORT_USAGE_COUNTS_SQL,
+} from './supportQuota.js';
 
 describe('computeSupportQuota', () => {
   it('computes allocated/used/remaining for a fully populated plan', () => {
@@ -76,6 +81,55 @@ describe('computeSupportQuota', () => {
     );
     expect(result.salesSupport).toEqual({ allocated: 0, used: 1, remaining: 0 });
     expect(result.contentSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
+  });
+
+  // Regression: an approved credit purchase must ADD allocation (MG-05
+  // "add credits to member"), not count as a used call.
+  it('adds approved purchased credits to the matching bucket allocation', () => {
+    const result = computeSupportQuota(
+      'starter',
+      [{ tech_support_days: 2, ad_support_days: 2, group_call_count: 4, call_credit_count: 0, one_to_one_enabled: false }],
+      [{ type: 'group_call', cnt: 1 }],
+      [],
+      [
+        { credit_type: 'tech_support', qty: 1 },
+        { credit_type: 'ad_support', qty: 2 },
+        { credit_type: 'group_call_45', qty: 1 },
+        { credit_type: 'group_call_60', qty: 2 },
+        { credit_type: 'one_to_one_45', qty: 1 },
+        { credit_type: 'one_to_one_60', qty: 1 },
+      ],
+    );
+    expect(result.techSupport).toEqual({ allocated: 3, used: 0, remaining: 3 });
+    expect(result.adSupport).toEqual({ allocated: 4, used: 0, remaining: 4 });
+    expect(result.groupCall).toEqual({ allocated: 7, used: 1, remaining: 6 });
+    expect(result.callCredits).toEqual({ allocated: 2, used: 0, remaining: 2 });
+  });
+
+  it('ignores lifeline and unknown purchase types for support buckets', () => {
+    const result = computeSupportQuota(
+      'free',
+      [],
+      [],
+      [],
+      [{ credit_type: 'lifeline', qty: 5 }, { credit_type: 'mystery', qty: 3 }],
+    );
+    expect(result.techSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.groupCall).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.callCredits).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.lifelines).toEqual({ total: 3, used: 0, remaining: 3 });
+  });
+
+  it('maps credit types to support usage types', () => {
+    expect(creditTypeToUsageType('group_call_60')).toBe('group_call');
+    expect(creditTypeToUsageType('one_to_one_45')).toBe('one_to_one');
+    expect(creditTypeToUsageType('tech_support')).toBe('tech_support');
+    expect(creditTypeToUsageType('lifeline')).toBeNull();
+  });
+
+  it('usage count SQL excludes legacy credit-approval rows', () => {
+    expect(SUPPORT_USAGE_COUNTS_SQL).toContain(`NOT LIKE '${LEGACY_CREDIT_USAGE_NOTE_PREFIX}%'`);
+    expect(SUPPORT_USAGE_COUNTS_SQL).toContain('notes IS NULL');
   });
 
   it('ignores usage rows for types not tracked in the response shape', () => {

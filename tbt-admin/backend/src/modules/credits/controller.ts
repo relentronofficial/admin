@@ -96,24 +96,11 @@ export async function approvePurchaseHandler(
         quantity, purchase.mbs_id,
       );
     }
-  } else {
-    // Map credit_type to support_usage type
-    const supportType =
-      credit_type === 'tech_support'                       ? 'tech_support'
-      : credit_type === 'ad_support'                       ? 'ad_support'
-      : (credit_type === 'group_call_45' || credit_type === 'group_call_60') ? 'group_call'
-      : (credit_type === 'one_to_one_45' || credit_type === 'one_to_one_60') ? 'one_to_one'
-      : null;
-
-    if (supportType) {
-      for (let i = 0; i < quantity; i++) {
-        await req.server.prisma.$executeRawUnsafe(
-          `INSERT INTO support_usage (member_id, type, notes, recorded_by) VALUES ($1::uuid, $2, $3, $4)`,
-          member_id, supportType, `Credit purchase approved (${credit_type})`, reviewedBy,
-        );
-      }
-    }
   }
+  // Support credit types need no write here: the approved credit_purchases
+  // row itself adds to the member's allocation (lib/supportQuota.ts). This
+  // used to insert support_usage rows, which counted the purchase as a USED
+  // call and reduced remaining quota.
 
   const approveTitle = 'Purchase Approved';
   const approveBody = `Your purchase of ${quantity}× ${credit_type.replace(/_/g, ' ')} has been approved!`;

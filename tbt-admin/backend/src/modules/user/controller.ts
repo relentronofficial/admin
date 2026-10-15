@@ -30,6 +30,7 @@ import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
+import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -6621,43 +6622,26 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   const plan = (member?.membershipPlan as string | null) ?? 'free';
 
-  const [entRows, usageRows, lifelineRows] = await Promise.all([
+  const [entRows, usageRows, lifelineRows, purchasedRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
        FROM plan_entitlements WHERE plan = $1`,
       plan,
     ),
-    request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT type, COUNT(*)::int AS cnt FROM support_usage WHERE member_id = $1::uuid GROUP BY type`,
-      memberId,
-    ),
+    request.server.prisma.$queryRawUnsafe<any[]>(SUPPORT_USAGE_COUNTS_SQL, memberId),
     member?.batchId
       ? request.server.prisma.$queryRawUnsafe<any[]>(
           `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id = $1::uuid AND batch_id = $2::uuid LIMIT 1`,
           memberId, member.batchId,
         )
       : Promise.resolve([]),
+    request.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
   ]);
 
-  const ent = entRows[0] ?? { tech_support_days: 0, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false, sales_call_count: 0, content_call_count: 0 };
-  const usageMap: Record<string, number> = {};
-  for (const row of usageRows) usageMap[row.type] = row.cnt;
-
-  const lifelinesTotal = (lifelineRows[0] as any)?.lifelines_total ?? 3;
-  const lifelinesUsed  = (lifelineRows[0] as any)?.lifelines_used  ?? 0;
-
-  return ok(reply, {
-    plan,
-    techSupport:    { allocated: ent.tech_support_days,   used: usageMap['tech_support']    ?? 0, remaining: Math.max(0, ent.tech_support_days   - (usageMap['tech_support']    ?? 0)) },
-    adSupport:      { allocated: ent.ad_support_days,     used: usageMap['ad_support']      ?? 0, remaining: Math.max(0, ent.ad_support_days     - (usageMap['ad_support']      ?? 0)) },
-    groupCall:      { allocated: ent.group_call_count,    used: usageMap['group_call']      ?? 0, remaining: Math.max(0, ent.group_call_count     - (usageMap['group_call']      ?? 0)) },
-    callCredits:    { allocated: ent.call_credit_count,   used: usageMap['one_to_one']      ?? 0, remaining: Math.max(0, ent.call_credit_count    - (usageMap['one_to_one']      ?? 0)) },
-    salesSupport:   { allocated: ent.sales_call_count,    used: usageMap['sales_support']   ?? 0, remaining: Math.max(0, ent.sales_call_count     - (usageMap['sales_support']   ?? 0)) },
-    contentSupport: { allocated: ent.content_call_count,  used: usageMap['content_support'] ?? 0, remaining: Math.max(0, ent.content_call_count   - (usageMap['content_support'] ?? 0)) },
-    oneToOne:       !!ent.one_to_one_enabled,
-    lifelines:      { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
-  });
+  // Same pure computation as the admin member-quota view (lib/supportQuota.ts),
+  // so purchased credits and legacy rows are handled identically in both.
+  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows));
 }
 
 // ── Psychometric Assessment ───────────────────────────────────────────────────
