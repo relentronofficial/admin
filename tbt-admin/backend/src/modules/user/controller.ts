@@ -495,11 +495,27 @@ export async function listUserCourseCategories(request: FastifyRequest, reply: F
 }
 
 export async function listCourseModuleTabsHandler(request: FastifyRequest, reply: FastifyReply) {
+  // Filter module tabs by the member's business type so only tabs with
+  // at least one tagged course are shown. NULL/empty applicable_business_types
+  // means the course is visible to all business types.
+  const memberRows = await request.server.prisma.$queryRawUnsafe<{ business_type: string | null }[]>(
+    `SELECT business_type FROM members WHERE id = $1::uuid`, request.memberId,
+  ).catch(() => []);
+  const businessType = memberRows[0]?.business_type ?? null;
+
+  const params: any[] = [];
+  let btFilter = '';
+  if (businessType) {
+    params.push(businessType);
+    btFilter = `AND (applicable_business_types IS NULL OR applicable_business_types = '{}' OR $1 = ANY(applicable_business_types))`;
+  }
+
   const rows = await request.server.prisma.$queryRawUnsafe<{ module: string }[]>(
     `SELECT DISTINCT module
      FROM courses
-     WHERE module IS NOT NULL AND is_published = true AND is_active = true
-     ORDER BY module`
+     WHERE module IS NOT NULL AND is_published = true AND is_active = true ${btFilter}
+     ORDER BY module`,
+    ...params,
   ).catch(() => [] as { module: string }[]);
   return ok(reply, rows.map(r => ({ title: r.module })));
 }
@@ -531,6 +547,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     durationDisplay: string | null; taskDurationDisplay: string | null; price: number | null; isPublished: boolean;
     isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
     instructor: any; module: string | null; requiredTier: number;
+    applicableBusinessTypes: string[] | null;
     _count: { lessons: number; enrollments: number };
   };
   type CatalogCache = { entries: CatalogEntry[]; total: number };
@@ -563,7 +580,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         SELECT
           c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
           c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-          c.xp_per_episode, c.module, c.required_tier,
+          c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types,
           a.id AS creator_id, a.full_name AS creator_full_name,
           a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -621,6 +638,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           price: r.price ? Number(r.price) : null, isPublished: r.is_published,
           isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
           instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
+          applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
           _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
         };
       });
@@ -652,7 +670,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       SELECT
         c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
         c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-        c.xp_per_episode, c.module, c.required_tier,
+        c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types,
         a.id AS creator_id, a.full_name AS creator_full_name,
         a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -709,6 +727,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         price: r.price ? Number(r.price) : null, isPublished: r.is_published,
         isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
         instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
+        applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
         _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
       };
     });
@@ -740,16 +759,18 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   let allowedModules: string[] = [];
   let programName: string | null = null;
 
-  const personKey = `courses:personalization:${request.memberId}`;
-  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none'; memberTier: number };
+  // v2: added businessType to the cached payload for business-type course filtering
+  const personKey = `courses:personalization:v2:${request.memberId}`;
+  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none'; memberTier: number; businessType: string | null };
   const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
-    // Fetch batch_id + allowed_modules + current_tier (member override) in one raw SQL call
+    // Fetch batch_id + allowed_modules + current_tier + business_type in one raw SQL call
     const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT batch_id, allowed_modules, current_tier FROM members WHERE id = $1::uuid`,
+      `SELECT batch_id, allowed_modules, current_tier, business_type FROM members WHERE id = $1::uuid`,
       request.memberId
     ).catch(() => []);
     const memberRow = memberRows[0];
     const memberTier = Number(memberRow?.current_tier ?? 1);
+    const businessType: string | null = memberRow?.business_type ?? null;
 
     // CP-11: member-level override takes priority over program
     const memberModuleOverride = memberRow?.allowed_modules;
@@ -758,7 +779,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         ? memberModuleOverride
         : JSON.parse(memberModuleOverride);
       const overrideState: PersonCtx['state'] = parsed.length > 0 ? 'program' : 'direct';
-      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const, memberTier };
+      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const, memberTier, businessType };
     }
 
     if (memberRow?.batch_id) {
@@ -774,10 +795,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         const raw = b.allowed_modules;
         const mods: string[] = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
         if (mods.length > 0) {
-          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const, memberTier };
+          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const, memberTier, businessType };
         }
       }
-      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier };
+      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType };
     }
 
     const anyAccess = await (request.server.prisma as any).courseAccess.findFirst({
@@ -785,8 +806,8 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       select: { id: true },
     }).catch(() => null);
     return anyAccess
-      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier }
-      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const, memberTier };
+      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType }
+      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType };
   });
 
   personalizationState = personCtx.state;
@@ -819,6 +840,18 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   data = data.filter((c) => (c.requiredTier ?? 1) <= memberTier || c.hasAccess);
   total = Math.max(0, total - (beforeTierFilter - data.length));
 
+  // Filter courses by the member's business type. Courses with no tags (null / empty)
+  // are visible to everyone. Only apply when the member has a business type set.
+  const memberBusinessType = personCtx.businessType;
+  if (memberBusinessType) {
+    const beforeBizFilter = data.length;
+    data = data.filter((c) => {
+      const tags = c.applicableBusinessTypes;
+      return !tags || tags.length === 0 || tags.includes(memberBusinessType);
+    });
+    total = Math.max(0, total - (beforeBizFilter - data.length));
+  }
+
   // CP-12/CP-13: Fetch module configs (shared across all members, longer TTL)
   const moduleConfigKey = 'courses:module-configs';
   type ModuleConfig = { moduleName: string; displayName: string | null; tagline: string | null; description: string | null; bannerUrl: string | null; iconUrl: string | null; accentColor: string | null; sortOrder: number };
@@ -847,6 +880,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     programName,
     sourceType: moduleAccess.selection !== null ? 'member_selection' : personCtx.sourceType,
     moduleConfigs,
+    memberBusinessType: memberBusinessType ?? null,
     mentorship: {
       selection: moduleAccess.selection,
       selectable: moduleAccess.selectable,

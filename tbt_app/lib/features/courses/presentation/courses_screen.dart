@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../shared/models/course.dart';
+import '../../../shared/providers/me_provider.dart';
 import '../../../shared/theme/design_tokens.dart';
 import '../providers/courses_provider.dart';
 
@@ -80,6 +81,10 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
     // Only show module row when ≥2 modules exist.
     final showModuleTabs = moduleTabs.length >= 2;
 
+    // Business type from raw me data (no Freezed change needed).
+    final rawMe = ref.watch(rawMeProvider).valueOrNull ?? {};
+    final memberBusinessType = rawMe['businessType'] as String?;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -113,6 +118,44 @@ class _CoursesScreenState extends ConsumerState<CoursesScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: _neumorphicSearchField(context, isDark),
               ),
+
+              // Business type filter indicator
+              if (memberBusinessType != null && memberBusinessType.isNotEmpty) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Row(
+                    children: [
+                      Text(
+                        'Filtered for: ',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark
+                              ? Colors.white54
+                              : Colors.black45,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _accent.withAlpha(26),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: _accent.withAlpha(64), width: 1),
+                        ),
+                        child: Text(
+                          memberBusinessType,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: _accent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Module tabs row (only shown when ≥2 modules from API)
               if (showModuleTabs) ...[
