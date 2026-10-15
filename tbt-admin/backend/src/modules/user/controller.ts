@@ -31,6 +31,8 @@ import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
+import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
+import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -6642,6 +6644,205 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
   // Same pure computation as the admin member-quota view (lib/supportQuota.ts),
   // so purchased credits and legacy rows are handled identically in both.
   return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows));
+}
+
+// ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ───────────────────
+// Member identity always comes from the JWT (request.memberId). Responses never
+// include meeting_url (only the join endpoint returns it) or other members' data.
+
+function ruleFail(reply: FastifyReply, r: { status: number; code: string; message: string }) {
+  return reply.status(r.status).send({ success: false, data: null, error: { code: r.code, message: r.message } });
+}
+
+async function loadMemberPlanStatus(request: FastifyRequest) {
+  const m = await request.server.prisma.member.findUnique({
+    where: { id: request.memberId! },
+    select: { membershipPlan: true, status: true },
+  });
+  return { plan: (m?.membershipPlan as string | null) ?? 'free', status: (m?.status as string | null) ?? null };
+}
+
+export async function listSupportCallsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { category } = request.query as { category?: string };
+  if (!isSupportCallCategory(category)) return fail(reply, 400, 'Unknown support call category');
+  const db = request.server.prisma;
+  const now = new Date();
+  const { plan } = await loadMemberPlanStatus(request);
+
+  const [quota, sessionRows, historyRows] = await Promise.all([
+    loadCategoryQuota(db, memberId, plan, category),
+    // Upcoming + in-progress sessions (so Join is reachable during the call).
+    db.$queryRawUnsafe<any[]>(
+      `SELECT ${SESSION_COLUMNS},
+              (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status <> 'cancelled') AS active_count,
+              mb.id AS my_booking_id, mb.status AS my_booking_status
+       FROM support_call_sessions s
+       LEFT JOIN support_call_bookings mb
+         ON mb.session_id = s.id AND mb.member_id = $1::uuid AND mb.status <> 'cancelled'
+       WHERE s.category = $2 AND s.status = 'scheduled'
+         AND s.starts_at + make_interval(mins => s.duration_minutes) > $3
+       ORDER BY s.starts_at ASC
+       LIMIT 50`,
+      memberId, category, now,
+    ),
+    db.$queryRawUnsafe<any[]>(
+      `SELECT b.id, b.status, b.booked_at, s.title, s.starts_at, s.duration_minutes, s.status AS session_status
+       FROM support_call_bookings b
+       JOIN support_call_sessions s ON s.id = b.session_id
+       WHERE b.member_id = $1::uuid AND s.category = $2
+       ORDER BY s.starts_at DESC
+       LIMIT 20`,
+      memberId, category,
+    ),
+  ]);
+
+  const sessions = sessionRows.map((r) => {
+    const s = mapSession(r);
+    const myBooking = r.my_booking_id ? { id: r.my_booking_id as string, status: r.my_booking_status as string } : null;
+    const join = myBooking
+      ? joinState({ bookingStatus: myBooking.status, session: s, hasMeetingUrl: s.hasMeetingUrl, now })
+      : null;
+    return {
+      id: s.id,
+      title: s.title,
+      description: s.description,
+      hostName: s.hostName,
+      startsAt: s.startsAt.toISOString(),
+      durationMinutes: s.durationMinutes,
+      capacity: s.capacity,
+      seatsLeft: Math.max(0, s.capacity - Number(r.active_count ?? 0)),
+      myBooking: myBooking
+        ? {
+            ...myBooking,
+            canCancel: canCancelBooking({ bookingStatus: myBooking.status, session: s, now }).ok,
+            canJoin: !!join?.ok,
+            joinMessage: join && !join.ok ? join.message : null,
+          }
+        : null,
+    };
+  });
+
+  return ok(reply, {
+    category,
+    quota,
+    sessions,
+    history: historyRows.map((r) => ({
+      bookingId: r.id as string,
+      title: r.title as string,
+      startsAt: new Date(r.starts_at).toISOString(),
+      durationMinutes: Number(r.duration_minutes),
+      status: r.session_status === 'cancelled' && r.status === 'cancelled' ? 'session_cancelled' : (r.status as string),
+    })),
+  });
+}
+
+export async function bookSupportCallHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id: sessionId } = request.params as { id: string };
+  if (!UUID_RE.test(sessionId)) return fail(reply, 404, 'Session not found');
+  const { plan, status } = await loadMemberPlanStatus(request);
+
+  try {
+    const result = await request.server.prisma.$transaction(async (tx) => {
+      // Lock the session row so concurrent bookings can't exceed capacity.
+      const rows = await tx.$queryRawUnsafe<any[]>(
+        `SELECT ${SESSION_COLUMNS} FROM support_call_sessions s WHERE s.id = $1::uuid FOR UPDATE`, sessionId,
+      );
+      if (!rows[0]) return { error: { status: 404, code: 'not_found', message: 'Session not found' } };
+      const s = mapSession(rows[0]);
+      if (!isSupportCallCategory(s.category)) return { error: { status: 404, code: 'not_found', message: 'Session not found' } };
+      // Serialise this member's bookings in this category so parallel requests
+      // on different sessions can't spend the same remaining call twice.
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `support_call:${memberId}:${s.category}`);
+
+      const [countRows, mineRows] = await Promise.all([
+        tx.$queryRawUnsafe<any[]>(
+          `SELECT COUNT(*)::int AS n FROM support_call_bookings WHERE session_id = $1::uuid AND status <> 'cancelled'`, sessionId,
+        ),
+        tx.$queryRawUnsafe<any[]>(
+          `SELECT id FROM support_call_bookings WHERE session_id = $1::uuid AND member_id = $2::uuid AND status <> 'cancelled' LIMIT 1`,
+          sessionId, memberId,
+        ),
+      ]);
+      const quota = await loadCategoryQuota(tx, memberId, plan, s.category);
+      const rule = canBook({
+        session: s,
+        now: new Date(),
+        activeBookingCount: countRows[0]?.n ?? 0,
+        alreadyBooked: mineRows.length > 0,
+        memberStatus: status,
+        quota,
+      });
+      if (!rule.ok) return { error: rule };
+
+      const inserted = await tx.$queryRawUnsafe<any[]>(
+        `INSERT INTO support_call_bookings (session_id, member_id) VALUES ($1::uuid, $2::uuid)
+         RETURNING id, status, booked_at`,
+        sessionId, memberId,
+      );
+      return { booking: inserted[0] };
+    });
+
+    if ('error' in result && result.error) return ruleFail(reply, result.error as any);
+    const b = (result as any).booking;
+    return reply.status(201).send({
+      success: true,
+      data: { id: b.id, sessionId, status: b.status, bookedAt: new Date(b.booked_at).toISOString() },
+      error: null,
+    });
+  } catch (err: any) {
+    // Unique index backstop for a duplicate that slipped past the checks.
+    if (String(err?.message ?? '').includes('uq_support_call_bookings_active') || err?.meta?.code === '23505') {
+      return ruleFail(reply, { status: 409, code: 'already_booked', message: 'You have already booked this session.' });
+    }
+    throw err;
+  }
+}
+
+export async function cancelSupportCallBookingHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id } = request.params as { id: string };
+  if (!UUID_RE.test(id)) return fail(reply, 404, 'Booking not found');
+
+  const result = await request.server.prisma.$transaction(async (tx) => {
+    // Scoped to the caller: another member's booking id behaves as not found.
+    const rows = await tx.$queryRawUnsafe<any[]>(
+      `SELECT b.id, b.status AS booking_status, ${SESSION_COLUMNS}
+       FROM support_call_bookings b JOIN support_call_sessions s ON s.id = b.session_id
+       WHERE b.id = $1::uuid AND b.member_id = $2::uuid
+       FOR UPDATE OF b`,
+      id, memberId,
+    );
+    if (!rows[0]) return { error: { status: 404, code: 'not_found', message: 'Booking not found' } };
+    const rule = canCancelBooking({ bookingStatus: rows[0].booking_status, session: mapSession(rows[0]), now: new Date() });
+    if (!rule.ok) return { error: rule };
+    await tx.$executeRawUnsafe(
+      `UPDATE support_call_bookings SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`, id,
+    );
+    return { ok: true };
+  });
+
+  if ('error' in result && result.error) return ruleFail(reply, result.error as any);
+  return ok(reply, { id, status: 'cancelled' });
+}
+
+export async function joinSupportCallHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id } = request.params as { id: string };
+  if (!UUID_RE.test(id)) return fail(reply, 404, 'Booking not found');
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT b.status AS booking_status, s.meeting_url, ${SESSION_COLUMNS}
+     FROM support_call_bookings b JOIN support_call_sessions s ON s.id = b.session_id
+     WHERE b.id = $1::uuid AND b.member_id = $2::uuid`,
+    id, memberId,
+  );
+  if (!rows[0]) return fail(reply, 404, 'Booking not found');
+  const s = mapSession(rows[0]);
+  const state = joinState({ bookingStatus: rows[0].booking_status, session: s, hasMeetingUrl: s.hasMeetingUrl, now: new Date() });
+  if (!state.ok) return ruleFail(reply, { status: 403, code: state.reason, message: state.message });
+  return ok(reply, { meetingUrl: String(rows[0].meeting_url).trim() });
 }
 
 // ── Psychometric Assessment ───────────────────────────────────────────────────
