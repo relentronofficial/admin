@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Lock, Play, BookOpen, X } from "lucide-react";
+import { Lock, Play, BookOpen, X, ChevronDown } from "lucide-react";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -376,6 +376,7 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
 function OnboardingVideosSection() {
   const { data: contentSteps } = useOnboardingContent();
   const [activeVideo, setActiveVideo] = useState<{ title: string; videoUrl: string } | null>(null);
+  const [expanded, setExpanded] = useState(true);
 
   const videoSteps = useMemo(
     () => ((contentSteps as any[]) ?? []).filter((s: any) => !!s.videoUrl),
@@ -387,28 +388,82 @@ function OnboardingVideosSection() {
   return (
     <>
       <section>
-        <div className="mb-4">
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
-            Introduction
-          </h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#92929b" }}>
-            Watch these to get the most from your membership
-          </p>
-        </div>
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          {videoSteps.map((step: any) => (
-            <button
-              key={step.id}
-              onClick={() => setActiveVideo({ title: step.title, videoUrl: step.videoUrl })}
+        {/* Module accordion header */}
+        <button
+          onClick={() => setExpanded(v => !v)}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 18px",
+            borderRadius: expanded ? "12px 12px 0 0" : 12,
+            background: "#1a1a1e",
+            border: "1px solid #2a2a2e",
+            borderBottom: expanded ? "1px solid #2a2a2e" : "1px solid #2a2a2e",
+            cursor: "pointer",
+            textAlign: "left",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <div
               style={{
-                flex: "0 0 200px",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                textAlign: "left",
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                background: "rgba(220,38,38,0.12)",
+                border: "1px solid rgba(220,38,38,0.25)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
               }}
             >
+              <Play size={14} style={{ color: "var(--color-accent)" }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f7" }}>Introduction</div>
+              <div style={{ fontSize: 12, color: "#92929b", marginTop: 1 }}>
+                {videoSteps.length} {videoSteps.length === 1 ? "video" : "videos"} · Watch these to get the most from your membership
+              </div>
+            </div>
+          </div>
+          <ChevronDown
+            size={18}
+            style={{
+              color: "#92929b",
+              flexShrink: 0,
+              transition: "transform 0.2s",
+              transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          />
+        </button>
+
+        {/* Expanded video list */}
+        {expanded && (
+          <div
+            style={{
+              background: "#141418",
+              border: "1px solid #2a2a2e",
+              borderTop: "none",
+              borderRadius: "0 0 12px 12px",
+              padding: "12px 18px 18px",
+            }}
+          >
+            <div className="flex gap-4 overflow-x-auto pb-2 pt-2">
+              {videoSteps.map((step: any) => (
+                <button
+                  key={step.id}
+                  onClick={() => setActiveVideo({ title: step.title, videoUrl: step.videoUrl })}
+                  style={{
+                    flex: "0 0 200px",
+                    background: "none",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
               <div
                 className="relative overflow-hidden"
                 style={{
@@ -468,9 +523,11 @@ function OnboardingVideosSection() {
               >
                 {step.title}
               </div>
-            </button>
-          ))}
-        </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {activeVideo && (
