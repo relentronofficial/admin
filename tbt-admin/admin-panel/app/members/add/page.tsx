@@ -395,7 +395,7 @@ export default function AddMemberPage() {
                     <option value="" disabled>Select...</option>
                     <option value="Product-based">Product-based</option>
                     <option value="Service-based">Service-based</option>
-                    <option value="Both">Both</option>
+                    <option value="Coaching">Coaching</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
