@@ -2,10 +2,11 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Lock, Play, BookOpen } from "lucide-react";
+import { Lock, Play, BookOpen, X } from "lucide-react";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { useOnboardingContent } from "@/lib/hooks/useOnboarding";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import { MentorshipModuleSelector } from "@/components/features/mentorship/MentorshipModulePicker";
 
@@ -361,6 +362,188 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
         </div>
       </div>
     </div>
+  );
+}
+
+// ── OnboardingVideosSection ───────────────────────────────────────────────────
+
+function OnboardingVideosSection() {
+  const { data: contentSteps } = useOnboardingContent();
+  const [activeVideo, setActiveVideo] = useState<{ title: string; videoUrl: string } | null>(null);
+
+  const videoSteps = useMemo(
+    () => ((contentSteps as any[]) ?? []).filter((s: any) => !!s.videoUrl),
+    [contentSteps]
+  );
+
+  if (videoSteps.length === 0) return null;
+
+  return (
+    <>
+      <section>
+        <div className="mb-4">
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
+            Getting Started
+          </h2>
+          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#92929b" }}>
+            Watch these to get the most from your membership
+          </p>
+        </div>
+        <div className="flex gap-4 overflow-x-auto pb-2">
+          {videoSteps.map((step: any) => (
+            <button
+              key={step.id}
+              onClick={() => setActiveVideo({ title: step.title, videoUrl: step.videoUrl })}
+              style={{
+                flex: "0 0 200px",
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div
+                className="relative overflow-hidden"
+                style={{
+                  height: 130,
+                  borderRadius: 10,
+                  background: "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
+                  border: "1px solid #414146",
+                  transition: "border-color 0.2s",
+                }}
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    opacity: 0.2,
+                    background:
+                      "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 7,
+                    right: 8,
+                    zIndex: 1,
+                    color: "white",
+                    fontSize: 7,
+                    fontWeight: 800,
+                  }}
+                >
+                  ✦ TBT BUSINESS
+                </div>
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{ zIndex: 1 }}
+                >
+                  <div
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: "50%",
+                      background: "rgba(255,255,255,0.15)",
+                      border: "1.5px solid rgba(255,255,255,0.4)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "white",
+                    }}
+                  >
+                    <Play size={16} />
+                  </div>
+                </div>
+              </div>
+              <div
+                className="line-clamp-2 mt-2"
+                style={{ fontSize: 12, fontWeight: 600, color: "#d0d0d8", lineHeight: 1.35 }}
+              >
+                {step.title}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {activeVideo && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(0,0,0,0.95)",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div
+            style={{
+              padding: "16px 20px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              borderBottom: "1px solid #2a2a2e",
+            }}
+          >
+            <h3 style={{ color: "#f5f5f7", fontSize: 16, fontWeight: 600, margin: 0 }}>
+              {activeVideo.title}
+            </h3>
+            <button
+              onClick={() => setActiveVideo(null)}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#a0a0a8",
+                padding: 4,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <X size={22} />
+            </button>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "20px",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 900,
+                aspectRatio: "16/9",
+                borderRadius: 12,
+                overflow: "hidden",
+                background: "#000",
+              }}
+            >
+              {activeVideo.videoUrl.endsWith(".m3u8") ? (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <video
+                  src={activeVideo.videoUrl}
+                  controls
+                  autoPlay
+                  style={{ width: "100%", height: "100%" }}
+                />
+              ) : (
+                <iframe
+                  src={activeVideo.videoUrl}
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                  allow="autoplay; fullscreen"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -731,6 +914,9 @@ export default function CoursesPage() {
           </button>
         </div>
       )}
+
+      {/* ── Onboarding Videos ─────────────────────────────────────────── */}
+      <OnboardingVideosSection />
 
       {/* ── New Member State — CTA banner (always visible for new members) ── */}
       {personalizationState === "new" && !catalogLoading && !catalogError && (
