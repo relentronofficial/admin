@@ -51,6 +51,24 @@ const GROUPS = [
       { key: "adUnmuteLabel", label: "Unmute Prompt" },
     ],
   },
+  {
+    // Member /batch-program "Weekly Activity Graph" (web).
+    title: "Batch Weekly Graph",
+    fields: [
+      { key: "batchGraphTitle", label: "Graph Title" },
+      { key: "batchGraphSubtitle", label: "Graph Subtitle" },
+      { key: "batchGraphEmpty", label: "No Activities Assigned Message" },
+      { key: "batchGraphError", label: "Load Error Message" },
+      { key: "batchGraphNoActivitiesWeek", label: "Week Without Activities Label" },
+      { key: "batchGraphCompletedLabel", label: "Completed Status" },
+      { key: "batchGraphSubmittedLabel", label: "Awaiting Review Status" },
+      { key: "batchGraphInProgressLabel", label: "In Progress Status" },
+      { key: "batchGraphNeedsRevisionLabel", label: "Needs Revision Status" },
+      { key: "batchGraphNotStartedLabel", label: "Not Started Status" },
+      { key: "batchGraphUpcomingLabel", label: "Upcoming Status" },
+      { key: "batchGraphDayLabel", label: "Day Prefix" },
+    ],
+  },
 ];
 
 const DEFAULTS: Record<string, string> = {
@@ -63,6 +81,15 @@ const DEFAULTS: Record<string, string> = {
   passwordLabel: "Password", passwordPlaceholder: "Enter your password", submitLabel: "Sign In",
   adSponsoredLabel: "Sponsored", adSkipLabel: "Skip", adSkipInLabel: "Skip in",
   adCloseLabel: "Close", adUnmuteLabel: "Tap for sound",
+  batchGraphTitle: "Weekly Activity Graph",
+  batchGraphSubtitle: "Each dot is an assigned activity. The line shows the share completed each week.",
+  batchGraphEmpty: "No activities have been assigned to your program yet.",
+  batchGraphError: "Could not load your weekly graph.",
+  batchGraphNoActivitiesWeek: "No activities",
+  batchGraphCompletedLabel: "Completed", batchGraphSubmittedLabel: "Awaiting review",
+  batchGraphInProgressLabel: "In progress", batchGraphNeedsRevisionLabel: "Needs revision",
+  batchGraphNotStartedLabel: "Not started", batchGraphUpcomingLabel: "Upcoming",
+  batchGraphDayLabel: "Day",
 };
 
 export default function UiStringsPage() {

@@ -371,6 +371,18 @@ export interface UiStrings {
   batchRequiredLabel?: string;
   batchOptionalLabel?: string;
   batchWeekLabel?: string;
+  batchGraphTitle?: string;
+  batchGraphSubtitle?: string;
+  batchGraphEmpty?: string;
+  batchGraphError?: string;
+  batchGraphNoActivitiesWeek?: string;
+  batchGraphCompletedLabel?: string;
+  batchGraphSubmittedLabel?: string;
+  batchGraphInProgressLabel?: string;
+  batchGraphNeedsRevisionLabel?: string;
+  batchGraphNotStartedLabel?: string;
+  batchGraphUpcomingLabel?: string;
+  batchGraphDayLabel?: string;
   batchViewProofLabel?: string;
 
   // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Optional like the rest —
