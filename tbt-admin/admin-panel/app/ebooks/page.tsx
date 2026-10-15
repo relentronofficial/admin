@@ -5,7 +5,8 @@
  *
  * Same monolith pattern as podcasts/page.tsx — shared Modal +
  * ModalActions primitives, same upload flow, same slug auto-gen.
- * PDF upload uses the R2 presigned-URL flow with progress bar.
+ * PDF + image uploads go through the backend (POST /api/upload/image →
+ * Bunny Storage, served by the Bunny CDN), with a progress bar for PDFs.
  */
 
 import React, { useRef, useState } from "react";
@@ -53,7 +54,8 @@ import {
   type EbookAuthor,
   type EbookPublisher,
 } from "@/lib/hooks/useEbooks";
-import { useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useUploadImage } from "@/lib/hooks/useAdmin";
+import apiClient from "@/lib/api/apiClient";
 import { useListBatches } from "@/lib/hooks/useTbt";
 import { toast } from "react-hot-toast";
 import {
@@ -1161,7 +1163,12 @@ function BookForm({
           </div>
         )}
       </div>
-      <ModalActions onClose={onClose} onSubmit={submit} busy={create.isPending || update.isPending} isEdit={isEdit} />
+      <ModalActions
+        onClose={onClose}
+        onSubmit={submit}
+        busy={create.isPending || update.isPending || coverUpload.busy || pdfUpload.busy}
+        isEdit={isEdit}
+      />
       </>
       )}
     </Modal>
@@ -2466,30 +2473,37 @@ function ModalActions({
   );
 }
 
+// Cloud Run rejects request bodies over 32 MiB (HTTP/1), so files are capped
+// just below that before upload instead of failing with an opaque 413.
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+const uploadErrorMessage = (err: any, fallback: string) =>
+  err?.response?.status === 413 ? "File is too large (max 30 MB)." : err?.message || fallback;
+
 function useCoverUploader(onSet: (url: string) => void, pathPrefix: string) {
   const [busy, setBusy] = useState(false);
-  const presign = useGetPresignedUrl();
+  const uploadImage = useUploadImage();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onFile = async (f: File | null) => {
     if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      toast.error("Only image files are supported.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      toast.error("Image is too large (max 30 MB).");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setBusy(true);
     try {
-      const { uploadUrl, publicUrl } = await presign.mutateAsync({
-        filename: f.name,
-        contentType: f.type,
-        bucket: "site-assets",
-        pathPrefix,
-      });
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: f,
-        headers: { "Content-Type": f.type },
-      });
+      const { publicUrl } = await uploadImage.mutateAsync({ file: f, pathPrefix });
+      if (!publicUrl) throw new Error("Upload failed: no file URL returned");
       onSet(publicUrl);
       toast.success("Uploaded");
-    } catch {
-      toast.error("Upload failed");
+    } catch (err: any) {
+      toast.error(uploadErrorMessage(err, "Upload failed"));
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -2506,50 +2520,50 @@ function useCoverUploader(onSet: (url: string) => void, pathPrefix: string) {
           type="file"
           accept="image/*"
           className="hidden"
+          disabled={busy}
           onChange={(e) => onFile(e.target.files?.[0] ?? null)}
         />
       </label>
     ),
+    busy,
   };
 }
 
 function usePdfUploader(onSet: (url: string) => void) {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
-  const presign = useGetPresignedUrl();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const onFile = async (f: File | null) => {
     if (!f) return;
     if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
       toast.error("Only PDF files are supported.");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
+    if (f.size > MAX_UPLOAD_BYTES) {
+      toast.error("PDF is too large (max 30 MB).");
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
     setBusy(true);
     setProgress(0);
     try {
-      const { uploadUrl, publicUrl } = await presign.mutateAsync({
-        filename: f.name,
-        contentType: "application/pdf",
-        bucket: "site-assets",
-        pathPrefix: "ebooks/pdfs",
+      // Same server-side upload endpoint the other admin pages use (App Resources
+      // uploads PDFs through it too); non-image files are stored unchanged.
+      const params = new URLSearchParams({ pathPrefix: "ebooks/pdfs", filename: f.name }).toString();
+      const res: any = await apiClient.post(`/api/upload/image?${params}`, f, {
+        headers: { "Content-Type": "application/pdf" },
+        onUploadProgress: (e) => {
+          if (e.total) setProgress(Math.round((e.loaded / e.total) * 100));
+        },
       });
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", uploadUrl);
-        xhr.setRequestHeader("Content-Type", "application/pdf");
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
-        };
-        xhr.onload = () =>
-          xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload ${xhr.status}`));
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.send(f);
-      });
+      const publicUrl: string | undefined = (res?.data || res)?.publicUrl;
+      if (!publicUrl) throw new Error("PDF upload failed: no file URL returned");
       onSet(publicUrl);
       toast.success("PDF uploaded");
-    } catch {
-      toast.error("PDF upload failed");
+    } catch (err: any) {
+      toast.error(uploadErrorMessage(err, "PDF upload failed"));
     } finally {
       setBusy(false);
       setProgress(0);
@@ -2574,9 +2588,11 @@ function usePdfUploader(onSet: (url: string) => void) {
           type="file"
           accept="application/pdf,.pdf"
           className="hidden"
+          disabled={busy}
           onChange={(e) => onFile(e.target.files?.[0] ?? null)}
         />
       </label>
     ),
+    busy,
   };
 }
