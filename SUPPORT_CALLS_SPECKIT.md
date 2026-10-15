@@ -1,6 +1,6 @@
 # SUPPORT_CALLS_SPECKIT — Expert Support Call booking
 
-Status: **APPROVED — in progress** (2026-10-15). Decisions in §7.
+Status: **IMPLEMENTED — in review** (2026-10-15). Decisions in §7, known limitations in §10.
 
 ## 1. Context — what exists today
 
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS support_call_sessions (
   duration_minutes INT          NOT NULL DEFAULT 45,
   capacity         INT          NOT NULL DEFAULT 1,   -- 1 for 1:1 calls, N for group calls
   meeting_url      TEXT,                        -- PRIVATE: only via the join endpoint
-  status           VARCHAR(20)  NOT NULL DEFAULT 'scheduled',  -- scheduled | cancelled | completed
+  status           VARCHAR(20)  NOT NULL DEFAULT 'scheduled',  -- scheduled | cancelled
   created_by       TEXT,
   created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
@@ -80,12 +80,12 @@ Member (`user` module, `/api/user/support-calls`, `authenticateUser`; member id 
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/api/user/support-calls?category=<type>` | `{ category, quota: {allocated, used, reserved, remaining}, sessions: [{id, title, description, hostName, startsAt, durationMinutes, seatsLeft, myBooking: {id, status} \| null}], history: [{bookingId, title, startsAt, status}] }` — upcoming sessions only, no other members, no meeting URL |
+| GET | `/api/user/support-calls?category=<type>` | `{ category, quota: {allocated, used, reserved, remaining}, sessions: [{id, title, description, hostName, startsAt, durationMinutes, capacity, seatsLeft, myBooking: {id, status, canCancel, canJoin, joinMessage} | null}]\| null}], history: [{bookingId, title, startsAt, status}] }` — upcoming sessions only, no other members, no meeting URL |
 | POST | `/api/user/support-calls/sessions/:id/book` | `{ booking }` · 409 already booked / full · 403 no quota / not included |
 | POST | `/api/user/support-calls/bookings/:id/cancel` | `{ booking }` · 403 past cutoff / not yours (404 for other members' ids) |
 | GET | `/api/user/support-calls/bookings/:id/join` | `{ meetingUrl }` inside the join window only |
 
-Admin (`support-entitlements` module, Clerk `authenticate`):
+Admin (`support-entitlements` module, Clerk `authenticate`; admin/super_admin see all sessions, mentors only their own — other mentors' ids return 404):
 
 | Method | Path |
 |---|---|
@@ -124,3 +124,11 @@ Unit: `supportCallLogic` (quota incl. reserved, 0/0 category, join window edges,
 ## 9. Delivery
 
 One PR into `main` (backend + admin + website; reviewed). After approval/merge: admin deploys via Vercel from `main`; backend + website reach production via the usual `main → production` promotion (only on explicit go-ahead). Live check needs a member login and an admin login; reported as unverified otherwise.
+
+## 10. Implementation notes & known limitations
+
+- Files: backend `lib/supportCallLogic.ts` (+ tests), `lib/supportCallData.ts`, `plugins/prisma.ts` (DDL), `modules/user/{controller,routes}.ts`, `modules/support-entitlements/{controller,routes}.ts`; admin `app/support-calls/page.tsx`, `lib/hooks/useTbt.ts`, `components/layout/Sidebar.tsx`; website `components/features/mentorship/SupportCallPanel.tsx`, `MentorshipDashboard.tsx` (tiles → buttons), `lib/hooks/useSupportCalls.ts`, `lib/api/services/supportCalls.service.ts`.
+- The dashboard's "Quota Remaining" summary chip is unchanged (allocated − completed). The per-category panel additionally shows reserved bookings and "left to book".
+- Panel strings follow the surrounding `MentorshipDashboard` (hard-coded English), not `uiStrings`.
+- Pre-existing, not changed: on a 375px screen `/courses` overflows by ~42px because of the Weekly Revenue chart's Daily/Cumulative toggle (`MentorshipDashboard.tsx` WeeklyChartSection, since 2dbec1f0). Mobile browsers then lay the page out wider than the screen, which also pushes the panel's close button partly off-screen (Escape / backdrop tap still close it). Fixing that toggle is a separate change.
+- Pre-existing, not changed: 8 `MentorshipDashboard.test.tsx` tests fail on `main` ("No QueryClient set").

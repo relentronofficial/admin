@@ -2611,3 +2611,127 @@ export const useMemberDailyActivity = (memberId: string, days = 30) =>
     staleTime: 60_000,
     placeholderData: keepPreviousData,
   });
+
+// ── Expert Support Call sessions (/api/support-entitlements/sessions) ─────────
+// Admin/super_admin see every session; mentors only the ones they host (server-enforced).
+export type SupportCallCategory =
+  | 'sales_support' | 'tech_support' | 'content_support' | 'ad_support' | 'one_to_one' | 'group_call';
+
+export interface SupportSession {
+  id: string;
+  category: SupportCallCategory;
+  title: string;
+  description: string | null;
+  hostAdminId: string | null;
+  hostName: string | null;
+  startsAt: string;
+  durationMinutes: number;
+  capacity: number;
+  status: 'scheduled' | 'cancelled';
+  meetingUrl: string | null;
+  hasMeetingUrl: boolean;
+  activeBookings: number;
+  pendingAttendance: number;
+  seatsLeft: number;
+}
+
+export interface SupportSessionInput {
+  category?: SupportCallCategory;
+  title?: string;
+  description?: string | null;
+  hostAdminId?: string | null;
+  hostName?: string | null;
+  startsAt?: string;
+  durationMinutes?: number;
+  capacity?: number;
+  meetingUrl?: string | null;
+}
+
+export const useListSupportSessions = (params: { category?: string; scope?: 'upcoming' | 'past' | 'all' }) =>
+  useQuery({
+    queryKey: ['support-sessions', params],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/support-entitlements/sessions', { params });
+      return (res?.data ?? []) as SupportSession[];
+    },
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  });
+
+export const useCreateSupportSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: SupportSessionInput) => {
+      const res: any = await apiClient.post('/api/support-entitlements/sessions', data);
+      return res?.data as SupportSession;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
+  });
+};
+
+export const useUpdateSupportSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: SupportSessionInput }) => {
+      const res: any = await apiClient.put(`/api/support-entitlements/sessions/${id}`, data);
+      return res?.data as SupportSession;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
+  });
+};
+
+export const useCancelSupportSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res: any = await apiClient.post(`/api/support-entitlements/sessions/${id}/cancel`);
+      return res?.data as { id: string; status: string; cancelledBookings: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['support-sessions'] });
+      qc.invalidateQueries({ queryKey: ['support-session-bookings'] });
+    },
+  });
+};
+
+export const useSupportSessionBookings = (sessionId: string | null) =>
+  useQuery({
+    queryKey: ['support-session-bookings', sessionId],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/support-entitlements/sessions/${sessionId}/bookings`);
+      return (res?.data ?? []) as Array<{
+        id: string; status: 'booked' | 'cancelled' | 'attended' | 'no_show'; bookedAt: string;
+        cancelledAt: string | null; memberId: string; memberName: string; phone: string | null; email: string | null;
+      }>;
+    },
+    enabled: !!sessionId,
+    staleTime: 15_000,
+  });
+
+export const useMarkSupportBooking = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'attended' | 'no_show' }) => {
+      const res: any = await apiClient.put(`/api/support-entitlements/bookings/${id}/status`, { status });
+      return res?.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['support-session-bookings'] });
+      qc.invalidateQueries({ queryKey: ['support-sessions'] });
+    },
+  });
+};
+
+/** Admin accounts that can host support calls (host picker for admin/super_admin). */
+export const useSupportCallHosts = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['support-call-hosts'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/admins/search', {
+        params: { q: '', role: 'mentor,admin,super_admin', limit: 100 },
+      });
+      return ((Array.isArray(res) ? res : res?.data) ?? []) as Array<{ id: string; fullName: string; role: string }>;
+    },
+    enabled,
+    staleTime: 5 * 60_000,
+  });

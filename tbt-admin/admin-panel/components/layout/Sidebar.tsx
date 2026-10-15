@@ -37,6 +37,7 @@ import {
   Coins,
   CreditCard,
   Terminal,
+  PhoneCall,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -103,6 +104,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     label: "Support",
     items: [
       { name: "Support", href: "/support", icon: MessageSquare },
+      { name: "Support Calls", href: "/support-calls", icon: PhoneCall },
     ],
   },
   {
