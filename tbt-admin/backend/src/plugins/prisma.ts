@@ -158,22 +158,6 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS ad_close_label TEXT NOT NULL DEFAULT 'Close',
           ADD COLUMN IF NOT EXISTS ad_unmute_label TEXT NOT NULL DEFAULT 'Tap for sound'
       `),
-      // Batch program Weekly Activity Graph labels (member /batch-program)
-      prisma.$executeRawUnsafe(`
-        ALTER TABLE ui_strings
-          ADD COLUMN IF NOT EXISTS batch_graph_title TEXT NOT NULL DEFAULT 'Weekly Activity Graph',
-          ADD COLUMN IF NOT EXISTS batch_graph_subtitle TEXT NOT NULL DEFAULT 'Each dot is an assigned activity. The line shows the share completed each week.',
-          ADD COLUMN IF NOT EXISTS batch_graph_empty TEXT NOT NULL DEFAULT 'No activities have been assigned to your program yet.',
-          ADD COLUMN IF NOT EXISTS batch_graph_error TEXT NOT NULL DEFAULT 'Could not load your weekly graph.',
-          ADD COLUMN IF NOT EXISTS batch_graph_no_activities_week TEXT NOT NULL DEFAULT 'No activities',
-          ADD COLUMN IF NOT EXISTS batch_graph_completed_label TEXT NOT NULL DEFAULT 'Completed',
-          ADD COLUMN IF NOT EXISTS batch_graph_submitted_label TEXT NOT NULL DEFAULT 'Awaiting review',
-          ADD COLUMN IF NOT EXISTS batch_graph_in_progress_label TEXT NOT NULL DEFAULT 'In progress',
-          ADD COLUMN IF NOT EXISTS batch_graph_needs_revision_label TEXT NOT NULL DEFAULT 'Needs revision',
-          ADD COLUMN IF NOT EXISTS batch_graph_not_started_label TEXT NOT NULL DEFAULT 'Not started',
-          ADD COLUMN IF NOT EXISTS batch_graph_upcoming_label TEXT NOT NULL DEFAULT 'Upcoming',
-          ADD COLUMN IF NOT EXISTS batch_graph_day_label TEXT NOT NULL DEFAULT 'Day'
-      `).catch(() => {}),
       // miscellaneous single-column additions (different tables, fully parallel)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS login_bg_images JSONB`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS task_timer_seconds INT NOT NULL DEFAULT 300`).catch(() => {}),
