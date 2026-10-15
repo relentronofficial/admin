@@ -2177,7 +2177,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     `).catch(() => {});
     await prisma.$executeRawUnsafe(`
       INSERT INTO module_config (module_name, display_name, sort_order)
-      VALUES ('Product', 'Product Mastery', 1),
+      VALUES ('Introduction', 'Introduction', 0),
+             ('Product', 'Product Mastery', 1),
              ('Service', 'Service Excellence', 2),
              ('Coaching', 'Business Coaching', 3)
       ON CONFLICT (module_name) DO NOTHING
