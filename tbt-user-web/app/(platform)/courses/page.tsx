@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
-import { Lock, Play, BookOpen, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Lock, Play, BookOpen, ChevronDown } from "lucide-react";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -256,7 +257,7 @@ function ModuleCard({
 
 // ── ModuleHero (single-module dedicated banner) ───────────────────────────────
 
-function ModuleHero({ cfg, programName, courseCount }: { cfg: ModuleConfig; programName: string | null; courseCount: number }) {
+function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg: ModuleConfig; programName: string | null; courseCount: number; memberBusinessType?: string | null }) {
   const accent = cfg.accentColor ?? "var(--color-accent)";
   return (
     <div
@@ -307,6 +308,12 @@ function ModuleHero({ cfg, programName, courseCount }: { cfg: ModuleConfig; prog
             <BookOpen size={13} />
             <span>{courseCount} {courseCount === 1 ? "course" : "courses"}</span>
           </div>
+          {memberBusinessType && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 999, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 11, fontWeight: 600 }}>
+              <span style={{ opacity: 0.7 }}>Filtered for:</span>
+              <span>{memberBusinessType}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -368,8 +375,9 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
 // ── OnboardingVideosSection ───────────────────────────────────────────────────
 
 function OnboardingVideosSection() {
+  const router = useRouter();
   const { data: contentSteps } = useOnboardingContent();
-  const [activeVideo, setActiveVideo] = useState<{ title: string; videoUrl: string } | null>(null);
+  const [expanded, setExpanded] = useState(true);
 
   const videoSteps = useMemo(
     () => ((contentSteps as any[]) ?? []).filter((s: any) => !!s.videoUrl),
@@ -379,171 +387,156 @@ function OnboardingVideosSection() {
   if (videoSteps.length === 0) return null;
 
   return (
-    <>
-      <section>
-        <div className="mb-4">
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
-            Getting Started
-          </h2>
-          <p style={{ margin: "4px 0 0", fontSize: 13, color: "#92929b" }}>
-            Watch these to get the most from your membership
-          </p>
+    <section>
+      {/* Module accordion header */}
+      <button
+        onClick={() => setExpanded(v => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 18px",
+          borderRadius: expanded ? "12px 12px 0 0" : 12,
+          background: "#1a1a1e",
+          border: "1px solid #2a2a2e",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              background: "rgba(220,38,38,0.12)",
+              border: "1px solid rgba(220,38,38,0.25)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Play size={14} style={{ color: "var(--color-accent)" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f7" }}>Introduction</div>
+            <div style={{ fontSize: 12, color: "#92929b", marginTop: 1 }}>
+              {videoSteps.length} {videoSteps.length === 1 ? "video" : "videos"} · Watch these to get the most from your membership
+            </div>
+          </div>
         </div>
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          {videoSteps.map((step: any) => (
-            <button
-              key={step.id}
-              onClick={() => setActiveVideo({ title: step.title, videoUrl: step.videoUrl })}
-              style={{
-                flex: "0 0 200px",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <div
-                className="relative overflow-hidden"
-                style={{
-                  height: 130,
-                  borderRadius: 10,
-                  background: "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
-                  border: "1px solid #414146",
-                  transition: "border-color 0.2s",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    opacity: 0.2,
-                    background:
-                      "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
-                  }}
-                />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 7,
-                    right: 8,
-                    zIndex: 1,
-                    color: "white",
-                    fontSize: 7,
-                    fontWeight: 800,
-                  }}
-                >
-                  ✦ TBT BUSINESS
-                </div>
-                <div
-                  className="absolute inset-0 flex items-center justify-center"
-                  style={{ zIndex: 1 }}
-                >
-                  <div
-                    style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: "50%",
-                      background: "rgba(255,255,255,0.15)",
-                      border: "1.5px solid rgba(255,255,255,0.4)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "white",
-                    }}
-                  >
-                    <Play size={16} />
-                  </div>
-                </div>
-              </div>
-              <div
-                className="line-clamp-2 mt-2"
-                style={{ fontSize: 12, fontWeight: 600, color: "#d0d0d8", lineHeight: 1.35 }}
-              >
-                {step.title}
-              </div>
-            </button>
-          ))}
-        </div>
-      </section>
+        <ChevronDown
+          size={18}
+          style={{
+            color: "#92929b",
+            flexShrink: 0,
+            transition: "transform 0.2s",
+            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        />
+      </button>
 
-      {activeVideo && (
+      {/* Expanded video grid */}
+      {expanded && (
         <div
           style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9999,
-            background: "rgba(0,0,0,0.95)",
-            display: "flex",
-            flexDirection: "column",
+            background: "#141418",
+            border: "1px solid #2a2a2e",
+            borderTop: "none",
+            borderRadius: "0 0 12px 12px",
+            padding: "16px 18px 20px",
           }}
         >
           <div
             style={{
-              padding: "16px 20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderBottom: "1px solid #2a2a2e",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+              gap: 14,
             }}
           >
-            <h3 style={{ color: "#f5f5f7", fontSize: 16, fontWeight: 600, margin: 0 }}>
-              {activeVideo.title}
-            </h3>
-            <button
-              onClick={() => setActiveVideo(null)}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                color: "#a0a0a8",
-                padding: 4,
-                display: "flex",
-                alignItems: "center",
-              }}
-            >
-              <X size={22} />
-            </button>
-          </div>
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: "20px",
-            }}
-          >
-            <div
-              style={{
-                width: "100%",
-                maxWidth: 900,
-                aspectRatio: "16/9",
-                borderRadius: 12,
-                overflow: "hidden",
-                background: "#000",
-              }}
-            >
-              {activeVideo.videoUrl.endsWith(".m3u8") ? (
-                // eslint-disable-next-line jsx-a11y/media-has-caption
-                <video
-                  src={activeVideo.videoUrl}
-                  controls
-                  autoPlay
-                  style={{ width: "100%", height: "100%" }}
-                />
-              ) : (
-                <iframe
-                  src={activeVideo.videoUrl}
-                  style={{ width: "100%", height: "100%", border: "none" }}
-                  allow="autoplay; fullscreen"
-                />
-              )}
-            </div>
+            {videoSteps.map((step: any) => (
+              <button
+                key={step.id}
+                onClick={() => router.push(`/courses/intro/${step.id}`)}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+              >
+                {/* 16:9 thumbnail */}
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    aspectRatio: "16/9",
+                    borderRadius: 10,
+                    overflow: "hidden",
+                    background: "#0a0a0e",
+                    border: "1px solid #2a2a2e",
+                  }}
+                >
+                  {step.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={step.imageUrl}
+                      alt={step.title}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: "100%",
+                        height: "100%",
+                        background: "linear-gradient(135deg, #0d1f2d 0%, #0a0a0e 100%)",
+                      }}
+                    />
+                  )}
+                  {/* Dark gradient overlay at bottom */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 50%)",
+                    }}
+                  />
+                  {/* Play button */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: "50%",
+                        background: "rgba(255,255,255,0.92)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
+                      }}
+                    >
+                      <Play size={15} style={{ color: "#111", marginLeft: 2 }} />
+                    </div>
+                  </div>
+                </div>
+                {/* Title below thumbnail */}
+                <div
+                  className="line-clamp-2"
+                  style={{ fontSize: 13, fontWeight: 600, color: "#d0d0d8", lineHeight: 1.4, marginTop: 8 }}
+                >
+                  {step.title}
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )}
-    </>
+    </section>
   );
 }
 
@@ -817,6 +810,7 @@ export default function CoursesPage() {
   // the catalog to it; this only drives the choose/change prompt.
   const mentorship: { selection: string[] | null; selectable: string[]; effective: string[]; selectionRequired: boolean } | null =
     meta.mentorship ?? null;
+  const memberBusinessType: string | null = meta.memberBusinessType ?? null;
   const showModuleSelector = !!mentorship && (mentorship.selectionRequired || editingModules);
 
   const myEnrollments: any[]  = enrollments ?? [];
@@ -930,6 +924,7 @@ export default function CoursesPage() {
             cfg={singleModuleCfg ?? { moduleName: allowedModules[0], displayName: allowedModules[0], tagline: null, description: null, bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: 0 }}
             programName={programName}
             courseCount={filteredCourses.length}
+            memberBusinessType={memberBusinessType}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
           <CourseGrid
@@ -967,6 +962,16 @@ export default function CoursesPage() {
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "#f5f5f7" }}>
                 {uiStrings?.coursesProgramTitle ?? "Your Program Modules"}
               </h2>
+            </div>
+          )}
+
+          {/* Business type filter badge */}
+          {memberBusinessType && (
+            <div className="flex items-center gap-2 mb-4">
+              <span style={{ fontSize: 12, color: "#92929b" }}>Filtered for:</span>
+              <span style={{ padding: "2px 10px", borderRadius: 999, background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)", color: "var(--color-accent)", fontSize: 12, fontWeight: 600 }}>
+                {memberBusinessType}
+              </span>
             </div>
           )}
 
@@ -1012,10 +1017,18 @@ export default function CoursesPage() {
       {(personalizationState === "direct" || personalizationState === "new") && (allCourses.length > 0 || catalogLoading) && (
         <section>
           {personalizationState === "direct" && (
-            <div className="mb-5">
+            <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
                 {uiStrings?.coursesCatalogTitle ?? "Modules"}
               </h2>
+              {memberBusinessType && (
+                <div className="flex items-center gap-2">
+                  <span style={{ fontSize: 12, color: "#92929b" }}>Filtered for:</span>
+                  <span style={{ padding: "2px 10px", borderRadius: 999, background: "rgba(220,38,38,0.1)", border: "1px solid rgba(220,38,38,0.25)", color: "var(--color-accent)", fontSize: 12, fontWeight: 600 }}>
+                    {memberBusinessType}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
