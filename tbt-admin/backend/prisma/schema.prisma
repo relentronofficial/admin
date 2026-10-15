@@ -2556,19 +2556,6 @@ model UiStrings {
   batchRequiredLabel          String   @default("Required") @map("batch_required_label")
   batchOptionalLabel          String   @default("Optional") @map("batch_optional_label")
   batchWeekLabel              String   @default("Week") @map("batch_week_label")
-  // Weekly Activity Graph (member /batch-program)
-  batchGraphTitle               String @default("Weekly Activity Graph") @map("batch_graph_title")
-  batchGraphSubtitle            String @default("Each dot is an assigned activity. The line shows the share completed each week.") @map("batch_graph_subtitle")
-  batchGraphEmpty               String @default("No activities have been assigned to your program yet.") @map("batch_graph_empty")
-  batchGraphError               String @default("Could not load your weekly graph.") @map("batch_graph_error")
-  batchGraphNoActivitiesWeek    String @default("No activities") @map("batch_graph_no_activities_week")
-  batchGraphCompletedLabel      String @default("Completed") @map("batch_graph_completed_label")
-  batchGraphSubmittedLabel      String @default("Awaiting review") @map("batch_graph_submitted_label")
-  batchGraphInProgressLabel     String @default("In progress") @map("batch_graph_in_progress_label")
-  batchGraphNeedsRevisionLabel  String @default("Needs revision") @map("batch_graph_needs_revision_label")
-  batchGraphNotStartedLabel     String @default("Not started") @map("batch_graph_not_started_label")
-  batchGraphUpcomingLabel       String @default("Upcoming") @map("batch_graph_upcoming_label")
-  batchGraphDayLabel            String @default("Day") @map("batch_graph_day_label")
 
   // Advertisement overlay (TBT_ADS_SPECKIT.md §9). Every string the ad overlay
   // shows comes from here — the clients keep hardcoded English fallbacks only
