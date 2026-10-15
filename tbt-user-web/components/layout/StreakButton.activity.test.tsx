@@ -108,6 +108,44 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     expect(flat(tierEl())).toBe("–");
   });
 
+  it("both counters share one layout so the numbers line up on every width", () => {
+    render(navbar());
+    for (const el of [streakEl(), tierEl()]) {
+      expect(el.className).toContain("items-center");
+      expect(el.className).toContain("h-8");
+      // Icon is never hidden on small screens — both icon + number always show.
+      const icon = el.querySelector("svg")!;
+      expect(icon).not.toBeNull();
+      expect(icon.getAttribute("class") ?? "").not.toMatch(/\bhidden\b/);
+    }
+    // Same height + padding classes on both.
+    const sizing = (el: HTMLElement) => el.className.split(" ").filter((c) => /^(h|px|gap)-/.test(c)).sort();
+    expect(sizing(streakEl())).toEqual(sizing(tierEl()));
+  });
+
+  it("no decorative glow or pulsing badge, even when the streak is at risk", () => {
+    state.streak = {
+      data: { currentStreak: 4, longestStreak: 4, activeToday: false, totalActiveDays: 4, pointsToday: 0, last7Days: [] },
+      isLoading: false,
+    };
+    const { container } = render(navbar());
+    expect(container.querySelector(".animate-pulse")).toBeNull();
+    expect(container.innerHTML).not.toMatch(/drop-shadow/);
+    expect(flat(streakEl())).toBe("4");
+    // The at-risk explanation is still available in the dropdown.
+    fireEvent.click(streakEl());
+    expect(screen.getByRole("dialog").textContent).toMatch(/keep your streak alive/i);
+  });
+
+  it("each member's own numbers are shown (no shared or hardcoded values)", () => {
+    const { rerender } = render(navbar());
+    expect([flat(streakEl()), flat(tierEl())]).toEqual(["5", "12"]);
+    state.streak = streak(0);
+    state.stats = stats(3, 104);
+    rerender(navbar());
+    expect([flat(streakEl()), flat(tierEl())]).toEqual(["0", "3"]);
+  });
+
   it("streak dropdown still works", () => {
     render(navbar());
     fireEvent.click(streakEl());
