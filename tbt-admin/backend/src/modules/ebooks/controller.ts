@@ -741,15 +741,11 @@ export async function listActiveCategoriesHandler(req: FastifyRequest, reply: Fa
 }
 
 // Member-facing publish gate: books with publishDate in the future
-// stay hidden until that date. Rows without a publishDate (legacy /
-// unscheduled) pass through unchanged.
+// stay hidden until that date. publishDate is non-nullable
+// (@default(now())), so a `{ publishDate: null }` branch is rejected by
+// Prisma ("Argument `publishDate` is missing") and 500s every query.
 function publishedFilter(): any {
-  return {
-    OR: [
-      { publishDate: null },
-      { publishDate: { lte: new Date() } },
-    ],
-  };
+  return { publishDate: { lte: new Date() } };
 }
 
 // Per-batch access: null → unrestricted, [] → hidden, [id, ...] →
