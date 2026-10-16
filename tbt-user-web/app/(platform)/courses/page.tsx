@@ -9,7 +9,6 @@ import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useOnboardingContent } from "@/lib/hooks/useOnboarding";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
-import { MentorshipModuleSelector } from "@/components/features/mentorship/MentorshipModulePicker";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -813,20 +812,13 @@ export default function CoursesPage() {
   const { data: catalogData, isLoading: catalogLoading, isError: catalogError, refetch: refetchCatalog } = useCourses({
     limit: 100,
   });
-  const [editingModules, setEditingModules] = useState(false);
-
   const allCourses: any[]    = catalogData?.data ?? [];
   const meta: any            = (catalogData as any)?.meta ?? {};
   const personalizationState: "new" | "program" | "direct" = meta.personalizationState ?? "new";
   const allowedModules: string[]     = meta.allowedModules ?? [];
   const programName: string | null   = meta.programName ?? null;
   const moduleConfigs: ModuleConfig[] = meta.moduleConfigs ?? [];
-  // Member's own mentorship-module selection — the server has already filtered
-  // the catalog to it; this only drives the choose/change prompt.
-  const mentorship: { selection: string[] | null; selectable: string[]; effective: string[]; selectionRequired: boolean } | null =
-    meta.mentorship ?? null;
   const memberBusinessType: string | null = meta.memberBusinessType ?? null;
-  const showModuleSelector = !!mentorship && (mentorship.selectionRequired || editingModules);
 
   const myEnrollments: any[]  = enrollments ?? [];
   const savedVideos: any[]    = (watchHistoryData as any)?.data ?? [];
@@ -896,33 +888,6 @@ export default function CoursesPage() {
         </div>
       )}
 
-      {/* ── Mentorship module selection — choose (first time / module withdrawn) or change ── */}
-      {showModuleSelector && mentorship && (
-        <section className="rounded-2xl p-6" style={{ background: "#1a1a1e", border: "1px solid #2a2a2e" }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#f5f5f7" }}>
-            {uiStrings?.mentorshipModulesPromptTitle ?? "Choose your mentorship modules"}
-          </h2>
-          <p style={{ fontSize: 13, color: "#92929b", margin: "6px 0 18px" }}>
-            {mentorship.selection !== null && mentorship.selectionRequired
-              ? (uiStrings?.mentorshipModulesUnavailable ?? "Your selected modules are no longer available. Please choose again.")
-              : (uiStrings?.mentorshipModulesPromptDesc ?? "Select the mentorship modules you joined. Only these modules will be shown here.")}
-          </p>
-          <MentorshipModuleSelector
-            onDone={() => setEditingModules(false)}
-            onCancel={mentorship.selectionRequired ? undefined : () => setEditingModules(false)}
-          />
-        </section>
-      )}
-      {!showModuleSelector && mentorship && mentorship.selection !== null && mentorship.selectable.length > 1 && (
-        <div className="flex justify-end" style={{ marginBottom: -16 }}>
-          <button
-            onClick={() => setEditingModules(true)}
-            style={{ padding: "6px 14px", borderRadius: 9, background: "#242428", border: "1px solid #414146", color: "#f5f5f7", fontSize: 12, fontWeight: 600 }}
-          >
-            {uiStrings?.mentorshipModulesChange ?? "Change modules"}
-          </button>
-        </div>
-      )}
 
       {/* ── Onboarding Videos ─────────────────────────────────────────── */}
       <OnboardingVideosSection cfg={moduleConfigs.find(m => m.moduleName === 'Introduction') ?? null} />
