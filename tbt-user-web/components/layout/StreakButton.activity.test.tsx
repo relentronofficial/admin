@@ -68,13 +68,13 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
   it("renders two independent elements with their own label and value", () => {
     render(navbar());
     expect(flat(streakEl())).toBe("5");
-    expect(flat(tierEl())).toBe("12");
+    expect(flat(tierEl())).toBe("12/90d");
     // Neither sits inside the other's container.
     expect(streakEl().contains(tierEl())).toBe(false);
     expect(tierEl().contains(streakEl())).toBe(false);
-    // Numbers only — no "day streak", "Tier Access" or "/90d" text is shown.
+    // Values only: the streak count, and Tier Access as active/total days. No labels shown.
     expect(streakEl().textContent).not.toMatch(/streak|Tier|\d+d/i);
-    expect(tierEl().textContent).not.toMatch(/streak|Tier|\/|\d+d/i);
+    expect(tierEl().textContent).not.toMatch(/streak|Tier/i);
     // Full context stays available to screen readers / tooltip.
     expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 12/90d");
     expect(streakEl().getAttribute("aria-label")).toBe("Learning Streak: 5 days");
@@ -85,14 +85,14 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     state.streak = streak(9);
     rerender(navbar());
     expect(flat(streakEl())).toBe("9");
-    expect(flat(tierEl())).toBe("12");
+    expect(flat(tierEl())).toBe("12/90d");
   });
 
   it("changing Tier Access does not change the streak", () => {
     const { rerender } = render(navbar());
     state.stats = stats(15, 90);
     rerender(navbar());
-    expect(flat(tierEl())).toBe("15");
+    expect(flat(tierEl())).toBe("15/90d");
     expect(flat(streakEl())).toBe("5");
   });
 
@@ -100,6 +100,7 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     state.stats = stats(15, 104);
     render(<>{navbar()}<MentorshipDashboard /></>);
     expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 15/104d");
+    expect(flat(tierEl())).toBe("15/104d");
     expect(tierTile()).toBe("15/104d");
   });
 
@@ -116,10 +117,8 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     for (const el of [streakEl(), tierEl()]) {
       expect(el.className).toContain("items-center");
       expect(el.className).toContain("h-8");
-      // Icon is never hidden on small screens — both icon + number always show.
-      const icon = el.querySelector("svg")!;
-      expect(icon).not.toBeNull();
-      expect(icon.getAttribute("class") ?? "").not.toMatch(/\bhidden\b/);
+      // No icon on either counter (no fire icon, no calendar icon) — value only.
+      expect(el.querySelector("svg")).toBeNull();
     }
     // Same height + padding classes on both.
     const sizing = (el: HTMLElement) => el.className.split(" ").filter((c) => /^(h|px|gap)-/.test(c)).sort();
@@ -142,11 +141,17 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
 
   it("each member's own numbers are shown (no shared or hardcoded values)", () => {
     const { rerender } = render(navbar());
-    expect([flat(streakEl()), flat(tierEl())]).toEqual(["5", "12"]);
+    expect([flat(streakEl()), flat(tierEl())]).toEqual(["5", "12/90d"]);
     state.streak = streak(0);
     state.stats = stats(3, 104);
     rerender(navbar());
-    expect([flat(streakEl()), flat(tierEl())]).toEqual(["0", "3"]);
+    expect([flat(streakEl()), flat(tierEl())]).toEqual(["0", "3/104d"]);
+  });
+
+  it("Tier Access falls back to the day count when the program has no duration", () => {
+    state.stats = stats(7, 0);
+    render(navbar());
+    expect(flat(tierEl())).toBe("7d");
   });
 
   it("streak dropdown still works", () => {
