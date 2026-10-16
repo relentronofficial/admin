@@ -307,11 +307,17 @@ export default function SupportCallsPage() {
   const canPickHost = me?.role === "admin" || me?.role === "super_admin";
   const [category, setCategory] = useState<string>("");
   const [scope, setScope] = useState<"upcoming" | "past" | "all">("upcoming");
+  const [callType, setCallType] = useState<"all" | "one_to_one" | "group">("all");
   const [editing, setEditing] = useState<SupportSession | null | "new">(null);
   const [viewing, setViewing] = useState<SupportSession | null>(null);
   const params = useMemo(() => ({ ...(category ? { category } : {}), scope }), [category, scope]);
   const { data: sessions = [], isLoading, isError, error, refetch } = useListSupportSessions(params);
   const cancel = useCancelSupportSession();
+  const filteredSessions = useMemo(() => {
+    if (callType === "all") return sessions;
+    if (callType === "one_to_one") return sessions.filter((s) => s.capacity === 1);
+    return sessions.filter((s) => s.capacity > 1);
+  }, [sessions, callType]);
 
   const doCancel = async (s: SupportSession) => {
     const msg = s.activeBookings > 0
@@ -372,6 +378,11 @@ export default function SupportCallsPage() {
             <option value="">All categories</option>
             {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
           </select>
+          <select className={cn(INPUT, "w-auto h-10")} value={callType} onChange={(e) => setCallType(e.target.value as typeof callType)}>
+            <option value="all">All call types</option>
+            <option value="one_to_one">1:1 only</option>
+            <option value="group">Group only</option>
+          </select>
         </div>
 
         {isLoading ? (
@@ -384,21 +395,25 @@ export default function SupportCallsPage() {
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#ef4444]">
             Could not load sessions. <button className="underline" onClick={() => refetch()}>Retry</button>
           </div>
-        ) : sessions.length === 0 ? (
+        ) : filteredSessions.length === 0 ? (
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#606060]">
-            No {scope === "all" ? "" : scope} sessions{category ? ` for ${CATEGORY_LABEL[category]}` : ""}.
+            No {scope === "all" ? "" : scope} sessions{category ? ` for ${CATEGORY_LABEL[category]}` : ""}{callType !== "all" ? ` (${callType === "one_to_one" ? "1:1" : "group"} filter active)` : ""}.
           </div>
         ) : (
           <div className="space-y-3">
-            {sessions.map((s) => {
+            {filteredSessions.map((s) => {
               const cancelled = s.status === "cancelled";
               const upcoming = new Date(s.startsAt).getTime() > Date.now();
+              const isOneToOne = s.capacity === 1;
               return (
                 <div key={s.id} className={cn("bg-[#181818] border border-[#2a2a2a] rounded-xl p-5", cancelled && "opacity-60")}>
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div className="min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#1f1f1f] text-[#a0a0a0]">{CATEGORY_LABEL[s.category]}</span>
+                        {isOneToOne && (
+                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#818cf8", background: "rgba(129,140,248,0.15)" }}>1:1</span>
+                        )}
                         {cancelled && (
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: BOOKING_BADGE.cancelled.color, background: BOOKING_BADGE.cancelled.bg }}>
                             Cancelled
