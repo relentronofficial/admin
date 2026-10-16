@@ -91,6 +91,9 @@ export const useMarkLessonComplete = (courseId: string) => {
         queryClient.invalidateQueries({ queryKey: ["course-xp", courseId] });
         queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
         queryClient.invalidateQueries({ queryKey: ["certificate-eligibility", courseId] });
+        // awardVideoStreakPoints fires fire-and-forget on the backend — bust
+        // the cache so the profile streak-points section reflects the award.
+        queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
       }
     },
   });
@@ -105,6 +108,7 @@ export const useSubmitCourseQuiz = (courseId: string, episodeId: string) => {
       queryClient.invalidateQueries({ queryKey: ["course-leaderboard", courseId] });
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
       queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
+      queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
     },
   });
 };

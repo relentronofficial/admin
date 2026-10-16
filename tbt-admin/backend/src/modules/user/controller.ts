@@ -7420,14 +7420,16 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         settingsRows,
         weeklyFbRows,
       ] = await Promise.all([
-        // Q1: today's watched time (IST date comparison)
+        // Q1: today's active minutes from the heartbeat-based bitset tracker.
+        // member_daily_activity stores a 1440-bit string (one bit per minute of the
+        // day); counting set bits gives accurate on-platform time, not cumulative
+        // video-watched seconds.
         prisma.$queryRawUnsafe<any[]>(
-          `SELECT COALESCE(SUM(watched_seconds), 0)::float AS total_secs
-           FROM member_episode_progress
-           WHERE member_id = $1::uuid
-             AND DATE(updated_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE AT TIME ZONE 'Asia/Kolkata'`,
+          `SELECT COALESCE(length(replace(active_bits::text, '0', ''))::int, 0) AS active_minutes
+           FROM member_daily_activity
+           WHERE member_id = $1::uuid AND activity_date = ${ACTIVITY_DATE_SQL}`,
           memberId,
-        ).catch(() => [{ total_secs: 0 }]),
+        ).catch(() => [{ active_minutes: 0 }]),
 
         // Q2: total enrolled episodes across all enrolled courses
         prisma.$queryRawUnsafe<any[]>(
@@ -7445,7 +7447,8 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
           memberId,
         ).catch(() => [{ cnt: 0 }]),
 
-        // Q4: batch task stats (approved submissions / total active tasks)
+        // Q4: task stats — batch-inline tasks + program tasks for the batch's program.
+        // Uses a JOIN to pick up program_id without a separate query.
         batchId
           ? prisma.$queryRawUnsafe<any[]>(
               `SELECT
@@ -7453,7 +7456,11 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
                  COUNT(DISTINCT ts.task_id) FILTER (WHERE ts.status = 'approved')::int AS completed_tasks
                FROM tasks t
                LEFT JOIN task_submissions ts ON ts.task_id = t.id AND ts.member_id = $1::uuid
-               WHERE t.batch_id = $2::uuid AND t.is_active = true`,
+               LEFT JOIN batches b ON b.id = $2::uuid
+               WHERE (
+                 t.batch_id = $2::uuid
+                 OR (t.program_id = b.program_id AND t.batch_id IS NULL AND b.program_id IS NOT NULL)
+               ) AND t.is_active = true`,
               memberId, batchId,
             ).catch(() => [{ total_tasks: 0, completed_tasks: 0 }])
           : Promise.resolve([{ total_tasks: 0, completed_tasks: 0 }]),
@@ -7499,7 +7506,7 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         })(),
       ]);
 
-      const dailyTimeSpentHrs = Number(timeRows[0]?.total_secs ?? 0) / 3600;
+      const dailyTimeSpentHrs = Number(timeRows[0]?.active_minutes ?? 0) / 60;
       const totalEpisodes = Number(episodeCountRows[0]?.cnt ?? 0);
       const completedEpisodes = Number(completedEpRows[0]?.cnt ?? 0);
       const tasksTotal = Number(taskRows[0]?.total_tasks ?? 0);
@@ -7508,11 +7515,14 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
       const streakDays = Number((streakRow as any)?.currentStreak ?? 0);
       const weeklyReportSubmitted = weeklyFbRows.length > 0;
 
-      // Days elapsed since batch started
+      // Days elapsed — compare IST date strings so midnight rollover is always correct.
       let daysElapsed = 0;
       if (batchData && (batchData as any).startsAt) {
-        const startMs = new Date((batchData as any).startsAt).getTime();
-        daysElapsed = Math.max(0, Math.floor((Date.now() - startMs) / (86400 * 1000)));
+        const startDay = localDayKey(new Date((batchData as any).startsAt), PROGRAM_TZ);
+        const todayDay = localDayKey(new Date(), PROGRAM_TZ);
+        daysElapsed = Math.max(0, Math.floor(
+          (new Date(`${todayDay}T00:00:00Z`).getTime() - new Date(`${startDay}T00:00:00Z`).getTime()) / (86400 * 1000)
+        ));
       }
 
       const baseDays = (batchData as any)?.snapshotDays ?? (batchData as any)?.program?.durationDays ?? 90;
