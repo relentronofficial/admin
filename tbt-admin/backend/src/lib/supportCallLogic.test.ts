@@ -131,3 +131,15 @@ describe('canManageSupportSession', () => {
     }
   });
 });
+
+describe('one_to_one rules', () => {
+  const base = { now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active', quota: quota(3) };
+  it('capacity=1 session is bookable when no one has booked yet', () => {
+    // A 1:1 call is exclusive: first booker gets it.
+    expect(canBook({ ...base, session: session({ capacity: 1 }), activeBookingCount: 0 })).toEqual({ ok: true });
+  });
+  it('capacity=1 session is full the moment one active booking exists', () => {
+    // The second caller is rejected immediately — no partial seats for a 1:1 call.
+    expect(canBook({ ...base, session: session({ capacity: 1 }), activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' });
+  });
+});

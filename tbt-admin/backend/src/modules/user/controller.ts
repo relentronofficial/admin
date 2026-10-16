@@ -6815,11 +6815,41 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
          RETURNING id, status, booked_at`,
         sessionId, memberId,
       );
-      return { booking: inserted[0] };
+      return { booking: inserted[0], session: s };
     });
 
     if ('error' in result && result.error) return ruleFail(reply, result.error as any);
     const b = (result as any).booking;
+    const sess = (result as any).session;
+
+    // Non-blocking: notify admin that a member booked a support call.
+    void (async () => {
+      try {
+        const m = await request.server.prisma.member.findUnique({
+          where: { id: memberId },
+          select: { firstName: true, lastName: true },
+        });
+        const memberName = `${m?.firstName ?? ''} ${m?.lastName ?? ''}`.trim() || 'Member';
+        const callType = sess.category === 'one_to_one' ? '1:1' : 'group';
+        const notifPayload = {
+          sessionId,
+          bookingId: b.id,
+          category: sess.category as string,
+          title: sess.title as string,
+          startsAt: sess.startsAt.toISOString(),
+          memberName,
+          hostAdminId: (sess.hostAdminId ?? null) as string | null,
+        };
+        request.server.io?.to('admin').emit('admin:support_call_booked', notifPayload);
+        void createAdminNotification(request.server.prisma, {
+          title: 'Support Call Booked',
+          body: `${memberName} booked a ${callType} support call: "${sess.title}".`,
+          type: 'support_call_booked',
+          metadata: notifPayload,
+        });
+      } catch { /* notification failure is non-fatal */ }
+    })();
+
     return reply.status(201).send({
       success: true,
       data: { id: b.id, sessionId, status: b.status, bookedAt: new Date(b.booked_at).toISOString() },

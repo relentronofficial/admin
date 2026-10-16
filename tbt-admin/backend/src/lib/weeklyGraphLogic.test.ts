@@ -4,6 +4,9 @@ import {
   buildWeeklyGraph,
   deriveActivityStatus,
   isTaskVisibleToMember,
+  MAX_TASK_PROGRESS_LEVEL,
+  milestoneLevelForLabel,
+  weekProgressLevel,
   type GraphTaskInput,
 } from './weeklyGraphLogic.js';
 
@@ -150,5 +153,88 @@ describe('buildWeeklyGraph', () => {
     expect(graph.currentWeek).toBe(2);
     expect(graph.weeks[1].isCurrent).toBe(true);
     expect(graph.weeks[1].activities.map((a) => a.taskId)).toEqual(['w', 'x', 'y']);
+  });
+});
+
+describe('milestone axis progress', () => {
+  it('maps admin milestone labels to axis levels (exact, case-insensitive); others are 0', () => {
+    expect(milestoneLevelForLabel('Ads')).toBe(1);
+    expect(milestoneLevelForLabel(' website ')).toBe(2);
+    expect(milestoneLevelForLabel('FUNNELS')).toBe(3);
+    expect(milestoneLevelForLabel('1 lakh')).toBe(0);
+    expect(milestoneLevelForLabel('1 crore')).toBe(0);
+    expect(milestoneLevelForLabel('Launch ads campaign')).toBe(0);
+    expect(milestoneLevelForLabel(null)).toBe(0);
+  });
+
+  it('keeps a week with nothing completed (or nothing assigned) at the baseline', () => {
+    expect(weekProgressLevel({ total: 4, completed: 0, completedMilestoneLevel: 0 })).toBe(0);
+    expect(weekProgressLevel({ total: 0, completed: 0, completedMilestoneLevel: 0 })).toBe(0);
+  });
+
+  it('scales the share of completed tasks onto Ads..Funnels and never past Funnels', () => {
+    expect(weekProgressLevel({ total: 4, completed: 1, completedMilestoneLevel: 0 })).toBe(0.75);
+    expect(weekProgressLevel({ total: 3, completed: 2, completedMilestoneLevel: 0 })).toBe(2);
+    expect(weekProgressLevel({ total: 4, completed: 4, completedMilestoneLevel: 0 })).toBe(MAX_TASK_PROGRESS_LEVEL);
+  });
+
+  it('a completed milestone task lifts the week to at least its milestone level', () => {
+    expect(weekProgressLevel({ total: 10, completed: 1, completedMilestoneLevel: 2 })).toBe(2);
+    expect(weekProgressLevel({ total: 2, completed: 2, completedMilestoneLevel: 1 })).toBe(3);
+  });
+
+  it('derives each week from approved work only; incomplete milestones do not count', () => {
+    const graph = buildWeeklyGraph({
+      memberId: ME,
+      tasks: [
+        task('ads', 1, { isMilestone: true, milestoneLabel: 'Ads' }),
+        task('w1b', 2),
+        task('site', 8, { isMilestone: true, milestoneLabel: 'Website' }),
+        task('w2b', 9),
+        task('w3', 15),
+      ],
+      submissions: [
+        { taskId: 'ads', dayNumber: 1, status: 'approved' },
+        { taskId: 'site', dayNumber: 8, status: 'pending' }, // awaiting review — not completed
+      ],
+      dayProgress: [{ dayNumber: 9, status: 'in_progress', completedTaskIds: ['w2b'] }], // ticked only
+      totalDays: 21,
+      currentDay: 16,
+    });
+    // W1: 1 of 2 done → share 1.5, Ads milestone (1) is lower → 1.5
+    expect(graph.weeks[0].progressLevel).toBe(1.5);
+    // W2: nothing approved → baseline, even though work is submitted/ticked
+    expect(graph.weeks[1].progressLevel).toBe(0);
+    // W3 (current): nothing completed → baseline, not carried up from W1
+    expect(graph.weeks[2].progressLevel).toBe(0);
+  });
+
+  it('plots no point for weeks that have not started', () => {
+    const graph = buildWeeklyGraph({
+      memberId: ME,
+      tasks: [task('a', 1), task('b', 20)],
+      submissions: [{ taskId: 'a', dayNumber: 1, status: 'approved' }],
+      dayProgress: [], totalDays: 28, currentDay: 3,
+    });
+    expect(graph.weeks.map((w) => w.progressLevel)).toEqual([3, null, null, null]);
+  });
+
+  it('follows the configured program length (number of weeks)', () => {
+    const short = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 20 });
+    const long = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 90, currentDay: 20 });
+    expect(short.weeks).toHaveLength(2);
+    expect(long.weeks).toHaveLength(13);
+    expect(long.weeks.slice(0, 3).map((w) => w.progressLevel)).toEqual([0, 0, 0]);
+    expect(long.weeks[3].progressLevel).toBeNull();
+  });
+
+  it('ignores another member\'s completed milestone task', () => {
+    const graph = buildWeeklyGraph({
+      memberId: ME,
+      tasks: [task('mine', 1), task('theirs', 1, { memberId: OTHER, isMilestone: true, milestoneLabel: 'Funnels' })],
+      submissions: [{ taskId: 'theirs', dayNumber: 1, status: 'approved' }],
+      dayProgress: [], totalDays: 7, currentDay: 2,
+    });
+    expect(graph.weeks[0].progressLevel).toBe(0);
   });
 });

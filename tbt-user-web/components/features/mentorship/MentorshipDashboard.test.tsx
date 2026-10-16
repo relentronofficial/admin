@@ -46,9 +46,9 @@ function baseData() {
       data: {
         totalDays: 14, currentDay: 3, currentWeek: 1, hasActivities: true,
         weeks: [
-          { weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, total: 1, completed: 1, requiredTotal: 1, requiredCompleted: 1, completionPercent: 100,
+          { weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, total: 1, completed: 1, requiredTotal: 1, requiredCompleted: 1, completionPercent: 100, progressLevel: 3,
             activities: [{ taskId: "t1", title: "Set up store", dayNumber: 2, isRequired: true, status: "completed", completed: true }] },
-          { weekNumber: 2, startDay: 8, endDay: 14, isCurrent: false, total: 1, completed: 0, requiredTotal: 1, requiredCompleted: 0, completionPercent: 0,
+          { weekNumber: 2, startDay: 8, endDay: 14, isCurrent: false, total: 1, completed: 0, requiredTotal: 1, requiredCompleted: 0, completionPercent: 0, progressLevel: null,
             activities: [{ taskId: "t2", title: "First ad", dayNumber: 9, isRequired: true, status: "upcoming", completed: false }] },
         ],
         summary: { total: 2, completed: 1, completionPercent: 50 },
@@ -97,9 +97,13 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     const h = headings();
     expect(h.indexOf("Weekly Activity Graph")).toBe(h.indexOf("Customer Journey") + 1);
-    // Real activities from the graph data, each with its status.
-    expect(document.body.innerHTML).toContain("Day 2 · Set up store · Completed");
-    expect(document.body.innerHTML).toContain("Day 9 · First ad · Upcoming");
+    // Milestone axis + week labels only; no per-activity detail.
+    const graph = screen.getByRole("img", { name: "Weekly Activity Graph" });
+    for (const label of ["Ads", "Website", "Funnels", "1 lakh", "1 crore", "W1", "W2"]) {
+      expect(graph.textContent).toContain(label);
+    }
+    expect(graph.querySelectorAll("circle")).toHaveLength(1); // W2 has not started
+    expect(document.body.innerHTML).not.toContain("Set up store");
   });
 
   it("shows no graph for a member without a batch", () => {

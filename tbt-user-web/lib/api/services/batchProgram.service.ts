@@ -31,6 +31,12 @@ export interface WeeklyGraphWeek {
   requiredCompleted: number;
   /** null when the week has no assigned activities — nothing is plotted for it */
   completionPercent: number | null;
+  /**
+   * Point height on the milestone axis, from approved work only: 0 = baseline,
+   * 1 = Ads, 2 = Website, 3 = Funnels (task progress never reaches the revenue
+   * milestones). null for weeks that have not started — nothing is plotted.
+   */
+  progressLevel: number | null;
 }
 
 export interface WeeklyGraph {
