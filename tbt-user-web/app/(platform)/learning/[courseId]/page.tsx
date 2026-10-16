@@ -3481,9 +3481,9 @@ export default function CourseDetailPage({
           </div>
         </div>
 
-        <div>
+        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
           {sidebarRows.length === 0 ? (
-            <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
+            <p className="col-span-full text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
               No lessons in this module yet.
             </p>
           ) : (
@@ -3508,238 +3508,244 @@ export default function CourseDetailPage({
               const timerStarted = timerSecs !== undefined;
               const timerDone = timerSecs === 0;
               const timerWarn = timerStarted && !timerDone && (timerSecs ?? focusTimerDuration) <= 60;
+              const thumbUrl = lesson.thumbnailUrl;
 
               return (
                 <React.Fragment key={lesson.id}>
-                  {/* Section header — rendered before first lesson in each group */}
+                  {/* Section header — full-width row spanning all columns */}
                   {isFirstInSection && courseSections.length > 0 && (
-                    section ? (
-                      <button
-                        onClick={() => setCollapsedSections(prev => { const next = new Set(prev); if (next.has(lessonSectionId!)) next.delete(lessonSectionId!); else next.add(lessonSectionId!); return next; })}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left border-b"
-                        style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
-                      >
-                        <ChevronDown size={13} className={`shrink-0 transition-transform ${isSectionCollapsed ? "-rotate-90" : ""}`} style={{ color: "var(--color-text-subtle)" }} />
-                        <p className="flex-1 text-xs font-bold uppercase tracking-wide truncate" style={{ color: "var(--color-text-normal)" }}>{section.title}</p>
-                        {(section as any).timerSeconds != null && (
-                          <span className="text-[10px] shrink-0 font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
-                            <Timer size={9} />
-                            {Math.round((section as any).timerSeconds / 60)}m
+                    <div className="col-span-full">
+                      {section ? (
+                        <button
+                          onClick={() => setCollapsedSections(prev => { const next = new Set(prev); if (next.has(lessonSectionId!)) next.delete(lessonSectionId!); else next.add(lessonSectionId!); return next; })}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded-lg border"
+                          style={{ background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}
+                        >
+                          <ChevronDown size={13} className={`shrink-0 transition-transform ${isSectionCollapsed ? "-rotate-90" : ""}`} style={{ color: "var(--color-text-subtle)" }} />
+                          <p className="flex-1 text-xs font-bold uppercase tracking-wide truncate" style={{ color: "var(--color-text-normal)" }}>{section.title}</p>
+                          {(section as any).timerSeconds != null && (
+                            <span className="text-[10px] shrink-0 font-bold flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}>
+                              <Timer size={9} />
+                              {Math.round((section as any).timerSeconds / 60)}m
+                            </span>
+                          )}
+                          <span
+                            className="text-[10px] shrink-0 font-semibold tabular-nums"
+                            title={`${group.percent}%`}
+                            aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
+                            style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
+                          >
+                            {group.completed}/{group.total}
                           </span>
-                        )}
-                        <span
-                          className="text-[10px] shrink-0 font-semibold tabular-nums"
-                          title={`${group.percent}%`}
-                          aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
-                          style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
-                        >
-                          {group.completed}/{group.total}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-3 px-4 py-2 border-b text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", borderColor: "var(--color-border-subtle)" }}>
-                        <span className="flex-1">General</span>
-                        <span
-                          className="shrink-0 font-semibold tabular-nums normal-case"
-                          title={`${group.percent}%`}
-                          aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
-                          style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
-                        >
-                          {group.completed}/{group.total}
-                        </span>
-                      </div>
-                    )
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                          <span className="flex-1">General</span>
+                          <span
+                            className="shrink-0 font-semibold tabular-nums normal-case"
+                            title={`${group.percent}%`}
+                            aria-label={`${group.completed}/${group.total} (${group.percent}%)`}
+                            style={{ color: group.total > 0 && group.completed === group.total ? "var(--color-success)" : "var(--color-text-disabled)" }}
+                          >
+                            {group.completed}/{group.total}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {!isSectionCollapsed && (
-                  <div className="border-b last:border-b-0" style={{ borderColor: "var(--color-border-subtle)" }}>
-                  <button
-                    // Locked/focus-locked lessons stay clickable (only a missing
-                    // video is a genuine dead end) so the click reaches
-                    // handleSelectLessonWithFocus, which surfaces a toast /
-                    // lifeline prompt instead of doing nothing. A native
-                    // `disabled` button never fires onClick, which would
-                    // silently swallow that feedback.
-                    onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
-                    disabled={!hasVideo}
-                    title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
-                    aria-disabled={!canPlay}
-                    className={cn(
-                      "w-full flex items-center gap-4 px-4 py-4 text-left transition-colors",
-                      canPlay
-                        ? "cursor-pointer hover:opacity-90"
-                        : "cursor-not-allowed opacity-60",
-                    )}
-                    style={{
-                      background: isFocusLocked
-                        ? "rgba(239,68,68,0.04)"
-                        : isActive
-                          ? "color-mix(in srgb, var(--color-accent) 18%, var(--color-bg-surface))"
-                          : "var(--color-bg-surface)",
-                    }}
-                  >
-                    <span
-                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
+                    <div
+                      className="flex flex-col rounded-xl overflow-hidden border transition-all"
                       style={{
-                        background: isLocked || isFocusLocked
-                          ? "var(--color-surface-overlay-md)"
-                          : isCompleted
-                            ? "var(--color-success)"
-                            : isActive
-                              ? "var(--color-accent)"
-                              : "var(--color-surface-overlay-lg)",
-                        color: isLocked || isFocusLocked
-                          ? isFocusLocked ? "#ef4444" : "var(--color-text-disabled)"
-                          : isCompleted || isActive
-                            ? "#fff"
-                            : "var(--color-text-subtle)",
+                        borderColor: isActive ? "var(--color-accent)" : "var(--color-border-subtle)",
+                        boxShadow: isActive ? "0 0 0 1px var(--color-accent)" : "none",
                       }}
                     >
-                      {isLocked || isFocusLocked
-                        ? <Lock size={13} />
-                        : isCompleted
-                          ? <CheckCircle2 size={14} />
-                          : idx + 1}
-                    </span>
-
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-strong)" }}>
-                        {lesson.title}
-                      </p>
-                      {duration && duration > 0 && (
-                        <p className="text-xs mt-0.5 flex items-center gap-1" style={{ color: "var(--color-text-subtle)" }}>
-                          <Clock size={10} /> {fmtDuration(duration)}
-                        </p>
-                      )}
-                      {!isActive && lesson.description && (
-                        <p className="text-xs line-clamp-1 mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                          {lesson.description}
-                        </p>
-                      )}
-                      {/* Quiz badge + XP chip + focus timer */}
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {(lesson as any).hasQuiz && (
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide"
-                            style={{
-                              background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
-                              color: "var(--color-accent)",
-                            }}
-                          >
-                            Quiz
-                          </span>
+                      {/* Thumbnail area */}
+                      <button
+                        onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
+                        disabled={!hasVideo}
+                        title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
+                        aria-disabled={!canPlay}
+                        className={cn(
+                          "relative w-full overflow-hidden",
+                          canPlay ? "cursor-pointer" : "cursor-not-allowed",
                         )}
-                        {((course as any).xpPerEpisode ?? 0) > 0 && (
-                          <span
-                            className="text-[10px] flex items-center gap-0.5 font-semibold"
-                            style={{ color: "var(--color-text-disabled)" }}
-                          >
-                            <Zap size={9} />+{(course as any).xpPerEpisode} XP
-                          </span>
-                        )}
-                        {((lesson as any).streakPoints ?? 0) > 0 && (
-                          <span
-                            className="text-[10px] flex items-center gap-0.5 font-semibold"
-                            style={{ color: "#f59e0b" }}
-                          >
-                            <Coins size={9} />+{(lesson as any).streakPoints} pts
-                          </span>
-                        )}
-                        {reviewDueIds.includes(lesson.id) && (
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
-                            style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
-                          >
-                            <RefreshCw size={8} /> Review
-                          </span>
-                        )}
-                        {/* Focus timer badge — static duration when not started, live countdown when running */}
-                        {!isCompleted && focusTimerDuration > 0 && (
-                          <span
-                            className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded"
-                            style={{
-                              background: timerDone
-                                ? "rgba(34,197,94,0.12)"
-                                : timerWarn
-                                  ? "rgba(239,68,68,0.1)"
-                                  : timerStarted
-                                    ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                                    : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
-                              color: timerDone
-                                ? "#22c55e"
-                                : timerWarn
-                                  ? "#ef4444"
-                                  : timerStarted
-                                    ? "var(--color-accent)"
-                                    : "var(--color-text-secondary)",
-                            }}
-                          >
-                            <Timer size={9} />
-                            {timerDone
-                              ? "Time's up!"
-                              : timerStarted
-                                ? fmtTime(timerSecs!)
-                                : fmtTime(focusTimerDuration)}
-                          </span>
-                        )}
-                      </div>
-                      {/* Live progress bar for active lesson */}
-                      {isActive && livePct > 0 && (
-                        <div className="h-0.5 rounded-full overflow-hidden mt-1.5" style={{ background: "var(--color-progress-track)" }}>
+                        style={{ aspectRatio: "16 / 9" }}
+                      >
+                        {/* Thumbnail image or gradient placeholder */}
+                        {thumbUrl ? (
+                          <img
+                            src={thumbUrl}
+                            alt={lesson.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
                           <div
-                            className="h-full rounded-full transition-all duration-1000"
-                            style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
+                            className="w-full h-full"
+                            style={{ background: "linear-gradient(135deg, var(--color-surface-overlay-xs) 0%, var(--color-surface-overlay-md) 100%)" }}
+                          />
+                        )}
+
+                        {/* Dimming overlay */}
+                        <div
+                          className="absolute inset-0"
+                          style={{ background: isActive ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.35)" }}
+                        />
+
+                        {/* Completion tint */}
+                        {isCompleted && (
+                          <div className="absolute inset-0" style={{ background: "color-mix(in srgb, var(--color-success) 8%, transparent)" }} />
+                        )}
+
+                        {/* Lesson number badge */}
+                        <span
+                          className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
+                          style={{ background: "rgba(0,0,0,0.65)", color: "#fff" }}
+                        >
+                          {idx + 1}
+                        </span>
+
+                        {/* Status icon overlay */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          {isLocked || isFocusLocked ? (
+                            <div
+                              className="w-9 h-9 rounded-full flex items-center justify-center"
+                              style={{ background: "rgba(0,0,0,0.6)" }}
+                            >
+                              <Lock size={15} style={{ color: isFocusLocked ? "#ef4444" : "#fff" }} />
+                            </div>
+                          ) : isActive ? (
+                            <div
+                              className="w-11 h-11 rounded-full flex items-center justify-center"
+                              style={{ background: "var(--color-accent)" }}
+                            >
+                              <Play size={18} fill="#fff" color="#fff" />
+                            </div>
+                          ) : isCompleted ? (
+                            <div
+                              className="w-9 h-9 rounded-full flex items-center justify-center"
+                              style={{ background: "rgba(0,0,0,0.5)" }}
+                            >
+                              <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
+                            </div>
+                          ) : (
+                            <div
+                              className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity opacity-70 hover:opacity-100"
+                              style={{ background: "rgba(0,0,0,0.5)" }}
+                            >
+                              <Play size={15} fill="#fff" color="#fff" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Live progress bar at bottom of thumbnail */}
+                        {isActive && livePct > 0 && (
+                          <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "rgba(0,0,0,0.3)" }}>
+                            <div
+                              className="h-full transition-all duration-1000"
+                              style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
+                            />
+                          </div>
+                        )}
+                      </button>
+
+                      {/* Info strip below thumbnail */}
+                      <div
+                        className="flex-1 flex flex-col px-2.5 py-2"
+                        style={{
+                          background: isActive
+                            ? "color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-surface))"
+                            : isFocusLocked
+                              ? "rgba(239,68,68,0.04)"
+                              : "var(--color-bg-surface)",
+                        }}
+                      >
+                        <p
+                          className={cn("text-xs font-semibold leading-snug line-clamp-2", !canPlay && "opacity-60")}
+                          style={{ color: "var(--color-text-strong)" }}
+                        >
+                          {lesson.title}
+                        </p>
+                        {duration > 0 && (
+                          <p className="text-[10px] flex items-center gap-0.5 mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                            <Clock size={9} /> {fmtDuration(duration)}
+                          </p>
+                        )}
+                        {/* Badges row */}
+                        <div className="flex items-center gap-1 mt-1 flex-wrap">
+                          {(lesson as any).hasQuiz && (
+                            <span
+                              className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide"
+                              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+                            >
+                              Quiz
+                            </span>
+                          )}
+                          {((course as any).xpPerEpisode ?? 0) > 0 && (
+                            <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "var(--color-text-disabled)" }}>
+                              <Zap size={8} />+{(course as any).xpPerEpisode}
+                            </span>
+                          )}
+                          {((lesson as any).streakPoints ?? 0) > 0 && (
+                            <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "#f59e0b" }}>
+                              <Coins size={8} />+{(lesson as any).streakPoints}
+                            </span>
+                          )}
+                          {reviewDueIds.includes(lesson.id) && (
+                            <span
+                              className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
+                              style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
+                            >
+                              <RefreshCw size={7} /> Review
+                            </span>
+                          )}
+                          {!isCompleted && focusTimerDuration > 0 && (
+                            <span
+                              className="flex items-center gap-0.5 text-[9px] font-bold px-1 py-0.5 rounded"
+                              style={{
+                                background: timerDone ? "rgba(34,197,94,0.12)" : timerWarn ? "rgba(239,68,68,0.1)" : timerStarted ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
+                                color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : timerStarted ? "var(--color-accent)" : "var(--color-text-secondary)",
+                              }}
+                            >
+                              <Timer size={8} />
+                              {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(focusTimerDuration)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Focus-locked lifeline banner */}
+                      {isFocusLocked && (
+                        <div
+                          className="flex items-center justify-between gap-2 px-2.5 py-2"
+                          style={{ background: "rgba(239,68,68,0.06)", borderTop: "1px solid rgba(239,68,68,0.15)" }}
+                        >
+                          <span className="text-[10px] font-bold" style={{ color: "#ef4444" }}>Timer expired</span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleUseLifeline(lesson, focusTimerDuration); }}
+                            disabled={lifelineBusy}
+                            aria-busy={lifelineBusy}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-white shrink-0 transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
+                            style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
+                          >
+                            <Zap size={9} />
+                            {lifelinesLeft > 0 ? `${lifelinesLeft} free` : `${LIFELINE_COIN_COST}c`}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Per-lesson resources */}
+                      {(allEpisodeResourcesMap[lesson.id]?.length ?? 0) > 0 && (
+                        <div className="px-2.5 pb-2.5 pt-1" style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
+                          <EpisodeResourcesSection
+                            resources={allEpisodeResourcesMap[lesson.id] ?? []}
+                            heading={uiStrings?.courseResourcesHeading ?? "Resources"}
+                            defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
                           />
                         </div>
                       )}
                     </div>
-
-                    {isActive ? (
-                      <Play size={14} fill="currentColor" style={{ color: "var(--color-accent)", flexShrink: 0 }} />
-                    ) : isCompleted ? (
-                      <CheckCircle2 size={15} style={{ color: "var(--color-success)", flexShrink: 0 }} />
-                    ) : null}
-                  </button>
-
-                  {/* Focus-locked lifeline banner */}
-                  {isFocusLocked && (
-                    <div
-                      className="flex items-center justify-between gap-3 px-4 py-2.5"
-                      style={{ background: "rgba(239,68,68,0.06)", borderTop: "1px solid rgba(239,68,68,0.15)" }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Lock size={12} style={{ color: "#ef4444" }} />
-                        <span className="text-xs font-bold" style={{ color: "#ef4444" }}>
-                          Lesson locked — timer expired
-                        </span>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleUseLifeline(lesson, focusTimerDuration); }}
-                        disabled={lifelineBusy}
-                        aria-busy={lifelineBusy}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white shrink-0 transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-wait"
-                        style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
-                      >
-                        <Zap size={11} />
-                        {lifelinesLeft > 0
-                          ? `Get Lifeline (${lifelinesLeft} free)`
-                          : `Lifeline (${LIFELINE_COIN_COST} coins)`}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Per-lesson resources in lesson list — only rendered when the
-                      lesson actually has resources; showEmpty is intentionally
-                      omitted so empty lessons don't duplicate the card layout. */}
-                  {(allEpisodeResourcesMap[lesson.id]?.length ?? 0) > 0 && (
-                  <div className="px-3 pb-3">
-                    <EpisodeResourcesSection
-                      resources={allEpisodeResourcesMap[lesson.id] ?? []}
-                      heading={uiStrings?.courseResourcesHeading ?? "Resources"}
-                      defaultDownloadLabel={uiStrings?.resourcesDownloadLabel ?? "Download"}
-                    />
-                  </div>
-                  )}
-                  </div>
                   )}
                 </React.Fragment>
               );
