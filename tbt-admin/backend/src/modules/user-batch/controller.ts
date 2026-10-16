@@ -267,8 +267,9 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     // OR the program's shared tasks), filtered to global or own assignments.
     prisma.$queryRawUnsafe<Array<{
       id: string; title: string; day_number: number; sort_order: number; is_required: boolean; member_id: string | null;
+      is_milestone: boolean | null; milestone_label: string | null;
     }>>(
-      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text
+      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text, is_milestone, milestone_label
        FROM tasks
        WHERE is_active = true
          AND (batch_id = $1::uuid OR ($2::uuid IS NOT NULL AND program_id = $2::uuid AND batch_id IS NULL))
@@ -294,6 +295,7 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     tasks: taskRows.map((t) => ({
       id: t.id, title: t.title, dayNumber: t.day_number, sortOrder: t.sort_order,
       isRequired: t.is_required, memberId: t.member_id,
+      isMilestone: t.is_milestone ?? false, milestoneLabel: t.milestone_label,
     })),
     submissions,
     dayProgress: dayProgress.map((p) => ({ dayNumber: p.dayNumber, status: p.status, completedTaskIds: p.completedTaskIds ?? [] })),

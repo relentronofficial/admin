@@ -25,6 +25,9 @@ export interface GraphTaskInput {
   isRequired: boolean;
   /** tasks.member_id — set for a member-specific assignment, null for everyone */
   memberId: string | null;
+  /** tasks.is_milestone / tasks.milestone_label — admin-set on the task form */
+  isMilestone?: boolean;
+  milestoneLabel?: string | null;
 }
 
 export interface GraphSubmissionInput {
@@ -60,6 +63,12 @@ export interface GraphWeek {
   requiredCompleted: number;
   /** completed / total as a whole %, or null when the week has no activities (no point is plotted) */
   completionPercent: number | null;
+  /**
+   * Height of this week's point on the milestone axis (see weekProgressLevel):
+   * 0 = baseline, 1 = Ads, 2 = Website, 3 = Funnels. null for weeks that have
+   * not started yet — nothing is plotted for the future.
+   */
+  progressLevel: number | null;
 }
 
 export interface WeeklyGraph {
@@ -81,6 +90,43 @@ export function isTaskVisibleToMember(task: { memberId: string | null }, memberI
 
 function percent(part: number, whole: number): number | null {
   return whole > 0 ? Math.round((part / whole) * 100) : null;
+}
+
+// ── Milestone axis ───────────────────────────────────────────────────────────
+// The member graph's Y axis is Ads → Website → Funnels → 1 lakh → 1 crore.
+// Only the first three are activity milestones that task completion can
+// evidence. The revenue milestones (levels 4–5) are never reached from tasks:
+// approved tasks do not prove revenue, and the only revenue data stored
+// (member_revenue_reports) is self-reported and unverified.
+
+/** Highest axis level task progress can reach (Funnels). */
+export const MAX_TASK_PROGRESS_LEVEL = 3;
+
+const MILESTONE_LABEL_LEVELS: Record<string, number> = {
+  ad: 1, ads: 1,
+  website: 2,
+  funnel: 3, funnels: 3,
+};
+
+/** Axis level a milestone task's label stands for (exact, case-insensitive), 0 for any other label. */
+export function milestoneLevelForLabel(label: string | null | undefined): number {
+  return MILESTONE_LABEL_LEVELS[(label ?? '').trim().toLowerCase()] ?? 0;
+}
+
+/**
+ * A week's point on the milestone axis, from approved work only:
+ *  - nothing completed (or nothing assigned) → 0, the baseline;
+ *  - otherwise the share of that week's tasks completed, scaled onto
+ *    0–MAX_TASK_PROGRESS_LEVEL (all done = Funnels);
+ *  - raised to a milestone's level when a task the admin marked as the
+ *    Ads / Website / Funnels milestone was completed that week.
+ * Each week stands alone, so a new week starting never lifts the line.
+ */
+export function weekProgressLevel(week: { total: number; completed: number; completedMilestoneLevel: number }): number {
+  if (week.total === 0 || week.completed === 0) return 0;
+  const share = (week.completed / week.total) * MAX_TASK_PROGRESS_LEVEL;
+  const level = Math.max(share, week.completedMilestoneLevel);
+  return Math.round(Math.min(level, MAX_TASK_PROGRESS_LEVEL) * 100) / 100;
 }
 
 /**
@@ -160,8 +206,10 @@ export function buildWeeklyGraph(params: {
       activities: [],
       total: 0, completed: 0, requiredTotal: 0, requiredCompleted: 0,
       completionPercent: null,
+      progressLevel: null,
     };
   });
+  const milestoneLevelByWeek = new Array<number>(weekCount).fill(0);
 
   for (const t of tasks) {
     const status = deriveActivityStatus({
@@ -175,7 +223,13 @@ export function buildWeeklyGraph(params: {
     const week = weeks[getWeekNumber(t.dayNumber) - 1];
     week.activities.push({ taskId: t.id, title: t.title, dayNumber: t.dayNumber, isRequired: t.isRequired, status, completed });
     week.total += 1;
-    if (completed) week.completed += 1;
+    if (completed) {
+      week.completed += 1;
+      if (t.isMilestone) {
+        const w = week.weekNumber - 1;
+        milestoneLevelByWeek[w] = Math.max(milestoneLevelByWeek[w], milestoneLevelForLabel(t.milestoneLabel));
+      }
+    }
     if (t.isRequired) {
       week.requiredTotal += 1;
       if (completed) week.requiredCompleted += 1;
@@ -186,6 +240,9 @@ export function buildWeeklyGraph(params: {
   let completed = 0;
   for (const w of weeks) {
     w.completionPercent = percent(w.completed, w.total);
+    w.progressLevel = w.weekNumber > currentWeek
+      ? null
+      : weekProgressLevel({ total: w.total, completed: w.completed, completedMilestoneLevel: milestoneLevelByWeek[w.weekNumber - 1] });
     total += w.total;
     completed += w.completed;
   }
