@@ -33,7 +33,8 @@ import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModule
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
 import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
-import { demoRevenue, demoSocial, isMentorshipDemoMember, mightBeDemoMember } from '../../lib/mentorshipDemo.js';
+import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
+import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -2228,6 +2229,12 @@ export async function getMyStreakPointsHandler(request: FastifyRequest, reply: F
 export async function getMyStreakHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const prisma = request.server.prisma;
+  // Mentorship demo mode: the streak comes entirely from the demo history, so
+  // the real computation (and its cache) is skipped for the demo member.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, (await buildDemoOverlay(request)).streak);
+  }
   const summary = await cacheGetOrCompute(request.server.redis ?? null, `streak:${memberId}`, 60, async () => {
     await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
     // Only qualifying activity marks a day (lib/activityDays.ts) — coin spends,
@@ -7382,23 +7389,6 @@ export async function updateMentorshipModulesHandler(request: FastifyRequest, re
   return ok(reply, await buildMentorshipModulesPayload(request));
 }
 
-// Mentorship demo mode (lib/mentorshipDemo.ts). True only for the configured
-// member: req.memberId comes from the verified session cookie and the email is
-// read from the DB, so no client input can switch it on. Other members skip the
-// lookup entirely.
-async function isMentorshipDemoRequest(request: FastifyRequest): Promise<boolean> {
-  const memberId = request.memberId!;
-  const config = { memberId: env.MENTORSHIP_DEMO_MEMBER_ID, email: env.MENTORSHIP_DEMO_EMAIL };
-  if (!mightBeDemoMember(memberId, config)) return false;
-  const member = await request.server.prisma.member
-    .findUnique({ where: { id: memberId }, select: { id: true, email: true } })
-    .catch(() => null);
-  return !!member && isMentorshipDemoMember(member, config);
-}
-
-// Invisible marker so an admin can confirm the overlay in devtools / curl.
-const markDemo = (reply: FastifyReply) => reply.header('x-tbt-demo', 'mentorship');
-
 export async function getMentorshipStatsHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const redis = (request.server as any).redis ?? null;
@@ -7567,6 +7557,12 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
     },
   );
 
+  // Demo overlay after the cache (cached value stays real): streak, Tier Access
+  // and task counters from the same demo history as the navbar and the graph.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoStats(result as any, await buildDemoOverlay(request)));
+  }
   return ok(reply, result);
 }
 

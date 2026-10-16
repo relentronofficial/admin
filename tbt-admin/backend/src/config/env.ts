@@ -69,9 +69,10 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
   // Mentorship dashboard demo mode (lib/mentorshipDemo.ts) — overlays demo
-  // values on GET /api/user/mentorship/{revenue,social} for ONE member,
-  // matched by BOTH their members.id and members.email. Writes nothing to the
-  // DB. Leave either unset to disable (the default).
+  // values on the mentorship revenue/social/stats, navbar streak and weekly
+  // activity graph endpoints for ONE member, matched by BOTH their members.id
+  // and members.email. Writes nothing to the DB. Leave either unset to disable
+  // (the default).
   MENTORSHIP_DEMO_MEMBER_ID: z.string().optional().or(z.literal('')),
   MENTORSHIP_DEMO_EMAIL: z.string().optional().or(z.literal('')),
   // Deep-link app associations
