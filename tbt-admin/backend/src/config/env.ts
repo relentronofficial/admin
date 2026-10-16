@@ -68,6 +68,13 @@ const envSchema = z.object({
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
+  // Mentorship dashboard demo mode (lib/mentorshipDemo.ts) — overlays demo
+  // values on the mentorship revenue/social/stats, navbar streak and weekly
+  // activity graph endpoints for ONE member, matched by BOTH their members.id
+  // and members.email. Writes nothing to the DB. Leave either unset to disable
+  // (the default).
+  MENTORSHIP_DEMO_MEMBER_ID: z.string().optional().or(z.literal('')),
+  MENTORSHIP_DEMO_EMAIL: z.string().optional().or(z.literal('')),
   // Deep-link app associations
   //   ANDROID_APP_PACKAGE — the Flutter app's applicationId (e.g. com.tamilbusinesstribe.tbt_app)
   //   ANDROID_APP_SHA256  — comma-separated SHA-256 fingerprints of the Android signing certs

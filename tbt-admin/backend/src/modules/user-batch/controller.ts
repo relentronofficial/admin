@@ -5,6 +5,7 @@ import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
 import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
+import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
 
 // Program calendar for the daily-activity ledger (lib/activityDays.ts): a batch
@@ -247,6 +248,14 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
 export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
   const prisma = req.server.prisma;
+
+  // Mentorship demo mode (lib/mentorshipDemo.ts): the configured member sees a
+  // graph built from the same demo history as their streak and Tier Access.
+  // Real tasks and submissions are not read or changed.
+  if (await isMentorshipDemoRequest(req)) {
+    markDemo(reply);
+    return reply.send({ success: true, data: (await buildDemoOverlay(req)).graph, error: null });
+  }
 
   const member = await prisma.member.findUnique({ where: { id: memberId }, select: { batchId: true } });
   if (!member?.batchId) return reply.send({ success: true, data: null, error: null });

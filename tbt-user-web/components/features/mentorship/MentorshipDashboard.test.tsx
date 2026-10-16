@@ -154,6 +154,40 @@ describe("MentorshipDashboard", () => {
     expect(document.querySelectorAll('svg[aria-label="Weekly revenue and order trajectory"] circle').length).toBe(6);
   });
 
+  it("demo-mode revenue payload: cards, derived metrics and the trajectory chart agree", () => {
+    // Exactly what the backend's demoRevenue({ isoWeek: 42, isoYear: 2026 })
+    // returns (tbt-admin/backend/src/lib/mentorshipDemo.ts).
+    state.revenue = {
+      data: {
+        weekNumber: 42, year: 2026,
+        revenueGenerated: 499900, revenuePrev: 412000, numberOfOrders: 610, ordersPrev: 528,
+        adBudgetSpent: 48500, roas: 10.31, customerAcqCost: 80, organicLeads: 142, leadsPrev: 118,
+        avgOrderValue: 820, rtoReturnsPercent: 4.2, conversionRate: 3.8, platformBadge: null,
+        dailyRevenue: [52000, 61500, 48800, 70200, 88400, 96300, 82700],
+        dailyOrders: [64, 75, 59, 86, 108, 117, 101],
+        updatedAt: null,
+      },
+    };
+    render(<MentorshipDashboard />);
+
+    // Cards
+    expect(screen.getByText("₹4,99,900")).toBeTruthy();
+    expect(screen.getByText("610 Orders")).toBeTruthy();
+    expect(screen.getByText("Avg Order Value: ₹820")).toBeTruthy(); // 499900 / 610
+    expect(screen.getByText("ROAS 10.31×")).toBeTruthy();           // 499900 / 48500
+
+    // Daily chart: all 7 days plotted, peak = best day (Sat ₹96,300 / 117 orders)
+    const chart = 'svg[aria-label="Weekly revenue and order trajectory"]';
+    expect(document.querySelectorAll(`${chart} circle`).length).toBe(7);
+    expect(screen.getByTestId("peak-callout").textContent).toContain("₹96,300");
+    expect(screen.getByTestId("peak-callout").textContent).toContain("117 Orders");
+
+    // Cumulative chart ends at the weekly total shown on the revenue card (₹499,900 → "₹500K" top tick)
+    fireEvent.click(screen.getByText("Cumulative"));
+    const ticks = [...document.querySelectorAll(`${chart} text`)].map((t) => t.textContent);
+    expect(ticks).toContain("₹500K");
+  });
+
   it("keeps the peak on the best daily value in cumulative mode", () => {
     render(<MentorshipDashboard />);
     fireEvent.click(screen.getByText("Cumulative"));

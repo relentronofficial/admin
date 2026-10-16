@@ -33,6 +33,8 @@ import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModule
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
 import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
+import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
+import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -2227,6 +2229,12 @@ export async function getMyStreakPointsHandler(request: FastifyRequest, reply: F
 export async function getMyStreakHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const prisma = request.server.prisma;
+  // Mentorship demo mode: the streak comes entirely from the demo history, so
+  // the real computation (and its cache) is skipped for the demo member.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, (await buildDemoOverlay(request)).streak);
+  }
   const summary = await cacheGetOrCompute(request.server.redis ?? null, `streak:${memberId}`, 60, async () => {
     await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
     // Only qualifying activity marks a day (lib/activityDays.ts) — coin spends,
@@ -7559,12 +7567,23 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
     },
   );
 
+  // Demo overlay after the cache (cached value stays real): streak, Tier Access
+  // and task counters from the same demo history as the navbar and the graph.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoStats(result as any, await buildDemoOverlay(request)));
+  }
   return ok(reply, result);
 }
 
 export async function getMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoRevenue({ isoWeek, isoYear }));
+  }
 
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT * FROM member_revenue_reports
@@ -7601,6 +7620,12 @@ export async function upsertMentorshipRevenueHandler(request: FastifyRequest, re
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
   const body = request.body as Record<string, any>;
+
+  // Demo mode never writes — the member's real revenue rows stay untouched.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoRevenue({ isoWeek, isoYear }));
+  }
 
   const dailyRevenue = Array.isArray(body.dailyRevenue) ? JSON.stringify(body.dailyRevenue) : null;
   const dailyOrders  = Array.isArray(body.dailyOrders)  ? JSON.stringify(body.dailyOrders)  : null;
@@ -7676,6 +7701,11 @@ export async function getMentorshipSocialHandler(request: FastifyRequest, reply:
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
 
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoSocial({ isoWeek, isoYear }));
+  }
+
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT * FROM member_social_reports WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
     memberId, isoWeek, isoYear,
@@ -7706,6 +7736,12 @@ export async function upsertMentorshipSocialHandler(request: FastifyRequest, rep
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
   const body = request.body as Record<string, number | null>;
+
+  // Demo mode never writes — the member's real social rows stay untouched.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoSocial({ isoWeek, isoYear }));
+  }
 
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_social_reports
