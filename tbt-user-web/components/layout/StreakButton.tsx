@@ -57,8 +57,14 @@ export function StreakButton() {
         aria-expanded={open}
         title={title}
       >
-        {/* Streak count only (e.g. 5), no icon — Tier Access is its own navbar
+        {/* Flame + streak count (e.g. 🔥 5). Tier Access is its own, icon-free navbar
             indicator (TierAccessIndicator). The full description is in the aria-label. */}
+        <Flame
+          size={14}
+          aria-hidden="true"
+          className="flex-shrink-0"
+          style={{ color: STREAK_GOLD, fill: STREAK_GOLD }}
+        />
         <span className="text-foreground">{isLoading ? "–" : current}</span>
       </button>
 

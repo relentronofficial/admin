@@ -117,9 +117,15 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     for (const el of [streakEl(), tierEl()]) {
       expect(el.className).toContain("items-center");
       expect(el.className).toContain("h-8");
-      // No icon on either counter (no fire icon, no calendar icon) — value only.
-      expect(el.querySelector("svg")).toBeNull();
     }
+    // Top Streak: exactly one flame icon, before the count (decorative, hidden from screen readers).
+    const icons = streakEl().querySelectorAll("svg");
+    expect(icons).toHaveLength(1);
+    expect(icons[0].classList.contains("lucide-flame")).toBe(true);
+    expect(icons[0].getAttribute("aria-hidden")).toBe("true");
+    expect(streakEl().firstElementChild).toBe(icons[0]);
+    // Tier Access: value only — no fire icon or any other icon.
+    expect(tierEl().querySelector("svg")).toBeNull();
     // Same height + padding classes on both.
     const sizing = (el: HTMLElement) => el.className.split(" ").filter((c) => /^(h|px|gap)-/.test(c)).sort();
     expect(sizing(streakEl())).toEqual(sizing(tierEl()));
