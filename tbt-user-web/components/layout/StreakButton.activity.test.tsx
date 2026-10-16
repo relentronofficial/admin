@@ -21,7 +21,10 @@ vi.mock("@/lib/hooks/useDashboard", () => ({
   useMyStreak: () => state.streak,
   useContinueLearning: () => ({ data: [], isLoading: false }),
 }));
-vi.mock("@/lib/hooks/useBatchProgram", () => ({ useMyBatchProgram: () => ({ data: null, isLoading: false }) }));
+vi.mock("@/lib/hooks/useBatchProgram", () => ({
+  useMyBatchProgram: () => ({ data: null, isLoading: false }),
+  useMyWeeklyGraph: () => ({ data: null, isLoading: false, isError: false }),
+}));
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: allocated - used });
 vi.mock("@/lib/hooks/useUser", () => ({
   useUserSupportQuota: () => ({

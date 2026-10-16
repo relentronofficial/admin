@@ -16,6 +16,7 @@ import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
 import SupportCallPanel from "./SupportCallPanel";
+import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import type { SupportCallCategory } from "@/lib/api/services/supportCalls.service";
 
 // ─── Animation variants ───────────────────────────────────────────────────────
@@ -1738,6 +1739,13 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
             leaderboard
           />
         </div>
+      </motion.div>
+
+      {/* ── D2. Weekly Activity Graph — the member's batch tasks by week, from
+              GET /api/user-batch/weekly-graph. Renders nothing for a member
+              without a batch. ─────────────────────────────────────────────── */}
+      <motion.div variants={fadeUp}>
+        <WeeklyActivityGraph />
       </motion.div>
 
       {/* ── E. Your Revenue Stats (saved weekly numbers) ───────────────── */}
