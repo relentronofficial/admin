@@ -33,6 +33,7 @@ import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModule
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
 import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
+import { demoRevenue, demoSocial, demoStats, isMentorshipDemoMember, mightBeDemoMember, type MentorshipStats } from '../../lib/mentorshipDemo.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -7381,6 +7382,23 @@ export async function updateMentorshipModulesHandler(request: FastifyRequest, re
   return ok(reply, await buildMentorshipModulesPayload(request));
 }
 
+// Mentorship demo mode (lib/mentorshipDemo.ts). True only for the configured
+// member: req.memberId comes from the verified session cookie and the email is
+// read from the DB, so no client input can switch it on. Other members skip the
+// lookup entirely.
+async function isMentorshipDemoRequest(request: FastifyRequest): Promise<boolean> {
+  const memberId = request.memberId!;
+  const config = { memberId: env.MENTORSHIP_DEMO_MEMBER_ID, email: env.MENTORSHIP_DEMO_EMAIL };
+  if (!mightBeDemoMember(memberId, config)) return false;
+  const member = await request.server.prisma.member
+    .findUnique({ where: { id: memberId }, select: { id: true, email: true } })
+    .catch(() => null);
+  return !!member && isMentorshipDemoMember(member, config);
+}
+
+// Invisible marker so an admin can confirm the overlay in devtools / curl.
+const markDemo = (reply: FastifyReply) => reply.header('x-tbt-demo', 'mentorship');
+
 export async function getMentorshipStatsHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const redis = (request.server as any).redis ?? null;
@@ -7549,12 +7567,22 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
     },
   );
 
+  // Overlay after the cache, so the cached value is always the real one.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoStats(result as MentorshipStats));
+  }
   return ok(reply, result);
 }
 
 export async function getMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoRevenue({ isoWeek, isoYear }));
+  }
 
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT * FROM member_revenue_reports
@@ -7591,6 +7619,12 @@ export async function upsertMentorshipRevenueHandler(request: FastifyRequest, re
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
   const body = request.body as Record<string, any>;
+
+  // Demo mode never writes — the member's real revenue rows stay untouched.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoRevenue({ isoWeek, isoYear }));
+  }
 
   const dailyRevenue = Array.isArray(body.dailyRevenue) ? JSON.stringify(body.dailyRevenue) : null;
   const dailyOrders  = Array.isArray(body.dailyOrders)  ? JSON.stringify(body.dailyOrders)  : null;
@@ -7666,6 +7700,11 @@ export async function getMentorshipSocialHandler(request: FastifyRequest, reply:
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
 
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoSocial({ isoWeek, isoYear }));
+  }
+
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT * FROM member_social_reports WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
     memberId, isoWeek, isoYear,
@@ -7696,6 +7735,12 @@ export async function upsertMentorshipSocialHandler(request: FastifyRequest, rep
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
   const body = request.body as Record<string, number | null>;
+
+  // Demo mode never writes — the member's real social rows stay untouched.
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    return ok(reply, demoSocial({ isoWeek, isoYear }));
+  }
 
   const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO member_social_reports
