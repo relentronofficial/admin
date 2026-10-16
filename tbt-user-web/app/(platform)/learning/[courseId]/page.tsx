@@ -40,6 +40,8 @@ import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
 import { buildSectionGroups, completedLessonIds } from "@/lib/utils/sectionProgress";
+import { buildRoadmapLevels } from "@/lib/utils/roadmapLevels";
+import LearningRoadmap from "@/components/features/courses/LearningRoadmap";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
 import { FeedbackModal } from "@/components/features/video/FeedbackModal";
 import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
@@ -2802,9 +2804,17 @@ export default function CourseDetailPage({
   // Course totals count only progress for lessons in this course response —
   // progress rows for hidden episodes would otherwise push it past 100%.
   const completedCount = completedLessonIds(lessons, completedIds).size;
+  // Floating Learning Roadmap: one level per section, from the same groups and
+  // progress as the sidebar (all lessons — not the module-filtered view).
+  const roadmapLevels = buildRoadmapLevels(
+    buildSectionGroups(lessons as any[], courseSections, completedIds),
+    completedIds,
+  );
 
   return (
     <div className="space-y-6 pb-12">
+
+      <LearningRoadmap levels={roadmapLevels} onOpenLesson={(lesson: any) => handleSelectLessonWithFocus(lesson)} />
 
       {/* ── Start-Video Confirmation Dialog ─────────────────────────────────
           Shown before every fresh (not-yet-started, not-yet-completed) lesson
