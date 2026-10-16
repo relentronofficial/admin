@@ -5,9 +5,16 @@
 // from the DB) and passes it in; nothing here trusts client input.
 //
 // Nothing is written to the database. Demo values replace the API responses of
-// GET /api/user/mentorship/{stats,revenue,social} for the target member only;
-// their real rows stay untouched underneath, so unsetting the config restores
-// their real view immediately. Every other member's responses are unchanged.
+// GET /api/user/mentorship/{revenue,social} for the target member only; their
+// real rows stay untouched underneath, so unsetting the config restores their
+// real view immediately. Every other member's responses are unchanged.
+//
+// Scope is deliberately limited to the member-entered business metrics.
+// GET /mentorship/stats is NOT overlaid: its streak, task, episode and active-day
+// counts are also shown on the same page from other real sources (navbar streak,
+// Weekly Activity Graph, Continue Learning, navbar Tier Access), and a demo value
+// there would contradict them. Revenue/social have no second source on the page,
+// and the revenue payload is built so its cards and its daily chart agree.
 //
 // Configured by two backend env vars (both required, see config/env.ts):
 //   MENTORSHIP_DEMO_MEMBER_ID — the target member's stable members.id (UUID)
@@ -62,8 +69,8 @@ export function demoRevenue(week: { isoWeek: number; isoYear: number }) {
     rtoReturnsPercent: 4.2,
     conversionRate: 3.8,
     platformBadge: null,
-    dailyRevenue: DAILY_REVENUE,
-    dailyOrders: DAILY_ORDERS,
+    dailyRevenue: [...DAILY_REVENUE],
+    dailyOrders: [...DAILY_ORDERS],
     updatedAt: null,
   };
 }
@@ -84,43 +91,5 @@ export function demoSocial(week: { isoWeek: number; isoYear: number }) {
     bioLinkClicks: 1320,
     bioLinkClicksPrev: 1045,
     updatedAt: null,
-  };
-}
-
-export interface MentorshipStats {
-  dailyTimeSpentHrs: number;
-  dailyTimeGoalHrs: number;
-  weeklyReportSubmitted: boolean;
-  streakDays: number;
-  totalEpisodes: number;
-  completedEpisodes: number;
-  tasksCompleted: number;
-  tasksTotal: number;
-  leaderboardRank: number | null;
-  daysElapsed: number;
-  activeDays: number;
-  totalDays: number;
-  programName: string | null;
-}
-
-/**
- * Overlays the activity counters; keeps the member's real program identity
- * (programName, totalDays, dailyTimeGoalHrs). Day counts never exceed totalDays.
- */
-export function demoStats(real: MentorshipStats): MentorshipStats {
-  const totalDays = real.totalDays > 0 ? real.totalDays : 90;
-  const daysElapsed = Math.min(30, totalDays);
-  return {
-    ...real,
-    dailyTimeSpentHrs: 1.6,
-    weeklyReportSubmitted: true,
-    streakDays: Math.min(12, daysElapsed),
-    totalEpisodes: 24,
-    completedEpisodes: 18,
-    tasksCompleted: 14,
-    tasksTotal: 20,
-    leaderboardRank: 7,
-    daysElapsed,
-    activeDays: Math.min(26, daysElapsed),
   };
 }

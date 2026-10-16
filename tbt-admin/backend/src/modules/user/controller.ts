@@ -33,7 +33,7 @@ import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModule
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
 import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
-import { demoRevenue, demoSocial, demoStats, isMentorshipDemoMember, mightBeDemoMember, type MentorshipStats } from '../../lib/mentorshipDemo.js';
+import { demoRevenue, demoSocial, isMentorshipDemoMember, mightBeDemoMember } from '../../lib/mentorshipDemo.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -7567,11 +7567,6 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
     },
   );
 
-  // Overlay after the cache, so the cached value is always the real one.
-  if (await isMentorshipDemoRequest(request)) {
-    markDemo(reply);
-    return ok(reply, demoStats(result as MentorshipStats));
-  }
   return ok(reply, result);
 }
 
