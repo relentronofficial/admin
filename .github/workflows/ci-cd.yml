@@ -208,7 +208,7 @@ jobs:
             --min-instances=1 \
             --quiet
 
-  # ── Deploy staging user-web (main branch only) ───────────────────────────
+  # ── Deploy staging user-web to Vercel (main branch only) ────────────────
   deploy-user-web-staging:
     needs: build-user-web
     if: github.ref == 'refs/heads/main' && needs.build-user-web.outputs.changed == 'true'
@@ -217,29 +217,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          node-version: '24'
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Deploy user-web to Cloud Run (staging)
+      - name: Deploy user-web to Vercel (preview)
+        working-directory: tbt-user-web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          gcloud run deploy tbt-user-web-staging \
-            --source tbt-user-web \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --port=3000 \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --min-instances=0 \
-            --set-build-env-vars="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
-            --set-env-vars="NODE_ENV=production" \
-            --quiet
+          npm install -g vercel@latest
+          vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }} --environment=preview
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
 
-  # ── Deploy production user-web (production branch only) ──────────────────
+  # ── Deploy production user-web to Vercel (production branch only) ────────
   deploy-user-web-production:
     needs: build-user-web
     if: github.ref == 'refs/heads/production' && needs.build-user-web.outputs.changed == 'true'
@@ -248,27 +242,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          node-version: '24'
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Deploy user-web to Cloud Run (production)
+      - name: Deploy user-web to Vercel (production)
+        working-directory: tbt-user-web
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          gcloud run deploy tbt-user-web \
-            --source tbt-user-web \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --port=3000 \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
-            --set-env-vars="NODE_ENV=production" \
-            --quiet
+          npm install -g vercel@latest
+          vercel pull --yes --token=${{ secrets.VERCEL_TOKEN }} --environment=production
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
   # ── Deploy staging admin panel (main branch only) ────────────────────────
   deploy-admin-staging:
