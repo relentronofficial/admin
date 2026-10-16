@@ -6,7 +6,7 @@ import { Flame, Trophy, CalendarCheck } from "lucide-react";
 import { useMyStreak } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
-import { NAV_COUNTER_CLASS, NAV_COUNTER_ICON_SIZE, NAV_COUNTER_STYLE } from "./TierAccessIndicator";
+import { NAV_COUNTER_CLASS, NAV_COUNTER_STYLE } from "./TierAccessIndicator";
 
 const STREAK_GOLD = "#f59e0b";
 
@@ -57,15 +57,8 @@ export function StreakButton() {
         aria-expanded={open}
         title={title}
       >
-        {/* Gold flame = today's activity is counted; otherwise the muted default. */}
-        <Flame
-          size={NAV_COUNTER_ICON_SIZE}
-          aria-hidden
-          className="flex-shrink-0"
-          style={flameColor ? { color: flameColor, fill: flameColor } : undefined}
-        />
-        {/* Streak count only (e.g. 🔥 0) — Tier Access is its own navbar indicator
-            (TierAccessIndicator). The full description is in the aria-label. */}
+        {/* Streak count only (e.g. 5), no icon — Tier Access is its own navbar
+            indicator (TierAccessIndicator). The full description is in the aria-label. */}
         <span className="text-foreground">{isLoading ? "–" : current}</span>
       </button>
 
