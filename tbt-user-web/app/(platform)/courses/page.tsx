@@ -380,7 +380,7 @@ function OnboardingVideosSection({ cfg }: { cfg?: ModuleConfig | null }) {
   const [expanded, setExpanded] = useState(true);
 
   const videoSteps = useMemo(
-    () => ((contentSteps as any[]) ?? []).filter((s: any) => !!s.videoUrl),
+    () => (contentSteps as any[]) ?? [],
     [contentSteps]
   );
 

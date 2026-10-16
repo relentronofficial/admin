@@ -18,7 +18,7 @@ export default function IntroVideoPage() {
   }, [contentSteps, stepId]);
 
   const allVideoSteps = useMemo(
-    () => ((contentSteps as any[]) ?? []).filter((s: any) => !!s.videoUrl),
+    () => (contentSteps as any[]) ?? [],
     [contentSteps]
   );
 
@@ -97,22 +97,39 @@ export default function IntroVideoPage() {
               boxShadow: "0 8px 40px rgba(0,0,0,0.6)",
             }}
           >
-            {step.videoUrl.endsWith(".m3u8") ? (
-              // eslint-disable-next-line jsx-a11y/media-has-caption
-              <video
-                src={step.videoUrl}
-                controls
-                autoPlay
-                playsInline
-                style={{ width: "100%", height: "100%", objectFit: "contain" }}
-              />
+            {step.videoUrl ? (
+              step.videoUrl.endsWith(".m3u8") ? (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <video
+                  src={step.videoUrl}
+                  controls
+                  autoPlay
+                  playsInline
+                  style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                />
+              ) : (
+                <iframe
+                  src={step.videoUrl}
+                  allow="autoplay; fullscreen"
+                  allowFullScreen
+                  style={{ width: "100%", height: "100%", border: "none" }}
+                />
+              )
             ) : (
-              <iframe
-                src={step.videoUrl}
-                allow="autoplay; fullscreen"
-                allowFullScreen
-                style={{ width: "100%", height: "100%", border: "none" }}
-              />
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "linear-gradient(135deg, #0d1f2d 0%, #0a0a0e 100%)",
+                  color: "#92929b",
+                  fontSize: 14,
+                }}
+              >
+                Video coming soon
+              </div>
             )}
           </div>
         )}
