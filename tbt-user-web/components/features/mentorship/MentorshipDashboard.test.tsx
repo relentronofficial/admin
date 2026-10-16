@@ -12,7 +12,12 @@ vi.mock("@/lib/hooks/useMentorship", () => ({
   useMentorshipSocial: () => ({ data: null }),
   useUpsertMentorshipSocial: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
-vi.mock("@/lib/hooks/useBatchProgram", () => ({ useMyBatchProgram: () => state.batch }));
+vi.mock("@/lib/hooks/useBatchProgram", () => ({
+  useMyBatchProgram: () => state.batch,
+  useMyWeeklyGraph: () => state.graph,
+}));
+vi.mock("@/lib/hooks/useDashboard", () => ({ useContinueLearning: () => ({ data: [], isLoading: false }) }));
+vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
 vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota }));
 
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: Math.max(0, allocated - used) });
@@ -36,6 +41,20 @@ function baseData() {
       isLoading: false, isError: false, refetch: vi.fn(),
     },
     batch: { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false },
+    // Member with a batch whose graph has one completed and one upcoming activity.
+    graph: {
+      data: {
+        totalDays: 14, currentDay: 3, currentWeek: 1, hasActivities: true,
+        weeks: [
+          { weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, total: 1, completed: 1, requiredTotal: 1, requiredCompleted: 1, completionPercent: 100,
+            activities: [{ taskId: "t1", title: "Set up store", dayNumber: 2, isRequired: true, status: "completed", completed: true }] },
+          { weekNumber: 2, startDay: 8, endDay: 14, isCurrent: false, total: 1, completed: 0, requiredTotal: 1, requiredCompleted: 0, completionPercent: 0,
+            activities: [{ taskId: "t2", title: "First ad", dayNumber: 9, isRequired: true, status: "upcoming", completed: false }] },
+        ],
+        summary: { total: 2, completed: 1, completionPercent: 50 },
+      },
+      isLoading: false, isError: false,
+    },
     revenue: {
       data: {
         weekNumber: 42, year: 2026, // ISO week 42 of 2026 = Mon 12 Oct – Sun 18 Oct
@@ -72,6 +91,21 @@ describe("MentorshipDashboard", () => {
     expect(screen.queryByText(/Social Media/i)).toBeNull();
     // Entry form is collapsed by default
     expect(screen.queryByText("Daily Inputs")).toBeNull();
+  });
+
+  it("shows the member's Weekly Activity Graph right after Customer Journey", () => {
+    render(<MentorshipDashboard />);
+    const h = headings();
+    expect(h.indexOf("Weekly Activity Graph")).toBe(h.indexOf("Customer Journey") + 1);
+    // Real activities from the graph data, each with its status.
+    expect(document.body.innerHTML).toContain("Day 2 · Set up store · Completed");
+    expect(document.body.innerHTML).toContain("Day 9 · First ad · Upcoming");
+  });
+
+  it("shows no graph for a member without a batch", () => {
+    state.graph = { data: null, isLoading: false, isError: false };
+    render(<MentorshipDashboard />);
+    expect(headings()).not.toContain("Weekly Activity Graph");
   });
 
   it("shows API values in the header, journey and support-call cards", () => {
