@@ -2149,6 +2149,54 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       UPDATE plan_entitlements SET sales_call_count = 15, content_call_count = 15 WHERE plan = 'vip'      AND sales_call_count = 0
     `).catch(() => {});
 
+    // ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ──────────────
+    // Sessions published by admins/mentors per category (support_usage.type
+    // values); bookings reserve quota until attendance is marked, which then
+    // writes the support_usage row. meeting_url is private (join endpoint only).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_call_sessions (
+        id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        category         VARCHAR(30)  NOT NULL,
+        title            VARCHAR(200) NOT NULL,
+        description      TEXT,
+        host_admin_id    UUID REFERENCES admins(id) ON DELETE SET NULL,
+        host_name        VARCHAR(120),
+        starts_at        TIMESTAMPTZ  NOT NULL,
+        duration_minutes INT          NOT NULL DEFAULT 45,
+        capacity         INT          NOT NULL DEFAULT 1,
+        meeting_url      TEXT,
+        status           VARCHAR(20)  NOT NULL DEFAULT 'scheduled',
+        created_by       TEXT,
+        created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_call_sessions_category_start ON support_call_sessions(category, starts_at)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_call_sessions_host ON support_call_sessions(host_admin_id)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_call_bookings (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        session_id   UUID NOT NULL REFERENCES support_call_sessions(id) ON DELETE CASCADE,
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        status       VARCHAR(20) NOT NULL DEFAULT 'booked',
+        booked_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        cancelled_at TIMESTAMPTZ,
+        usage_id     UUID REFERENCES support_usage(id) ON DELETE SET NULL,
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    // One live booking per member per session — DB-level duplicate guard.
+    await prisma.$executeRawUnsafe(
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_support_call_bookings_active ON support_call_bookings(session_id, member_id) WHERE status <> 'cancelled'`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_support_call_bookings_member ON support_call_bookings(member_id)`
+    ).catch(() => {});
+
     // ── CP-01: Course page personalization — allowed modules per program ──────
     await prisma.$executeRawUnsafe(
       `ALTER TABLE programs ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT '[]'::jsonb`

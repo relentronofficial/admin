@@ -104,6 +104,10 @@ import {
   getMyConnectionsHandler,
   getMyPostsHandler,
   getSupportQuotaHandler,
+  listSupportCallsHandler,
+  bookSupportCallHandler,
+  cancelSupportCallBookingHandler,
+  joinSupportCallHandler,
   getMyStreakPointsHandler,
   getMyStreakHandler,
   activityHeartbeatHandler,
@@ -142,6 +146,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
   fastify.get('/support-quota', getSupportQuotaHandler);
+
+  // ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ─────────────────
+  fastify.get('/support-calls', listSupportCallsHandler);
+  fastify.post('/support-calls/sessions/:id/book', bookSupportCallHandler);
+  fastify.post('/support-calls/bookings/:id/cancel', cancelSupportCallBookingHandler);
+  fastify.get('/support-calls/bookings/:id/join', joinSupportCallHandler);
 
   // ── Mentorship Dashboard ───────────────────────────────────────────────────
   fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
