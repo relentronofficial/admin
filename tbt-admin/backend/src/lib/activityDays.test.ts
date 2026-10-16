@@ -53,6 +53,17 @@ describe('daily activity → streak + Tier Access', () => {
     expect(a).toEqual(b);
   });
 
+  it('12 eligible active days (with gaps, several actions per day) → Tier Access 12', () => {
+    const days = ['01', '02', '04', '05', '07', '08', '09', '11', '13', '14', '16', '18']
+      .flatMap((d) => [`2026-10-${d}`, `2026-10-${d}`]); // two actions each day
+    expect(metrics(days, '2026-10-18T12:00:00+05:30').tier).toBe(12);
+  });
+
+  it('five consecutive active days ending today → current streak 5', () => {
+    const days = ['2026-10-10', '2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14'];
+    expect(metrics(days, '2026-10-14T21:00:00+05:30')).toEqual({ streak: 5, tier: 5 });
+  });
+
   it('7. duplicate rows from concurrent requests do not add days', () => {
     const dupes = Array.from({ length: 20 }, () => '2026-10-05');
     expect(metrics([...dupes, '2026-10-06', '2026-10-06'], '2026-10-06T09:00:00+05:30')).toEqual({ streak: 2, tier: 2 });

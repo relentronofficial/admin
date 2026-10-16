@@ -6,6 +6,7 @@ import { Flame, Trophy, CalendarCheck } from "lucide-react";
 import { useMyStreak } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
+import { NAV_COUNTER_CLASS, NAV_COUNTER_ICON_SIZE, NAV_COUNTER_STYLE } from "./TierAccessIndicator";
 
 const STREAK_GOLD = "#f59e0b";
 
@@ -27,7 +28,8 @@ export function StreakButton() {
 
   const current = streak?.currentStreak ?? 0;
   const activeToday = !!streak?.activeToday;
-  // Streak exists but nothing logged today yet — it ends at midnight (UTC).
+  // Streak exists but nothing logged today yet — it ends at the program day's
+  // midnight (PROGRAM_TIMEZONE on the backend). Shown as a message in the dropdown.
   const atRisk = current > 0 && !activeToday;
   const flameColor = activeToday ? STREAK_GOLD : undefined;
   const daysUnit = uiStrings?.streakDaysUnit ?? "days";
@@ -46,36 +48,25 @@ export function StreakButton() {
       <button
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "relative flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
+          NAV_COUNTER_CLASS,
+          "transition-colors duration-200",
           open ? "text-foreground" : "text-muted-foreground hover:text-foreground"
         )}
+        style={NAV_COUNTER_STYLE}
         aria-label={`${title}: ${current} ${daysUnit}`}
         aria-expanded={open}
         title={title}
       >
-        <span
-          className={cn(
-            "absolute inset-0 rounded-xl pointer-events-none transition-opacity duration-200",
-            open ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-          )}
-          style={{ background: "color-mix(in srgb, var(--color-accent) 9%, var(--color-surface-overlay))" }}
-        />
+        {/* Gold flame = today's activity is counted; otherwise the muted default. */}
         <Flame
-          size={17}
-          className={cn("relative z-10", activeToday && "drop-shadow-[0_0_6px_rgba(245,158,11,0.6)]")}
+          size={NAV_COUNTER_ICON_SIZE}
+          aria-hidden
+          className="flex-shrink-0"
           style={flameColor ? { color: flameColor, fill: flameColor } : undefined}
         />
         {/* Streak count only (e.g. 🔥 0) — Tier Access is its own navbar indicator
             (TierAccessIndicator). The full description is in the aria-label. */}
-        <span className="relative z-10 text-xs font-bold tabular-nums whitespace-nowrap" style={flameColor ? { color: flameColor } : undefined}>
-          {isLoading ? "–" : current}
-        </span>
-        {atRisk && (
-          <span
-            className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full z-20 animate-pulse"
-            style={{ background: "var(--color-alert)" }}
-          />
-        )}
+        <span className="text-foreground">{isLoading ? "–" : current}</span>
       </button>
 
       {open && (
