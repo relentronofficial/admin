@@ -2,6 +2,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
+  eslint: { ignoreDuringBuilds: true },
   images: {
     remotePatterns: [
       {

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError } from 'zod';
 import { taskInitiativeSchema, updateTaskSchema } from './schema.js';
 import { notifyMembers } from '../../lib/notifications.js';
+import { mergeAudiences, notifyWeeklyGraphChanged, resolveTaskAudience } from '../../lib/weeklyGraphNotify.js';
 
 export async function listTasksHandler(request: FastifyRequest, reply: FastifyReply) {
   const { programId, stepId, page = 1, limit = 500 } = request.query as any;
@@ -91,6 +92,8 @@ export async function createTaskInitiativeHandler(request: FastifyRequest, reply
       ...vals
     );
   }
+  void resolveTaskAudience(request.server.prisma, [task.id]).then((a) =>
+    notifyWeeklyGraphChanged(request.server, a, 'task_created'));
   // Fetch member name for the response
   let memberName: string | null = null;
   if (memberId) {
@@ -127,13 +130,20 @@ export async function updateTaskHandler(request: FastifyRequest, reply: FastifyR
   // Normalize empty-string UUID fields to null (Postgres rejects "" as invalid UUID)
   const data: any = { ...body };
   if (data.stepId === '') data.stepId = null;
+  const audienceBefore = await resolveTaskAudience(request.server.prisma, [id]);
   const task = await request.server.prisma.task.update({ where: { id }, data });
+  // A changed dayNumber moves the activity to another week; refresh everyone
+  // who could see it before or after the change.
+  void resolveTaskAudience(request.server.prisma, [id]).then((after) =>
+    notifyWeeklyGraphChanged(request.server, mergeAudiences(audienceBefore, after), 'task_updated'));
   return reply.send({ success: true, data: task, error: null });
 }
 
 export async function deleteTaskHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
+  const audience = await resolveTaskAudience(request.server.prisma, [id]);
   await request.server.prisma.task.delete({ where: { id } });
+  void notifyWeeklyGraphChanged(request.server, audience, 'task_deleted');
   return reply.send({ success: true, data: null, error: null });
 }
 
@@ -254,5 +264,6 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
     });
   }
 
+  void notifyWeeklyGraphChanged(request.server, { memberIds: [s.member_id] }, 'task_reviewed');
   return reply.send({ success: true, data: { id: subId, status: newStatus }, error: null });
 }

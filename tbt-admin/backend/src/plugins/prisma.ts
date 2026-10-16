@@ -2225,7 +2225,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     `).catch(() => {});
     await prisma.$executeRawUnsafe(`
       INSERT INTO module_config (module_name, display_name, sort_order)
-      VALUES ('Product', 'Product Mastery', 1),
+      VALUES ('Introduction', 'Introduction', 0),
+             ('Product', 'Product Mastery', 1),
              ('Service', 'Service Excellence', 2),
              ('Coaching', 'Business Coaching', 3)
       ON CONFLICT (module_name) DO NOTHING
@@ -2268,7 +2269,19 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
     // (e.g. during rolling deployments where old instances still hold all slots).
-    fastify.log.warn('⚠️ DB connect on startup failed — will retry on first query:', err as any);
+    fastify.log.warn('⚠️ DB connect on startup failed — will retry DDL in 15 s:', err as any);
+    // Retry only the most recently-added columns that may have been skipped.
+    // Wrapped in a long timeout so the old instance has time to release its pool slots.
+    setTimeout(async () => {
+      try {
+        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`).catch(() => {});
+        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`).catch(() => {});
+        await prisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
+        fastify.log.info('✅ Startup DDL retry completed');
+      } catch (retryErr) {
+        fastify.log.warn('⚠️ Startup DDL retry failed:', retryErr as any);
+      }
+    }, 15_000);
   }
 
   fastify.decorate('prisma', prisma);

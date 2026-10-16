@@ -374,7 +374,7 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
 
 // ── OnboardingVideosSection ───────────────────────────────────────────────────
 
-function OnboardingVideosSection() {
+function OnboardingVideosSection({ cfg }: { cfg?: ModuleConfig | null }) {
   const router = useRouter();
   const { data: contentSteps } = useOnboardingContent();
   const [expanded, setExpanded] = useState(true);
@@ -386,8 +386,24 @@ function OnboardingVideosSection() {
 
   if (videoSteps.length === 0) return null;
 
+  const accent = cfg?.accentColor ?? "var(--color-accent)";
+  const title = cfg?.displayName ?? "Introduction";
+  const subtitle = cfg?.tagline ?? `${videoSteps.length} ${videoSteps.length === 1 ? "video" : "videos"} · Watch these to get the most from your membership`;
+
   return (
     <section>
+      {/* Module hero banner — shown when a banner image is configured */}
+      {cfg?.bannerUrl && (
+        <div className="relative overflow-hidden rounded-t-2xl" style={{ height: 120 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={cfg.bannerUrl} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.25) 100%)" }} />
+          <div className="relative flex items-end h-full p-4 gap-2">
+            <span className="overlay-text" style={{ fontSize: 18, fontWeight: 700 }}>{title}</span>
+          </div>
+        </div>
+      )}
+
       {/* Module accordion header */}
       <button
         onClick={() => setExpanded(v => !v)}
@@ -397,9 +413,10 @@ function OnboardingVideosSection() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "14px 18px",
-          borderRadius: expanded ? "12px 12px 0 0" : 12,
+          borderRadius: cfg?.bannerUrl ? (expanded ? "0 0 0 0" : "0 0 12px 12px") : (expanded ? "12px 12px 0 0" : 12),
           background: "#1a1a1e",
           border: "1px solid #2a2a2e",
+          borderTop: cfg?.bannerUrl ? "none" : "1px solid #2a2a2e",
           cursor: "pointer",
           textAlign: "left",
         }}
@@ -410,21 +427,19 @@ function OnboardingVideosSection() {
               width: 34,
               height: 34,
               borderRadius: 8,
-              background: "rgba(220,38,38,0.12)",
-              border: "1px solid rgba(220,38,38,0.25)",
+              background: `color-mix(in srgb, ${accent} 12%, transparent)`,
+              border: `1px solid color-mix(in srgb, ${accent} 25%, transparent)`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               flexShrink: 0,
             }}
           >
-            <Play size={14} style={{ color: "var(--color-accent)" }} />
+            <Play size={14} style={{ color: accent }} />
           </div>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f7" }}>Introduction</div>
-            <div style={{ fontSize: 12, color: "#92929b", marginTop: 1 }}>
-              {videoSteps.length} {videoSteps.length === 1 ? "video" : "videos"} · Watch these to get the most from your membership
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f7" }}>{title}</div>
+            <div style={{ fontSize: 12, color: "#92929b", marginTop: 1 }}>{subtitle}</div>
           </div>
         </div>
         <ChevronDown
@@ -910,7 +925,7 @@ export default function CoursesPage() {
       )}
 
       {/* ── Onboarding Videos ─────────────────────────────────────────── */}
-      <OnboardingVideosSection />
+      <OnboardingVideosSection cfg={moduleConfigs.find(m => m.moduleName === 'Introduction') ?? null} />
 
       {/* ── New Member State — CTA banner (always visible for new members) ── */}
       {personalizationState === "new" && !catalogLoading && !catalogError && (

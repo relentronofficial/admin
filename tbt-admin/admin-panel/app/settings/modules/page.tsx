@@ -6,7 +6,8 @@ import { useModuleConfigs, useUpdateModuleConfig, type ModuleConfig } from '@/li
 import { useGetPresignedUrl } from '@/lib/hooks/useAdmin';
 import toast from 'react-hot-toast';
 
-const MODULE_NAMES = ['Product', 'Service', 'Coaching'];
+const MODULE_NAMES = ['Introduction', 'Product', 'Service', 'Coaching'];
+const MENTORSHIP_MODULES = new Set(['Product', 'Service', 'Coaching']);
 
 export default function ModuleConfigPage() {
   const { data: configs = [], isLoading } = useModuleConfigs();
@@ -71,7 +72,7 @@ export default function ModuleConfigPage() {
           Course Module Branding
         </h1>
         <p className="text-[#a0a0a0] text-sm mb-8">
-          Configure display names, taglines, banners and accent colors for each course module. These control how the /courses page appears to members assigned to a module.
+          Configure display names, taglines, banners and accent colors for each course module. Introduction controls the /courses intro section; Product, Service and Coaching control how the /courses page appears to members assigned to each module.
         </p>
 
         {isLoading ? (
@@ -180,20 +181,22 @@ export default function ModuleConfigPage() {
                     </div>
                   </div>
 
-                  <div className="mb-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={form.isActive !== false}
-                        onChange={e => set(moduleName, 'isActive', e.target.checked)}
-                        style={{ accentColor: '#dc2626' }}
-                      />
-                      <span className="text-sm text-[#f0f0f0]">Offer in mentorship selection</span>
-                    </label>
-                    <p className="text-[#606060] text-xs mt-1">
-                      When off, members can no longer pick this module during onboarding, and members who picked it lose access to its courses until it is turned back on.
-                    </p>
-                  </div>
+                  {MENTORSHIP_MODULES.has(moduleName) && (
+                    <div className="mb-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={form.isActive !== false}
+                          onChange={e => set(moduleName, 'isActive', e.target.checked)}
+                          style={{ accentColor: '#dc2626' }}
+                        />
+                        <span className="text-sm text-[#f0f0f0]">Offer in mentorship selection</span>
+                      </label>
+                      <p className="text-[#606060] text-xs mt-1">
+                        When off, members can no longer pick this module during onboarding, and members who picked it lose access to its courses until it is turned back on.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="mb-5">
                     <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">

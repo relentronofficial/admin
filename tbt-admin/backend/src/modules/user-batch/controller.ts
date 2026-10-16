@@ -2,7 +2,9 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
-import { checklistAvailableActionUrl } from '../../lib/weekChecklistLogic.js';
+import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
+import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
+import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
 
 // Program calendar for the daily-activity ledger (lib/activityDays.ts): a batch
@@ -158,13 +160,20 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
   if (programTasks.length > 0) {
     const ids = programTasks.map((t: any) => t.id);
     const placeholders = ids.map((_: any, i: number) => `$${i + 1}::uuid`).join(',');
-    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null; process_id: string | null; stage_position: number | null }>>(
-      `SELECT id::text, timer_seconds, process_id::text, stage_position FROM tasks WHERE id IN (${placeholders})`,
+    const timerRows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string; timer_seconds: number | null; process_id: string | null; stage_position: number | null; member_id: string | null }>>(
+      `SELECT id::text, timer_seconds, process_id::text, stage_position, member_id::text FROM tasks WHERE id IN (${placeholders})`,
       ...ids
     );
     const timerMap: Record<string, { timerSeconds: number | null; processId: string | null; stagePosition: number | null }> = {};
-    for (const r of timerRows) timerMap[r.id] = { timerSeconds: r.timer_seconds, processId: r.process_id, stagePosition: r.stage_position };
-    programTasksWithTimer = programTasks.map((t: any) => ({ ...t, ...(timerMap[t.id] ?? { timerSeconds: null, processId: null, stagePosition: null }) }));
+    const assignedTo: Record<string, string | null> = {};
+    for (const r of timerRows) {
+      timerMap[r.id] = { timerSeconds: r.timer_seconds, processId: r.process_id, stagePosition: r.stage_position };
+      assignedTo[r.id] = r.member_id;
+    }
+    programTasksWithTimer = programTasks
+      // tasks.member_id assigns a task to one member — never send it to anyone else.
+      .filter((t: any) => isTaskVisibleToMember({ memberId: assignedTo[t.id] ?? null }, memberId))
+      .map((t: any) => ({ ...t, ...(timerMap[t.id] ?? { timerSeconds: null, processId: null, stagePosition: null }) }));
   }
 
   // MG-03: Fetch processes for this batch and compute stageLocked per task
@@ -230,6 +239,69 @@ export async function getMyBatchHandler(req: FastifyRequest, reply: FastifyReply
     },
     error: null,
   });
+}
+
+// GET /api/user-batch/weekly-graph — the signed-in member's weekly activity
+// graph. Scoped to req.memberId only: their batch, active tasks that are
+// global or assigned to them, and their own submissions/day progress.
+export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const prisma = req.server.prisma;
+
+  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { batchId: true } });
+  if (!member?.batchId) return reply.send({ success: true, data: null, error: null });
+  const batchId = member.batchId;
+
+  const batch = await prisma.batch.findUnique({
+    where: { id: batchId },
+    select: { programId: true, snapshotDays: true, startsAt: true, program: { select: { durationDays: true } } },
+  });
+  if (!batch) return reply.send({ success: true, data: null, error: null });
+
+  const [settings, taskRows, submissions, dayProgress] = await Promise.all([
+    prisma.$queryRawUnsafe<Array<{ extended_days: number | null }>>(
+      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
+      batchId, memberId,
+    ),
+    // Same task set as GET /api/user-batch (active, this batch's inline tasks
+    // OR the program's shared tasks), filtered to global or own assignments.
+    prisma.$queryRawUnsafe<Array<{
+      id: string; title: string; day_number: number; sort_order: number; is_required: boolean; member_id: string | null;
+    }>>(
+      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text
+       FROM tasks
+       WHERE is_active = true
+         AND (batch_id = $1::uuid OR ($2::uuid IS NOT NULL AND program_id = $2::uuid AND batch_id IS NULL))
+         AND (member_id IS NULL OR member_id = $3::uuid)`,
+      batchId, batch.programId ?? null, memberId,
+    ),
+    prisma.$queryRawUnsafe<Array<{ taskId: string; dayNumber: number | null; status: string }>>(
+      `SELECT task_id::text AS "taskId", day_number AS "dayNumber", status::text AS status
+       FROM task_submissions WHERE batch_id=$1::uuid AND member_id=$2::uuid`,
+      batchId, memberId,
+    ),
+    prisma.memberDayProgress.findMany({
+      where: { batchId, memberId },
+      select: { dayNumber: true, status: true, completedTaskIds: true },
+    }),
+  ]);
+
+  const baseDays = batch.snapshotDays ?? batch.program?.durationDays ?? 90;
+  const totalDays = baseDays + (settings[0]?.extended_days ?? 0);
+
+  const graph = buildWeeklyGraph({
+    memberId,
+    tasks: taskRows.map((t) => ({
+      id: t.id, title: t.title, dayNumber: t.day_number, sortOrder: t.sort_order,
+      isRequired: t.is_required, memberId: t.member_id,
+    })),
+    submissions,
+    dayProgress: dayProgress.map((p) => ({ dayNumber: p.dayNumber, status: p.status, completedTaskIds: p.completedTaskIds ?? [] })),
+    totalDays,
+    currentDay: getCurrentDayNumber(new Date(batch.startsAt)),
+  });
+
+  return reply.send({ success: true, data: graph, error: null });
 }
 
 // PUT /api/user-batch/:dayNumber — save draft
