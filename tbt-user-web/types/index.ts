@@ -109,6 +109,7 @@ export interface Lesson {
   sectionTitle?: string | null;
   sectionOrder?: number | null;
   sectionTimerSeconds?: number | null;
+  thumbnailUrl?: string | null;
 }
 
 export interface CourseEnrollment {

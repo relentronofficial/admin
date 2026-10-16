@@ -1128,6 +1128,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
       sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
       moduleIds: episodeModuleMap.get(ep.id) ?? [],
+      thumbnailUrl: ep.thumbnailUrl ?? null,
     };
   });
 
