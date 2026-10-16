@@ -1,0 +1,133 @@
+import { describe, it, expect } from 'vitest';
+import {
+  canBook,
+  canCancelBooking,
+  canManageSupportSession,
+  canMarkAttendance,
+  categoryQuota,
+  isSupportCallCategory,
+  joinState,
+  quotaBucketFor,
+  sessionEndsAt,
+} from './supportCallLogic.js';
+import { computeSupportQuota } from './supportQuota.js';
+
+const NOW = new Date('2026-10-20T10:00:00Z');
+const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
+const session = (over: Partial<{ status: string; startsAt: Date; durationMinutes: number; capacity: number; hostAdminId: string | null }> = {}) => ({
+  status: 'scheduled', startsAt: at(24 * 60), durationMinutes: 45, capacity: 1, hostAdminId: 'mentor-1', ...over,
+});
+const quota = (allocated: number, used = 0, reserved = 0) => categoryQuota({ allocated, used, remaining: Math.max(0, allocated - used) }, reserved);
+
+describe('categories', () => {
+  it('accepts exactly the six support_usage types', () => {
+    for (const c of ['sales_support', 'tech_support', 'content_support', 'ad_support', 'one_to_one', 'group_call']) {
+      expect(isSupportCallCategory(c)).toBe(true);
+    }
+    expect(isSupportCallCategory('lifeline')).toBe(false);
+    expect(isSupportCallCategory(undefined)).toBe(false);
+  });
+
+  it('maps each category to its existing quota bucket', () => {
+    const q = computeSupportQuota('p', [{
+      tech_support_days: 1, ad_support_days: 2, group_call_count: 3, call_credit_count: 4, one_to_one_enabled: true,
+      sales_call_count: 5, content_call_count: 6,
+    }], [], []);
+    expect(quotaBucketFor(q, 'tech_support').allocated).toBe(1);
+    expect(quotaBucketFor(q, 'ad_support').allocated).toBe(2);
+    expect(quotaBucketFor(q, 'group_call').allocated).toBe(3);
+    expect(quotaBucketFor(q, 'one_to_one').allocated).toBe(4);
+    expect(quotaBucketFor(q, 'sales_support').allocated).toBe(5);
+    expect(quotaBucketFor(q, 'content_support').allocated).toBe(6);
+  });
+});
+
+describe('categoryQuota', () => {
+  it('subtracts pending reservations from remaining', () => {
+    expect(quota(5, 2, 1)).toEqual({ allocated: 5, used: 2, reserved: 1, remaining: 2 });
+  });
+  it('never goes negative and handles a 0/0 category', () => {
+    expect(quota(0)).toEqual({ allocated: 0, used: 0, reserved: 0, remaining: 0 });
+    expect(quota(1, 3, 2).remaining).toBe(0);
+  });
+});
+
+describe('canBook', () => {
+  const base = { session: session(), now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active', quota: quota(3) };
+  it('allows an eligible member', () => expect(canBook(base)).toEqual({ ok: true }));
+  it('rejects a cancelled session', () => expect(canBook({ ...base, session: session({ status: 'cancelled' }) })).toMatchObject({ ok: false, code: 'session_unavailable' }));
+  it('rejects a session that has started', () => expect(canBook({ ...base, session: session({ startsAt: NOW }) })).toMatchObject({ ok: false, code: 'session_started' }));
+  it('rejects a duplicate booking', () => expect(canBook({ ...base, alreadyBooked: true })).toMatchObject({ ok: false, status: 409, code: 'already_booked' }));
+  it('rejects inactive members', () => expect(canBook({ ...base, memberStatus: 'pending' })).toMatchObject({ ok: false, code: 'member_inactive' }));
+  it('rejects a category not in the plan (0/0)', () => expect(canBook({ ...base, quota: quota(0) })).toMatchObject({ ok: false, code: 'not_included' }));
+  it('rejects when quota is used up', () => expect(canBook({ ...base, quota: quota(2, 2) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
+  it('counts reservations against quota', () => expect(canBook({ ...base, quota: quota(2, 1, 1) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
+  it('rejects a full session', () => expect(canBook({ ...base, activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' }));
+  it('allows a group session with seats left', () => expect(canBook({ ...base, session: session({ capacity: 10 }), activeBookingCount: 9 })).toEqual({ ok: true }));
+});
+
+describe('canCancelBooking', () => {
+  it('allows cancelling more than 2 hours before', () => {
+    expect(canCancelBooking({ bookingStatus: 'booked', session: session({ startsAt: at(121) }), now: NOW })).toEqual({ ok: true });
+    expect(canCancelBooking({ bookingStatus: 'booked', session: session({ startsAt: at(120) }), now: NOW })).toEqual({ ok: true });
+  });
+  it('blocks cancelling inside the 2 hour cutoff', () => {
+    expect(canCancelBooking({ bookingStatus: 'booked', session: session({ startsAt: at(119) }), now: NOW })).toMatchObject({ ok: false, code: 'cancel_cutoff' });
+  });
+  it('blocks cancelling a booking that is not active', () => {
+    for (const s of ['cancelled', 'attended', 'no_show']) {
+      expect(canCancelBooking({ bookingStatus: s, session: session(), now: NOW })).toMatchObject({ ok: false, code: 'not_cancellable' });
+    }
+  });
+});
+
+describe('joinState', () => {
+  const j = (over: Partial<Parameters<typeof joinState>[0]> = {}) =>
+    joinState({ bookingStatus: 'booked', session: session({ startsAt: at(5) }), hasMeetingUrl: true, now: NOW, ...over });
+  it('opens 10 minutes before start', () => {
+    expect(j()).toEqual({ ok: true });
+    expect(j({ session: session({ startsAt: at(10) }) })).toEqual({ ok: true });
+    expect(j({ session: session({ startsAt: at(11) }) })).toMatchObject({ ok: false, reason: 'too_early' });
+  });
+  it('stays open until the session ends, then closes', () => {
+    expect(j({ session: session({ startsAt: at(-45), durationMinutes: 45 }) })).toEqual({ ok: true });
+    expect(j({ session: session({ startsAt: at(-46), durationMinutes: 45 }) })).toMatchObject({ ok: false, reason: 'ended' });
+  });
+  it('needs an active booking, a live session and a link', () => {
+    expect(j({ bookingStatus: 'cancelled' })).toMatchObject({ ok: false, reason: 'not_booked' });
+    expect(j({ bookingStatus: 'no_show' })).toMatchObject({ ok: false, reason: 'not_booked' });
+    expect(j({ bookingStatus: 'attended' })).toEqual({ ok: true });
+    expect(j({ session: session({ startsAt: at(5), status: 'cancelled' }) })).toMatchObject({ ok: false, reason: 'session_cancelled' });
+    expect(j({ hasMeetingUrl: false })).toMatchObject({ ok: false, reason: 'no_link' });
+  });
+  it('computes the end time from duration', () => {
+    expect(sessionEndsAt(session({ startsAt: NOW, durationMinutes: 30 })).toISOString()).toBe('2026-10-20T10:30:00.000Z');
+  });
+});
+
+describe('canMarkAttendance', () => {
+  it('only after start, only once', () => {
+    expect(canMarkAttendance({ bookingStatus: 'booked', session: session({ startsAt: at(-1) }), now: NOW })).toEqual({ ok: true });
+    expect(canMarkAttendance({ bookingStatus: 'booked', session: session({ startsAt: at(1) }), now: NOW })).toMatchObject({ ok: false, code: 'not_started' });
+    expect(canMarkAttendance({ bookingStatus: 'attended', session: session({ startsAt: at(-1) }), now: NOW })).toMatchObject({ ok: false, code: 'already_marked' });
+    expect(canMarkAttendance({ bookingStatus: 'booked', session: session({ startsAt: at(-1), status: 'cancelled' }), now: NOW })).toMatchObject({ ok: false, code: 'session_cancelled' });
+  });
+});
+
+describe('canManageSupportSession', () => {
+  it('lets admin/super_admin manage everything', () => {
+    expect(canManageSupportSession('admin', 'a1', { hostAdminId: 'someone' })).toBe(true);
+    expect(canManageSupportSession('super_admin', 'a1', { hostAdminId: null })).toBe(true);
+  });
+  it('limits mentors to their own sessions', () => {
+    expect(canManageSupportSession('mentor', 'mentor-1', { hostAdminId: 'mentor-1' })).toBe(true);
+    expect(canManageSupportSession('mentor', 'mentor-1', { hostAdminId: 'mentor-2' })).toBe(false);
+    expect(canManageSupportSession('mentor', 'mentor-1', { hostAdminId: null })).toBe(false);
+    expect(canManageSupportSession('mentor', 'mentor-1')).toBe(true); // may use the module at all
+  });
+  it('denies other roles and unknown admins', () => {
+    for (const r of ['account_manager', 'moderator', '', null, undefined]) {
+      expect(canManageSupportSession(r as any, 'x', { hostAdminId: 'x' })).toBe(false);
+    }
+  });
+});

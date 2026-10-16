@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock,
@@ -15,6 +15,8 @@ import { useUserSupportQuota } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
+import SupportCallPanel from "./SupportCallPanel";
+import type { SupportCallCategory } from "@/lib/api/services/supportCalls.service";
 
 // ─── Animation variants ───────────────────────────────────────────────────────
 
@@ -179,11 +181,15 @@ function JourneyTile({
   );
 }
 
-function SupportCallTile({ label, used, total }: { label: string; used: number; total: number }) {
+function SupportCallTile({ label, used, total, onClick }: { label: string; used: number; total: number; onClick: () => void }) {
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   return (
-    <div
-      className="relative rounded-[10px]"
+    <button
+      type="button"
+      onClick={onClick}
+      aria-haspopup="dialog"
+      aria-label={`${label}: ${used} of ${total} calls completed. View sessions`}
+      className="relative block w-full text-left rounded-[10px] cursor-pointer transition-[filter] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#809ed5]"
       style={{ background: "#242428", padding: "10px 12px", height: 53 }}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
@@ -196,7 +202,7 @@ function SupportCallTile({ label, used, total }: { label: string; used: number; 
         {used}
         <span style={{ color: "#93939b", fontWeight: 400 }}>/{total}</span>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -1518,6 +1524,8 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
   const { data: revenue } = useMentorshipRevenue();
   const [showRevenueForm, setShowRevenueForm] = useState(false);
+  const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
+  const closeCallPanel = useCallback(() => setOpenCall(null), []);
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
@@ -1656,13 +1664,14 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} />
-          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} />
-          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} />
-          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} />
-          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} />
-          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} />
+          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated}   onClick={() => setOpenCall({ category: "sales_support",   label: "☎ Sales Calls" })} />
+          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated}    onClick={() => setOpenCall({ category: "tech_support",    label: "⚙ Tech Calls" })} />
+          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} onClick={() => setOpenCall({ category: "content_support", label: "▶ Content Calls" })} />
+          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated}      onClick={() => setOpenCall({ category: "ad_support",      label: "📢 Marketing Calls" })} />
+          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated}    onClick={() => setOpenCall({ category: "one_to_one",      label: "♟ Mentor 1-On-1" })} />
+          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated}      onClick={() => setOpenCall({ category: "group_call",      label: "👥 Live Group Q&A" })} />
         </div>
+        {openCall && <SupportCallPanel category={openCall.category} label={openCall.label} onClose={closeCallPanel} />}
       </motion.div>
 
       {/* ── Customer Journey ─────────────────────────────────────────── */}
