@@ -21,6 +21,11 @@ function levelsFor(completed: string[]) {
   return buildRoadmapLevels(buildSectionGroups(lessons, sections, completed), completed);
 }
 
+const player = vi.hoisted(() => ({ episode: null as any }));
+vi.mock("@/lib/stores/usePodcastPlayer", () => ({
+  usePodcastPlayer: (sel: (s: any) => any) => sel(player),
+}));
+
 let onOpen: ReturnType<typeof vi.fn<(lesson: any) => void>>;
 const renderMap = (completed: string[] = []) => render(<LearningRoadmap levels={levelsFor(completed)} onOpenLesson={onOpen} />);
 const openPanel = () => fireEvent.click(screen.getByRole("button", { name: /^Learning roadmap:/ }));
@@ -28,22 +33,44 @@ const level = (n: number) => screen.getAllByRole("button").find((b) => (b.getAtt
 
 beforeEach(() => {
   onOpen = vi.fn<(lesson: any) => void>();
+  player.episode = null;
 });
 afterEach(cleanup);
 
 describe("LearningRoadmap", () => {
-  it("shows a slim fixed edge tab with the level summary, closed by default", () => {
+  it("is a circular map button fixed to the bottom-right, closed by default", () => {
     renderMap(["a1", "a2"]);
-    const btn = screen.getByRole("button", { name: "Learning roadmap: 1 of 3 levels completed" });
-    expect(btn.className.split(" ")).toContain("fixed");
+    const btn = screen.getByRole("button", { name: "Learning roadmap: 1 of 3 levels completed" }) as HTMLButtonElement;
     const classes = btn.className.split(" ");
-    expect(classes).toContain("left-0");
-    // Fits inside the page side padding (px-4 = 16px, md:px-6 = 24px).
-    expect(classes).toContain("w-4");
-    expect(classes).toContain("md:w-[22px]");
-    expect(btn.textContent).toContain("Roadmap · 1/3");
+    for (const c of ["fixed", "w-12", "h-12", "rounded-full"]) expect(classes).toContain(c);
+    const css = document.querySelector("style")!.textContent!;
+    expect(css).toContain("right: calc(1rem + env(safe-area-inset-right, 0px));");
+    expect(btn.className.split(" ")).toContain("tbt-roadmap-fab");
+    expect(btn.style.getPropertyValue("--tbt-roadmap-fab-offset")).toBe("1rem");
+    expect(css).toContain("bottom: calc(var(--tbt-roadmap-fab-offset, 1rem) + env(safe-area-inset-bottom, 0px));");
+    expect(btn.style.left).toBe("");
+    expect(btn.querySelector("svg")).toBeTruthy(); // map icon instead of text
+    expect(btn.textContent).toBe("");
+    expect(btn.getAttribute("title")).toBe("Learning Roadmap");
     expect(btn.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("glows only while closed; the glow is turned off for reduced motion", () => {
+    const { container } = renderMap();
+    const btn = screen.getByRole("button", { name: /^Learning roadmap:/ });
+    expect(btn.getAttribute("data-glow")).toBe("true");
+    const css = container.querySelector("style")!.textContent!;
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*animation: none/);
+    expect(css).not.toMatch(/(^|\})\s*(button|div|\*)\s*\{/); // styles scoped to .tbt-roadmap-fab only
+    openPanel();
+    expect(btn.getAttribute("data-glow")).toBe("false");
+  });
+
+  it("moves above the podcast mini-player when it is showing", () => {
+    player.episode = { id: "ep1" };
+    renderMap();
+    expect((screen.getByRole("button", { name: /^Learning roadmap:/ }) as HTMLButtonElement).style.getPropertyValue("--tbt-roadmap-fab-offset")).toBe("6rem");
   });
 
   it("opens a panel with one diamond level per section, in order, on a winding path", () => {

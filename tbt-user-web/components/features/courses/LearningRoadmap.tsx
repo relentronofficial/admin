@@ -1,17 +1,16 @@
 "use client";
 
-// Floating Learning Roadmap for a course page. A slim tab fixed to the left edge
-// (vertically centred) opens a panel with a winding path of diamond-shaped
-// levels — one per course section, in order. The tab is 16px wide on phones and
-// 22px from md up, i.e. inside the platform layout's side padding (px-4 / md:px-6),
-// so while closed it never covers the video, lessons, navigation or buttons.
+// Floating Learning Roadmap for a course page. A small circular map button fixed
+// to the bottom-right corner opens a panel with a winding path of diamond-shaped
+// levels — one per course section, in order.
 // Levels come from buildRoadmapLevels (lib/utils/roadmapLevels.ts) over the same
 // section groups and progress the lesson sidebar uses, so nothing is stored or
 // computed separately: progress is the member's existing lesson progress, and
 // unlocking follows the course's existing rules. Clicking an open level hands its
 // next lesson to the page's normal lesson-open flow.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Lock, X } from "lucide-react";
+import { Check, Lock, Map as MapIcon, X } from "lucide-react";
+import { usePodcastPlayer } from "@/lib/stores/usePodcastPlayer";
 import { roadmapSummary, type RoadmapLevel, type RoadmapLesson } from "@/lib/utils/roadmapLevels";
 
 const PANEL_WIDTH = 300;
@@ -70,6 +69,23 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const summary = useMemo(() => roadmapSummary(levels), [levels]);
+  const miniPlayerVisible = usePodcastPlayer((s) => !!s.episode);
+  // Pin the trigger to the *visible* screen corner. `position: fixed` measures from
+  // the layout viewport, which a page wider/taller than a phone screen enlarges, so
+  // plain right/bottom (the CSS fallback) could land off-screen there.
+  const [visibleCorner, setVisibleCorner] = useState<{ right: number; bottom: number } | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setVisibleCorner({ right: vv.offsetLeft + vv.width, bottom: vv.offsetTop + vv.height });
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -216,8 +232,25 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
         </div>
       )}
 
-      {/* Slim edge tab inside the page's side padding: 16px (px-4) on phones,
-          22px (< md:px-6 = 24px) from md up — never over page content. */}
+      {/* Circular trigger, fixed bottom-right (safe-area aware). Lifted above the
+          podcast mini-player when it is showing; z-30 keeps it under the course
+          page's bottom-right XP flashes (z-50). The soft glow runs only while the
+          panel is closed and is disabled for prefers-reduced-motion. */}
+      <style>{`
+        @keyframes tbt-roadmap-fab-glow {
+          0%, 100% { box-shadow: 0 6px 16px rgba(0,0,0,0.28), 0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent); }
+          50% { box-shadow: 0 6px 16px rgba(0,0,0,0.28), 0 0 0 10px color-mix(in srgb, var(--color-accent) 0%, transparent); }
+        }
+        .tbt-roadmap-fab {
+          right: calc(1rem + env(safe-area-inset-right, 0px));
+          bottom: calc(var(--tbt-roadmap-fab-offset, 1rem) + env(safe-area-inset-bottom, 0px));
+        }
+        .tbt-roadmap-fab[data-glow="true"] { animation: tbt-roadmap-fab-glow 2.6s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .tbt-roadmap-fab[data-glow="true"] { animation: none; }
+          .tbt-roadmap-fab { transition: none; }
+        }
+      `}</style>
       <button
         ref={buttonRef}
         type="button"
@@ -225,17 +258,29 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={`Learning roadmap: ${summary.completed} of ${summary.total} levels completed`}
-        className="fixed left-0 top-1/2 z-30 w-4 md:w-[22px] py-3 rounded-r-lg shadow-md flex items-center justify-center"
+        title="Learning Roadmap"
+        data-glow={!open}
+        className="tbt-roadmap-fab fixed z-30 w-12 h-12 rounded-full flex items-center justify-center transition-transform duration-200 ease-out md:hover:scale-110 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{
+          ["--tbt-roadmap-fab-offset" as string]: miniPlayerVisible ? "6rem" : "1rem",
+          // The pages render this inside a `space-y-*` stack, whose sibling top margin
+          // would otherwise shift a top-anchored fixed button down.
+          margin: 0,
+          ...(visibleCorner
+            ? {
+                right: "auto",
+                bottom: "auto",
+                left: `calc(${visibleCorner.right}px - 4rem - env(safe-area-inset-right, 0px))`,
+                top: `calc(${visibleCorner.bottom}px - 3rem - var(--tbt-roadmap-fab-offset) - env(safe-area-inset-bottom, 0px))`,
+              }
+            : {}),
           background: "var(--color-accent)",
           color: "#fff",
-          writingMode: "vertical-rl",
-          transform: "translateY(-50%) rotate(180deg)",
+          boxShadow: "0 6px 16px rgba(0,0,0,0.28)",
+          outlineColor: "var(--color-accent)",
         }}
       >
-        <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
-          Roadmap · {summary.completed}/{summary.total}
-        </span>
+        <MapIcon size={22} strokeWidth={2.25} aria-hidden />
       </button>
     </>
   );
