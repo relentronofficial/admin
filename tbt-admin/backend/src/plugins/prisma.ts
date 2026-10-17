@@ -2197,6 +2197,67 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_support_call_bookings_member ON support_call_bookings(member_id)`
     ).catch(() => {});
 
+    // ── Admin-configurable Weekly Activity Graph (2026-10-17) ───────────────
+    // Per-program weeks (X axis) and milestones (Y axis), plus admin-recorded
+    // member milestone achievements (the only way a revenue milestone is ever
+    // reached). A program with no rows uses the built-in defaults (7-day weeks
+    // from the program length; Ads → Website → Funnels → 1 lakh → 1 crore), so
+    // nothing changes until an admin edits that program. Everything links by id.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS graph_weeks (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        program_id UUID NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        label      VARCHAR(60) NOT NULL,
+        start_day  INT NOT NULL,
+        end_day    INT NOT NULL,
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active  BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_graph_weeks_program ON graph_weeks(program_id, sort_order)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS graph_milestones (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        program_id UUID NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        label      VARCHAR(60) NOT NULL,
+        kind       VARCHAR(10) NOT NULL DEFAULT 'activity',
+        sort_order INT NOT NULL DEFAULT 0,
+        is_active  BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_graph_milestones_program ON graph_milestones(program_id, sort_order)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_graph_milestone_records (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        milestone_id UUID NOT NULL REFERENCES graph_milestones(id) ON DELETE CASCADE,
+        week_id      UUID REFERENCES graph_weeks(id) ON DELETE SET NULL,
+        note         TEXT,
+        recorded_by  TEXT,
+        recorded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (member_id, milestone_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_member_graph_records_member ON member_graph_milestone_records(member_id)`
+    ).catch(() => {});
+    // Optional stable links from an activity to a configured week / milestone.
+    // NULL = previous behaviour (week from day_number, milestone from milestone_label).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS graph_week_id UUID REFERENCES graph_weeks(id) ON DELETE SET NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS graph_milestone_id UUID REFERENCES graph_milestones(id) ON DELETE SET NULL`
+    ).catch(() => {});
+
     // ── CP-01: Course page personalization — allowed modules per program ──────
     await prisma.$executeRawUnsafe(
       `ALTER TABLE programs ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT '[]'::jsonb`

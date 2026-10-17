@@ -153,4 +153,63 @@ describe("WeeklyActivityGraph with the real API response", () => {
     renderGraph();
     expect(await screen.findByRole("img", { name: "Weekly Activity Graph" })).toBeTruthy();
   });
+
+  describe("admin-configured graph (config from the API)", () => {
+    const configured = (over: { milestones?: string[]; weeks?: Array<[string, number | null]> } = {}) => {
+      const milestones = over.milestones ?? ["Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore"];
+      const weekDefs = over.weeks ?? [["Kick-off", 0.6], ["Launch", 0], ["W3", null], ["W5", null]];
+      return {
+        ...REAL_RESPONSE,
+        data: {
+          ...REAL_RESPONSE.data,
+          weeks: weekDefs.map(([label, level], i) => ({
+            ...REAL_RESPONSE.data.weeks[Math.min(i, 2)], weekNumber: i + 1, weekId: `w-${i + 1}`, label, progressLevel: level,
+          })),
+          config: {
+            source: "program",
+            milestones: milestones.map((label, i) => ({ id: `m-${i}`, label, kind: i < 4 ? "activity" : "revenue" })),
+          },
+        },
+      };
+    };
+
+    it("draws the configured milestones (labels and order) and week labels, including an added W5", async () => {
+      get.mockResolvedValue(configured());
+      const { container } = renderGraph();
+      await screen.findByRole("img", { name: "Weekly Activity Graph" });
+      expect(svgTexts(container)).toEqual([
+        "Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore",
+        "Kick-off", "Launch", "W3", "W5",
+      ]);
+      // Six levels, bottom to top
+      const ys = ["Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore"].map((m) => yOf(container, m));
+      expect([...ys].sort((a, b) => b - a)).toEqual(ys);
+      expect(points(container).map((p) => p.week)).toEqual(["Kick-off", "Launch"]);
+    });
+
+    it("a renamed milestone shows its new label; a disabled one (absent from config) is gone", async () => {
+      get.mockResolvedValue(configured({ milestones: ["Meta Ads", "Website", "₹5 Lakhs"] }));
+      const { container } = renderGraph();
+      await screen.findByRole("img", { name: "Weekly Activity Graph" });
+      const texts = svgTexts(container);
+      expect(texts.slice(0, 3)).toEqual(["Meta Ads", "Website", "₹5 Lakhs"]);
+      expect(texts).not.toContain("Funnels");
+      expect(texts).not.toContain("1 crore");
+    });
+
+    it("plots a point at the configured milestone level", async () => {
+      get.mockResolvedValue(configured({ weeks: [["W1", 5], ["W2", 0]] })); // level 5 = "₹5 Lakhs"
+      const { container } = renderGraph();
+      await screen.findByRole("img", { name: "Weekly Activity Graph" });
+      const [w1] = points(container);
+      expect(w1.y).toBeCloseTo(yOf(container, "₹5 Lakhs"));
+    });
+
+    it("older backend responses without config still show the original five labels", async () => {
+      get.mockResolvedValue(REAL_RESPONSE);
+      const { container } = renderGraph();
+      await screen.findByRole("img", { name: "Weekly Activity Graph" });
+      expect(svgTexts(container).slice(0, 5)).toEqual(MILESTONES);
+    });
+  });
 });
