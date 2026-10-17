@@ -30,7 +30,11 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 ENV NEXT_PUBLIC_RAZORPAY_KEY_ID=$NEXT_PUBLIC_RAZORPAY_KEY_ID
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN npm run build
+# `gcloud run deploy --source` cannot pass --build-arg, and --set-build-env-vars
+# only reaches buildpack builds, never this Dockerfile — so CI writes the
+# per-environment NEXT_PUBLIC_* values to .ci-build-env (KEY='value' lines,
+# public values only) and they override the defaults above for this build.
+RUN if [ -f .ci-build-env ]; then set -a && . ./.ci-build-env && set +a; fi && npm run build
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
 FROM base AS runner
