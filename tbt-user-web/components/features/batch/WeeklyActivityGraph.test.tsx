@@ -8,7 +8,8 @@ import WeeklyActivityGraph from "./WeeklyActivityGraph";
 // (the backend body, `response.data`).
 const get = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/client", () => ({ default: { get } }));
-vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
+const siteConfig = vi.hoisted(() => ({ value: { uiStrings: null, hiddenMenuKeys: [] as string[] } }));
+vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => siteConfig.value }));
 
 // Captured from GET /api/user-batch/weekly-graph (commit affbff77) against a
 // seeded local database for a member on program day 10 (task ids shortened),
@@ -35,7 +36,10 @@ const points = (c: HTMLElement) => [...c.querySelectorAll("circle")].map((p) => 
   y: Number(p.getAttribute("cy")),
 }));
 
-beforeEach(() => get.mockReset());
+beforeEach(() => {
+  get.mockReset();
+  siteConfig.value = { uiStrings: null, hiddenMenuKeys: [] };
+});
 afterEach(cleanup);
 
 describe("WeeklyActivityGraph with the real API response", () => {
@@ -132,5 +136,21 @@ describe("WeeklyActivityGraph with the real API response", () => {
     await screen.findByRole("img", { name: "Weekly Activity Graph" });
     const baseline = 2 * yOf(container, "Ads") - yOf(container, "Website");
     expect(points(container).map((p) => p.y)).toEqual([baseline, baseline]);
+  });
+
+  it("renders nothing and makes no request when the admin hides it (weekly_graph)", async () => {
+    siteConfig.value = { uiStrings: null, hiddenMenuKeys: ["weekly_graph"] };
+    get.mockResolvedValue(REAL_RESPONSE);
+    const { container } = renderGraph();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(container.textContent).toBe("");
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("still shows when the admin hides other sections only", async () => {
+    siteConfig.value = { uiStrings: null, hiddenMenuKeys: ["streak", "ebooks"] };
+    get.mockResolvedValue(REAL_RESPONSE);
+    renderGraph();
+    expect(await screen.findByRole("img", { name: "Weekly Activity Graph" })).toBeTruthy();
   });
 });

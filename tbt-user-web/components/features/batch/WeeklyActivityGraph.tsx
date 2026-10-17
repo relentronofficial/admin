@@ -21,7 +21,17 @@ const MIN_COL = 40;  // below this the chart scrolls horizontally instead of squ
 
 const yFor = (level: number) => TOP + PLOT_H - level * LEVEL_GAP;
 
+/** Admin can hide the graph (Settings → Navigation → Platform Sections → "weekly_graph"). */
+export const WEEKLY_GRAPH_MENU_KEY = "weekly_graph";
+
 export default function WeeklyActivityGraph() {
+  const { hiddenMenuKeys } = useSiteConfig();
+  // Hidden by the admin: render nothing and don't fetch the graph at all.
+  if ((hiddenMenuKeys ?? []).includes(WEEKLY_GRAPH_MENU_KEY)) return null;
+  return <WeeklyActivityGraphContent />;
+}
+
+function WeeklyActivityGraphContent() {
   const { data: graph, isLoading, isError } = useMyWeeklyGraph();
   const { uiStrings } = useSiteConfig();
   const s = uiStrings as any;
