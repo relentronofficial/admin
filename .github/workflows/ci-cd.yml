@@ -253,7 +253,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          vercel deploy tbt-user-web --yes \
+          vercel deploy --yes \
             --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
@@ -306,7 +306,7 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          vercel deploy tbt-user-web --prod --yes \
+          vercel deploy --prod --yes \
             --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
             --build-env NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
