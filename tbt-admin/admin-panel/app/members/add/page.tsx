@@ -388,7 +388,7 @@ export default function AddMemberPage() {
               </div>
 
               {/* Row 2 */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-3 gap-6">
                 <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Type</label>
                   <select {...register("productServiceType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
@@ -397,6 +397,15 @@ export default function AddMemberPage() {
                     <option value="Service-based">Service-based</option>
                     <option value="Coaching">Coaching</option>
                     <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Course Module</label>
+                  <select {...register("businessType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
+                    <option value="">— Not assigned —</option>
+                    <option value="Product">Product</option>
+                    <option value="Service">Service</option>
+                    <option value="Coaching">Coaching</option>
                   </select>
                 </div>
                 <div>
