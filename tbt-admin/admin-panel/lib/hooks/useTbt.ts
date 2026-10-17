@@ -2735,3 +2735,105 @@ export const useSupportCallHosts = (enabled: boolean) =>
     enabled,
     staleTime: 5 * 60_000,
   });
+
+// ─── Admin-configurable Weekly Activity Graph (/api/weekly-graph/admin) ───────
+// Per-program weeks (X axis), milestones (Y axis), activities and admin-recorded
+// member milestones. Role checks are server-side (edits: admin/super_admin;
+// member records: + mentor).
+
+export type GraphMilestoneKind = 'activity' | 'revenue';
+export interface GraphWeekItem { id: string | null; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }
+export interface GraphMilestoneItem { id: string | null; label: string; kind: GraphMilestoneKind; sortOrder: number; isActive: boolean }
+export interface GraphActivityItem {
+  id: string; title: string; dayNumber: number; sortOrder: number; isRequired: boolean; isActive: boolean;
+  memberId: string | null; weekId: string | null; milestoneId: string | null; isMilestone: boolean; milestoneLabel: string | null;
+}
+export interface WeeklyGraphConfig {
+  program: { id: string; name: string; durationDays: number };
+  /** false = the program still uses the built-in defaults (items have id null until saved) */
+  saved: boolean;
+  weeks: GraphWeekItem[];
+  milestones: GraphMilestoneItem[];
+  activities: GraphActivityItem[];
+}
+export interface GraphMemberRecord {
+  id: string; milestoneId: string; milestoneLabel: string; kind: GraphMilestoneKind;
+  weekId: string | null; weekLabel: string | null; note: string | null; recordedBy: string | null; recordedAt: string;
+}
+
+const weeklyGraphKey = (programId: string) => ['weekly-graph-config', programId];
+const wgBase = (programId: string) => `/api/weekly-graph/admin/programs/${programId}`;
+
+export const useWeeklyGraphConfig = (programId: string) =>
+  useQuery({
+    queryKey: weeklyGraphKey(programId),
+    queryFn: async () => { const res: any = await apiClient.get(`${wgBase(programId)}/config`); return res.data as WeeklyGraphConfig; },
+    enabled: !!programId,
+    staleTime: 10_000,
+  });
+
+/** Every config mutation refetches the program's config afterwards. */
+const useWeeklyGraphMutation = <V,>(programId: string, fn: (v: V) => Promise<any>) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => qc.invalidateQueries({ queryKey: weeklyGraphKey(programId) }),
+  });
+};
+
+export const useInitializeWeeklyGraph = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (_: void) => (await apiClient.post(`${wgBase(programId)}/initialize`) as any).data);
+
+export const useSaveGraphWeek = (programId: string) =>
+  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; startDay?: number; endDay?: number; isActive?: boolean }) =>
+    ((id ? await apiClient.put(`${wgBase(programId)}/weeks/${id}`, body) : await apiClient.post(`${wgBase(programId)}/weeks`, body)) as any).data);
+
+export const useDeleteGraphWeek = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/weeks/${id}`) as any).data);
+
+export const useReorderGraphWeeks = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (ids: string[]) => (await apiClient.put(`${wgBase(programId)}/weeks/reorder`, { ids }) as any).data);
+
+export const useSaveGraphMilestone = (programId: string) =>
+  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; kind?: GraphMilestoneKind; isActive?: boolean }) =>
+    ((id ? await apiClient.put(`${wgBase(programId)}/milestones/${id}`, body) : await apiClient.post(`${wgBase(programId)}/milestones`, body)) as any).data);
+
+export const useDeleteGraphMilestone = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/milestones/${id}`) as any).data);
+
+export const useReorderGraphMilestones = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (ids: string[]) => (await apiClient.put(`${wgBase(programId)}/milestones/reorder`, { ids }) as any).data);
+
+export const useSaveGraphActivity = (programId: string) =>
+  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string; title?: string; weekId?: string | null; milestoneId?: string | null; isRequired?: boolean; isActive?: boolean }) =>
+    ((id ? await apiClient.put(`${wgBase(programId)}/activities/${id}`, body) : await apiClient.post(`${wgBase(programId)}/activities`, body)) as any).data);
+
+const graphRecordsKey = (memberId: string) => ['weekly-graph-records', memberId];
+
+export const useGraphMemberRecords = (memberId: string) =>
+  useQuery({
+    queryKey: graphRecordsKey(memberId),
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/weekly-graph/admin/members/${memberId}/records`);
+      return res.data as { member: { id: string; firstName: string; lastName: string | null; programId: string | null }; records: GraphMemberRecord[] };
+    },
+    enabled: !!memberId,
+  });
+
+export const useSaveGraphMemberRecord = (memberId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { milestoneId: string; weekId: string; note?: string }) =>
+      (await apiClient.put(`/api/weekly-graph/admin/members/${memberId}/records`, body) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
+  });
+};
+
+export const useDeleteGraphMemberRecord = (memberId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (recordId: string) =>
+      (await apiClient.delete(`/api/weekly-graph/admin/members/${memberId}/records/${recordId}`) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
+  });
+};
