@@ -16,8 +16,10 @@ import LearningRoadmap from "./LearningRoadmap";
 
 export default function CoursesPageRoadmap({ courseId }: { courseId: string }) {
   const router = useRouter();
-  const { data: course } = useCourse(courseId);
-  const { data: progressList } = useLessonProgress(courseId);
+  const courseQuery = useCourse(courseId);
+  const progressQuery = useLessonProgress(courseId);
+  const course = courseQuery.data;
+  const progressList = progressQuery.data;
 
   const levels = useMemo(() => {
     if (!course) return [];
@@ -26,11 +28,17 @@ export default function CoursesPageRoadmap({ courseId }: { courseId: string }) {
     return buildRoadmapLevels(buildSectionGroups((course.lessons ?? []) as any[], sections, completedIds), completedIds);
   }, [course, progressList]);
 
-  if (!course) return null;
+  const status = courseQuery.isError || progressQuery.isError ? "error" : !course || progressQuery.isLoading ? "loading" : "ready";
+
   return (
     <LearningRoadmap
       levels={levels}
-      title={course.title}
+      title={course?.title}
+      status={status}
+      onRetry={() => {
+        void courseQuery.refetch();
+        void progressQuery.refetch();
+      }}
       onOpenLesson={(lesson) => router.push(`/learning/${courseId}?lesson=${lesson.id}`)}
     />
   );
