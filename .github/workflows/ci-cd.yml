@@ -156,7 +156,7 @@ jobs:
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,SUPABASE_URL=stg-SUPABASE_URL:latest,SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-WABA_FROM_NUMBER:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
-            --set-env-vars="NODE_ENV=production,WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }},USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }},ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }},BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net,CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A,MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }},MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
+            --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }}|ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }}|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-user-web-staging-464464507912.asia-south1.run.app,https://tbt-user-web-staging-nt77kcmmiq-el.a.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
             --port=8000 \
             --quiet
 
@@ -209,13 +209,28 @@ jobs:
             --quiet
 
   # ── Deploy staging user-web (main branch only) ───────────────────────────
+  # Cloud Run is the user-web host (app.tamilbusinesstribe.com is served by
+  # tbt-user-web). Each new revision gets no traffic until the bundle it
+  # actually serves is checked against the expected backend — see
+  # .github/scripts/verify-user-web-target.sh.
   deploy-user-web-staging:
-    needs: build-user-web
-    if: github.ref == 'refs/heads/main' && needs.build-user-web.outputs.changed == 'true'
+    # Waits for the staging backend deploy (when one runs) so a CORS change for
+    # this site is live before the site starts calling it.
+    needs: [build-user-web, deploy-backend-staging]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.deploy-backend-staging.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: staging
+    env:
+      SERVICE: tbt-user-web-staging
+      API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://tbt-user-web-staging-464464507912.asia-south1.run.app
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the backend this build will use
+        run: |
+          bash .github/scripts/verify-user-web-target.sh config staging "$API_URL"
+          bash .github/scripts/verify-user-web-target.sh cors "$API_URL" "$SITE_ORIGIN"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -230,9 +245,22 @@ jobs:
           CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      - name: Deploy user-web to Cloud Run (staging)
+      # Read by tbt-user-web/Dockerfile — the only way build-time values reach a
+      # `--source` Dockerfile build. Public values only: it is uploaded with the source.
+      - name: Write build-time env for the Dockerfile
         run: |
-          gcloud run deploy tbt-user-web-staging \
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
+
+      - name: Deploy user-web to Cloud Run (staging) — no traffic yet
+        run: |
+          gcloud run deploy $SERVICE \
             --source tbt-user-web \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
@@ -240,21 +268,36 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=0 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }},NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login,NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
             --set-env-vars="NODE_ENV=production" \
+            --no-traffic \
+            --tag=candidate \
             --quiet
 
+      - name: Verify the new revision calls only the staging backend
+        run: |
+          CANDIDATE_URL=$(gcloud run services describe $SERVICE --region $GCP_REGION --project $GCP_PROJECT --format=json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
+          bash .github/scripts/verify-user-web-target.sh bundle "$CANDIDATE_URL" "$API_URL"
+
+      - name: Route traffic to the new revision
+        run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet
+
+      # Optional mirror to the v0-tbt-ott-user-web Vercel project. Cloud Run is
+      # the host, so a Vercel failure (e.g. its 100 deployments/day free-plan
+      # limit) must not fail the deploy.
       - name: Install Vercel CLI
+        continue-on-error: true
         run: npm install -g vercel@latest
 
-      - name: Deploy user-web to Vercel (staging preview)
+      - name: Deploy user-web to Vercel (staging preview, non-blocking mirror)
+        continue-on-error: true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
           vercel deploy --yes \
-            --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
+            --build-env NEXT_PUBLIC_API_URL="$API_URL" \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community \
@@ -267,8 +310,17 @@ jobs:
     if: github.ref == 'refs/heads/production' && needs.build-user-web.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      SERVICE: tbt-user-web
+      API_URL: https://tbt-backend-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://app.tamilbusinesstribe.com
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the backend this build will use
+        run: |
+          bash .github/scripts/verify-user-web-target.sh config production "$API_URL"
+          bash .github/scripts/verify-user-web-target.sh cors "$API_URL" "$SITE_ORIGIN"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -283,9 +335,22 @@ jobs:
           CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      - name: Deploy user-web to Cloud Run (production)
+      # See the staging job: read by tbt-user-web/Dockerfile. Public values only.
+      - name: Write build-time env for the Dockerfile
         run: |
-          gcloud run deploy tbt-user-web \
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
+
+      - name: Deploy user-web to Cloud Run (production) — no traffic yet
+        run: |
+          gcloud run deploy $SERVICE \
             --source tbt-user-web \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
@@ -293,21 +358,34 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }},NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login,NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
             --set-env-vars="NODE_ENV=production" \
+            --no-traffic \
+            --tag=candidate \
             --quiet
 
+      - name: Verify the new revision calls only the production backend
+        run: |
+          CANDIDATE_URL=$(gcloud run services describe $SERVICE --region $GCP_REGION --project $GCP_PROJECT --format=json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
+          bash .github/scripts/verify-user-web-target.sh bundle "$CANDIDATE_URL" "$API_URL"
+
+      - name: Route traffic to the new revision
+        run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet
+
+      # Optional mirror — see the staging job. Must not fail the deploy.
       - name: Install Vercel CLI
+        continue-on-error: true
         run: npm install -g vercel@latest
 
-      - name: Deploy user-web to Vercel (production)
+      - name: Deploy user-web to Vercel (production, non-blocking mirror)
+        continue-on-error: true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
           vercel deploy --prod --yes \
-            --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
+            --build-env NEXT_PUBLIC_API_URL="$API_URL" \
             --build-env NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
