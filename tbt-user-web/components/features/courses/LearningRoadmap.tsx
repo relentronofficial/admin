@@ -58,9 +58,12 @@ function nodeColors(state: RoadmapLevel["state"]) {
 export default function LearningRoadmap<L extends RoadmapLesson>({
   levels,
   onOpenLesson,
+  title,
 }: {
   levels: RoadmapLevel<L>[];
   onOpenLesson: (lesson: L) => void;
+  /** Course name, shown in the panel when the page itself doesn't make it obvious (e.g. /courses). */
+  title?: string;
 }) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -118,6 +121,11 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
               <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--color-text-secondary)" }}>
                 Learning roadmap
               </p>
+              {title && (
+                <p className="text-xs font-semibold mt-0.5 truncate" style={{ color: "var(--color-text-normal)" }}>
+                  {title}
+                </p>
+              )}
               <p className="text-sm font-bold mt-0.5" style={{ color: "var(--color-text-normal)" }}>
                 {summary.completed} of {summary.total} levels completed
               </p>

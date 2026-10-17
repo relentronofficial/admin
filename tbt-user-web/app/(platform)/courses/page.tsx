@@ -9,6 +9,7 @@ import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useOnboardingContent } from "@/lib/hooks/useOnboarding";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
+import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -865,10 +866,24 @@ export default function CoursesPage() {
     return moduleConfigs.find(m => m.moduleName === allowedModules[0]) ?? null;
   }, [allowedModules, moduleConfigs]);
 
+  // Learning Roadmap course: the most recently watched enrolled course that isn't
+  // finished, else the latest unfinished enrollment. None → no roadmap.
+  const roadmapCourseId: string | null = useMemo(() => {
+    const unfinished = (id?: string | null) => !!id && !!enrolledMap.get(id) && !enrolledMap.get(id).completedAt;
+    const watched = savedVideos.find((v: any) => v?.type === "course" && unfinished(v.courseId));
+    if (watched) return watched.courseId;
+    const latest = myEnrollments
+      .filter((e: any) => !e.completedAt)
+      .sort((a: any, b: any) => String(b.enrolledAt ?? "").localeCompare(String(a.enrolledAt ?? "")))[0];
+    return latest?.courseId ?? null;
+  }, [savedVideos, myEnrollments, enrolledMap]);
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-8 pb-8">
+
+      {roadmapCourseId && <CoursesPageRoadmap courseId={roadmapCourseId} />}
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
       <MentorshipDashboard />
