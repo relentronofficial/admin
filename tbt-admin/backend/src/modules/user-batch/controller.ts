@@ -5,6 +5,7 @@ import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
 import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
+import { loadGraphConfig, loadMemberGraphRecords } from '../../lib/weeklyGraphConfigData.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
 
@@ -276,9 +277,10 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     // OR the program's shared tasks), filtered to global or own assignments.
     prisma.$queryRawUnsafe<Array<{
       id: string; title: string; day_number: number; sort_order: number; is_required: boolean; member_id: string | null;
-      is_milestone: boolean | null; milestone_label: string | null;
+      is_milestone: boolean | null; milestone_label: string | null; graph_week_id: string | null; graph_milestone_id: string | null;
     }>>(
-      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text, is_milestone, milestone_label
+      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text, is_milestone, milestone_label,
+              graph_week_id::text, graph_milestone_id::text
        FROM tasks
        WHERE is_active = true
          AND (batch_id = $1::uuid OR ($2::uuid IS NOT NULL AND program_id = $2::uuid AND batch_id IS NULL))
@@ -296,6 +298,11 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     }),
   ]);
 
+  const [graphConfig, graphRecords] = await Promise.all([
+    loadGraphConfig(prisma, batch.programId ?? null),
+    loadMemberGraphRecords(prisma, memberId),
+  ]);
+
   const baseDays = batch.snapshotDays ?? batch.program?.durationDays ?? 90;
   const totalDays = baseDays + (settings[0]?.extended_days ?? 0);
 
@@ -305,11 +312,16 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
       id: t.id, title: t.title, dayNumber: t.day_number, sortOrder: t.sort_order,
       isRequired: t.is_required, memberId: t.member_id,
       isMilestone: t.is_milestone ?? false, milestoneLabel: t.milestone_label,
+      graphWeekId: t.graph_week_id, graphMilestoneId: t.graph_milestone_id,
     })),
     submissions,
     dayProgress: dayProgress.map((p) => ({ dayNumber: p.dayNumber, status: p.status, completedTaskIds: p.completedTaskIds ?? [] })),
     totalDays,
     currentDay: getCurrentDayNumber(new Date(batch.startsAt)),
+    // Admin-configured weeks/milestones of the member's program (defaults when
+    // not configured) and this member's own admin-recorded achievements.
+    config: graphConfig,
+    records: graphRecords,
   });
 
   return reply.send({ success: true, data: graph, error: null });

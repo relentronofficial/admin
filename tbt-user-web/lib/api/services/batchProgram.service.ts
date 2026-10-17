@@ -37,6 +37,10 @@ export interface WeeklyGraphWeek {
    * milestones). null for weeks that have not started — nothing is plotted.
    */
   progressLevel: number | null;
+  /** graph_weeks.id, or null for a built-in default week (optional for older backends) */
+  weekId?: string | null;
+  /** Display label, e.g. "W1" or an admin-configured name */
+  label?: string;
 }
 
 export interface WeeklyGraph {
@@ -46,6 +50,8 @@ export interface WeeklyGraph {
   hasActivities: boolean;
   weeks: WeeklyGraphWeek[];
   summary: { total: number; completed: number; completionPercent: number | null };
+  /** Y axis, bottom → top (progressLevel n = milestones[n - 1]); from the program's admin config or the defaults */
+  config?: { source: "program" | "default"; milestones: Array<{ id: string | null; label: string; kind: "activity" | "revenue" }> };
 }
 
 export const batchProgramService = {

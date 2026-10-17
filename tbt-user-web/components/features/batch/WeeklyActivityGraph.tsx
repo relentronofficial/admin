@@ -4,22 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
-// Two-axis milestone graph: weeks along X, the five milestones up Y, one line
-// through each started week's point. Point heights (week.progressLevel) are
-// computed server-side from approved tasks only — see weeklyGraphLogic.ts.
-// The revenue milestones (levels 4–5) are axis labels only; task progress
-// never reaches them.
+// Two-axis milestone graph: weeks along X, milestones up Y, one line through
+// each started week's point. Weeks, milestones (labels and order) and point
+// heights all come from the API — the program's admin configuration (Admin →
+// Weekly Graph) or the built-in defaults — see weeklyGraphLogic.ts. Task
+// progress never reaches a revenue milestone; only an admin record does.
 
 const LEFT = 64;     // room for the milestone labels
 const RIGHT = 12;
 const TOP = 12;
 const LEVEL_GAP = 32;
-const LEVELS = 5;
-const PLOT_H = LEVEL_GAP * LEVELS;
 const BOTTOM = 26;   // room for the week labels
 const MIN_COL = 40;  // below this the chart scrolls horizontally instead of squeezing
-
-const yFor = (level: number) => TOP + PLOT_H - level * LEVEL_GAP;
 
 /** Admin can hide the graph (Settings → Navigation → Platform Sections → "weekly_graph"). */
 export const WEEKLY_GRAPH_MENU_KEY = "weekly_graph";
@@ -72,13 +68,21 @@ function WeeklyActivityGraphContent() {
   if (weeks.length === 0) return null;
 
   const weekPrefix = s?.batchGraphWeekPrefix ?? "W";
-  const milestones = [
-    s?.batchGraphMilestoneAds ?? "Ads",
-    s?.batchGraphMilestoneWebsite ?? "Website",
-    s?.batchGraphMilestoneFunnels ?? "Funnels",
-    s?.batchGraphMilestoneLakh ?? "1 lakh",
-    s?.batchGraphMilestoneCrore ?? "1 crore",
-  ];
+  // Y axis bottom → top: the program's configured milestones from the API, or
+  // the original five when talking to a backend that predates the config.
+  const configured = graph!.config?.milestones;
+  const milestones = configured?.length
+    ? configured.map((m) => m.label)
+    : [
+        s?.batchGraphMilestoneAds ?? "Ads",
+        s?.batchGraphMilestoneWebsite ?? "Website",
+        s?.batchGraphMilestoneFunnels ?? "Funnels",
+        s?.batchGraphMilestoneLakh ?? "1 lakh",
+        s?.batchGraphMilestoneCrore ?? "1 crore",
+      ];
+  const weekLabel = (w: { label?: string; weekNumber: number }) => w.label || `${weekPrefix}${w.weekNumber}`;
+  const PLOT_H = LEVEL_GAP * Math.max(milestones.length, 1);
+  const yFor = (level: number) => TOP + PLOT_H - Math.min(level, milestones.length) * LEVEL_GAP;
 
   const col = Math.max(MIN_COL, (boxWidth - LEFT - RIGHT) / weeks.length || 0);
   const width = LEFT + weeks.length * col + RIGHT;
@@ -120,7 +124,7 @@ function WeeklyActivityGraphContent() {
           {/* Week labels */}
           {weeks.map((w, i) => (
             <text key={w.weekNumber} x={colX(i)} y={yFor(0) + 17} textAnchor="middle" fontSize="11" fill="var(--color-text-secondary)">
-              {`${weekPrefix}${w.weekNumber}`}
+              {weekLabel(w)}
             </text>
           ))}
 
@@ -137,7 +141,7 @@ function WeeklyActivityGraphContent() {
           )}
           {plotted.map(({ w, x }) => (
             <circle key={w.weekNumber} cx={x} cy={yFor(w.progressLevel!)} r={4} fill="var(--color-accent)">
-              <title>{`${weekPrefix}${w.weekNumber}`}</title>
+              <title>{weekLabel(w)}</title>
             </circle>
           ))}
         </svg>

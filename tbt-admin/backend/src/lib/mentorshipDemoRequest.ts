@@ -7,6 +7,7 @@ import { env } from '../config/env.js';
 import { localDayKey, programToday, resolveProgramTimezone, computeTierActiveDays } from './activityDays.js';
 import { computeStreakSummary, type StreakSummary } from './streakSummaryLogic.js';
 import { buildWeeklyGraph, type WeeklyGraph } from './weeklyGraphLogic.js';
+import { loadGraphConfig } from './weeklyGraphConfigData.js';
 import {
   buildDemoActivity,
   buildDemoGraphInputs,
@@ -45,30 +46,31 @@ export function markDemo(reply: FastifyReply): void {
 }
 
 /** The member's real program window (same rules as GET /api/user-batch and /mentorship/stats). */
-export async function loadDemoProgram(request: FastifyRequest): Promise<DemoProgram & { batchId: string | null }> {
+export async function loadDemoProgram(request: FastifyRequest): Promise<DemoProgram & { batchId: string | null; programId: string | null }> {
   const prisma = request.server.prisma;
   const memberId = request.memberId!;
   const member = await prisma.member.findUnique({ where: { id: memberId }, select: { batchId: true } }).catch(() => null);
   const batchId = (member as any)?.batchId ?? null;
-  if (!batchId) return { batchId: null, programStartDay: null, totalDays: 0 };
+  if (!batchId) return { batchId: null, programId: null, programStartDay: null, totalDays: 0 };
 
   const [batch, settings] = await Promise.all([
     prisma.batch.findUnique({
       where: { id: batchId },
-      select: { startsAt: true, snapshotDays: true, program: { select: { durationDays: true } } },
+      select: { startsAt: true, snapshotDays: true, programId: true, program: { select: { durationDays: true } } },
     }).catch(() => null),
     prisma.$queryRawUnsafe<Array<{ extended_days: number | null }>>(
       `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
       batchId, memberId,
     ).catch(() => []),
   ]);
-  if (!batch) return { batchId: null, programStartDay: null, totalDays: 0 };
+  if (!batch) return { batchId: null, programId: null, programStartDay: null, totalDays: 0 };
 
   const baseDays = (batch as any).snapshotDays ?? (batch as any).program?.durationDays ?? 90;
   const totalDays = baseDays + ((settings as any[])[0]?.extended_days ?? 0);
   const startsAt = (batch as any).startsAt ? new Date((batch as any).startsAt) : null;
   return {
     batchId,
+    programId: (batch as any).programId ?? null,
     programStartDay: startsAt ? localDayKey(startsAt, programTz()) : null,
     totalDays,
   };
@@ -99,6 +101,8 @@ export async function buildDemoOverlay(request: FastifyRequest, now: Date = new 
     const { tasks, submissions } = buildDemoGraphInputs(program, currentDay);
     graph = buildWeeklyGraph({
       memberId: request.memberId!, tasks, submissions, dayProgress: [], totalDays: program.totalDays, currentDay,
+      // Same axis as the member's real graph (the program's admin config, or defaults).
+      config: await loadGraphConfig(request.server.prisma, program.programId),
     });
   }
   return { streak, tierActiveDays, graph };
