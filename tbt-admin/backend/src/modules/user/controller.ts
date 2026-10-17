@@ -31,7 +31,7 @@ import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
-import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
+import { canBook, canCancelBooking, isOneToOneSession, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
@@ -6839,7 +6839,7 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
           select: { firstName: true, lastName: true },
         });
         const memberName = `${m?.firstName ?? ''} ${m?.lastName ?? ''}`.trim() || 'Member';
-        const callType = sess.category === 'one_to_one' ? '1:1' : 'group';
+        const callType = isOneToOneSession(sess) ? '1:1' : 'group';
         const notifPayload = {
           sessionId,
           bookingId: b.id,

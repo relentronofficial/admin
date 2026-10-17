@@ -142,3 +142,13 @@ export function canManageSupportSession(
 export function isFullAccessRole(role: string | null | undefined): boolean {
   return !!role && FULL_ACCESS_ROLES.has(role);
 }
+
+/**
+ * A support call is "1:1" when its session has exactly one seat — whatever the
+ * category (a 1-seat Sales or Tech call is just as private as Mentor 1-On-1).
+ * Same rule as the admin Support Calls page's "1:1 only" filter and badge
+ * (`session.capacity === 1`), so notifications and the admin list agree.
+ */
+export function isOneToOneSession(session: { capacity: number }): boolean {
+  return session.capacity === 1;
+}
