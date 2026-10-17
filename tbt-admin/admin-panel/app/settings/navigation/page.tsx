@@ -23,6 +23,7 @@ const FIXED_MENUS = [
   { key: "podcasts", label: "Voice of Sakthi (Podcasts)", desc: "Web nav + mobile bottom tab + drawer" },
   { key: "support", label: "Support", desc: "Web top-bar icon + mobile drawer" },
   { key: "streak", label: "Learning Streak", desc: "Web top-bar flame icon + streak dropdown" },
+  { key: "weekly_graph", label: "Weekly Activity Graph", desc: "Web mentorship dashboard + batch program page" },
   { key: "wins", label: "Wins / Leaderboard", desc: "Mobile bottom tab + drawer" },
   { key: "ai_content", label: "Content Buddy AI", desc: "Mobile drawer" },
 ];
