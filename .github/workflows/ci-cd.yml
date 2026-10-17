@@ -248,7 +248,6 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy user-web to Vercel (staging preview)
-        working-directory: tbt-user-web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -302,7 +301,6 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy user-web to Vercel (production)
-        working-directory: tbt-user-web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
