@@ -349,7 +349,7 @@ jobs:
             --min-instances=0 \
             --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
             --set-secrets="CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest" \
-            --set-env-vars="NODE_ENV=production" \
+            --set-env-vars="NODE_ENV=production|NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}|NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app" \
             --quiet
 
   # ── Deploy production admin panel (production branch only) ───────────────
@@ -386,5 +386,5 @@ jobs:
             --min-instances=1 \
             --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
             --set-secrets="CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest" \
-            --set-env-vars="NODE_ENV=production" \
+            --set-env-vars="NODE_ENV=production|NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}|NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app" \
             --quiet
