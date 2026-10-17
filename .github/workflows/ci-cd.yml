@@ -248,13 +248,12 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy user-web to Vercel (staging preview)
-        working-directory: tbt-user-web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          vercel deploy --yes \
+          vercel deploy tbt-user-web --yes \
             --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
@@ -302,13 +301,12 @@ jobs:
         run: npm install -g vercel@latest
 
       - name: Deploy user-web to Vercel (production)
-        working-directory: tbt-user-web
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
-          vercel deploy --prod --yes \
+          vercel deploy tbt-user-web --prod --yes \
             --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
             --build-env NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
