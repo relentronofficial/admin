@@ -3,11 +3,10 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, Play, BookOpen, ChevronDown } from "lucide-react";
+import { Lock, Play, BookOpen } from "lucide-react";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import { useOnboardingContent } from "@/lib/hooks/useOnboarding";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 
@@ -372,189 +371,6 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
   );
 }
 
-// ── OnboardingVideosSection ───────────────────────────────────────────────────
-
-function OnboardingVideosSection({ cfg }: { cfg?: ModuleConfig | null }) {
-  const router = useRouter();
-  const { data: contentSteps } = useOnboardingContent();
-  const [expanded, setExpanded] = useState(true);
-
-  const videoSteps = useMemo(
-    () => (contentSteps as any[]) ?? [],
-    [contentSteps]
-  );
-
-  if (videoSteps.length === 0) return null;
-
-  const accent = cfg?.accentColor ?? "var(--color-accent)";
-  const title = cfg?.displayName ?? "Introduction";
-  const subtitle = cfg?.tagline ?? `${videoSteps.length} ${videoSteps.length === 1 ? "video" : "videos"} · Watch these to get the most from your membership`;
-
-  return (
-    <section>
-      {/* Module hero banner — shown when a banner image is configured */}
-      {cfg?.bannerUrl && (
-        <div className="relative overflow-hidden rounded-t-2xl" style={{ height: 120 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={cfg.bannerUrl} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.25) 100%)" }} />
-          <div className="relative flex items-end h-full p-4 gap-2">
-            <span className="overlay-text" style={{ fontSize: 18, fontWeight: 700 }}>{title}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Module accordion header */}
-      <button
-        onClick={() => setExpanded(v => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "14px 18px",
-          borderRadius: cfg?.bannerUrl ? (expanded ? "0 0 0 0" : "0 0 12px 12px") : (expanded ? "12px 12px 0 0" : 12),
-          background: "#1a1a1e",
-          border: "1px solid #2a2a2e",
-          borderTop: cfg?.bannerUrl ? "none" : "1px solid #2a2a2e",
-          cursor: "pointer",
-          textAlign: "left",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 8,
-              background: `color-mix(in srgb, ${accent} 12%, transparent)`,
-              border: `1px solid color-mix(in srgb, ${accent} 25%, transparent)`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            <Play size={14} style={{ color: accent }} />
-          </div>
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f7" }}>{title}</div>
-            <div style={{ fontSize: 12, color: "#92929b", marginTop: 1 }}>{subtitle}</div>
-          </div>
-        </div>
-        <ChevronDown
-          size={18}
-          style={{
-            color: "#92929b",
-            flexShrink: 0,
-            transition: "transform 0.2s",
-            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
-          }}
-        />
-      </button>
-
-      {/* Expanded video grid */}
-      {expanded && (
-        <div
-          style={{
-            background: "#141418",
-            border: "1px solid #2a2a2e",
-            borderTop: "none",
-            borderRadius: "0 0 12px 12px",
-            padding: "16px 18px 20px",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
-              gap: 14,
-            }}
-          >
-            {videoSteps.map((step: any) => (
-              <button
-                key={step.id}
-                onClick={() => router.push(`/courses/intro/${step.id}`)}
-                style={{ background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
-              >
-                {/* 16:9 thumbnail */}
-                <div
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    aspectRatio: "16/9",
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    background: "#0a0a0e",
-                    border: "1px solid #2a2a2e",
-                  }}
-                >
-                  {step.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={step.imageUrl}
-                      alt={step.title}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        background: "linear-gradient(135deg, #0d1f2d 0%, #0a0a0e 100%)",
-                      }}
-                    />
-                  )}
-                  {/* Dark gradient overlay at bottom */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 50%)",
-                    }}
-                  />
-                  {/* Play button */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: "50%",
-                        background: "rgba(255,255,255,0.92)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        boxShadow: "0 2px 10px rgba(0,0,0,0.4)",
-                      }}
-                    >
-                      <Play size={15} style={{ color: "#111", marginLeft: 2 }} />
-                    </div>
-                  </div>
-                </div>
-                {/* Title below thumbnail */}
-                <div
-                  className="line-clamp-2"
-                  style={{ fontSize: 13, fontWeight: 600, color: "#d0d0d8", lineHeight: 1.4, marginTop: 8 }}
-                >
-                  {step.title}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
 // ── SavedVideoCard ─────────────────────────────────────────────────────────────
 
 function SavedVideoCard({ item }: { item: any }) {
@@ -903,9 +719,6 @@ export default function CoursesPage() {
         </div>
       )}
 
-
-      {/* ── Onboarding Videos ─────────────────────────────────────────── */}
-      <OnboardingVideosSection cfg={moduleConfigs.find(m => m.moduleName === 'Introduction') ?? null} />
 
       {/* ── New Member State — CTA banner (always visible for new members) ── */}
       {personalizationState === "new" && !catalogLoading && !catalogError && (
