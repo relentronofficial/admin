@@ -57,7 +57,7 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
   return cached<ModuleAccess>(redis, accessKey(memberId), 60, async () => {
     const [memberRows, options] = await Promise.all([
       (prisma.$queryRawUnsafe(
-        `SELECT m.allowed_modules, m.mentorship_modules, p.allowed_modules AS program_modules
+        `SELECT m.allowed_modules, m.mentorship_modules, m.business_type, p.allowed_modules AS program_modules
          FROM members m
          LEFT JOIN batches b ON b.id = m.batch_id
          LEFT JOIN programs p ON p.id = b.program_id
@@ -80,6 +80,7 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
       adminOverride: parseModuleList(row.allowed_modules),
       programModules: parseModuleList(row.program_modules) ?? [],
       selection: parseModuleList(row.mentorship_modules),
+      businessType: row.business_type ?? null,
     });
   });
 }

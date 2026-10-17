@@ -4,15 +4,21 @@
 // detail / playback / progress guards, and the selection endpoints — routes
 // through the same verdict and it can be unit-tested without a database.
 //
-// Two layers:
+// Three layers (highest to lowest priority):
 //   1. Entitlement ceiling (admin/program-controlled, unchanged from CP-11):
 //      members.allowed_modules (admin override; [] = explicitly unrestricted)
 //      → programs.allowed_modules (via batch; [] = unrestricted) → unrestricted.
 //   2. The member's own selection (members.mentorship_modules), made during
 //      onboarding. It can only narrow the ceiling, never widen it.
+//   3. Business-type derivation (members.business_type): when the member has
+//      no explicit selection, their business type is used as the default
+//      effective module (if it falls within the selectable set). This means
+//      a member who chose "Service" as their business type automatically sees
+//      the Service course tab without having to separately pick a module.
+//      The stored selection (mentorship_modules) always wins if non-null.
 //
-// A member with no saved selection (null) keeps the legacy CP-11 behaviour —
-// the ceiling alone — so existing members are not cut off before they choose.
+// A member with no saved selection AND no business type keeps the legacy
+// CP-11 behaviour — the ceiling alone — so existing members are not cut off.
 
 export interface ModuleAccessInput {
   /** module_config rows with is_active = true, in sort order. */
@@ -23,6 +29,8 @@ export interface ModuleAccessInput {
   programModules: string[];
   /** members.mentorship_modules — null = never selected. */
   selection: string[] | null;
+  /** members.business_type — used as default effective when selection is null. */
+  businessType?: string | null;
 }
 
 export interface ModuleAccess {
@@ -38,6 +46,8 @@ export interface ModuleAccess {
   restricted: boolean;
   /** True when the member has nothing usable selected but could choose. */
   selectionRequired: boolean;
+  /** True when effective was derived from business_type (no explicit selection). */
+  businessTypeDerived: boolean;
 }
 
 /** Normalise a JSONB module list (array, JSON string, or null) into string[] | null. */
@@ -62,7 +72,7 @@ export function parseModuleList(raw: unknown): string[] | null {
 }
 
 export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
-  const { activeModules, adminOverride, programModules, selection } = input;
+  const { activeModules, adminOverride, programModules, selection, businessType } = input;
 
   const entitled: string[] | null =
     adminOverride !== null
@@ -72,6 +82,19 @@ export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
   const selectable = activeModules.filter((m) => entitled === null || entitled.includes(m));
 
   if (selection === null) {
+    // No explicit selection: use business type as the default effective module
+    // when it maps to a currently-selectable module.
+    if (businessType && selectable.includes(businessType)) {
+      return {
+        entitled,
+        selectable,
+        selection: null,
+        effective: [businessType],
+        restricted: true,
+        selectionRequired: false,
+        businessTypeDerived: true,
+      };
+    }
     return {
       entitled,
       selectable,
@@ -79,6 +102,7 @@ export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
       effective: entitled ?? [],
       restricted: entitled !== null,
       selectionRequired: selectable.length > 0,
+      businessTypeDerived: false,
     };
   }
 
@@ -93,6 +117,7 @@ export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
     effective,
     restricted: true,
     selectionRequired: effective.length === 0 && selectable.length > 0,
+    businessTypeDerived: false,
   };
 }
 

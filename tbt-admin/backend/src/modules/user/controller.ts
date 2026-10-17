@@ -473,6 +473,9 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
   });
 
   void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
+  if (businessType !== undefined) {
+    void invalidateMemberModuleAccess(request.server.redis ?? null, request.memberId!);
+  }
 
   return ok(reply, {
     ...member,
@@ -830,7 +833,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     request.log.error({ err }, 'mentorship module access lookup failed');
     return fail(reply, 503, 'Could not load your mentorship modules');
   }
-  if (moduleAccess.selection !== null) {
+  if (moduleAccess.selection !== null || moduleAccess.businessTypeDerived) {
     const beforeModuleFilter = data.length;
     data = data.filter((c) => isCourseModuleAllowed(c.module, moduleAccess));
     total = Math.max(0, total - (beforeModuleFilter - data.length));

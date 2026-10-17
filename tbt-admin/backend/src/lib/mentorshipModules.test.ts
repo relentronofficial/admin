@@ -81,6 +81,65 @@ describe('resolveModuleAccess', () => {
   });
 });
 
+describe('resolveModuleAccess — business type derivation', () => {
+  it('derives effective from businessType when selection is null and type is selectable', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: null, businessType: 'Service' });
+    expect(a.effective).toEqual(['Service']);
+    expect(a.restricted).toBe(true);
+    expect(a.businessTypeDerived).toBe(true);
+    expect(a.selectionRequired).toBe(false);
+    expect(a.selection).toBeNull();
+  });
+
+  it('derives correctly for all three module values', () => {
+    for (const bt of ['Product', 'Service', 'Coaching'] as const) {
+      const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: null, businessType: bt });
+      expect(a.effective).toEqual([bt]);
+      expect(a.businessTypeDerived).toBe(true);
+    }
+  });
+
+  it('explicit selection wins over businessType', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: ['Service'], businessType: 'Product' });
+    expect(a.effective).toEqual(['Service']);
+    expect(a.businessTypeDerived).toBe(false);
+  });
+
+  it('businessType outside program ceiling falls back to showing all ceiling modules', () => {
+    // Program allows Service + Coaching; businessType is Product (not in ceiling)
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: ['Service', 'Coaching'], selection: null, businessType: 'Product' });
+    expect(a.businessTypeDerived).toBe(false);
+    expect(a.effective).toEqual(['Service', 'Coaching']);
+    expect(a.restricted).toBe(true);
+  });
+
+  it('admin override wins even with a businessType set', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: ['Coaching'], programModules: [], selection: null, businessType: 'Product' });
+    // Admin ceiling is Coaching only; Product is not in selectable
+    expect(a.businessTypeDerived).toBe(false);
+    expect(a.effective).toEqual(['Coaching']);
+  });
+
+  it('businessType that matches admin ceiling is still derived', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: ['Service'], programModules: [], selection: null, businessType: 'Service' });
+    expect(a.businessTypeDerived).toBe(true);
+    expect(a.effective).toEqual(['Service']);
+  });
+
+  it('null businessType keeps legacy behaviour (no derivation)', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: null, businessType: null });
+    expect(a.businessTypeDerived).toBe(false);
+    expect(a.restricted).toBe(false);
+    expect(a.selectionRequired).toBe(true);
+  });
+
+  it('unknown businessType (not an active module) falls back gracefully', () => {
+    const a = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: null, businessType: 'Other' });
+    expect(a.businessTypeDerived).toBe(false);
+    expect(a.restricted).toBe(false);
+  });
+});
+
 describe('isCourseModuleAllowed', () => {
   const services = resolveModuleAccess({ activeModules: ACTIVE, adminOverride: null, programModules: [], selection: ['Service'] });
   it('denies courses in unselected modules', () => {

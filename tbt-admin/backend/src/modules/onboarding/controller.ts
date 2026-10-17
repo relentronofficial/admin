@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getPresignedUrlHandler } from '../upload/controller.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit } from '../../lib/onboardingLogic.js';
+import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { onboardingButtonSchema, onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
 import { env } from '../../config/env.js';
 
@@ -168,6 +169,10 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
     );
   }
   const [updated] = await Promise.all(promises);
+
+  if (prismaFields.businessType !== undefined) {
+    void invalidateMemberModuleAccess(req.server.redis ?? null, memberId);
+  }
 
   const [skillRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
