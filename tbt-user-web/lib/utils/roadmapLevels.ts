@@ -9,7 +9,10 @@
 //   • Level 1 is always open; Level N opens only after every earlier level is
 //     completed, and never while the server still locks its first lesson
 //     (server-side sequential unlock, lessonProgression.ts);
-//   • the open level that isn't finished yet is the CURRENT one.
+//   • the open level that isn't finished yet is the CURRENT one;
+//   • when the course's sections are passed in, a section with no lessons yet
+//     still appears (the sidebar drops it): it is LOCKED — there is nothing to
+//     open or complete — and, being unfinished, keeps every later level locked.
 
 import type { LessonLike, SectionGroup, SectionLike } from "./sectionProgress";
 
@@ -34,10 +37,27 @@ export interface RoadmapLevel<L extends RoadmapLesson = RoadmapLesson> {
   target: L | null;
 }
 
+/** Every course section in order, as a group — the lesson groups plus empty groups for sections with no lessons yet. */
+function withEmptySections<L extends RoadmapLesson, S extends SectionLike>(groups: SectionGroup<L, S>[], sections: S[]): SectionGroup<L, S>[] {
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const ordered = sections
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => (a.s.sortOrder ?? a.i) - (b.s.sortOrder ?? b.i) || a.i - b.i)
+    .map(({ s }) => s);
+  const out = ordered.map(
+    (s) => byId.get(s.id) ?? { id: s.id, section: s, lessons: [], visibleLessons: [], completed: 0, total: 0, percent: 0 },
+  );
+  const general = byId.get(null);
+  return general ? [...out, general] : out;
+}
+
 export function buildRoadmapLevels<L extends RoadmapLesson, S extends SectionLike>(
   groups: SectionGroup<L, S>[],
   completedIds: Iterable<string>,
+  /** The course's sections; when given, sections without lessons are shown as locked levels too. */
+  sections?: S[],
 ): RoadmapLevel<L>[] {
+  if (sections?.length) groups = withEmptySections(groups, sections);
   const done = new Set(completedIds);
   let previousAllCompleted = true;
   let currentAssigned = false;
@@ -47,7 +67,7 @@ export function buildRoadmapLevels<L extends RoadmapLesson, S extends SectionLik
     const firstLesson = g.lessons[0] ?? null;
     const serverLocked = !!firstLesson?.locked;
     // Level 1 has no earlier levels, so previousAllCompleted starts true.
-    const open = previousAllCompleted && (!serverLocked || isComplete);
+    const open = previousAllCompleted && g.total > 0 && (!serverLocked || isComplete);
 
     let state: RoadmapLevelState;
     if (isComplete && open) state = "completed";

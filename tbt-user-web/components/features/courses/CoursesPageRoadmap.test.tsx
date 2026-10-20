@@ -57,6 +57,15 @@ describe("CoursesPageRoadmap (/courses)", () => {
     expect(state.push).toHaveBeenCalledWith("/learning/c1?lesson=l1");
   });
 
+  it("passes the course's sections so chapters without lessons still show as locked levels", () => {
+    state.course.data = { ...COURSE, sections: [...COURSE.sections, { id: "s3", title: "Scale", sortOrder: 3 }] };
+    render(<CoursesPageRoadmap courseId="c1" />);
+    openPopup();
+    const states = [...dialog().querySelectorAll("button[data-level-state]")].map((b) => b.getAttribute("data-level-state"));
+    expect(states).toEqual(["current", "locked", "locked"]);
+    expect(dialog().textContent).toContain("Scale");
+  });
+
   it("shows a loading state while the course loads", () => {
     state.course = { ...state.course, data: undefined, isLoading: true };
     render(<CoursesPageRoadmap courseId="c1" />);

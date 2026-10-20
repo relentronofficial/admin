@@ -339,7 +339,7 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                                 setOpen(false);
                                 onOpenLesson(lvl.target);
                               }}
-                              aria-label={`Level ${lvl.number}: ${lvl.title} — ${STATE_LABEL[lvl.state]}, ${lvl.completed} of ${lvl.total} lessons completed`}
+                              aria-label={`Level ${lvl.number}: ${lvl.title} — ${STATE_LABEL[lvl.state]}, ${lvl.total > 0 ? `${lvl.completed} of ${lvl.total} lessons completed` : "no lessons yet"}`}
                               aria-current={current ? "step" : undefined}
                               data-level-state={lvl.state}
                               className={`tbt-roadmap-node absolute rounded-full flex items-center justify-center text-lg font-extrabold tabular-nums transition-transform duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 ${
@@ -377,7 +377,7 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                                 {lvl.title}
                               </span>
                               <span className="block text-[11px] tabular-nums" style={{ color: "var(--color-text-secondary)" }}>
-                                {lvl.completed}/{lvl.total} lessons · {STATE_LABEL[lvl.state]}
+                                {lvl.total > 0 ? `${lvl.completed}/${lvl.total} lessons` : "No lessons yet"} · {STATE_LABEL[lvl.state]}
                               </span>
                             </div>
                           </li>

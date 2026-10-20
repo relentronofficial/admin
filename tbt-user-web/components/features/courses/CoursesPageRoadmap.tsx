@@ -25,7 +25,7 @@ export default function CoursesPageRoadmap({ courseId }: { courseId: string }) {
     if (!course) return [];
     const completedIds = new Set((progressList ?? []).filter((p) => p.completed).map((p) => p.lessonId));
     const sections: any[] = (course as any).sections ?? [];
-    return buildRoadmapLevels(buildSectionGroups((course.lessons ?? []) as any[], sections, completedIds), completedIds);
+    return buildRoadmapLevels(buildSectionGroups((course.lessons ?? []) as any[], sections, completedIds), completedIds, sections);
   }, [course, progressList]);
 
   const status = courseQuery.isError || progressQuery.isError ? "error" : !course || progressQuery.isLoading ? "loading" : "ready";
