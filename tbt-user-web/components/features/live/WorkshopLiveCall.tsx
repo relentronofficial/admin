@@ -151,7 +151,7 @@ function MemberQaPanel({ liveCallId, onClose }: { liveCallId: string; onClose: (
   return (
     <div className="flex flex-col h-full" style={{ background: "#141414" }}>
       <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={{ borderBottom: "1px solid #2a2a2a" }}>
-        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#a0a0a0", fontFamily: "Rajdhani, sans-serif" }}>Q&amp;A</span>
+        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "#a0a0a0" }}>Q&amp;A</span>
         <button onClick={onClose} className="p-1 rounded" style={{ color: "#606060" }}>✕</button>
       </div>
 

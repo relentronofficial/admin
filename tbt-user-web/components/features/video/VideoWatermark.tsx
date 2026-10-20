@@ -46,6 +46,8 @@ function makeTileBg(text: string): string {
   const escaped = text.replace(/[<>&"']/g, (c: string) =>
     ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[c] ?? c),
   );
+  // An SVG used as a background image can't load the page's web fonts, so
+  // this tile stays on the system monospace font rather than Nexa.
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="280" height="90">' +
     '<text x="10" y="55" font-family="monospace" font-size="9" font-weight="600"' +
@@ -187,7 +189,6 @@ export function VideoWatermark({
                     color: "#ffffff",
                     fontSize: "11px",
                     fontWeight: 700,
-                    fontFamily: "monospace",
                     whiteSpace: "nowrap",
                     letterSpacing: "0.04em",
                     textShadow: "0 1px 4px rgba(0,0,0,0.95)",

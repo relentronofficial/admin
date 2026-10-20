@@ -63,8 +63,10 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        mono: ["var(--font-geist-mono)", "monospace"],
+        // Variables are defined on <html> by app/fonts/nexa.ts via app/layout.tsx.
+        sans: ["var(--font-nexa)", "system-ui", "sans-serif"],
+        // `font-mono` is only used for timers/IDs: Nexa with tabular digits.
+        mono: [["var(--font-nexa-tabular)", "ui-monospace", "monospace"], { fontFeatureSettings: '"tnum"' }],
       },
       keyframes: {
         "accordion-down": {
