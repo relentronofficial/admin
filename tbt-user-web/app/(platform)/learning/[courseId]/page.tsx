@@ -2809,6 +2809,7 @@ export default function CourseDetailPage({
   const roadmapLevels = buildRoadmapLevels(
     buildSectionGroups(lessons as any[], courseSections, completedIds),
     completedIds,
+    courseSections,
   );
 
   return (

@@ -221,3 +221,76 @@ describe("LearningRoadmap — states", () => {
     expect(dialog().textContent).toContain("No levels yet");
   });
 });
+
+describe("LearningRoadmap — all configured levels (Ads → 1 Crore)", () => {
+  const MILESTONES = ["Ads", "Website", "Funnels", "1 Lakh", "1 Crore"];
+  const msSections = MILESTONES.map((title, i) => ({ id: `m${i + 1}`, title, sortOrder: i + 1 }));
+  // Two lessons per chapter, in course order; server sequential lock as in production.
+  const msOrder = MILESTONES.flatMap((_, i) => [`m${i + 1}a`, `m${i + 1}b`]);
+  const msLevels = (completed: string[], withLessons = MILESTONES.length) => {
+    const lessons = msOrder
+      .filter((id) => Number(id.slice(1, -1)) <= withLessons)
+      .map((id, i, all) => ({
+        id,
+        title: `Lesson ${id}`,
+        sectionId: `m${id.slice(1, -1)}`,
+        locked: all.slice(0, i).some((p) => !completed.includes(p)),
+      }));
+    return buildRoadmapLevels(buildSectionGroups(lessons, msSections, completed), completed, msSections);
+  };
+  const renderMs = (completed: string[], withLessons?: number) =>
+    render(<LearningRoadmap levels={msLevels(completed, withLessons)} onOpenLesson={onOpen} title="Growth Path" />);
+  const states = () => [1, 2, 3, 4, 5].map((n) => level(n).getAttribute("data-level-state"));
+
+  it("renders all five named levels in order, then the Finish marker — locked ones included", () => {
+    renderMs([]);
+    openPopup();
+    const nodes = [...dialog().querySelectorAll("button[data-level-state]")];
+    expect(nodes).toHaveLength(5);
+    MILESTONES.forEach((name, i) => expect(level(i + 1).getAttribute("aria-label")).toContain(`Level ${i + 1}: ${name} —`));
+    const text = dialog().textContent!;
+    for (const name of MILESTONES) expect(text).toContain(name);
+    expect(text.indexOf("1 Crore")).toBeLessThan(text.lastIndexOf("Finish"));
+    expect(text).toContain("Start");
+    expect(states()).toEqual(["current", "locked", "locked", "locked", "locked"]);
+  });
+
+  it("locked levels are visible but not clickable", () => {
+    renderMs([]);
+    openPopup();
+    for (const n of [2, 3, 4, 5]) {
+      expect(level(n).getAttribute("aria-disabled")).toBe("true");
+      expect(level(n).textContent).toBe(""); // lock icon, no number
+      fireEvent.click(level(n));
+    }
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeTruthy();
+  });
+
+  it("completing a level (all its lessons) unlocks only the next one; a started level does not", () => {
+    renderMs(["m1a"]); // Ads opened/half done → still current
+    openPopup();
+    expect(states()).toEqual(["current", "locked", "locked", "locked", "locked"]);
+    cleanup();
+    renderMs(["m1a", "m1b"]); // Ads completed
+    openPopup();
+    expect(states()).toEqual(["completed", "current", "locked", "locked", "locked"]);
+    fireEvent.click(level(2));
+    expect(onOpen.mock.calls[0][0].id).toBe("m2a");
+    cleanup();
+    renderMs(["m1a", "m1b", "m2a", "m2b"]); // Website completed
+    openPopup();
+    expect(states()).toEqual(["completed", "completed", "current", "locked", "locked"]);
+    expect(dialog().textContent).toContain("2 of 5 levels completed");
+  });
+
+  it("chapters with no lessons yet still show, as locked levels", () => {
+    renderMs(["m1a", "m1b"], 1); // only Ads has lessons, and it is done
+    openPopup();
+    expect(states()).toEqual(["completed", "locked", "locked", "locked", "locked"]);
+    expect(level(2).getAttribute("aria-label")).toContain("no lessons yet");
+    expect(dialog().textContent).toContain("No lessons yet");
+    fireEvent.click(level(2));
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+});
