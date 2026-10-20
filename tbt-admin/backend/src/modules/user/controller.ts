@@ -1272,6 +1272,8 @@ export async function enrollCourseHandler(request: FastifyRequest, reply: Fastif
     courseTitle: enrollment.course?.title ?? '',
   }).catch(() => {});
 
+  void invalidateCache(request.server.redis ?? null, `enrollments:v1:${request.memberId!}`);
+
   return reply.status(201).send({
     success: true,
     data: {
@@ -1749,6 +1751,9 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 
   if (finalIsCompleted && !existingProgress?.completed) {
     const pct = await recalculateCourseProgress(request, courseId);
+    // Bust the enrollments cache so the /courses page progress bars reflect the
+    // new progressPercentage immediately (not after the 60 s TTL expires).
+    void invalidateCache(request.server.redis ?? null, `enrollments:v1:${request.memberId!}`);
 
     const courseForXp = await request.server.prisma.course.findUnique({
       where: { id: courseId },
@@ -1838,10 +1843,13 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
 }
 
 async function recalculateCourseProgress(request: FastifyRequest, courseId: string): Promise<number> {
+  // Only count visible episodes so hidden/draft episodes don't dilute the
+  // percentage and prevent completedAt from being set when all visible lessons
+  // have been finished.
   const [total, completed] = await Promise.all([
-    request.server.prisma.courseEpisode.count({ where: { courseId } }),
+    request.server.prisma.courseEpisode.count({ where: { courseId, isVisible: true } }),
     (request.server.prisma as any).courseEpisodeProgress.count({
-      where: { memberId: request.memberId, episode: { courseId }, completed: true },
+      where: { memberId: request.memberId, episode: { courseId, isVisible: true }, completed: true },
     }),
   ]);
 
