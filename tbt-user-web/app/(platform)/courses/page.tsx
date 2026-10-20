@@ -623,7 +623,8 @@ export default function CoursesPage() {
   const [faqOpen, setFaqOpen] = useState(false);
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
 
-  const { uiStrings } = useSiteConfig();
+  const { uiStrings, config } = useSiteConfig();
+  const coursesBannerUrl = (config as any)?.coursesBannerUrl?.trim() || null;
 
   const { data: faqs = [] } = useCourseFaqs();
 
@@ -703,6 +704,22 @@ export default function CoursesPage() {
   return (
     <div className="space-y-8 pb-8">
 
+      {/* ── Page banner (admin-configured) ──────────────────────────── */}
+      {coursesBannerUrl && (
+        <div
+          className="relative overflow-hidden rounded-2xl"
+          style={{
+            background: `url(${JSON.stringify(coursesBannerUrl)}) center / cover no-repeat`,
+            minHeight: 120,
+          }}
+        >
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "linear-gradient(135deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.45) 100%)" }}
+          />
+        </div>
+      )}
+
       {roadmapCourseId && <CoursesPageRoadmap courseId={roadmapCourseId} />}
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
@@ -722,7 +739,6 @@ export default function CoursesPage() {
           </button>
         </div>
       )}
-
 
       {/* ── New Member State — CTA banner (always visible for new members) ── */}
       {personalizationState === "new" && !catalogLoading && !catalogError && (

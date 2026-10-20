@@ -12,7 +12,13 @@ const CONVERTIBLE_IMAGE_TYPES = new Set([
   'image/avif', 'image/gif', 'image/bmp', 'image/tiff',
 ]);
 
-
+// BUNNY_CDN_URL is usually a bare hostname, but may carry a scheme or a
+// trailing slash — build public URLs without producing "https://https://…".
+function cdnPublicUrl(key: string): string {
+  const base = (env.BUNNY_CDN_URL ?? '').trim();
+  const origin = (base.startsWith('http') ? base : `https://${base}`).replace(/\/+$/, '');
+  return `${origin}/${key}`;
+}
 
 export async function uploadImageHandler(req: FastifyRequest, reply: FastifyReply) {
   const { pathPrefix = 'uploads', filename = 'file' } = req.query as { pathPrefix?: string; filename?: string };
@@ -55,7 +61,7 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
         req.log.error(`Bunny Storage upload failed [${bunnyRes.status}]: ${text}`);
         // fall through to R2
       } else {
-        const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+        const publicUrl = cdnPublicUrl(key);
         req.log.info(`Bunny Storage upload success: ${publicUrl}`);
         return reply.send({ success: true, data: { publicUrl }, error: null });
       }
@@ -76,7 +82,7 @@ export async function uploadImageHandler(req: FastifyRequest, reply: FastifyRepl
         ContentType: contentType,
       }));
       const publicUrl = env.BUNNY_CDN_URL
-        ? `https://${env.BUNNY_CDN_URL}/${key}`
+        ? cdnPublicUrl(key)
         : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
       return reply.send({ success: true, data: { publicUrl }, error: null });
     } catch (err: any) {
@@ -168,7 +174,7 @@ export async function getPresignedUrlHandler(request: FastifyRequest, reply: Fas
   try {
     const s3 = getS3Client();
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
-    const publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+    const publicUrl = cdnPublicUrl(key);
 
     return reply.send({ success: true, data: { uploadUrl, publicUrl } });
   } catch (err: any) {

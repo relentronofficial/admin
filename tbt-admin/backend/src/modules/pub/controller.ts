@@ -9,44 +9,54 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
 
   const redis = req.server.redis ?? null;
   const CACHE_KEY = 'pub:site-config:v3';
-  const data = await cacheGetOrCompute<object>(redis, CACHE_KEY, 300, async () => {
-    let config = await req.server.prisma.siteConfig.findFirst();
-    if (!config) {
-      config = await req.server.prisma.siteConfig.create({
-        data: { siteName: 'TBT', footerText: '© TBT' },
-      });
-    }
-    const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
-      'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-    ).catch(() => []);
-    const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
-      'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
-    ).catch(() => []);
-    return {
-      siteName: config.siteName,
-      // Admin-controlled light/dark mode (Admin → Navigation) — web + mobile follow this.
-      themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
-      logoUrl: config.logoUrl ?? null,
-      faviconUrl: config.faviconUrl ?? null,
-      footerText: config.footerText,
-      theme: {
-        accentColor: config.accentColor,
-        alertColor: config.alertColor,
-        successColor: config.successColor,
-        bgPrimary: config.bgPrimary,
-        bgSurface: config.bgSurface,
-      },
-      splashLogoUrl: config.splashLogoUrl ?? null,
-      splashDurationMs: config.splashDurationMs,
-      loginBgUrl: config.loginBgUrl ?? null,
-      loginBgMobileUrl: config.loginBgMobileUrl ?? null,
-      loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
-      taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
-      earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
-      coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
-    };
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
+  let config = await req.server.prisma.siteConfig.findFirst();
+  if (!config) {
+    config = await req.server.prisma.siteConfig.create({
+      data: { siteName: 'TBT', footerText: '© TBT' },
+    });
+  }
+
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch((err) => {
+    req.log.error({ err }, '[pub/site-config] extra site_configs columns query failed');
+    return null;
   });
+  const extrasFailed = extraRows === null;
+
+  const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
+    'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
+
+  const data = {
+    siteName: config.siteName,
+    themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
+    logoUrl: config.logoUrl ?? null,
+    faviconUrl: config.faviconUrl ?? null,
+    footerText: config.footerText,
+    theme: {
+      accentColor: config.accentColor,
+      alertColor: config.alertColor,
+      successColor: config.successColor,
+      bgPrimary: config.bgPrimary,
+      bgSurface: config.bgSurface,
+    },
+    splashLogoUrl: config.splashLogoUrl ?? null,
+    splashDurationMs: config.splashDurationMs,
+    loginBgUrl: config.loginBgUrl ?? null,
+    loginBgMobileUrl: config.loginBgMobileUrl ?? null,
+    loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
+    taskTimerSeconds: extraRows?.[0]?.task_timer_seconds ?? 300,
+    freeLifelinesPerSession: extraRows?.[0]?.free_lifelines_per_session ?? 3,
+    earlyCompletionBonusXp: extraRows?.[0]?.early_completion_bonus_xp ?? 5,
+    coursesBannerUrl: extraRows?.[0]?.courses_banner_url ?? null,
+  };
+  // Never cache a degraded (defaulted) response — it would hide the real
+  // values for the full TTL once the underlying query recovers.
+  if (!extrasFailed) await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });
 }
 
