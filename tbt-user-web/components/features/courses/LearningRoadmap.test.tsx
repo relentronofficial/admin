@@ -8,6 +8,12 @@ const player = vi.hoisted(() => ({ episode: null as any }));
 vi.mock("@/lib/stores/usePodcastPlayer", () => ({
   usePodcastPlayer: (sel: (s: any) => any) => sel(player),
 }));
+const growth = vi.hoisted(() => ({
+  query: { data: null as any, isLoading: false, isError: false, refetch: () => {} },
+  push: (_: string) => {},
+}));
+vi.mock("@/lib/hooks/useBatchProgram", () => ({ useMyWeeklyGraph: () => growth.query }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: (h: string) => growth.push(h) }) }));
 
 const sections = [
   { id: "s1", title: "Foundations", sortOrder: 1 },
@@ -30,13 +36,21 @@ let onOpen: ReturnType<typeof vi.fn<(lesson: any) => void>>;
 const renderMap = (completed: string[] = [], extra: Record<string, any> = {}) =>
   render(<LearningRoadmap levels={levelsFor(completed)} onOpenLesson={onOpen} title="Growth Accelerator" {...extra} />);
 const trigger = () => screen.getByRole("button", { name: /^Learning roadmap:/ });
-const openPopup = () => fireEvent.click(trigger());
+const tab = (name: string) => screen.getByRole("tab", { name });
+/** Open the popup on the "This course" tab (the course chapter levels). */
+const openPopup = () => {
+  fireEvent.click(trigger());
+  fireEvent.click(tab("This course"));
+};
+const openGrowth = () => fireEvent.click(trigger()); // Growth milestones is the default tab
 const dialog = () => screen.getByRole("dialog", { name: "Learning Roadmap" });
 const level = (n: number) => within(dialog()).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").startsWith(`Level ${n}:`))!;
 
 beforeEach(() => {
   onOpen = vi.fn<(lesson: any) => void>();
   player.episode = null;
+  growth.query = { data: null, isLoading: false, isError: false, refetch: vi.fn() };
+  growth.push = vi.fn();
 });
 afterEach(cleanup);
 
@@ -292,5 +306,140 @@ describe("LearningRoadmap — all configured levels (Ads → 1 Crore)", () => {
     expect(dialog().textContent).toContain("No lessons yet");
     fireEvent.click(level(2));
     expect(onOpen).not.toHaveBeenCalled();
+  });
+});
+
+describe("LearningRoadmap — Growth milestones tab", () => {
+  const LABELS = ["Ads", "Website", "Funnels", "1 lakh", "1 crore"];
+  const graph = (reached: boolean[] = [], over: Record<string, any> = {}) => ({
+    totalDays: 28, currentDay: 10, currentWeek: 2, hasActivities: true,
+    weeks: [{ weekNumber: 1, progressLevel: 3, completionPercent: 100 }],
+    summary: { total: 0, completed: 0, completionPercent: null },
+    config: {
+      source: "program",
+      milestones: LABELS.map((label, i) => ({
+        id: `m${i + 1}`, label, kind: i < 3 ? "activity" : "revenue",
+        reached: !!reached[i], dayNumber: i === 0 ? 3 : i === 1 ? 9 : null, ...over,
+      })),
+    },
+  });
+  const milestone = (n: number) =>
+    within(dialog()).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").startsWith(`Milestone ${n}:`))!;
+  const mStates = () => [1, 2, 3, 4, 5].map((n) => milestone(n).getAttribute("data-level-state"));
+
+  it("is the default tab; the header and course tab stay unchanged", () => {
+    growth.query.data = graph();
+    renderMap(["a1", "a2"]);
+    openGrowth();
+    expect(tab("Growth milestones").getAttribute("aria-selected")).toBe("true");
+    expect(tab("This course").getAttribute("aria-selected")).toBe("false");
+    expect(within(dialog()).getByRole("heading", { name: /Learning Roadmap/ })).toBeTruthy();
+    expect(dialog().textContent).toContain("1 of 3 levels completed"); // header still shows course progress
+    fireEvent.click(tab("This course"));
+    expect(level(2).getAttribute("data-level-state")).toBe("current");
+  });
+
+  it("shows all five milestones in configured order on the winding path, with Start and Finish", () => {
+    growth.query.data = graph();
+    renderMap();
+    openGrowth();
+    const list = within(dialog()).getByRole("list", { name: "Growth milestones" });
+    expect(list.querySelectorAll("button[data-level-state]")).toHaveLength(5);
+    LABELS.forEach((label, i) => {
+      expect(milestone(i + 1).getAttribute("aria-label")).toContain(`Milestone ${i + 1}: ${label} —`);
+      expect(milestone(i + 1).style.left).toBe(`calc(${levelPoint(i).x}% - 30px)`);
+    });
+    expect(dialog().querySelectorAll("svg[data-roadmap-path] path[data-road-state]")).toHaveLength(4);
+    expect(dialog().textContent).toContain("Start");
+    expect(dialog().textContent).toContain("Finish");
+    expect(dialog().textContent).toContain("0 of 5 milestones reached");
+  });
+
+  it("only milestone 1 is open at first, even when the week graph plots high; locked ones don't navigate", () => {
+    growth.query.data = graph();
+    renderMap();
+    openGrowth();
+    expect(mStates()).toEqual(["current", "locked", "locked", "locked", "locked"]);
+    for (const n of [2, 3, 4, 5]) {
+      expect(milestone(n).getAttribute("aria-disabled")).toBe("true");
+      fireEvent.click(milestone(n));
+    }
+    expect(growth.push).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeTruthy();
+  });
+
+  it("an open activity milestone opens its linked batch-program day and closes the popup", () => {
+    growth.query.data = graph([true]);
+    renderMap();
+    openGrowth();
+    expect(mStates()).toEqual(["completed", "current", "locked", "locked", "locked"]);
+    fireEvent.click(milestone(2));
+    expect(growth.push).toHaveBeenCalledWith("/batch-program/9");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("with no linked task, an open activity milestone opens the batch program", () => {
+    growth.query.data = graph([true, true]);
+    renderMap();
+    openGrowth();
+    fireEvent.click(milestone(3));
+    expect(growth.push).toHaveBeenCalledWith("/batch-program");
+  });
+
+  it("revenue milestones show status only — no destination even when open", () => {
+    growth.query.data = graph([true, true, true]);
+    renderMap();
+    openGrowth();
+    expect(milestone(4).getAttribute("data-level-state")).toBe("current");
+    expect(milestone(4).getAttribute("aria-disabled")).toBe("true");
+    expect(milestone(4).getAttribute("aria-label")).toContain("achievement status only");
+    expect(dialog().textContent).toContain("Recorded by your mentor when achieved");
+    fireEvent.click(milestone(4));
+    expect(growth.push).not.toHaveBeenCalled();
+  });
+
+  it("unsaved program settings: revenue milestones say they are not set up, never reached", () => {
+    growth.query.data = graph([true, true, true], { id: null });
+    renderMap();
+    openGrowth();
+    expect(dialog().textContent).toContain("Not set up for your program yet");
+    expect(milestone(4).getAttribute("data-level-state")).not.toBe("completed");
+  });
+
+  it("not in a batch: five default milestones, all locked, with a join message; course tab still works", () => {
+    growth.query.data = null;
+    renderMap(["a1"]);
+    openGrowth();
+    expect(dialog().textContent).toContain("Join a batch program to unlock");
+    expect(mStates()).toEqual(["locked", "locked", "locked", "locked", "locked"]);
+    LABELS.forEach((label, i) => expect(milestone(i + 1).getAttribute("aria-label")).toContain(label));
+    fireEvent.click(tab("This course"));
+    fireEvent.click(level(1));
+    expect(onOpen.mock.calls[0][0].id).toBe("a2");
+  });
+
+  it("loading and error (with retry) states", () => {
+    growth.query = { data: undefined, isLoading: true, isError: false, refetch: vi.fn() };
+    renderMap();
+    openGrowth();
+    expect(dialog().querySelector('[aria-busy="true"]')).toBeTruthy();
+    cleanup();
+    const refetch = vi.fn();
+    growth.query = { data: undefined, isLoading: false, isError: true, refetch };
+    renderMap();
+    openGrowth();
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("arrow keys switch tabs", () => {
+    growth.query.data = graph();
+    renderMap();
+    openGrowth();
+    fireEvent.keyDown(tab("Growth milestones"), { key: "ArrowRight" });
+    expect(tab("This course").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(tab("This course"));
+    fireEvent.keyDown(tab("This course"), { key: "ArrowLeft" });
+    expect(tab("Growth milestones").getAttribute("aria-selected")).toBe("true");
   });
 });
