@@ -51,7 +51,17 @@ export interface WeeklyGraph {
   weeks: WeeklyGraphWeek[];
   summary: { total: number; completed: number; completionPercent: number | null };
   /** Y axis, bottom → top (progressLevel n = milestones[n - 1]); from the program's admin config or the defaults */
-  config?: { source: "program" | "default"; milestones: Array<{ id: string | null; label: string; kind: "activity" | "revenue" }> };
+  config?: { source: "program" | "default"; milestones: WeeklyGraphMilestone[] };
+}
+
+export interface WeeklyGraphMilestone {
+  id: string | null;
+  label: string;
+  kind: "activity" | "revenue";
+  /** Explicit evidence only: an admin-approved linked task, or an admin/mentor-recorded achievement (optional for older backends). */
+  reached?: boolean;
+  /** Batch-program day of the linked task; null when none is linked, always null for revenue milestones. */
+  dayNumber?: number | null;
 }
 
 export const batchProgramService = {

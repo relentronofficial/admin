@@ -238,3 +238,78 @@ describe('milestone axis progress', () => {
     expect(graph.weeks[0].progressLevel).toBe(0);
   });
 });
+
+describe('buildWeeklyGraph — per-milestone reached/dayNumber (Learning Roadmap)', () => {
+  const approved = (taskId: string, dayNumber: number) => ({ taskId, dayNumber, status: 'approved' });
+  const graph = (over: Partial<Parameters<typeof buildWeeklyGraph>[0]> = {}) =>
+    buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 28, currentDay: 20, ...over });
+  const saved = {
+    source: 'program' as const, weeks: null, coveredUntilDay: 0,
+    milestones: [
+      { id: 'm-ads', label: 'Ads', kind: 'activity' as const },
+      { id: 'm-web', label: 'Website', kind: 'activity' as const },
+      { id: 'm-fun', label: 'Funnels', kind: 'activity' as const },
+      { id: 'm-1l', label: '1 lakh', kind: 'revenue' as const },
+      { id: 'm-1c', label: '1 crore', kind: 'revenue' as const },
+    ],
+  };
+  const status = (g: ReturnType<typeof graph>) => g.config.milestones.map((m) => [m.label, m.reached, m.dayNumber]);
+
+  it('keeps every existing milestone field and adds reached=false / dayNumber=null when nothing is linked', () => {
+    const g = graph();
+    expect(g.config.milestones.map((m) => ({ id: m.id, label: m.label, kind: m.kind }))).toEqual([
+      { id: null, label: 'Ads', kind: 'activity' }, { id: null, label: 'Website', kind: 'activity' },
+      { id: null, label: 'Funnels', kind: 'activity' }, { id: null, label: '1 lakh', kind: 'revenue' },
+      { id: null, label: '1 crore', kind: 'revenue' },
+    ]);
+    expect(g.config.milestones.every((m) => m.reached === false && m.dayNumber === null)).toBe(true);
+  });
+
+  it('is reached only through an approved linked task — never from task share or the plotted height', () => {
+    // Every task of week 1 approved → week plots at Funnels, but no task is a milestone.
+    const g = graph({ tasks: [task('a', 1), task('b', 2)], submissions: [approved('a', 1), approved('b', 2)] });
+    expect(g.weeks[0].progressLevel).toBe(MAX_TASK_PROGRESS_LEVEL);
+    expect(g.config.milestones.some((m) => m.reached)).toBe(false);
+  });
+
+  it('a linked but unapproved task gives the day, not reached; approval reaches it', () => {
+    const tasks = [task('ads', 3, { graphMilestoneId: 'm-ads' }), task('web', 9, { graphMilestoneId: 'm-web' })];
+    expect(status(graph({ config: saved, tasks, submissions: [{ taskId: 'ads', dayNumber: 3, status: 'pending' }] })).slice(0, 2))
+      .toEqual([['Ads', false, 3], ['Website', false, 9]]);
+    expect(status(graph({ config: saved, tasks, submissions: [approved('ads', 3)] })).slice(0, 2))
+      .toEqual([['Ads', true, 3], ['Website', false, 9]]);
+  });
+
+  it('uses the earliest approved linked task day when reached, else the earliest linked day', () => {
+    const tasks = [task('w1', 4, { graphMilestoneId: 'm-web' }), task('w2', 11, { graphMilestoneId: 'm-web' })];
+    expect(status(graph({ config: saved, tasks }))[1]).toEqual(['Website', false, 4]);
+    expect(status(graph({ config: saved, tasks, submissions: [approved('w2', 11)] }))[1]).toEqual(['Website', true, 11]);
+  });
+
+  it('legacy is_milestone + milestone_label links work on unsaved (default) settings', () => {
+    const g = graph({ tasks: [task('f', 5, { isMilestone: true, milestoneLabel: 'funnel' })], submissions: [approved('f', 5)] });
+    expect(status(g)[2]).toEqual(['Funnels', true, 5]);
+  });
+
+  it("ignores other members' tasks", () => {
+    const g = graph({ config: saved, tasks: [task('x', 2, { memberId: OTHER, graphMilestoneId: 'm-ads' })], submissions: [approved('x', 2)] });
+    expect(status(g)[0]).toEqual(['Ads', false, null]);
+  });
+
+  it('revenue milestones: never from tasks, only from a recorded achievement, and never have a day', () => {
+    const tasks = [task('rev', 6, { graphMilestoneId: 'm-1l' }), task('rev2', 7, { isMilestone: true, milestoneLabel: '1 lakh' })];
+    expect(status(graph({ config: saved, tasks, submissions: [approved('rev', 6), approved('rev2', 7)] })).slice(3))
+      .toEqual([['1 lakh', false, null], ['1 crore', false, null]]);
+    const recorded = graph({ config: saved, records: [{ milestoneId: 'm-1l', weekId: null }] });
+    expect(status(recorded).slice(3)).toEqual([['1 lakh', true, null], ['1 crore', false, null]]);
+  });
+
+  it('a recorded achievement reaches an activity milestone too, whatever its week', () => {
+    expect(status(graph({ config: saved, records: [{ milestoneId: 'm-web', weekId: 'gone' }] }))[1]).toEqual(['Website', true, null]);
+  });
+
+  it('default (unsaved) revenue milestones can never be reached — records need a saved milestone id', () => {
+    const g = graph({ records: [{ milestoneId: 'anything', weekId: null }] });
+    expect(g.config.milestones.slice(3).map((m) => [m.id, m.reached])).toEqual([[null, false], [null, false]]);
+  });
+});
