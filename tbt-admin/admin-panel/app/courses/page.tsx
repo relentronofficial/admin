@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
   CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, FileText, ListTodo, Link2,
-  MessageSquare, Star, ThumbsUp, Layers, Copy,
+  MessageSquare, Star, ThumbsUp, Layers, Copy, HelpCircle, Video, Type,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -33,6 +33,7 @@ import {
   useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
   useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
   useListCourseEpisodeFeedback, useUpdateCourseEpisodeFeedbackStatus,
+  useListCourseFaqsAdmin, useCreateCourseFaq, useUpdateCourseFaq, useDeleteCourseFaq, useReorderCourseFaqs,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -405,6 +406,10 @@ export default function CoursesPage() {
             </PanelErrorBoundary>
           )}
         </div>
+
+        {/* Course Page FAQ Manager */}
+        <CourseFaqManager />
+
         </>}
       </div>
 
@@ -3557,6 +3562,181 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Course Page FAQ Manager ───────────────────────────────────────────────────
+
+const EMPTY_FAQ = { question: "", answerType: "text" as "text" | "video", answerText: "", answerVideoUrl: "", isActive: true };
+
+function CourseFaqManager() {
+  const { data, isLoading } = useListCourseFaqsAdmin();
+  const create = useCreateCourseFaq();
+  const update = useUpdateCourseFaq();
+  const remove = useDeleteCourseFaq();
+  const reorder = useReorderCourseFaqs();
+
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ ...EMPTY_FAQ });
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  const faqs: any[] = (data as any)?.data ?? [];
+  useEffect(() => { setLocalItems(faqs); setIsDirty(false); }, [data]);
+
+  function openCreate() { setForm({ ...EMPTY_FAQ }); setEditId(null); setShowForm(true); }
+  function openEdit(faq: any) {
+    setForm({ question: faq.question, answerType: faq.answerType, answerText: faq.answerText ?? "", answerVideoUrl: faq.answerVideoUrl ?? "", isActive: faq.isActive });
+    setEditId(faq.id); setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.question.trim()) return;
+    try {
+      if (editId) {
+        await update.mutateAsync({ id: editId, question: form.question.trim(), answerType: form.answerType, answerText: form.answerType === 'text' ? form.answerText : undefined, answerVideoUrl: form.answerType === 'video' ? form.answerVideoUrl : undefined, isActive: form.isActive });
+        toast.success("FAQ updated");
+      } else {
+        await create.mutateAsync({ question: form.question.trim(), answerType: form.answerType, answerText: form.answerType === 'text' ? form.answerText : undefined, answerVideoUrl: form.answerType === 'video' ? form.answerVideoUrl : undefined, isActive: form.isActive });
+        toast.success("FAQ created");
+      }
+      setShowForm(false); setEditId(null); setForm({ ...EMPTY_FAQ });
+    } catch { toast.error("Failed to save FAQ"); }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this FAQ?")) return;
+    await remove.mutateAsync(id).catch(() => toast.error("Delete failed"));
+    toast.success("Deleted");
+  }
+
+  const onDragStart = (i: number) => { dragIdx.current = i; };
+  const onDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setDragOver(i); };
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
+  };
+
+  async function handleSaveOrder() {
+    await reorder.mutateAsync(localItems.map(f => f.id));
+    setIsDirty(false); toast.success("Order saved");
+  }
+
+  return (
+    <div className="bg-[#181818] border border-[#2a2a2a] rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+        <div className="flex items-center gap-2">
+          <HelpCircle size={16} className="text-[#dc2626]" />
+          <span className="font-rajdhani text-[11px] font-bold uppercase tracking-widest text-[#606060]">Course Page FAQ</span>
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#2a2a2a] text-[#a0a0a0]">{faqs.length}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isDirty && (
+            <button onClick={handleSaveOrder} disabled={reorder.isPending} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors disabled:opacity-50">
+              {reorder.isPending ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save Order
+            </button>
+          )}
+          {!showForm && (
+            <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors">
+              <Plus size={11} /> Add FAQ
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {showForm && (
+          <div className="border border-[#333] bg-[#141414] rounded-xl p-4 space-y-3 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">{editId ? "Edit FAQ" : "New FAQ"}</p>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Question</label>
+              <input value={form.question} onChange={e => setForm(f => ({ ...f, question: e.target.value }))} placeholder="e.g. What courses are included in this program?" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white text-sm outline-none focus:border-[#dc2626]" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Answer Type</label>
+              <div className="flex gap-2">
+                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.answerType === 'text' ? 'border-[#dc2626] bg-red-500/10 text-[#dc2626]' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                  <input type="radio" className="sr-only" checked={form.answerType === 'text'} onChange={() => setForm(f => ({ ...f, answerType: 'text' }))} />
+                  <Type size={11} /> Text
+                </label>
+                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.answerType === 'video' ? 'border-[#dc2626] bg-red-500/10 text-[#dc2626]' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                  <input type="radio" className="sr-only" checked={form.answerType === 'video'} onChange={() => setForm(f => ({ ...f, answerType: 'video' }))} />
+                  <Video size={11} /> Video
+                </label>
+              </div>
+            </div>
+            {form.answerType === 'text' ? (
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Answer Text</label>
+                <textarea value={form.answerText} onChange={e => setForm(f => ({ ...f, answerText: e.target.value }))} placeholder="Write the answer..." rows={4} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#dc2626] resize-none" />
+              </div>
+            ) : (
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Video URL (Bunny iframe embed URL)</label>
+                <input value={form.answerVideoUrl} onChange={e => setForm(f => ({ ...f, answerVideoUrl: e.target.value }))} placeholder="https://iframe.mediadelivery.net/embed/..." className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white text-sm outline-none focus:border-[#dc2626]" />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="faq-active" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="accent-[#dc2626]" />
+              <label htmlFor="faq-active" className="text-[11px] text-[#a0a0a0]">Active (visible to members)</label>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setShowForm(false); setEditId(null); }} className="px-3 py-1.5 text-[11px] text-[#666] hover:text-white rounded-lg transition-colors">Cancel</button>
+              <button onClick={handleSave} disabled={create.isPending || update.isPending || !form.question.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors disabled:opacity-50">
+                {(create.isPending || update.isPending) ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                {editId ? "Update" : "Add"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <p className="text-[12px] text-[#555] text-center py-6">Loading...</p>}
+        {!isLoading && localItems.length === 0 && !showForm && (
+          <p className="text-[12px] text-[#555] text-center py-6">No FAQs yet. Click "Add FAQ" to create the first one.</p>
+        )}
+
+        {localItems.map((faq, i) => (
+          <div key={faq.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragLeave={() => setDragOver(null)}
+            className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${dragOver === i ? 'border-[#dc2626] bg-red-500/5' : 'border-[#2a2a2a] bg-[#141414]'}`}>
+            <GripVertical size={14} className="text-[#444] mt-0.5 shrink-0 cursor-grab" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-[#f0f0f0] leading-snug">{faq.question}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold ${faq.answerType === 'video' ? 'bg-blue-500/15 text-blue-400' : 'bg-[#2a2a2a] text-[#666]'}`}>
+                  {faq.answerType === 'video' ? <Video size={8} /> : <Type size={8} />}
+                  {faq.answerType}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${faq.isActive ? 'bg-green-500/15 text-green-400' : 'bg-[#2a2a2a] text-[#555]'}`}>
+                  {faq.isActive ? 'active' : 'hidden'}
+                </span>
+                {faq.answerType === 'text' && faq.answerText && (
+                  <span className="text-[10px] text-[#555] truncate max-w-[260px]">{faq.answerText}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => update.mutate({ id: faq.id, isActive: !faq.isActive })} title={faq.isActive ? "Hide" : "Show"} className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#555] hover:text-[#a0a0a0] transition-colors">
+                {faq.isActive ? <Eye size={12} /> : <EyeOff size={12} />}
+              </button>
+              <button onClick={() => openEdit(faq)} className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#555] hover:text-[#a0a0a0] transition-colors">
+                <Pencil size={12} />
+              </button>
+              <button onClick={() => handleDelete(faq.id)} className="p-1.5 rounded hover:bg-red-500/10 text-[#555] hover:text-red-400 transition-colors">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

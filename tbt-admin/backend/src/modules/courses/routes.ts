@@ -21,6 +21,8 @@ import {
   updateCourseSectionHandler, deleteCourseSectionHandler, reorderCourseSectionsHandler,
   listCourseModulesHandler, createCourseModuleHandler,
   updateCourseModuleHandler, deleteCourseModuleHandler, reorderCourseModulesHandler,
+  listCourseFaqsAdminHandler, createCourseFaqHandler, updateCourseFaqHandler,
+  deleteCourseFaqHandler, reorderCourseFaqsHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -73,6 +75,13 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/modules/reorder', reorderCourseModulesHandler);
   fastify.put('/:id/modules/:moduleId', updateCourseModuleHandler);
   fastify.delete('/:id/modules/:moduleId', deleteCourseModuleHandler);
+
+  // Course Page FAQs (global — not per-course)
+  fastify.get('/faqs', listCourseFaqsAdminHandler);
+  fastify.post('/faqs', createCourseFaqHandler);
+  fastify.put('/faqs/reorder', reorderCourseFaqsHandler);
+  fastify.put('/faqs/:faqId', updateCourseFaqHandler);
+  fastify.delete('/faqs/:faqId', deleteCourseFaqHandler);
 
   // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);
