@@ -7406,9 +7406,10 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
   if (coinResult.status === 'credited') {
     void invalidateCache((request.server as any).redis ?? null, `me:${coinResult.memberId}`);
   }
-  // A database error is answered 500 so Razorpay retries the event later.
-  if (coinResult.status === 'error') return reply.status(500).send({ ok: false });
-  if (coinResult.status !== 'not_found') return reply.send({ ok: true });
+  // A coin-lookup error must not block course/lifeline payments on the same
+  // webhook: it is logged and the event falls through. Coin orders are still
+  // credited by /verify.
+  if (coinResult.status !== 'not_found' && coinResult.status !== 'error') return reply.send({ ok: true });
 
   const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT cp.id, cp.status, cp.member_id, cp.course_id
