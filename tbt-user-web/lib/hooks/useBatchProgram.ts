@@ -222,6 +222,61 @@ export const useDownloadBatchCertificate = () => {
 
 export type ExtraLifelineOutcome = "success" | "cancelled" | "failed" | "pending" | "error" | "busy";
 
+/**
+ * Result of one purchase attempt. For errors, `stage` says where it stopped and
+ * `code` is the backend's safe reason code (e.g. PRICE_NOT_CONFIGURED) — shown
+ * to the member as a reference for support and visible in the backend logs.
+ * Before checkout opens (stage "order"/"checkout") nothing can have been charged.
+ */
+export interface ExtraLifelineResult {
+  outcome: ExtraLifelineOutcome;
+  stage?: "checkout" | "order" | "verify";
+  code?: string;
+}
+
+/**
+ * Backend reason code (e.g. "PRICE_NOT_CONFIGURED") from an apiClient result.
+ * - A 2xx body with success:false (e.g. 202 PAYMENT_PENDING) arrives as { error: { message: CODE } }.
+ * - A 4xx/5xx is REJECTED by apiClient's interceptor (lib/api/client.ts) as new Error(CODE):
+ *   the HTTP status is not kept, so the code is the only signal.
+ */
+function errorCode(x: any): string | undefined {
+  const raw = x instanceof Error
+    ? x.message
+    : x?.response?.data?.error?.message ?? x?.error?.message ?? (typeof x?.error === "string" ? x.error : undefined);
+  return typeof raw === "string" && /^[A-Z][A-Z0-9_]{2,60}$/.test(raw) ? raw : undefined;
+}
+
+const UNAVAILABLE_CODES = new Set([
+  "RAZORPAY_NOT_CONFIGURED", "PRICE_NOT_CONFIGURED", "PRICING_TABLE_MISSING", "PRICE_LOOKUP_FAILED",
+  "LIFELINE_TABLE_MISSING", "ORDER_SAVE_FAILED",
+]);
+
+/** Member-facing message for a purchase result (null = say nothing, e.g. a second click while busy). */
+export function extraLifelineMessage(r: ExtraLifelineResult): { kind: "success" | "info" | "error"; text: string } | null {
+  const ref = r.code ? ` (ref: ${r.code})` : "";
+  switch (r.outcome) {
+    case "success":
+      return { kind: "success", text: "Extra lifeline added!" };
+    case "cancelled":
+      return { kind: "info", text: "Payment cancelled — no lifeline added." };
+    case "failed":
+      return { kind: "error", text: "Payment failed — no lifeline added." };
+    case "pending":
+      return { kind: "info", text: "Payment is still processing. Your lifeline will be added automatically once Razorpay confirms it — contact support if it hasn't appeared within an hour." };
+    case "busy":
+      return null;
+    default:
+      if (r.stage === "checkout") return { kind: "error", text: "Couldn't load the payment window. Check your connection and try again — no payment was taken." };
+      if (r.stage === "order") {
+        if (r.code === "NOT_IN_BATCH") return { kind: "error", text: "Extra lifelines are available to batch program members only." };
+        if (r.code && UNAVAILABLE_CODES.has(r.code)) return { kind: "error", text: `Lifeline purchases are temporarily unavailable — no payment was taken. Please try again later${ref}.` };
+        return { kind: "error", text: `Couldn't start the payment — no payment was taken. Please try again${ref}.` };
+      }
+      return { kind: "error", text: `We couldn't confirm your payment yet. If you were charged, your lifeline will be added automatically — contact support if it hasn't appeared within an hour${ref}.` };
+  }
+}
+
 const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
 
 function loadRazorpayCheckout(): Promise<boolean> {
@@ -247,19 +302,19 @@ export const useBuyExtraLifeline = ({ pendingRetryDelayMs = 3000, pendingRetries
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
-  const buy = useCallback(async (): Promise<ExtraLifelineOutcome> => {
-    if (busyRef.current) return "busy";
+  const buy = useCallback(async (): Promise<ExtraLifelineResult> => {
+    if (busyRef.current) return { outcome: "busy" };
     busyRef.current = true;
     setBusy(true);
     try {
-      if (!(await loadRazorpayCheckout())) return "error";
+      if (!(await loadRazorpayCheckout())) return { outcome: "error", stage: "checkout", code: "CHECKOUT_LOAD_FAILED" };
       let order;
       try {
         const res = await batchProgramService.createLifelineOrder();
-        if (!res?.success || !res.data) return "error";
+        if (!res?.success || !res.data) return { outcome: "error", stage: "order", code: errorCode(res) };
         order = res.data;
-      } catch {
-        return "error";
+      } catch (err) {
+        return { outcome: "error", stage: "order", code: errorCode(err) };
       }
 
       const paid = await new Promise<CheckoutResult>((resolve) => {
@@ -287,7 +342,7 @@ export const useBuyExtraLifeline = ({ pendingRetryDelayMs = 3000, pendingRetries
         });
         rzp.open();
       });
-      if (paid === "cancelled" || paid === "failed") return paid;
+      if (paid === "cancelled" || paid === "failed") return { outcome: paid };
 
       for (let attempt = 0; ; attempt++) {
         try {
@@ -297,12 +352,16 @@ export const useBuyExtraLifeline = ({ pendingRetryDelayMs = 3000, pendingRetries
               qc.invalidateQueries({ queryKey: ["my-batch"] }),
               qc.invalidateQueries({ queryKey: ["user", "support-quota"] }),
             ]);
-            return "success";
+            return { outcome: "success" };
           }
           // 202 PAYMENT_PENDING: captured money not settled yet — ask again shortly.
-          if (res?.error?.message !== "PAYMENT_PENDING" || attempt >= pendingRetries) return res?.error?.message === "PAYMENT_PENDING" ? "pending" : "error";
-        } catch (err: any) {
-          return err?.response?.status === 402 ? "failed" : "error";
+          const code = errorCode(res);
+          if (code !== "PAYMENT_PENDING") return { outcome: "error", stage: "verify", code };
+          if (attempt >= pendingRetries) return { outcome: "pending", stage: "verify", code };
+        } catch (err) {
+          const code = errorCode(err);
+          // 402 PAYMENT_FAILED: Razorpay reports the payment failed — nothing was charged/credited.
+          return code === "PAYMENT_FAILED" ? { outcome: "failed", stage: "verify", code } : { outcome: "error", stage: "verify", code };
         }
         await new Promise((r) => setTimeout(r, pendingRetryDelayMs));
       }

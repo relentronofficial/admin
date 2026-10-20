@@ -12,7 +12,16 @@ vi.mock("@/lib/hooks/useMentorship", () => ({
   useMentorshipSocial: () => ({ data: null }),
   useUpsertMentorshipSocial: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
-vi.mock("@/lib/hooks/useBatchProgram", () => ({
+const toastMock = vi.hoisted(() => {
+  const info = vi.fn();
+  return { info, success: vi.fn(), error: vi.fn() };
+});
+vi.mock("react-hot-toast", () => ({
+  toast: Object.assign((...a: unknown[]) => toastMock.info(...a), { success: toastMock.success, error: toastMock.error }),
+}));
+vi.mock("@/lib/hooks/useBatchProgram", async (importOriginal) => ({
+  // the real message mapper; only the data/purchase hooks are mocked
+  extraLifelineMessage: (await importOriginal<typeof import("@/lib/hooks/useBatchProgram")>()).extraLifelineMessage,
   useMyBatchProgram: () => state.batch,
   useMyWeeklyGraph: () => state.graph,
   useBuyExtraLifeline: () => state.buy,
@@ -42,7 +51,7 @@ function baseData() {
       isLoading: false, isError: false, refetch: vi.fn(),
     },
     batch: { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false },
-    buy: { buy: vi.fn(async () => "success"), busy: false },
+    buy: { buy: vi.fn(async () => ({ outcome: "success" })), busy: false },
     pricing: [{ credit_type: "lifeline", price_inr: 199 }],
     // Member with a batch whose graph has one completed and one upcoming activity.
     graph: {
@@ -75,7 +84,12 @@ function baseData() {
 const headings = () => screen.getAllByRole("heading").map((h) => h.textContent?.trim());
 const tile = (label: string) => screen.getByText(label).closest("div")!.parentElement!.textContent!.replace(/\s+/g, "");
 
-beforeEach(() => Object.assign(state, baseData()));
+beforeEach(() => {
+  Object.assign(state, baseData());
+  toastMock.info.mockClear();
+  toastMock.success.mockClear();
+  toastMock.error.mockClear();
+});
 afterEach(cleanup);
 
 describe("MentorshipDashboard", () => {
@@ -236,55 +250,112 @@ describe("MentorshipDashboard", () => {
 });
 
 describe("MentorshipDashboard — lifeline hearts", () => {
-  const hearts = () => {
-    const pill = [...document.querySelectorAll("span")].find((s) => s.textContent?.includes("❤️"))!;
+  /** The red lifeline pill: filled ❤️ = remaining, faded 🤍 = used, and the + buy button. */
+  const pill = () => {
+    const el = [...document.querySelectorAll("span")].find((s) => /❤️|🤍/.test(s.textContent ?? "") && s.style.background !== "")!;
     return {
-      filled: (pill.textContent!.match(/❤️/g) ?? []).length,
-      plus: [...pill.querySelectorAll<HTMLButtonElement>("button[data-lifeline-buy]")],
-      outlined: (pill.textContent!.match(/🤍/g) ?? []).length,
+      el,
+      filled: (el.textContent!.match(/❤️/g) ?? []).length,
+      used: (el.textContent!.match(/🤍/g) ?? []).length,
+      plus: [...el.querySelectorAll<HTMLButtonElement>("button[data-lifeline-buy]")],
     };
   };
+  const withLifelines = (total: number, used: number) => {
+    state.batch = { data: { lifelinesTotal: total, lifelinesUsed: used }, isLoading: false };
+  };
 
-  it("keeps a filled heart for each remaining lifeline and shows a + for each used one", () => {
-    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false };
+  it("0 used: three hearts and no + button", () => {
+    withLifelines(3, 0);
     render(<MentorshipDashboard />);
-    const h = hearts();
-    expect(h.filled).toBe(2);
-    expect(h.plus).toHaveLength(1);
-    expect(h.outlined).toBe(0);
+    expect(pill()).toMatchObject({ filled: 3, used: 0 });
+    expect(pill().plus).toHaveLength(0);
   });
 
-  it("shows no + while no lifeline has been used", () => {
-    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 0 }, isLoading: false };
-    render(<MentorshipDashboard />);
-    expect(hearts()).toMatchObject({ filled: 3, outlined: 0 });
-    expect(hearts().plus).toHaveLength(0);
+  it("1 or 2 used: remaining hearts filled, used hearts faded, still no + button", () => {
+    for (const used of [1, 2]) {
+      withLifelines(3, used);
+      render(<MentorshipDashboard />);
+      expect(pill()).toMatchObject({ filled: 3 - used, used });
+      expect(pill().plus).toHaveLength(0);
+      cleanup();
+    }
   });
 
-  it("every used lifeline gets a + — all three when all are used", () => {
-    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 3 }, isLoading: false };
+  it("all 3 used: three faded hearts and exactly ONE + button", () => {
+    withLifelines(3, 3);
     render(<MentorshipDashboard />);
-    const pill = document.querySelectorAll("button[data-lifeline-buy]");
-    expect(pill).toHaveLength(3);
+    expect(pill()).toMatchObject({ filled: 0, used: 3 });
+    expect(pill().plus).toHaveLength(1);
+    expect(document.querySelectorAll("button[data-lifeline-buy]")).toHaveLength(1);
+  });
+
+  it("repeated renders never add more + buttons", () => {
+    withLifelines(3, 3);
+    const { rerender } = render(<MentorshipDashboard />);
+    for (let i = 0; i < 4; i++) rerender(<MentorshipDashboard />);
+    expect(document.querySelectorAll("button[data-lifeline-buy]")).toHaveLength(1);
+  });
+
+  it("after buying (total 4, used 3) one heart is filled again and the + disappears; spending it brings back one +", () => {
+    withLifelines(4, 3);
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 1, used: 3 });
+    expect(pill().plus).toHaveLength(0);
+    cleanup();
+    withLifelines(4, 4);
+    render(<MentorshipDashboard />);
+    expect(pill().plus).toHaveLength(1);
+  });
+
+  it("over-used data (used > total) shows no negative hearts and one +", () => {
+    withLifelines(3, 5);
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 0, used: 3 });
+    expect(pill().plus).toHaveLength(1);
+  });
+
+  it("no lifeline data (loading/error/not in a batch): no hearts and no + button", () => {
+    state.batch = { data: null, isLoading: false };
+    render(<MentorshipDashboard />);
+    expect(document.querySelectorAll("button[data-lifeline-buy]")).toHaveLength(0);
+    expect(document.body.textContent).not.toMatch(/❤️|🤍/);
   });
 
   it("labels the + with the admin-configured Extra Lifeline price", () => {
+    withLifelines(3, 3);
     state.pricing = [{ credit_type: "tech_support", price_inr: 999 }, { credit_type: "lifeline", price_inr: "249.00" }];
     render(<MentorshipDashboard />);
     expect(screen.getByRole("button", { name: "Buy an extra lifeline for ₹249" })).toBeTruthy();
   });
 
-  it("clicking + starts the Extra Lifeline purchase", () => {
+  it("clicking + starts one purchase and shows its message", async () => {
+    withLifelines(3, 3);
+    state.buy = { buy: vi.fn(async () => ({ outcome: "error", stage: "order", code: "PRICE_NOT_CONFIGURED" })), busy: false };
     render(<MentorshipDashboard />);
-    fireEvent.click(hearts().plus[0]);
+    fireEvent.click(pill().plus[0]);
     expect(state.buy.buy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+    expect(toastMock.error.mock.calls[0][0]).toContain("temporarily unavailable");
+    expect(toastMock.error.mock.calls[0][0]).toContain("ref: PRICE_NOT_CONFIGURED");
   });
 
-  it("the + is disabled while a purchase is in progress", () => {
+  it("a cancelled checkout shows the cancel message and nothing else", async () => {
+    withLifelines(3, 3);
+    state.buy = { buy: vi.fn(async () => ({ outcome: "cancelled" })), busy: false };
+    render(<MentorshipDashboard />);
+    fireEvent.click(pill().plus[0]);
+    await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("Payment cancelled — no lifeline added.", expect.anything()));
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("while a purchase is in progress the + is disabled, busy and shows a spinner", () => {
+    withLifelines(3, 3);
     state.buy = { buy: vi.fn(), busy: true };
     render(<MentorshipDashboard />);
-    const btn = hearts().plus[0];
+    const btn = pill().plus[0];
     expect(btn.disabled).toBe(true);
+    expect(btn.getAttribute("aria-busy")).toBe("true");
+    expect(btn.querySelector(".animate-spin")).toBeTruthy();
     fireEvent.click(btn);
     expect(state.buy.buy).not.toHaveBeenCalled();
   });

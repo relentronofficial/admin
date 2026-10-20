@@ -25,9 +25,10 @@ vi.mock('./razorpay.js', () => ({
 }));
 
 const { creditLifelineOrder, liveLifelineRazorpayReader } = await import('./lifelineCredit.js');
-const { LIFELINE_ORDERS_DDL } = await import('./lifelineOrdersSchema.js');
+const { LIFELINE_ORDERS_DDL } = await import('../plugins/prisma.js');
 const { runLifelineReconciliation } = await import('../jobs/lifelineReconcile.js');
 const { handleLifelineWebhookEvent } = await import('../modules/user/lifelinePurchase.js');
+const { priceInrToPaise } = await import('./lifelinePurchaseLogic.js');
 
 const RAW_URL = process.env.LIFELINE_PG_TEST_URL ?? '';
 const isLocal = (() => {
@@ -192,6 +193,15 @@ describe.skipIf(!RAW_URL)('creditLifelineOrder — real PostgreSQL', () => {
     const late = pay(stale);
     expect((await creditLifelineOrder(prisma, liveLifelineRazorpayReader, { orderId: stale, paymentId: late })).kind).toBe('credited');
     expect(await lifelines()).toBe(4);
+  });
+
+  it('reads the real DECIMAL credit_pricing price (Prisma.Decimal) as paise — the production create-order 503', async () => {
+    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS credit_pricing (
+      credit_type VARCHAR(50) PRIMARY KEY, price_inr DECIMAL(10,2) NOT NULL, label TEXT NOT NULL)`);
+    await prisma.$executeRawUnsafe(`INSERT INTO credit_pricing VALUES ('lifeline', 199, 'Extra Lifeline') ON CONFLICT DO NOTHING`);
+    const [row] = await prisma.$queryRawUnsafe<any[]>(`SELECT price_inr, label FROM credit_pricing WHERE credit_type = $1`, 'lifeline');
+    expect(typeof row.price_inr).toBe('object'); // what tripped the old string/number-only parser
+    expect(priceInrToPaise(row.price_inr)).toBe(19900);
   });
 
   it('the webhook lookup ignores orders that are not lifeline orders', async () => {

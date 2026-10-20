@@ -59,6 +59,7 @@ vi.mock('../../lib/razorpay.js', async (importOriginal) => {
   };
 });
 
+const { Prisma } = await import('@prisma/client');
 const { createLifelineOrderHandler, verifyLifelinePaymentHandler } = await import('./lifelinePurchase.js');
 const { razorpayWebhookHandler } = await import('./controller.js');
 const { runLifelineReconciliation } = await import('../../jobs/lifelineReconcile.js');
@@ -76,7 +77,10 @@ interface Order {
 }
 interface Store {
   members: Record<string, { batchId: string | null }>;
-  pricing: Record<string, { price_inr: string; label: string }>;
+  /** price_inr as Prisma returns a raw DECIMAL column: a Prisma.Decimal object. */
+  pricing: Record<string, { price_inr: unknown; label: string }>;
+  /** Simulate a table missing in the database (Postgres 42P01). */
+  missingTable: string | null;
   orders: Order[];
   settings: Array<{ memberId: string; batchId: string; total: number; used: number }>;
   /** SQL fragment that fails once (transient DB error). */
@@ -87,6 +91,9 @@ let db: Store;
 
 async function sql(text: string, ...a: any[]): Promise<any> {
   const q = text.replace(/\s+/g, ' ').trim();
+  if (db.missingTable && q.includes(db.missingTable)) {
+    throw Object.assign(new Error(`relation "${db.missingTable}" does not exist`), { code: 'P2010', meta: { code: '42P01' } });
+  }
   if (db.failOnce && q.includes(db.failOnce)) {
     db.failOnce = null;
     throw new Error('connection terminated unexpectedly');
@@ -227,7 +234,8 @@ beforeEach(() => {
   rzp.rateLimited = false;
   db = {
     members: { [ME]: { batchId: BATCH }, [OTHER]: { batchId: BATCH } },
-    pricing: { lifeline: { price_inr: '199.00', label: 'Extra Lifeline' } },
+    pricing: { lifeline: { price_inr: new Prisma.Decimal('199.00'), label: 'Extra Lifeline' } },
+    missingTable: null,
     orders: [],
     settings: [{ memberId: ME, batchId: BATCH, total: 3, used: 2 }],
     failOnce: null,
@@ -246,20 +254,59 @@ describe('POST /api/user/lifelines/razorpay/create-order', () => {
   });
 
   it('follows an admin price change — the price is never hardcoded', async () => {
-    db.pricing.lifeline.price_inr = '249.00';
+    db.pricing.lifeline.price_inr = new Prisma.Decimal('249.00');
     expect((await createOrder()).body.data.amount).toBe(24900);
   });
 
   it('refuses when no price is configured, the member is not in a batch, or Razorpay is not configured', async () => {
     delete (db.pricing as any).lifeline;
     expect(await createOrder()).toMatchObject({ status: 503, body: { error: { message: 'PRICE_NOT_CONFIGURED' } } });
-    db.pricing.lifeline = { price_inr: '199.00', label: 'Extra Lifeline' };
+    db.pricing.lifeline = { price_inr: new Prisma.Decimal('199.00'), label: 'Extra Lifeline' };
     db.members[ME].batchId = null;
     expect(await createOrder()).toMatchObject({ status: 400, body: { error: { message: 'NOT_IN_BATCH' } } });
     db.members[ME].batchId = BATCH;
     env.RAZORPAY_KEY_SECRET = undefined;
     expect(await createOrder()).toMatchObject({ status: 503, body: { error: { message: 'RAZORPAY_NOT_CONFIGURED' } } });
     expect(rzp.orders.size).toBe(0);
+  });
+});
+
+describe('create-order failures are diagnosable (safe reason codes in the response and the log)', () => {
+  beforeEach(() => quietLog.warn.mockClear());
+
+  it('the configured DECIMAL price (Prisma.Decimal) creates an order — the production 503 regression', async () => {
+    const res = await createOrder();
+    expect(res.status).toBe(200);
+    expect(res.body.data.amount).toBe(19900);
+    expect(quietLog.warn).not.toHaveBeenCalled();
+  });
+
+  it('each failure returns and logs its own code — never secrets or member data', async () => {
+    const cases: Array<[() => void, number, string]> = [
+      [() => { env.RAZORPAY_KEY_SECRET = undefined; }, 503, 'RAZORPAY_NOT_CONFIGURED'],
+      [() => { db.members[ME].batchId = null; }, 400, 'NOT_IN_BATCH'],
+      [() => { db.pricing.lifeline.price_inr = new Prisma.Decimal(0); }, 503, 'PRICE_NOT_CONFIGURED'],
+      [() => { db.missingTable = 'credit_pricing'; }, 503, 'PRICING_TABLE_MISSING'],
+      [() => { db.failOnce = 'FROM credit_pricing'; }, 503, 'PRICE_LOOKUP_FAILED'],
+      [() => { db.missingTable = 'INSERT INTO lifeline_razorpay_orders'; }, 503, 'LIFELINE_TABLE_MISSING'],
+      [() => { db.failOnce = 'INSERT INTO lifeline_razorpay_orders'; }, 503, 'ORDER_SAVE_FAILED'],
+    ];
+    for (const [setup, status, code] of cases) {
+      quietLog.warn.mockClear();
+      setup();
+      const res = await createOrder();
+      expect(res).toMatchObject({ status, body: { success: false, error: { message: code } } });
+      expect(quietLog.warn).toHaveBeenCalledWith({ code }, '[lifeline-order] create-order failed');
+      const logged = JSON.stringify(quietLog.warn.mock.calls);
+      for (const secret of ['test-key-secret', 'test-webhook-secret', ME, BATCH]) expect(logged).not.toContain(secret);
+      // reset for the next case
+      env.RAZORPAY_KEY_SECRET = 'test-key-secret';
+      db.members[ME].batchId = BATCH;
+      db.pricing.lifeline.price_inr = new Prisma.Decimal('199.00');
+      db.missingTable = null;
+      db.failOnce = null;
+    }
+    expect(db.orders).toEqual([]);
   });
 });
 

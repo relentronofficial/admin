@@ -14,6 +14,13 @@ describe('priceInrToPaise', () => {
     expect(priceInrToPaise(249)).toBe(24900);
     expect(priceInrToPaise('99.99')).toBe(9999);
   });
+  it('reads the Prisma.Decimal that a raw DECIMAL query returns (the production create-order 503)', async () => {
+    const { Prisma } = await import('@prisma/client');
+    expect(priceInrToPaise(new Prisma.Decimal('199.00'))).toBe(19900);
+    expect(priceInrToPaise(new Prisma.Decimal('249.5'))).toBe(24950);
+    expect(priceInrToPaise(new Prisma.Decimal(0))).toBeNull();
+    expect(priceInrToPaise({})).toBeNull();
+  });
   it('rejects missing, zero, negative or non-numeric prices', () => {
     for (const v of [undefined, null, '', '0', 0, -5, 'abc', NaN]) expect(priceInrToPaise(v)).toBeNull();
   });
@@ -51,5 +58,25 @@ describe('checkLifelinePayment', () => {
     expect(check({}, { status: 'created' })).toMatchObject({ pending: true });
     expect(check({ status: 'attempted' })).toMatchObject({ pending: true });
     expect(check({}, { status: 'refunded' })).toMatchObject({ ok: false, code: 'PAYMENT_NOT_CAPTURED' });
+  });
+});
+
+describe('CI schema guard keeps the lifeline order table (deploys must not drop or block on it)', () => {
+  it('a Prisma diff that would drop lifeline_razorpay_orders, its columns or indexes is skipped — never applied or blocked', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { extractStartupManagedObjects, guardSchemaDiff } = await import('./schemaGuardLogic.js');
+    const prismaTs = fileURLToPath(new URL('../plugins/prisma.ts', import.meta.url));
+    const managed = extractStartupManagedObjects(readFileSync(prismaTs, 'utf8'));
+    const diff = [
+      'DROP TABLE "lifeline_razorpay_orders";',
+      'ALTER TABLE "lifeline_razorpay_orders" DROP COLUMN "last_checked_at";',
+      'DROP INDEX "idx_lifeline_rzp_orders_member";',
+      'DROP INDEX "idx_lifeline_rzp_orders_unpaid";',
+    ].join('\n');
+    const r = guardSchemaDiff(diff, managed);
+    expect(r.blocked).toEqual([]);
+    expect(r.apply).toEqual([]);
+    expect(r.skipped).toHaveLength(4);
   });
 });

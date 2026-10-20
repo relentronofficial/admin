@@ -28,10 +28,25 @@ function fail(reply: FastifyReply, status: number, message: string) {
 
 const razorpayConfigured = () => !!env.RAZORPAY_KEY_ID && !!env.RAZORPAY_KEY_SECRET;
 
+const isMissingRelation = (err: any) => {
+  const code = err?.meta?.code ?? err?.code;
+  return code === '42P01' || /42P01|relation .* does not exist/i.test(String(err?.message ?? ''));
+};
+
+/**
+ * create-order failure: logged with a reason code only (no secrets, member or
+ * payment data) so the cause is visible in the backend logs, and returned to
+ * the client as the same code.
+ */
+function orderFail(request: FastifyRequest, reply: FastifyReply, status: number, code: string) {
+  request.log.warn({ code }, '[lifeline-order] create-order failed');
+  return fail(reply, status, code);
+}
+
 // POST /api/user/lifelines/razorpay/create-order
 export async function createLifelineOrderHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
-  if (!razorpayConfigured()) return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  if (!razorpayConfigured()) return orderFail(request, reply, 503, 'RAZORPAY_NOT_CONFIGURED');
   const prisma = request.server.prisma;
 
   // Lifelines belong to the member's current batch — taken from the server, never the client.
@@ -39,13 +54,18 @@ export async function createLifelineOrderHandler(request: FastifyRequest, reply:
     `SELECT batch_id::text AS "batchId" FROM members WHERE id = $1::uuid`, memberId,
   );
   const batchId: string | null = member?.batchId ?? null;
-  if (!batchId) return fail(reply, 400, 'NOT_IN_BATCH');
+  if (!batchId) return orderFail(request, reply, 400, 'NOT_IN_BATCH');
 
-  const [pricing] = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT price_inr, label FROM credit_pricing WHERE credit_type = $1`, LIFELINE_CREDIT_TYPE,
-  );
+  let pricing: any;
+  try {
+    [pricing] = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT price_inr, label FROM credit_pricing WHERE credit_type = $1`, LIFELINE_CREDIT_TYPE,
+    );
+  } catch (err) {
+    return orderFail(request, reply, 503, isMissingRelation(err) ? 'PRICING_TABLE_MISSING' : 'PRICE_LOOKUP_FAILED');
+  }
   const amountPaise = priceInrToPaise(pricing?.price_inr);
-  if (amountPaise === null) return fail(reply, 503, 'PRICE_NOT_CONFIGURED');
+  if (amountPaise === null) return orderFail(request, reply, 503, 'PRICE_NOT_CONFIGURED');
 
   let rzpOrder: any;
   try {
@@ -56,14 +76,19 @@ export async function createLifelineOrderHandler(request: FastifyRequest, reply:
       notes: { memberId, batchId, type: LIFELINE_ORDER_TYPE },
     });
   } catch {
-    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+    return orderFail(request, reply, 502, 'ORDER_CREATE_FAILED');
   }
 
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO lifeline_razorpay_orders (order_id, member_id, batch_id, amount_paise, currency)
-     VALUES ($1, $2::uuid, $3::uuid, $4, 'INR')`,
-    rzpOrder.id, memberId, batchId, amountPaise,
-  );
+  // Unpaid Razorpay orders are harmless (nothing charged) if this save fails.
+  try {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO lifeline_razorpay_orders (order_id, member_id, batch_id, amount_paise, currency)
+       VALUES ($1, $2::uuid, $3::uuid, $4, 'INR')`,
+      rzpOrder.id, memberId, batchId, amountPaise,
+    );
+  } catch (err) {
+    return orderFail(request, reply, 503, isMissingRelation(err) ? 'LIFELINE_TABLE_MISSING' : 'ORDER_SAVE_FAILED');
+  }
 
   return ok(reply, {
     orderId: rzpOrder.id,
@@ -127,11 +152,10 @@ export async function handleLifelineWebhookEvent(
   let known: any[];
   try {
     known = await prisma.$queryRawUnsafe(`SELECT 1 FROM lifeline_razorpay_orders WHERE order_id = $1`, orderId);
-  } catch (err: any) {
+  } catch (err) {
     // Table missing (startup DDL never ran) → no lifeline orders can exist: leave
     // the event to the course logic so course webhooks keep working.
-    const code = err?.meta?.code ?? err?.code;
-    if (code === '42P01' || /42P01|relation .* does not exist/i.test(String(err?.message ?? ''))) return null;
+    if (isMissingRelation(err)) return null;
     return { status: 503, payload: { ok: false } };
   }
   if (known.length === 0) return null; // not a lifeline order → course logic
