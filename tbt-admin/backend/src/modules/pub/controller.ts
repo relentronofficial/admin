@@ -3,6 +3,7 @@ import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
 import { cacheGet, cacheSet, cacheGetOrCompute } from '../../lib/cache.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
+import { publicFaqList, type FaqRow } from '../../lib/moduleFaqLogic.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
@@ -587,6 +588,26 @@ export async function pubLegalPageHandler(req: FastifyRequest, reply: FastifyRep
     },
     error: null,
   });
+}
+
+// ── Modules page FAQ ──────────────────────────────────────────────────
+// Public, read-only: published FAQs only, in admin display order, and only
+// id/question/answer (no drafts, authors or timestamps). Not cached so an
+// unpublish takes effect on every instance immediately.
+
+export async function pubModuleFaqsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'no-store');
+  try {
+    const rows = await req.server.prisma.$queryRawUnsafe<FaqRow[]>(
+      `SELECT id::text AS id, question, answer, is_published, sort_order
+       FROM module_faqs WHERE is_published = TRUE
+       ORDER BY sort_order ASC, created_at ASC`,
+    );
+    return reply.send({ success: true, data: publicFaqList(rows), error: null });
+  } catch (err) {
+    req.log.error({ err }, 'module FAQ read failed');
+    return reply.status(503).send({ success: false, data: null, error: 'FAQs are unavailable right now' });
+  }
 }
 
 // ── WhatsApp → Autonomous Dev Pipeline ────────────────────────────────────────
