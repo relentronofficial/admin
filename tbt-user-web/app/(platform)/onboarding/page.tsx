@@ -491,6 +491,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const mentorshipData = mentorshipQuery.data;
   const includeMentorship = !mentorshipData || mentorshipData.options.length > 0;
   const [mentorshipValue, setMentorshipValue] = useState<string[]>([]);
+  const mentorshipSavingRef = useRef(false);
   useEffect(() => {
     if (!mentorshipData) return;
     const available = new Set(mentorshipData.options.map((o) => o.moduleName));
@@ -671,14 +672,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const saveMentorshipAndAdvance = async () => {
+    // A second click before the disabled state renders must not send a second save.
+    if (mentorshipSavingRef.current) return;
     const saved = mentorshipData?.selection ?? null;
     const unchanged = saved !== null && !mentorshipData?.selectionRequired
       && saved.length === mentorshipValue.length && saved.every((m) => mentorshipValue.includes(m));
+    mentorshipSavingRef.current = true;
     try {
       if (!unchanged) await updateMentorship.mutateAsync(mentorshipValue);
       setStep(nextStep ?? "review");
     } catch (err: any) {
-      toast.error(err?.message || "Could not save your mentorship selection.");
+      // Stay on this step with the selection kept, so the member can retry.
+      toast.error(err?.message || "Could not save your mentorship selection.", { id: "mentorship-save" });
+    } finally {
+      mentorshipSavingRef.current = false;
     }
   };
 

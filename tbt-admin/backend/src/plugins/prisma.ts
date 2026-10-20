@@ -52,6 +52,24 @@ function buildDatasourceUrl(raw: string): string {
   }
 }
 
+/**
+ * ALTER on the busy `members` table. It needs an exclusive lock; with no
+ * lock_timeout it can queue behind long transactions (blocking every members
+ * query meanwhile) until statement_timeout cancels it — and a bare
+ * `.catch(() => {})` then hid that, leaving production without
+ * members.mentorship_modules. Fail fast and log the real reason instead.
+ */
+async function alterMembersTable(prisma: PrismaClient, log: FastifyInstance['log'], ddl: string): Promise<void> {
+  try {
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`),
+      prisma.$executeRawUnsafe(ddl),
+    ]);
+  } catch (err) {
+    log.warn({ err, ddl }, 'startup DDL on members failed');
+  }
+}
+
 async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions) {
   const prisma = new PrismaClient({
     datasources: { db: { url: buildDatasourceUrl(env.DATABASE_URL) } },
@@ -2379,9 +2397,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     ).catch(() => {});
 
     // ── CP-11: Per-member course module override (2026-10-09) ─────────────────
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`
-    ).catch(() => {});
+    await alterMembersTable(prisma, fastify.log, `ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`);
 
     // ── CP-12: Module config table — per-module branding (2026-10-09) ─────────
     await prisma.$executeRawUnsafe(`
@@ -2413,9 +2429,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // never chosen). Narrows, never widens, allowed_modules / program ceiling.
     // module_config.is_active — admin can withdraw a module from selection.
     // See lib/mentorshipModules.ts.
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`
-    ).catch(() => {});
+    await alterMembersTable(prisma, fastify.log, `ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`);
     await prisma.$executeRawUnsafe(
       `ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`
     ).catch(() => {});
@@ -2471,8 +2485,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Wrapped in a long timeout so the old instance has time to release its pool slots.
     setTimeout(async () => {
       try {
-        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`).catch(() => {});
-        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`).catch(() => {});
+        await alterMembersTable(prisma, fastify.log, `ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB DEFAULT NULL`);
+        await alterMembersTable(prisma, fastify.log, `ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB DEFAULT NULL`);
         await prisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
         fastify.log.info('✅ Startup DDL retry completed');
       } catch (retryErr) {

@@ -161,6 +161,16 @@ ALTER TABLE "new_things" ADD CONSTRAINT "new_things_id_fkey" FOREIGN KEY ("id") 
     expect(script.trimEnd().endsWith('COMMIT;')).toBe(true);
   });
 
+  it('sets a lock timeout so an ALTER on a busy table fails fast instead of stalling it', () => {
+    const diff = `ALTER TABLE "members" ADD COLUMN "allowed_modules" JSONB,\nADD COLUMN "mentorship_modules" JSONB;`;
+    const r = guardSchemaDiff(diff, extractStartupManagedObjects(''));
+    expect(r.blocked).toEqual([]);
+    const lines = buildApplyScript(r.apply).split('\n');
+    expect(lines[0]).toBe('BEGIN;');
+    expect(lines[1]).toBe("SET LOCAL lock_timeout = '10s';");
+    expect(lines.join('\n')).toContain('ADD COLUMN "mentorship_modules" JSONB');
+  });
+
   it('splits statements without breaking on semicolons inside string literals', () => {
     expect(splitSqlStatements(`CREATE TABLE "a" ("n" TEXT DEFAULT 'x;y');\nDROP TABLE "b";`)).toHaveLength(2);
   });
