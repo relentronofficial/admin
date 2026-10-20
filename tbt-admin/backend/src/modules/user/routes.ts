@@ -133,6 +133,7 @@ import {
   upsertMentorshipSocialHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
+import { createLifelineOrderHandler, verifyLifelinePaymentHandler } from './lifelinePurchase.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
@@ -321,6 +322,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
   fastify.post('/coins/razorpay/create-order', createCoinOrderHandler);
   fastify.post('/coins/razorpay/verify', verifyCoinPaymentHandler);
+
+  // ── Extra Lifeline Purchase via Razorpay ───────────────────────────────────
+  fastify.post('/lifelines/razorpay/create-order', createLifelineOrderHandler);
+  fastify.post('/lifelines/razorpay/verify', verifyLifelinePaymentHandler);
 }
 
 // Webhook — registered separately (no authenticateUser hook).

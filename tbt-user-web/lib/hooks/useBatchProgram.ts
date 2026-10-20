@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { batchProgramService } from "@/lib/api/services/batchProgram.service";
@@ -211,4 +212,105 @@ export const useDownloadBatchCertificate = () => {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
   });
+};
+
+// ── Extra Lifeline purchase (Razorpay) ─────────────────────────────────────────
+// One program lifeline at the admin-configured price. The browser only opens
+// checkout; the lifeline is added by the backend after it verifies the payment
+// (POST /api/user/lifelines/razorpay/verify), and the hearts are then refreshed
+// from GET /api/user-batch — never from the checkout callback alone.
+
+export type ExtraLifelineOutcome = "success" | "cancelled" | "failed" | "pending" | "error" | "busy";
+
+const RAZORPAY_CHECKOUT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+
+function loadRazorpayCheckout(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if ((window as any).Razorpay) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${RAZORPAY_CHECKOUT_SRC}"]`);
+    const s = existing ?? document.createElement("script");
+    s.addEventListener("load", () => resolve(!!(window as any).Razorpay));
+    s.addEventListener("error", () => resolve(false));
+    if (!existing) {
+      s.src = RAZORPAY_CHECKOUT_SRC;
+      s.async = true;
+      document.body.appendChild(s);
+    }
+  });
+}
+
+type CheckoutResult = { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string } | "cancelled" | "failed";
+
+export const useBuyExtraLifeline = ({ pendingRetryDelayMs = 3000, pendingRetries = 2 } = {}) => {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  const buy = useCallback(async (): Promise<ExtraLifelineOutcome> => {
+    if (busyRef.current) return "busy";
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      if (!(await loadRazorpayCheckout())) return "error";
+      let order;
+      try {
+        const res = await batchProgramService.createLifelineOrder();
+        if (!res?.success || !res.data) return "error";
+        order = res.data;
+      } catch {
+        return "error";
+      }
+
+      const paid = await new Promise<CheckoutResult>((resolve) => {
+        let settled = false;
+        let attemptFailed = false;
+        const done = (v: CheckoutResult) => {
+          if (settled) return;
+          settled = true;
+          resolve(v);
+        };
+        const rzp = new (window as any).Razorpay({
+          key: order.keyId,
+          amount: order.amount,
+          currency: order.currency,
+          order_id: order.orderId,
+          name: "Tamil Business Tribe",
+          description: order.label,
+          handler: (r: any) =>
+            done({ razorpayOrderId: r.razorpay_order_id ?? order.orderId, razorpayPaymentId: r.razorpay_payment_id, razorpaySignature: r.razorpay_signature }),
+          // A failed attempt keeps checkout open for a retry; it only counts once the member closes it.
+          modal: { ondismiss: () => done(attemptFailed ? "failed" : "cancelled") },
+        });
+        rzp.on("payment.failed", () => {
+          attemptFailed = true;
+        });
+        rzp.open();
+      });
+      if (paid === "cancelled" || paid === "failed") return paid;
+
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const res: any = await batchProgramService.verifyLifelinePayment(paid);
+          if (res?.success) {
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["my-batch"] }),
+              qc.invalidateQueries({ queryKey: ["user", "support-quota"] }),
+            ]);
+            return "success";
+          }
+          // 202 PAYMENT_PENDING: captured money not settled yet — ask again shortly.
+          if (res?.error?.message !== "PAYMENT_PENDING" || attempt >= pendingRetries) return res?.error?.message === "PAYMENT_PENDING" ? "pending" : "error";
+        } catch (err: any) {
+          return err?.response?.status === 402 ? "failed" : "error";
+        }
+        await new Promise((r) => setTimeout(r, pendingRetryDelayMs));
+      }
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [qc, pendingRetryDelayMs, pendingRetries]);
+
+  return { buy, busy };
 };
