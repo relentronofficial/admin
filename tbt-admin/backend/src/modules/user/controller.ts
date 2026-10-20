@@ -35,6 +35,7 @@ import { canBook, canCancelBooking, isSupportCallCategory, joinState } from '../
 import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
+import { handleLifelineWebhookEvent } from './lifelinePurchase.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -7179,6 +7180,11 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
 
   let body: any;
   try { body = JSON.parse(rawBody); } catch { return reply.status(400).send({ ok: false }); }
+
+  // Extra Lifeline orders are handled first (lifelinePurchase.ts) — they never
+  // exist in course_payments; anything else falls through to the course logic below.
+  const lifeline = await handleLifelineWebhookEvent(request.server.prisma, body, request.log);
+  if (lifeline) return reply.status(lifeline.status).send(lifeline.payload);
 
   if (body.event === 'payment.failed') {
     const failedOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;

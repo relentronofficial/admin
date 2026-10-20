@@ -69,6 +69,7 @@ import { startBatchReportJobs } from './jobs/batchReports.js';
 import { startCourseReportJobs } from './jobs/courseReports.js';
 import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
 import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
+import { startLifelineReconcileJob } from './jobs/lifelineReconcile.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
 import { runWeeklyCourseReports } from './lib/courseReports.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
@@ -443,6 +444,15 @@ async function bootstrap() {
       // Support-ticket escalation sweep (every 2 minutes — see
       // helpdeskEscalation.ts for why this deviates from the hourly norm).
       startHelpdeskEscalationJob(fastify.prisma, (fastify as any).io ?? null, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      }).catch(() => { /* logged internally */ });
+
+      // Extra Lifeline reconciliation (every 15 minutes — credits captured
+      // Razorpay payments that verify/webhook never credited; see
+      // lifelineReconcile.ts). Off with LIFELINE_RECONCILE_DISABLED=true.
+      startLifelineReconcileJob(fastify.prisma, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),

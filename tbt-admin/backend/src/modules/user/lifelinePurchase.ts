@@ -2,26 +2,21 @@
 //
 //   POST /api/user/lifelines/razorpay/create-order
 //   POST /api/user/lifelines/razorpay/verify
+//   + the lifeline branch of the Razorpay webhook (handleLifelineWebhookEvent,
+//     called from razorpayWebhookHandler after its signature check)
 //
 // Same shape as the TBT coin purchase (controller.ts createCoinOrderHandler /
 // verifyCoinPaymentHandler), but sells exactly one program lifeline at the
 // admin-configured credit_pricing price. The order is stored server-side
-// (lifeline_razorpay_orders) so verification can check ownership and amount;
-// a lifeline is added only after the signature is valid AND Razorpay itself
-// reports the payment captured for this order (lib/lifelinePurchaseLogic.ts).
-// The status flip created → paid and the lifelines_total + 1 run in one
-// transaction, so a repeated or concurrent verify can never add twice.
+// (lifeline_razorpay_orders) so every crediting path can check ownership and
+// amount. Crediting itself — verify, webhook and the reconciliation job alike —
+// goes through lib/lifelineCredit.ts creditLifelineOrder, which credits each
+// order at most once.
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { getRazorpay, verifyPaymentSignature } from '../../lib/razorpay.js';
-import {
-  LIFELINE_CREDIT_TYPE,
-  LIFELINE_ORDER_TYPE,
-  checkLifelinePayment,
-  checkOrderOwnership,
-  priceInrToPaise,
-  type LifelineOrderRow,
-} from '../../lib/lifelinePurchaseLogic.js';
+import { LIFELINE_CREDIT_TYPE, LIFELINE_ORDER_TYPE, priceInrToPaise } from '../../lib/lifelinePurchaseLogic.js';
+import { creditLifelineOrder, liveLifelineRazorpayReader } from '../../lib/lifelineCredit.js';
 
 function ok(reply: FastifyReply, data: unknown) {
   return reply.send({ success: true, data, error: null });
@@ -32,16 +27,6 @@ function fail(reply: FastifyReply, status: number, message: string) {
 }
 
 const razorpayConfigured = () => !!env.RAZORPAY_KEY_ID && !!env.RAZORPAY_KEY_SECRET;
-
-async function lifelineState(prisma: any, memberId: string, batchId: string) {
-  const rows = await prisma.$queryRawUnsafe(
-    `SELECT lifelines_total, lifelines_used FROM member_batch_settings WHERE member_id=$1::uuid AND batch_id=$2::uuid LIMIT 1`,
-    memberId, batchId,
-  );
-  const total = Number((rows as any[])[0]?.lifelines_total ?? 3);
-  const used = Number((rows as any[])[0]?.lifelines_used ?? 0);
-  return { lifelinesTotal: total, lifelinesUsed: used, lifelinesRemaining: Math.max(0, total - used) };
-}
 
 // POST /api/user/lifelines/razorpay/create-order
 export async function createLifelineOrderHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -101,72 +86,67 @@ export async function verifyLifelinePaymentHandler(request: FastifyRequest, repl
   if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
     return fail(reply, 400, 'SIGNATURE_INVALID');
   }
-  const prisma = request.server.prisma;
 
-  const [row] = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT order_id AS "orderId", member_id::text AS "memberId", batch_id::text AS "batchId",
-            amount_paise AS "amountPaise", currency, status, payment_id AS "paymentId"
-     FROM lifeline_razorpay_orders WHERE order_id = $1`,
-    razorpayOrderId,
-  );
-  const order = row ? ({ ...row, amountPaise: Number(row.amountPaise) } as LifelineOrderRow & { batchId: string }) : null;
-  const owner = checkOrderOwnership(order, memberId);
-  if (!owner.ok) return fail(reply, owner.httpStatus, owner.code);
+  const outcome = await creditLifelineOrder(request.server.prisma, liveLifelineRazorpayReader, {
+    orderId: razorpayOrderId,
+    paymentId: razorpayPaymentId,
+    actingMemberId: memberId,
+  });
+  if (outcome.kind === 'credited') return ok(reply, { lifelineAdded: true, alreadyProcessed: false, ...outcome.state });
+  if (outcome.kind === 'already') return ok(reply, { lifelineAdded: false, alreadyProcessed: true, ...outcome.state });
+  return fail(reply, outcome.httpStatus, outcome.code);
+}
 
-  // Already credited: same payment → idempotent success; a different payment → conflict.
-  if (order!.status === 'paid') {
-    if (order!.paymentId !== razorpayPaymentId) return fail(reply, 409, 'ORDER_ALREADY_PAID');
-    return ok(reply, { lifelineAdded: false, alreadyProcessed: true, ...(await lifelineState(prisma, memberId, order!.batchId)) });
-  }
+/** Webhook events that can mean a lifeline order was paid. */
+const PAID_EVENTS = new Set(['payment.captured', 'order.paid']);
 
-  let rzpOrder: any;
-  let rzpPayment: any;
+/**
+ * Lifeline branch of the Razorpay webhook. Called by razorpayWebhookHandler
+ * AFTER it verified the signature over the raw body. Returns null when the
+ * event is not about a lifeline order (the caller then runs its unchanged
+ * course-payment logic).
+ *
+ * The event payload is only used to find which order/payment to look at:
+ * the order must exist in lifeline_razorpay_orders, and creditLifelineOrder
+ * re-fetches the order and payment from Razorpay and checks them before
+ * crediting. Duplicate deliveries are acknowledged without crediting again.
+ *
+ * Status codes: 200 = done or nothing to do (Razorpay stops retrying);
+ * 503 = transient (Razorpay/DB unavailable, payment not settled yet) — Razorpay
+ * retries the delivery.
+ */
+export async function handleLifelineWebhookEvent(
+  prisma: any,
+  body: any,
+  log?: { warn: (obj: unknown, msg: string) => void },
+): Promise<{ status: number; payload: { ok: boolean } } | null> {
+  const payment = body?.payload?.payment?.entity;
+  const orderId: unknown = payment?.order_id ?? body?.payload?.order?.entity?.id;
+  if (typeof orderId !== 'string' || !orderId) return null;
+
+  let known: any[];
   try {
-    [rzpOrder, rzpPayment] = await Promise.all([
-      getRazorpay().orders.fetch(razorpayOrderId),
-      getRazorpay().payments.fetch(razorpayPaymentId),
-    ]);
-  } catch {
-    return fail(reply, 502, 'RAZORPAY_UNAVAILABLE');
-  }
-  const check = checkLifelinePayment({ memberId, order: order!, rzpOrder, rzpPayment });
-  if (!check.ok) return fail(reply, check.httpStatus, check.code);
-
-  let added: { lifelines_total: number; lifelines_used: number } | null = null;
-  try {
-    added = await prisma.$transaction(async (tx: any) => {
-      const flipped = await tx.$queryRawUnsafe(
-        `UPDATE lifeline_razorpay_orders SET status = 'paid', payment_id = $3, paid_at = NOW()
-         WHERE order_id = $1 AND member_id = $2::uuid AND status = 'created'
-         RETURNING batch_id::text AS "batchId"`,
-        razorpayOrderId, memberId, razorpayPaymentId,
-      );
-      if ((flipped as any[]).length === 0) return null; // a concurrent verify got here first
-      await tx.$executeRawUnsafe(
-        `INSERT INTO member_batch_settings (member_id, batch_id) VALUES ($1::uuid, $2::uuid)
-         ON CONFLICT (member_id, batch_id) DO NOTHING`,
-        memberId, order!.batchId,
-      );
-      const [settings] = await tx.$queryRawUnsafe(
-        `UPDATE member_batch_settings SET lifelines_total = lifelines_total + 1
-         WHERE member_id = $1::uuid AND batch_id = $2::uuid
-         RETURNING lifelines_total, lifelines_used`,
-        memberId, order!.batchId,
-      );
-      return settings;
-    });
+    known = await prisma.$queryRawUnsafe(`SELECT 1 FROM lifeline_razorpay_orders WHERE order_id = $1`, orderId);
   } catch (err: any) {
-    // payment_id is UNIQUE: one Razorpay payment can never pay for two orders.
-    if (err?.code === 'P2010' || /unique|duplicate/i.test(String(err?.message))) return fail(reply, 409, 'PAYMENT_ALREADY_USED');
-    throw err;
+    // Table missing (startup DDL never ran) → no lifeline orders can exist: leave
+    // the event to the course logic so course webhooks keep working.
+    const code = err?.meta?.code ?? err?.code;
+    if (code === '42P01' || /42P01|relation .* does not exist/i.test(String(err?.message ?? ''))) return null;
+    return { status: 503, payload: { ok: false } };
   }
+  if (known.length === 0) return null; // not a lifeline order → course logic
 
-  const state = added
-    ? {
-        lifelinesTotal: Number(added.lifelines_total),
-        lifelinesUsed: Number(added.lifelines_used),
-        lifelinesRemaining: Math.max(0, Number(added.lifelines_total) - Number(added.lifelines_used)),
-      }
-    : await lifelineState(prisma, memberId, order!.batchId);
-  return ok(reply, { lifelineAdded: !!added, alreadyProcessed: !added, ...state });
+  // Failed/refund and other events for a lifeline order need no action.
+  if (!PAID_EVENTS.has(body?.event)) return { status: 200, payload: { ok: true } };
+  const paymentId: unknown = payment?.id;
+  if (typeof paymentId !== 'string' || !paymentId) return { status: 200, payload: { ok: true } };
+
+  const outcome = await creditLifelineOrder(prisma, liveLifelineRazorpayReader, { orderId, paymentId });
+  if (outcome.kind === 'credited' || outcome.kind === 'already') return { status: 200, payload: { ok: true } };
+  if (outcome.kind === 'rejected') {
+    // Retrying cannot fix a mismatch — acknowledge, and leave a trace for support (no payment details).
+    log?.warn({ code: outcome.code }, '[lifeline-webhook] paid event not credited');
+    return { status: 200, payload: { ok: true } };
+  }
+  return { status: 503, payload: { ok: false } };
 }
