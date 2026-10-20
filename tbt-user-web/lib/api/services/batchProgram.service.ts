@@ -64,8 +64,31 @@ export interface WeeklyGraphMilestone {
   dayNumber?: number | null;
 }
 
+/** POST /api/user/lifelines/razorpay/create-order — one Extra Lifeline at the admin-configured price. */
+export interface LifelineOrder {
+  orderId: string;
+  /** paise */
+  amount: number;
+  currency: string;
+  keyId: string;
+  label: string;
+}
+
+export interface LifelinePaymentResult {
+  lifelineAdded: boolean;
+  alreadyProcessed: boolean;
+  lifelinesTotal: number;
+  lifelinesUsed: number;
+  lifelinesRemaining: number;
+}
+
 export const batchProgramService = {
   /** null when the member is not in a batch */
   getMyWeeklyGraph: () =>
     apiClient.get<never, ApiResponse<WeeklyGraph | null>>("/api/user-batch/weekly-graph"),
+  createLifelineOrder: () =>
+    apiClient.post<never, ApiResponse<LifelineOrder>>("/api/user/lifelines/razorpay/create-order"),
+  /** Server-side verification; a lifeline is added only when this succeeds. */
+  verifyLifelinePayment: (params: { razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string }) =>
+    apiClient.post<never, ApiResponse<LifelinePaymentResult>>("/api/user/lifelines/razorpay/verify", params),
 };

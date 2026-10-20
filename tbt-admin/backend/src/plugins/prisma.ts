@@ -1837,6 +1837,25 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ('lifeline',       199,  'Extra Lifeline',         'One focus-mode lifeline unlock')
       ON CONFLICT (credit_type) DO NOTHING
     `).catch(() => {});
+    // Extra Lifeline bought online (modules/user/lifelinePurchase.ts): one row per
+    // Razorpay order, so verification can check ownership/amount and credit at most
+    // once (status created → paid; payment_id UNIQUE).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS lifeline_razorpay_orders (
+        order_id     TEXT PRIMARY KEY,
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        batch_id     UUID NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+        amount_paise INT NOT NULL,
+        currency     VARCHAR(10) NOT NULL DEFAULT 'INR',
+        status       VARCHAR(20) NOT NULL DEFAULT 'created',
+        payment_id   TEXT UNIQUE,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        paid_at      TIMESTAMPTZ
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_lifeline_rzp_orders_member ON lifeline_razorpay_orders(member_id)`
+    ).catch(() => {});
 
     // ── Course Modules (2026-09-09) ──────────────────────────────────────────
     // Named topic areas within a course (e.g. E-commerce, Service, Coaching).

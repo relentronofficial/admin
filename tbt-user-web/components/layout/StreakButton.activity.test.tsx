@@ -24,9 +24,11 @@ vi.mock("@/lib/hooks/useDashboard", () => ({
 vi.mock("@/lib/hooks/useBatchProgram", () => ({
   useMyBatchProgram: () => ({ data: null, isLoading: false }),
   useMyWeeklyGraph: () => ({ data: null, isLoading: false, isError: false }),
+  useBuyExtraLifeline: () => ({ buy: async () => "cancelled", busy: false }),
 }));
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: allocated - used });
 vi.mock("@/lib/hooks/useUser", () => ({
+  useCreditPricing: () => ({ data: undefined }),
   useUserSupportQuota: () => ({
     data: {
       salesSupport: bucket(1, 0), techSupport: bucket(1, 0), contentSupport: bucket(1, 0),

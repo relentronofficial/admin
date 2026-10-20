@@ -15,10 +15,11 @@ vi.mock("@/lib/hooks/useMentorship", () => ({
 vi.mock("@/lib/hooks/useBatchProgram", () => ({
   useMyBatchProgram: () => state.batch,
   useMyWeeklyGraph: () => state.graph,
+  useBuyExtraLifeline: () => state.buy,
 }));
 vi.mock("@/lib/hooks/useDashboard", () => ({ useContinueLearning: () => ({ data: [], isLoading: false }) }));
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
-vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota }));
+vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota, useCreditPricing: () => ({ data: state.pricing }) }));
 
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: Math.max(0, allocated - used) });
 
@@ -41,6 +42,8 @@ function baseData() {
       isLoading: false, isError: false, refetch: vi.fn(),
     },
     batch: { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false },
+    buy: { buy: vi.fn(async () => "success"), busy: false },
+    pricing: [{ credit_type: "lifeline", price_inr: 199 }],
     // Member with a batch whose graph has one completed and one upcoming activity.
     graph: {
       data: {
@@ -229,5 +232,60 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     expect(screen.getByText("Couldn't load your mentorship stats.")).toBeTruthy();
     expect(screen.queryByText("Customer Journey")).toBeNull();
+  });
+});
+
+describe("MentorshipDashboard — lifeline hearts", () => {
+  const hearts = () => {
+    const pill = [...document.querySelectorAll("span")].find((s) => s.textContent?.includes("❤️"))!;
+    return {
+      filled: (pill.textContent!.match(/❤️/g) ?? []).length,
+      plus: [...pill.querySelectorAll<HTMLButtonElement>("button[data-lifeline-buy]")],
+      outlined: (pill.textContent!.match(/🤍/g) ?? []).length,
+    };
+  };
+
+  it("keeps a filled heart for each remaining lifeline and shows a + for each used one", () => {
+    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false };
+    render(<MentorshipDashboard />);
+    const h = hearts();
+    expect(h.filled).toBe(2);
+    expect(h.plus).toHaveLength(1);
+    expect(h.outlined).toBe(0);
+  });
+
+  it("shows no + while no lifeline has been used", () => {
+    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 0 }, isLoading: false };
+    render(<MentorshipDashboard />);
+    expect(hearts()).toMatchObject({ filled: 3, outlined: 0 });
+    expect(hearts().plus).toHaveLength(0);
+  });
+
+  it("every used lifeline gets a + — all three when all are used", () => {
+    state.batch = { data: { lifelinesTotal: 3, lifelinesUsed: 3 }, isLoading: false };
+    render(<MentorshipDashboard />);
+    const pill = document.querySelectorAll("button[data-lifeline-buy]");
+    expect(pill).toHaveLength(3);
+  });
+
+  it("labels the + with the admin-configured Extra Lifeline price", () => {
+    state.pricing = [{ credit_type: "tech_support", price_inr: 999 }, { credit_type: "lifeline", price_inr: "249.00" }];
+    render(<MentorshipDashboard />);
+    expect(screen.getByRole("button", { name: "Buy an extra lifeline for ₹249" })).toBeTruthy();
+  });
+
+  it("clicking + starts the Extra Lifeline purchase", () => {
+    render(<MentorshipDashboard />);
+    fireEvent.click(hearts().plus[0]);
+    expect(state.buy.buy).toHaveBeenCalledTimes(1);
+  });
+
+  it("the + is disabled while a purchase is in progress", () => {
+    state.buy = { buy: vi.fn(), busy: true };
+    render(<MentorshipDashboard />);
+    const btn = hearts().plus[0];
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(state.buy.buy).not.toHaveBeenCalled();
   });
 });

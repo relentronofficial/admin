@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
-  TrendingUp, TrendingDown, ChevronRight, Play, Lock,
+  TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
-import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
+import { useMyBatchProgram, useBuyExtraLifeline, type ExtraLifelineOutcome } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
-import { useUserSupportQuota } from "@/lib/hooks/useUser";
+import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
@@ -72,12 +72,20 @@ function MentorshipHeader({
   streakDays,
   lifelinesTotal,
   lifelinesUsed,
+  onBuyLifeline,
+  buyingLifeline = false,
+  lifelinePriceInr = null,
 }: {
   programName: string | null;
   weeklyReportSubmitted: boolean;
   streakDays: number;
   lifelinesTotal: number | null;
   lifelinesUsed: number | null;
+  /** Starts the Extra Lifeline purchase (Razorpay); each used heart shows a + for it. */
+  onBuyLifeline?: () => void;
+  buyingLifeline?: boolean;
+  /** Admin-configured Extra Lifeline price (credit_pricing), for the button label only. */
+  lifelinePriceInr?: number | null;
 }) {
   const totalHearts = lifelinesTotal ?? 0;
   const filledHearts = lifelinesTotal != null ? lifelinesTotal - (lifelinesUsed ?? 0) : 0;
@@ -98,9 +106,27 @@ function MentorshipHeader({
             {Array.from({ length: filledHearts }).map((_, i) => (
               <span key={i} style={{ fontSize: 12 }}>❤️</span>
             ))}
-            {Array.from({ length: totalHearts - filledHearts }).map((_, i) => (
-              <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
-            ))}
+            {Array.from({ length: totalHearts - filledHearts }).map((_, i) => {
+              const label = `Buy an extra lifeline${lifelinePriceInr != null ? ` for ₹${lifelinePriceInr}` : ""}`;
+              return onBuyLifeline ? (
+                <button
+                  key={`e-${i}`}
+                  type="button"
+                  onClick={onBuyLifeline}
+                  disabled={buyingLifeline}
+                  aria-label={label}
+                  aria-busy={buyingLifeline || undefined}
+                  title={label}
+                  data-lifeline-buy
+                  className="inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+                  style={{ width: 16, height: 16, background: "rgba(255,255,255,0.25)", color: "#fff", outlineColor: "#fff" }}
+                >
+                  <Plus size={11} strokeWidth={3} aria-hidden />
+                </button>
+              ) : (
+                <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
+              );
+            })}
           </span>
         )}
       </div>
@@ -1536,6 +1562,17 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   // null when the member has no batch settings yet — header then shows no hearts
   const lifelinesTotal: number | null = batchData?.lifelinesTotal ?? null;
   const lifelinesUsed: number | null = batchData?.lifelinesUsed ?? null;
+  const { data: creditPricing } = useCreditPricing();
+  const lifelinePrice = creditPricing?.find((p) => p.credit_type === "lifeline")?.price_inr;
+  const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
+  const handleBuyLifeline = useCallback(async () => {
+    const outcome: ExtraLifelineOutcome = await buyLifeline();
+    if (outcome === "success") toast.success("Extra lifeline added!", { id: "lifeline-buy" });
+    else if (outcome === "cancelled") toast("Payment cancelled — no lifeline added.", { id: "lifeline-buy" });
+    else if (outcome === "failed") toast.error("Payment failed — no lifeline added.", { id: "lifeline-buy" });
+    else if (outcome === "pending") toast("Payment is still processing. If your lifeline doesn't appear in a few minutes, contact support with your Razorpay payment ID.", { id: "lifeline-buy", duration: 10000 });
+    else if (outcome === "error") toast.error("Couldn't complete the purchase. If you were charged, contact support.", { id: "lifeline-buy", duration: 8000 });
+  }, [buyLifeline]);
 
   const dailyHrs = stats?.dailyTimeSpentHrs ?? 0;
   const dailyGoal: number | null = stats?.dailyTimeGoalHrs ?? null;
@@ -1608,6 +1645,9 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         streakDays={streakDays}
         lifelinesTotal={lifelinesTotal}
         lifelinesUsed={lifelinesUsed}
+        onBuyLifeline={handleBuyLifeline}
+        buyingLifeline={buyingLifeline}
+        lifelinePriceInr={lifelinePrice != null ? Number(lifelinePrice) : null}
       />
 
       {/* ── KPI Strip ────────────────────────────────────────────────── */}
