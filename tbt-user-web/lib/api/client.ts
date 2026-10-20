@@ -36,6 +36,7 @@ const ACCESS_EXP_KEY = "tbt_access_exp";
 const ACCESS_LIFETIME_MS = 14.5 * 60 * 1000; // 30 s buffer before the 15-min server TTL
 
 let _refreshPromise: Promise<void> | null = null;
+let _sessionRevoked = false;
 
 function scheduleRefresh(): Promise<void> {
   if (!_refreshPromise) {
@@ -80,8 +81,10 @@ apiClient.interceptors.response.use(
 
     // Kicked session (another device logged in): navigate to login immediately.
     // Do NOT attempt a refresh — the server has already revoked this session.
+    // Guard with _sessionRevoked so concurrent in-flight requests only redirect once.
     if (error.response?.status === 401 && error.response?.data?.code === "SESSION_REVOKED") {
-      if (typeof window !== "undefined") {
+      if (typeof window !== "undefined" && !_sessionRevoked) {
+        _sessionRevoked = true;
         sessionStorage.setItem("tbt_session_kicked", "1");
         localStorage.removeItem(ACCESS_EXP_KEY);
         window.location.href = "/login";
@@ -92,8 +95,9 @@ apiClient.interceptors.response.use(
     // Reactive refresh: catches the rare case where the proactive check was
     // skipped (no localStorage hint, e.g. first-ever session or cleared storage).
     // Skip for user-auth endpoints — a 401 there is a real credential error.
+    // Skip if session was already revoked — no point refreshing a dead session.
     const isAuthEndpoint = !!originalRequest?.url?.includes("/api/user-auth/");
-    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint && !_sessionRevoked) {
       originalRequest._retry = true;
       try {
         await scheduleRefresh();
@@ -125,7 +129,7 @@ apiClient.interceptors.request.use(async (config) => {
     // refresh now so the request goes out with a fresh cookie. All callers
     // that arrive while a refresh is in-flight await the same promise.
     const isAuthPath = !!config.url?.includes("/api/user-auth/");
-    if (!isAuthPath) {
+    if (!isAuthPath && !_sessionRevoked) {
       const exp = localStorage.getItem(ACCESS_EXP_KEY);
       if (exp && Date.now() > parseInt(exp, 10)) {
         try {
