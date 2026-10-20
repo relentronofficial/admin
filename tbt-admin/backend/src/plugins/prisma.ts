@@ -2216,6 +2216,61 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_support_call_bookings_member ON support_call_bookings(member_id)`
     ).catch(() => {});
 
+    // ── Support calls unlocked with TBT coins (2026-10-20) ──────────────────
+    // coin_cost on a booking = the coins it was paid with (NULL = free quota).
+    // A paid booking adds one call to that category's allocation while it is
+    // not cancelled, so it never consumes the member's included calls; a
+    // cancellation refunds the coins (tbt_activity_log, reference = booking id).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE support_call_bookings ADD COLUMN IF NOT EXISTS coin_cost INT`
+    ).catch(() => {});
+    // Admin-set coin price per extra call. No row / NULL = coin unlock is off
+    // for that category — there is deliberately no built-in default price.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_call_coin_pricing (
+        category    VARCHAR(30) PRIMARY KEY,
+        coin_cost   INT CHECK (coin_cost IS NULL OR coin_cost > 0),
+        updated_by  TEXT,
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    // Admin-managed TBT coin packages. With no active package, coin purchase
+    // keeps the original single package (lib/coinOrders.ts LEGACY_COIN_PACKAGE).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS coin_packages (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        label       VARCHAR(120) NOT NULL,
+        coins       INT NOT NULL CHECK (coins > 0),
+        price_inr   DECIMAL(10,2) NOT NULL CHECK (price_inr > 0),
+        is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+        sort_order  INT NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    // One row per Razorpay coin order: binds the order to the member and to the
+    // coins/amount fixed at order time, and its UUID is the ledger reference
+    // that makes crediting idempotent across /verify and the webhook.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS coin_orders (
+        id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id           UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        razorpay_order_id   VARCHAR(64) NOT NULL UNIQUE,
+        package_id          UUID REFERENCES coin_packages(id) ON DELETE SET NULL,
+        coins               INT NOT NULL CHECK (coins > 0),
+        amount_paise        INT NOT NULL CHECK (amount_paise > 0),
+        currency            VARCHAR(10) NOT NULL DEFAULT 'INR',
+        status              VARCHAR(20) NOT NULL DEFAULT 'created',
+        razorpay_payment_id VARCHAR(64),
+        failure_reason      TEXT,
+        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        paid_at             TIMESTAMPTZ
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_coin_orders_member ON coin_orders(member_id)`
+    ).catch(() => {});
+
     // ── Admin-configurable Weekly Activity Graph (2026-10-17) ───────────────
     // Per-program weeks (X axis) and milestones (Y axis), plus admin-recorded
     // member milestone achievements (the only way a revenue milestone is ever

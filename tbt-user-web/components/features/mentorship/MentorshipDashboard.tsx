@@ -12,12 +12,13 @@ import {
 import { useMyBatchProgram, useBuyExtraLifeline, type ExtraLifelineOutcome } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
+import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
 import SupportCallPanel from "./SupportCallPanel";
 import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
-import type { SupportCallCategory } from "@/lib/api/services/supportCalls.service";
+import type { SupportCallCategory, SupportCallsSummary } from "@/lib/api/services/supportCalls.service";
 
 // ─── Animation variants ───────────────────────────────────────────────────────
 
@@ -208,16 +209,35 @@ function JourneyTile({
   );
 }
 
-function SupportCallTile({ label, used, total, onClick }: { label: string; used: number; total: number; onClick: () => void }) {
+type CallCard = SupportCallsSummary["categories"][number];
+
+/** The card's next step, exactly as the server decided it. */
+function callCardHint(card: CallCard | undefined): { text: string; color: string; locked: boolean } | null {
+  if (!card) return null;
+  switch (card.action) {
+    case "book":
+      return { text: `${card.quota.remaining} free · Book Call`, color: "#22c55e", locked: false };
+    case "unlock_with_coins":
+      return { text: `Unlock with TBT Coins · ${card.coinCost}`, color: "#eab308", locked: true };
+    case "purchase_coins":
+      return { text: "Purchase TBT Coins", color: "#eab308", locked: true };
+    default:
+      return { text: card.lockedReason === "not_included" ? "Not in your plan" : "All calls used", color: "#93939b", locked: true };
+  }
+}
+
+function SupportCallTile({ label, used, total, card, onClick }: { label: string; used: number; total: number; card?: CallCard; onClick: () => void }) {
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+  const hint = callCardHint(card);
   return (
     <button
       type="button"
       onClick={onClick}
       aria-haspopup="dialog"
-      aria-label={`${label}: ${used} of ${total} calls completed. View sessions`}
+      aria-label={`${label}: ${used} of ${total} calls completed.${hint ? ` ${hint.text}.` : ""} View sessions`}
+      data-call-action={card?.action}
       className="relative block w-full text-left rounded-[10px] cursor-pointer transition-[filter] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#809ed5]"
-      style={{ background: "#242428", padding: "10px 12px", height: 53 }}
+      style={{ background: "#242428", padding: "10px 12px", minHeight: 53 }}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
         <span className="truncate" style={{ color: "#d0cfd4", fontSize: 9, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
@@ -229,6 +249,12 @@ function SupportCallTile({ label, used, total, onClick }: { label: string; used:
         {used}
         <span style={{ color: "#93939b", fontWeight: 400 }}>/{total}</span>
       </div>
+      {hint && (
+        <div className="flex items-center gap-1 truncate" style={{ color: hint.color, fontSize: 9, fontWeight: 600, marginTop: 2 }}>
+          {hint.locked && <Lock size={9} className="shrink-0" aria-hidden="true" />}
+          <span className="truncate">{hint.text}</span>
+        </div>
+      )}
     </button>
   );
 }
@@ -1549,6 +1575,9 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
+  // Next action per call card (Book / Unlock with coins / Purchase coins / locked); optional overlay on the counts.
+  const { data: callSummary } = useSupportCallsSummary();
+  const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
   const [showRevenueForm, setShowRevenueForm] = useState(false);
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
@@ -1705,12 +1734,12 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated}   onClick={() => setOpenCall({ category: "sales_support",   label: "☎ Sales Calls" })} />
-          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated}    onClick={() => setOpenCall({ category: "tech_support",    label: "⚙ Tech Calls" })} />
-          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} onClick={() => setOpenCall({ category: "content_support", label: "▶ Content Calls" })} />
-          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated}      onClick={() => setOpenCall({ category: "ad_support",      label: "📢 Marketing Calls" })} />
-          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated}    onClick={() => setOpenCall({ category: "one_to_one",      label: "♟ Mentor 1-On-1" })} />
-          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated}      onClick={() => setOpenCall({ category: "group_call",      label: "👥 Live Group Q&A" })} />
+          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} card={cardFor("sales_support")}   onClick={() => setOpenCall({ category: "sales_support",   label: "☎ Sales Calls" })} />
+          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} card={cardFor("tech_support")}    onClick={() => setOpenCall({ category: "tech_support",    label: "⚙ Tech Calls" })} />
+          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} card={cardFor("content_support")} onClick={() => setOpenCall({ category: "content_support", label: "▶ Content Calls" })} />
+          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} card={cardFor("ad_support")}      onClick={() => setOpenCall({ category: "ad_support",      label: "📢 Marketing Calls" })} />
+          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} card={cardFor("one_to_one")}    onClick={() => setOpenCall({ category: "one_to_one",      label: "♟ Mentor 1-On-1" })} />
+          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} card={cardFor("group_call")}      onClick={() => setOpenCall({ category: "group_call",      label: "👥 Live Group Q&A" })} />
         </div>
         {openCall && <SupportCallPanel category={openCall.category} label={openCall.label} onClose={closeCallPanel} />}
       </motion.div>

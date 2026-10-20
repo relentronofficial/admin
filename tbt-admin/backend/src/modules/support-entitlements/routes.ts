@@ -12,6 +12,8 @@ import {
   cancelSupportSessionHandler,
   listSupportSessionBookingsHandler,
   markSupportBookingHandler,
+  listCallCoinPricingHandler,
+  updateCallCoinPricingHandler,
 } from './controller.js';
 
 export async function supportEntitlementsRoutes(fastify: FastifyInstance) {
@@ -23,6 +25,10 @@ export async function supportEntitlementsRoutes(fastify: FastifyInstance) {
   fastify.post('/usage', recordUsageHandler);
   fastify.delete('/usage/:id', deleteUsageHandler);
   fastify.get('/member/:memberId', getMemberSupportQuotaHandler);
+
+  // Coin price per extra call once a member's included calls are used.
+  fastify.get('/coin-pricing', listCallCoinPricingHandler);
+  fastify.put('/coin-pricing/:category', updateCallCoinPricingHandler);
 
   // Expert Support Call sessions — role-gated in the handlers (admin/super_admin all, mentor own).
   fastify.get('/sessions', listSupportSessionsHandler);
