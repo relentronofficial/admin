@@ -5,6 +5,7 @@ import {
   canManageSupportSession,
   canMarkAttendance,
   categoryQuota,
+  isOneToOneSession,
   isSupportCallCategory,
   joinState,
   quotaBucketFor,
@@ -141,5 +142,11 @@ describe('one_to_one rules', () => {
   it('capacity=1 session is full the moment one active booking exists', () => {
     // The second caller is rejected immediately — no partial seats for a 1:1 call.
     expect(canBook({ ...base, session: session({ capacity: 1 }), activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' });
+  });
+  it('a call is 1:1 when its session has one seat, whatever the category', () => {
+    // Same rule as the admin "1:1 only" filter and badge (capacity === 1).
+    expect(isOneToOneSession({ capacity: 1 })).toBe(true);
+    expect(isOneToOneSession({ capacity: 2 })).toBe(false);
+    expect(isOneToOneSession({ capacity: 10 })).toBe(false);
   });
 });
