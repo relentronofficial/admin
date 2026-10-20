@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   push: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: state.push }) }));
+vi.mock("@/lib/hooks/useBatchProgram", () => ({ useMyWeeklyGraph: () => ({ data: null, isLoading: false, isError: false, refetch: vi.fn() }) }));
 vi.mock("@/lib/hooks/useCourses", () => ({
   useCourse: () => state.course,
   useLessonProgress: () => state.progress,
@@ -31,7 +32,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const openPopup = () => fireEvent.click(screen.getByRole("button", { name: /^Learning roadmap:/ }));
+const openPopup = () => {
+  fireEvent.click(screen.getByRole("button", { name: /^Learning roadmap:/ }));
+  fireEvent.click(screen.getByRole("tab", { name: "This course" }));
+};
 const dialog = () => screen.getByRole("dialog", { name: "Learning Roadmap" });
 
 describe("CoursesPageRoadmap (/courses)", () => {

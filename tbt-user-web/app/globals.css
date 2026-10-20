@@ -147,6 +147,12 @@
   }
 }
 
+/* LiveKit sets its own system font stack on [data-lk-theme=default]. Unlayered
+   and more specific so it wins over @livekit/components-styles. */
+:root [data-lk-theme] {
+  --lk-font-family: var(--font-nexa), system-ui, sans-serif;
+}
+
 /* Video player */
 .video-player {
   @apply relative w-full aspect-video bg-black rounded-xl overflow-hidden;

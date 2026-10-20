@@ -101,7 +101,31 @@ export interface WeeklyGraph {
   weeks: GraphWeek[];
   summary: { total: number; completed: number; completionPercent: number | null };
   /** The Y axis, bottom to top (progressLevel n = milestones[n - 1]); source tells defaults from admin config. */
-  config: { source: 'program' | 'default'; milestones: Array<{ id: string | null; label: string; kind: MilestoneKind }> };
+  config: { source: 'program' | 'default'; milestones: GraphMilestoneStatus[] };
+}
+
+/**
+ * One configured milestone with this member's explicit evidence for it.
+ * `reached` is never derived from a week's plotted height (progressLevel) or
+ * task share — only from:
+ *   • an admin-approved task linked to this activity milestone
+ *     (tasks.graph_milestone_id, or the legacy is_milestone + milestone_label),
+ *     within the same task cap the graph uses (tasks never prove revenue); or
+ *   • an admin/mentor-recorded achievement (member_graph_milestone_records).
+ * A built-in default milestone (id null — program settings never saved) can
+ * have no recorded achievement, so a default revenue milestone is never reached.
+ */
+export interface GraphMilestoneStatus {
+  id: string | null;
+  label: string;
+  kind: MilestoneKind;
+  reached: boolean;
+  /**
+   * Batch-program day of the linked task: the earliest approved one when
+   * reached through a task, else the earliest linked one. null when no task is
+   * linked, and always null for revenue milestones (no task proves revenue).
+   */
+  dayNumber: number | null;
 }
 
 /**
@@ -267,6 +291,8 @@ export function buildWeeklyGraph(params: {
     label: w.label,
   }));
   const milestoneLevelByWeek = new Array<number>(weeks.length).fill(0);
+  const milestoneReached = new Array<boolean>(milestones.length).fill(false);
+  const milestoneDay = new Array<number | null>(milestones.length).fill(null);
 
   /** Which displayed week an activity belongs to, or -1 when it is hidden (its week is disabled). */
   const weekIndexFor = (t: GraphTaskInput): number => {
@@ -300,6 +326,16 @@ export function buildWeeklyGraph(params: {
       week.completed += 1;
       milestoneLevelByWeek[w] = Math.max(milestoneLevelByWeek[w], taskMilestoneLevel(t));
     }
+    // Explicit milestone link (tasks are in day order, so the first hit is the earliest).
+    const linked = taskMilestoneLevel(t) - 1;
+    if (linked >= 0 && !milestoneReached[linked]) {
+      if (completed) {
+        milestoneReached[linked] = true;
+        milestoneDay[linked] = t.dayNumber;
+      } else if (milestoneDay[linked] === null) {
+        milestoneDay[linked] = t.dayNumber;
+      }
+    }
     if (t.isRequired) {
       week.requiredTotal += 1;
       if (completed) week.requiredCompleted += 1;
@@ -313,6 +349,12 @@ export function buildWeeklyGraph(params: {
     const w = weeks.findIndex((wk) => wk.weekId !== null && wk.weekId === r.weekId);
     const m = milestones.findIndex((ms) => ms.id !== null && ms.id === r.milestoneId);
     if (w >= 0 && m >= 0) recordLevelByWeek[w] = Math.max(recordLevelByWeek[w], m + 1);
+  }
+
+  // An admin/mentor-recorded achievement reaches its milestone whatever week it was recorded in.
+  for (const r of params.records ?? []) {
+    const m = milestones.findIndex((ms) => ms.id !== null && ms.id === r.milestoneId);
+    if (m >= 0) milestoneReached[m] = true;
   }
 
   let total = 0;
@@ -336,6 +378,15 @@ export function buildWeeklyGraph(params: {
     hasActivities: total > 0,
     weeks,
     summary: { total, completed, completionPercent: percent(completed, total) },
-    config: { source: config.source, milestones: milestones.map((m) => ({ id: m.id, label: m.label, kind: m.kind })) },
+    config: {
+      source: config.source,
+      milestones: milestones.map((m, i) => ({
+        id: m.id,
+        label: m.label,
+        kind: m.kind,
+        reached: milestoneReached[i],
+        dayNumber: m.kind === 'activity' ? milestoneDay[i] : null,
+      })),
+    },
   };
 }

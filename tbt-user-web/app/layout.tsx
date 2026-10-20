@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import { nexa, nexaTabular } from "./fonts/nexa";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
 import type { SiteConfig, UiStrings } from "@/types";
@@ -109,7 +110,10 @@ export default async function RootLayout({
   })();
 
   return (
-    <html lang="en" className={initialThemeClass} suppressHydrationWarning>
+    // The font variables go on <html>: Tailwind's preflight sets font-family on
+    // html from them, and an undefined var() there drops the whole declaration
+    // (the old body-level --font-inter left every page in the browser's serif).
+    <html lang="en" className={`${nexa.variable} ${nexaTabular.variable} ${initialThemeClass}`} suppressHydrationWarning>
       <head>
         {/* Anti-flash script must be first — runs before any CSS or React hydration */}
         <script dangerouslySetInnerHTML={{ __html: themeScript(adminThemeMode) }} />
@@ -128,7 +132,7 @@ export default async function RootLayout({
         )}
       </head>
       <body
-        className={`antialiased min-h-screen bg-background`}
+        className="antialiased min-h-screen bg-background"
         suppressHydrationWarning
       >
         <Providers
