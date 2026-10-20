@@ -76,6 +76,7 @@ function MentorshipHeader({
   onBuyLifeline,
   buyingLifeline = false,
   lifelinePriceInr = null,
+  programVideos = null,
 }: {
   programName: string | null;
   weeklyReportSubmitted: boolean;
@@ -87,13 +88,22 @@ function MentorshipHeader({
   buyingLifeline?: boolean;
   /** Admin-configured Extra Lifeline price (credit_pricing), for the button label only. */
   lifelinePriceInr?: number | null;
+  /** Required program videos (mentorship stats). The "+" shows only when every one is completed. */
+  programVideos?: { total: number; completed: number } | null;
 }) {
   // lifelinesTotal = original 3 + any bought (member_batch_settings.lifelines_total);
   // lifelinesUsed = lifelines spent. Remaining = total − used (never below 0).
   const totalHearts = lifelinesTotal ?? 0;
   const filledHearts = lifelinesTotal != null ? Math.min(totalHearts, Math.max(0, lifelinesTotal - (lifelinesUsed ?? 0))) : 0;
-  // A single "+" only once every lifeline is spent — never one per used heart.
-  const showBuy = !!onBuyLifeline && totalHearts > 0 && filledHearts === 0;
+  // A single "+" — shown only once the member has completed EVERY required
+  // program video (backend programVideos). Not tied to the lifeline balance;
+  // hidden while loading, when the field is missing, or with zero required videos.
+  const allProgramVideosDone =
+    programVideos != null &&
+    Number.isFinite(programVideos.total) &&
+    programVideos.total > 0 &&
+    programVideos.completed === programVideos.total;
+  const showBuy = !!onBuyLifeline && totalHearts > 0 && allProgramVideosDone;
   const buyLabel = `Buy an extra lifeline${lifelinePriceInr != null ? ` for ₹${lifelinePriceInr}` : ""}`;
 
   return (
@@ -1679,6 +1689,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
         onBuyLifeline={handleBuyLifeline}
         buyingLifeline={buyingLifeline}
         lifelinePriceInr={lifelinePrice != null ? Number(lifelinePrice) : null}
+        programVideos={stats?.programVideos ?? null}
       />
 
       {/* ── KPI Strip ────────────────────────────────────────────────── */}

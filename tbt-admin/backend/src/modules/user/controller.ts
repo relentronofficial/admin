@@ -71,6 +71,7 @@ import {
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { handleLifelineWebhookEvent } from './lifelinePurchase.js';
+import { loadProgramVideoProgress } from '../../lib/programVideoProgress.js';
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -7783,6 +7784,10 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         });
       }
 
+      // Required program videos (lib/programVideoProgress.ts) — gates the Extra
+      // Lifeline "+"; null when it can't be determined (the website then hides it).
+      const programVideos = await loadProgramVideoProgress(prisma, redis, memberId, batchId);
+
       return {
         dailyTimeSpentHrs: Math.round(dailyTimeSpentHrs * 100) / 100,
         dailyTimeGoalHrs: 2.0,
@@ -7797,6 +7802,7 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         activeDays,
         totalDays,
         programName,
+        programVideos,
       };
     },
   );
