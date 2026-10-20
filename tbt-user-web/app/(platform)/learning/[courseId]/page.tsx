@@ -14,7 +14,6 @@ import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
-import { LessonFeedbackSection } from "@/components/features/course/LessonFeedbackSection";
 import { EpisodeResourcesSection } from "@/components/features/course/EpisodeResourcesSection";
 import { useRegisterMedia, useSuppressAds } from "@/lib/ads/useRegisterMedia";
 import { useQueryClient } from "@tanstack/react-query";
@@ -23,7 +22,6 @@ import {
   useSubmitCourseQuiz, useCourseXp, useCertificateEligibility,
   useCourseLeaderboard, useRequestCourseAccess,
   useSaveReflection, useReflections,
-  useLessonFeedback,
   useEpisodeResources, useAllCourseEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
@@ -1632,7 +1630,6 @@ export default function CourseDetailPage({
 
   // Gamification: Practice Arena + Reflection + Spaced Repetition
   const { data: savedReflections } = useReflections(courseId);
-  const { data: lessonFeedbackList } = useLessonFeedback(courseId);
   const localReflections = useMemo(() => {
     if (savedReflections && savedReflections.length > 0) return [];
     try {
@@ -3313,20 +3310,6 @@ export default function CourseDetailPage({
               >
                 <RotateCcw size={11} /> Rewatch from start
               </button>
-            )}
-
-            {/* Per-lesson rating + feedback — shown once this specific lesson
-                is completed; each lesson gets its own independent section.
-                Submits to both lesson_feedback (rating) and
-                CourseEpisodeFeedback (admin panel — Courses -> Feedback);
-                this is the only feedback UI on this page. */}
-            {(watchState === "completed" || !!selectedLesson.isCompleted) && (
-              <LessonFeedbackSection
-                key={selectedLesson.id}
-                lessonId={selectedLesson.id}
-                courseId={courseId}
-                existing={lessonFeedbackList?.find((f: any) => f.lessonId === selectedLesson.id)}
-              />
             )}
 
             {/* Episode Resources */}
