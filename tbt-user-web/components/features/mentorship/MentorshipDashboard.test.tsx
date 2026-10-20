@@ -29,6 +29,7 @@ vi.mock("@/lib/hooks/useBatchProgram", async (importOriginal) => ({
 vi.mock("@/lib/hooks/useDashboard", () => ({ useContinueLearning: () => ({ data: [], isLoading: false }) }));
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
 vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota, useCreditPricing: () => ({ data: state.pricing }) }));
+vi.mock("@/lib/hooks/useSupportCalls", () => ({ useSupportCallsSummary: () => state.callSummary }));
 
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: Math.max(0, allocated - used) });
 
@@ -53,6 +54,8 @@ function baseData() {
     batch: { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false },
     buy: { buy: vi.fn(async () => ({ outcome: "success" })), busy: false },
     pricing: [{ credit_type: "lifeline", price_inr: 199 }],
+    // No summary yet → cards show counts only (the summary is an optional overlay).
+    callSummary: { data: undefined },
     // Member with a batch whose graph has one completed and one upcoming activity.
     graph: {
       data: {
@@ -246,6 +249,33 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     expect(screen.getByText("Couldn't load your mentorship stats.")).toBeTruthy();
     expect(screen.queryByText("Customer Journey")).toBeNull();
+  });
+
+  it("each call card shows its next action from the server: Book Call, Unlock with TBT Coins, Purchase TBT Coins or locked", () => {
+    const q = (allocated: number, used: number, reserved = 0) => ({ allocated, used, reserved, remaining: Math.max(0, allocated - used - reserved), included: allocated, unlocked: 0 });
+    state.callSummary = {
+      data: {
+        coinBalance: 80,
+        coinPurchaseAvailable: true,
+        categories: [
+          { category: "sales_support", quota: q(7, 2), coinCost: 100, action: "book", lockedReason: null },
+          { category: "tech_support", quota: q(7, 7), coinCost: 50, action: "unlock_with_coins", lockedReason: null },
+          { category: "content_support", quota: q(5, 4, 1), coinCost: 100, action: "purchase_coins", lockedReason: null },
+          { category: "ad_support", quota: q(7, 7), coinCost: null, action: "locked", lockedReason: "quota_exhausted" },
+          { category: "one_to_one", quota: q(0, 0), coinCost: 100, action: "locked", lockedReason: "not_included" },
+          { category: "group_call", quota: q(12, 3), coinCost: null, action: "book", lockedReason: null },
+        ],
+      },
+    };
+    render(<MentorshipDashboard />);
+    const card = (name: RegExp) => screen.getByRole("button", { name });
+    expect(card(/^☎ Sales Calls/).textContent).toContain("5 free · Book Call");
+    expect(card(/^⚙ Tech Calls/).textContent).toContain("Unlock with TBT Coins · 50");
+    expect(card(/^▶ Content Calls/).textContent).toContain("Purchase TBT Coins");
+    expect(card(/^📢 Marketing Calls/).textContent).toContain("All calls used");
+    expect(card(/^♟ Mentor 1-On-1/).textContent).toContain("Not in your plan");
+    expect(card(/^♟ Mentor 1-On-1/).getAttribute("data-call-action")).toBe("locked");
+    expect(card(/^👥 Live Group Q&A/).textContent).toContain("9 free · Book Call");
   });
 });
 

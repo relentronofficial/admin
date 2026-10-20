@@ -6,6 +6,10 @@ import {
   rejectPurchaseHandler,
   getCreditPricingHandler,
   updateCreditPricingHandler,
+  listCoinPackagesAdminHandler,
+  createCoinPackageHandler,
+  updateCoinPackageHandler,
+  deleteCoinPackageHandler,
 } from './controller.js';
 
 export async function creditsRoutes(fastify: FastifyInstance) {
@@ -17,4 +21,10 @@ export async function creditsRoutes(fastify: FastifyInstance) {
   fastify.post('/:id/reject', rejectPurchaseHandler);
   fastify.get('/pricing', getCreditPricingHandler);
   fastify.put('/pricing/:creditType', updateCreditPricingHandler);
+
+  // TBT coin packages sold via Razorpay
+  fastify.get('/coin-packages', listCoinPackagesAdminHandler);
+  fastify.post('/coin-packages', createCoinPackageHandler);
+  fastify.put('/coin-packages/:id', updateCoinPackageHandler);
+  fastify.delete('/coin-packages/:id', deleteCoinPackageHandler);
 }

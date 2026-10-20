@@ -1,5 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
+import { getActingAdmin } from '../../lib/adminRole.js';
+import { isFullAccessRole } from '../../lib/supportCallLogic.js';
 
 function ok(reply: FastifyReply, data: any) {
   return reply.send({ success: true, data, error: null });
@@ -254,4 +257,84 @@ export async function getMyCreditPurchasesHandler(req: FastifyRequest, reply: Fa
     memberId,
   );
   return ok(reply, rows);
+}
+
+// ── TBT coin packages (admin) ─────────────────────────────────────────────────
+// Sold via Razorpay at /api/user/coins/razorpay/create-order. Prices are fixed
+// on each order when it is created, so editing a package never changes an
+// order already in flight. Writes are limited to admin/super_admin.
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const coinPackageSchema = z.object({
+  label:     z.string().trim().min(1, 'Label is required').max(120),
+  coins:     z.number().int().positive('Coins must be above 0').max(10_000_000),
+  priceInr:  z.number().positive('Price must be above 0').max(10_000_000)
+               .refine((v) => Math.round(v * 100) === v * 100, { message: 'Price can have at most 2 decimals' }),
+  isActive:  z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+function coinPackageDto(r: any) {
+  return {
+    id: r.id as string,
+    label: r.label as string,
+    coins: Number(r.coins),
+    priceInr: Number(r.price_inr),
+    isActive: !!r.is_active,
+    sortOrder: Number(r.sort_order ?? 0),
+  };
+}
+
+async function requireCoinPackageEditor(req: FastifyRequest, reply: FastifyReply) {
+  const acting = await getActingAdmin(req);
+  if (!acting || !isFullAccessRole(acting.role)) {
+    reply.status(403).send({ success: false, data: null, error: 'Only Admin and Super Admin accounts can manage coin packages.' });
+    return null;
+  }
+  return acting;
+}
+
+export async function listCoinPackagesAdminHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, label, coins, price_inr, is_active, sort_order FROM coin_packages ORDER BY sort_order ASC, price_inr ASC`,
+  );
+  return ok(reply, rows.map(coinPackageDto));
+}
+
+export async function createCoinPackageHandler(req: FastifyRequest, reply: FastifyReply) {
+  if (!(await requireCoinPackageEditor(req, reply))) return reply;
+  const parsed = coinPackageSchema.safeParse(req.body);
+  if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
+  const { label, coins, priceInr, isActive = true, sortOrder = 0 } = parsed.data;
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO coin_packages (label, coins, price_inr, is_active, sort_order)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, label, coins, price_inr, is_active, sort_order`,
+    label, coins, priceInr, isActive, sortOrder,
+  );
+  return reply.status(201).send({ success: true, data: coinPackageDto(rows[0]), error: null });
+}
+
+export async function updateCoinPackageHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  if (!(await requireCoinPackageEditor(req, reply))) return reply;
+  if (!UUID_RE.test(req.params.id)) return reply.status(404).send({ success: false, data: null, error: 'Package not found' });
+  const parsed = coinPackageSchema.safeParse(req.body);
+  if (!parsed.success) return reply.status(400).send({ success: false, data: null, error: parsed.error.issues[0]?.message });
+  const { label, coins, priceInr, isActive = true, sortOrder = 0 } = parsed.data;
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE coin_packages SET label = $2, coins = $3, price_inr = $4, is_active = $5, sort_order = $6, updated_at = NOW()
+     WHERE id = $1::uuid RETURNING id, label, coins, price_inr, is_active, sort_order`,
+    req.params.id, label, coins, priceInr, isActive, sortOrder,
+  );
+  if (!rows[0]) return reply.status(404).send({ success: false, data: null, error: 'Package not found' });
+  return ok(reply, coinPackageDto(rows[0]));
+}
+
+export async function deleteCoinPackageHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  if (!(await requireCoinPackageEditor(req, reply))) return reply;
+  if (!UUID_RE.test(req.params.id)) return reply.status(404).send({ success: false, data: null, error: 'Package not found' });
+  // Past orders keep their coins/amount; their package_id is cleared by the FK.
+  const n = await req.server.prisma.$executeRawUnsafe(`DELETE FROM coin_packages WHERE id = $1::uuid`, req.params.id);
+  if (!n) return reply.status(404).send({ success: false, data: null, error: 'Package not found' });
+  return ok(reply, { id: req.params.id });
 }

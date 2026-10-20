@@ -49,16 +49,23 @@ export interface CategoryQuota {
   used: number;
   reserved: number;
   remaining: number;
+  /** Calls the plan (plus approved credit purchases) includes — excludes coin unlocks. */
+  included: number;
+  /** Calls unlocked with TBT coins that are still live (booked/attended/no-show). */
+  unlocked: number;
 }
 
 /** Bookings that are still pending attendance hold a slot of the member's quota. */
 export function categoryQuota(bucket: SupportQuotaBucket, reserved: number): CategoryQuota {
   const r = Math.max(0, reserved);
+  const unlocked = Math.max(0, bucket.unlocked ?? 0);
   return {
     allocated: bucket.allocated,
     used: bucket.used,
     reserved: r,
     remaining: Math.max(0, bucket.allocated - bucket.used - r),
+    included: Math.max(0, bucket.allocated - unlocked),
+    unlocked,
   };
 }
 
@@ -86,6 +93,74 @@ export function canBook(input: {
   if (quota.remaining <= 0) return deny(403, 'quota_exhausted', 'You have no calls left in this category.');
   if (activeBookingCount >= session.capacity) return deny(409, 'session_full', 'This session is full.');
   return { ok: true };
+}
+
+/**
+ * Booking an extra call paid with TBT coins. Only offered once the included
+ * calls are all used or booked (never instead of a free call), only in a
+ * category the plan includes, only when an admin has set a coin price, and
+ * only at the price the member confirmed — a changed price is refused rather
+ * than charged.
+ */
+export function canBookWithCoins(input: {
+  session: SessionLike;
+  now: Date;
+  activeBookingCount: number;
+  alreadyBooked: boolean;
+  memberStatus: string | null | undefined;
+  quota: CategoryQuota;
+  coinCost: number | null;
+  expectedCoinCost: unknown;
+  balance: number;
+}): RuleResult {
+  const { session, now, activeBookingCount, alreadyBooked, memberStatus, quota, coinCost, expectedCoinCost, balance } = input;
+  if (session.status !== 'scheduled') return deny(409, 'session_unavailable', 'This session is no longer available.');
+  if (session.startsAt.getTime() <= now.getTime()) return deny(409, 'session_started', 'This session has already started.');
+  if (alreadyBooked) return deny(409, 'already_booked', 'You have already booked this session.');
+  if (memberStatus !== 'active') return deny(403, 'member_inactive', 'Your membership must be active to book calls.');
+  if (quota.included <= 0) return deny(403, 'not_included', 'This call type is not included in your plan.');
+  if (quota.remaining > 0) return deny(409, 'free_quota_available', 'You still have free calls in this category — book with your quota instead.');
+  if (!isValidCoinCost(coinCost)) return deny(403, 'coin_unlock_unavailable', 'Extra calls in this category cannot be unlocked with TBT coins.');
+  if (activeBookingCount >= session.capacity) return deny(409, 'session_full', 'This session is full.');
+  if (expectedCoinCost !== coinCost) {
+    return deny(409, 'coin_price_changed', `The price for an extra call is now ${coinCost} TBT coins. Please review and confirm again.`);
+  }
+  if (balance < coinCost) {
+    return deny(402, 'insufficient_coins', `You need ${coinCost} TBT coins but have ${Math.max(0, balance)}.`);
+  }
+  return { ok: true };
+}
+
+export function isValidCoinCost(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0;
+}
+
+export type CallCardAction = 'book' | 'unlock_with_coins' | 'purchase_coins' | 'locked';
+export type CallLockedReason = 'not_included' | 'quota_exhausted' | null;
+
+/**
+ * The one next step a call card offers, from server state only:
+ * free calls left → Book Call; all used and a coin price set → Unlock with
+ * TBT Coins (enough coins) or Purchase TBT Coins (not enough); otherwise locked.
+ */
+export function callCardAction(input: {
+  quota: CategoryQuota;
+  coinCost: number | null;
+  balance: number;
+  coinPurchaseAvailable: boolean;
+}): { action: CallCardAction; lockedReason: CallLockedReason } {
+  const { quota, coinCost, balance, coinPurchaseAvailable } = input;
+  if (quota.included <= 0) return { action: 'locked', lockedReason: 'not_included' };
+  if (quota.remaining > 0) return { action: 'book', lockedReason: null };
+  if (!isValidCoinCost(coinCost)) return { action: 'locked', lockedReason: 'quota_exhausted' };
+  if (balance >= coinCost) return { action: 'unlock_with_coins', lockedReason: null };
+  if (coinPurchaseAvailable) return { action: 'purchase_coins', lockedReason: null };
+  return { action: 'locked', lockedReason: 'quota_exhausted' };
+}
+
+/** Coins returned when a booking is cancelled (by the member or with its session). */
+export function coinRefundFor(coinCost: number | null | undefined): number {
+  return isValidCoinCost(coinCost) ? coinCost : 0;
 }
 
 export function canCancelBooking(input: { bookingStatus: string; session: SessionLike; now: Date }): RuleResult {

@@ -27,6 +27,7 @@ vi.mock("@/lib/hooks/useBatchProgram", () => ({
   useBuyExtraLifeline: () => ({ buy: async () => "cancelled", busy: false }),
 }));
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: allocated - used });
+vi.mock("@/lib/hooks/useSupportCalls", () => ({ useSupportCallsSummary: () => ({ data: undefined }) }));
 vi.mock("@/lib/hooks/useUser", () => ({
   useCreditPricing: () => ({ data: undefined }),
   useUserSupportQuota: () => ({

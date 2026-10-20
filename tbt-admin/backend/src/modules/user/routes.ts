@@ -124,6 +124,8 @@ import {
   razorpayWebhookHandler,
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
+  listCoinPackagesHandler,
+  getSupportCallsSummaryHandler,
   getMentorshipStatsHandler,
   getMentorshipModulesHandler,
   updateMentorshipModulesHandler,
@@ -150,6 +152,7 @@ export async function userRoutes(fastify: FastifyInstance) {
 
   // ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ─────────────────
   fastify.get('/support-calls', listSupportCallsHandler);
+  fastify.get('/support-calls/summary', getSupportCallsSummaryHandler);
   fastify.post('/support-calls/sessions/:id/book', bookSupportCallHandler);
   fastify.post('/support-calls/bookings/:id/cancel', cancelSupportCallBookingHandler);
   fastify.get('/support-calls/bookings/:id/join', joinSupportCallHandler);
@@ -320,6 +323,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
 
   // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
+  fastify.get('/coins/packages', listCoinPackagesHandler);
   fastify.post('/coins/razorpay/create-order', createCoinOrderHandler);
   fastify.post('/coins/razorpay/verify', verifyCoinPaymentHandler);
 

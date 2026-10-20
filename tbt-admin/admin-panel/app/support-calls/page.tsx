@@ -270,6 +270,11 @@ function BookingsModal({ session, onClose }: { session: SupportSession; onClose:
                     <div className="text-[11px] text-[#888]">{[b.phone, b.email].filter(Boolean).join(" · ")}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {b.coinCost != null && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-[#eab308] bg-[rgba(234,179,8,0.15)]">
+                        {b.coinCost} coins{b.status === "cancelled" ? " · refunded" : ""}
+                      </span>
+                    )}
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: badge.color, background: badge.bg }}>
                       {badge.label}
                     </span>

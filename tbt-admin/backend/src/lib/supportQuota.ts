@@ -59,10 +59,24 @@ export const APPROVED_CREDIT_PURCHASES_SQL = `
   WHERE member_id = $1::uuid AND status = 'approved'
   GROUP BY credit_type`;
 
+/** Not-cancelled support-call bookings paid with TBT coins, grouped by category. */
+export interface CoinUnlockRow {
+  type: string;
+  cnt: number;
+}
+
+export const COIN_UNLOCKED_BOOKINGS_SQL = `
+  SELECT s.category AS type, COUNT(*)::int AS cnt
+  FROM support_call_bookings b JOIN support_call_sessions s ON s.id = b.session_id
+  WHERE b.member_id = $1::uuid AND b.coin_cost IS NOT NULL AND b.status <> 'cancelled'
+  GROUP BY s.category`;
+
 export interface SupportQuotaBucket {
   allocated: number;
   used: number;
   remaining: number;
+  /** Calls in `allocated` that were unlocked with TBT coins (the rest are included). */
+  unlocked: number;
 }
 
 export interface SupportQuota {
@@ -87,8 +101,9 @@ const DEFAULT_ENTITLEMENT: PlanEntitlementRow = {
 
 const DEFAULT_LIFELINES_TOTAL = 3;
 
-function bucket(allocated: number, used: number): SupportQuotaBucket {
-  return { allocated, used, remaining: Math.max(0, allocated - used) };
+function bucket(included: number, used: number, unlocked = 0): SupportQuotaBucket {
+  const allocated = included + unlocked;
+  return { allocated, used, remaining: Math.max(0, allocated - used), unlocked };
 }
 
 export function computeSupportQuota(
@@ -97,6 +112,7 @@ export function computeSupportQuota(
   usageRows: UsageCountRow[],
   lifelineRows: LifelineRow[],
   purchasedRows: PurchasedCreditRow[] = [],
+  coinUnlockRows: CoinUnlockRow[] = [],
 ): SupportQuota {
   const ent = entRows[0] ?? DEFAULT_ENTITLEMENT;
 
@@ -109,17 +125,23 @@ export function computeSupportQuota(
     if (type) extra[type] = (extra[type] ?? 0) + Math.max(0, Number(row.qty) || 0);
   }
 
+  // A coin-paid booking adds its own call to the allocation, so booking it
+  // never eats into the plan's included calls (and attending it moves it
+  // from reserved to used without changing what remains).
+  const unlocked: Record<string, number> = {};
+  for (const row of coinUnlockRows) unlocked[row.type] = (unlocked[row.type] ?? 0) + Math.max(0, Number(row.cnt) || 0);
+
   const lifelinesTotal = lifelineRows[0]?.lifelines_total ?? DEFAULT_LIFELINES_TOTAL;
   const lifelinesUsed = lifelineRows[0]?.lifelines_used ?? 0;
 
   return {
     plan,
-    techSupport: bucket(ent.tech_support_days + (extra['tech_support'] ?? 0), usageMap['tech_support'] ?? 0),
-    adSupport: bucket(ent.ad_support_days + (extra['ad_support'] ?? 0), usageMap['ad_support'] ?? 0),
-    groupCall: bucket(ent.group_call_count + (extra['group_call'] ?? 0), usageMap['group_call'] ?? 0),
-    callCredits: bucket(ent.call_credit_count + (extra['one_to_one'] ?? 0), usageMap['one_to_one'] ?? 0),
-    salesSupport: bucket(ent.sales_call_count ?? 0, usageMap['sales_support'] ?? 0),
-    contentSupport: bucket(ent.content_call_count ?? 0, usageMap['content_support'] ?? 0),
+    techSupport: bucket(ent.tech_support_days + (extra['tech_support'] ?? 0), usageMap['tech_support'] ?? 0, unlocked['tech_support']),
+    adSupport: bucket(ent.ad_support_days + (extra['ad_support'] ?? 0), usageMap['ad_support'] ?? 0, unlocked['ad_support']),
+    groupCall: bucket(ent.group_call_count + (extra['group_call'] ?? 0), usageMap['group_call'] ?? 0, unlocked['group_call']),
+    callCredits: bucket(ent.call_credit_count + (extra['one_to_one'] ?? 0), usageMap['one_to_one'] ?? 0, unlocked['one_to_one']),
+    salesSupport: bucket(ent.sales_call_count ?? 0, usageMap['sales_support'] ?? 0, unlocked['sales_support']),
+    contentSupport: bucket(ent.content_call_count ?? 0, usageMap['content_support'] ?? 0, unlocked['content_support']),
     oneToOne: !!ent.one_to_one_enabled,
     lifelines: { total: lifelinesTotal, used: lifelinesUsed, remaining: Math.max(0, lifelinesTotal - lifelinesUsed) },
   };

@@ -2701,7 +2701,7 @@ export const useSupportSessionBookings = (sessionId: string | null) =>
       const res: any = await apiClient.get(`/api/support-entitlements/sessions/${sessionId}/bookings`);
       return (res?.data ?? []) as Array<{
         id: string; status: 'booked' | 'cancelled' | 'attended' | 'no_show'; bookedAt: string;
-        cancelledAt: string | null; memberId: string; memberName: string; phone: string | null; email: string | null;
+        cancelledAt: string | null; memberId: string; memberName: string; phone: string | null; email: string | null; coinCost?: number | null;
       }>;
     },
     enabled: !!sessionId,
@@ -2926,5 +2926,52 @@ export const useDeleteModuleFaq = () => {
   return useMutation({
     mutationFn: async (id: string) => ((await apiClient.delete(`/api/module-faqs/admin/${id}`)) as any).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+// ── Support calls unlocked with TBT coins + coin packages ────────────────────
+
+export type CallCoinPrice = { category: string; coinCost: number | null };
+export type CoinPackageRow = { id: string; label: string; coins: number; priceInr: number; isActive: boolean; sortOrder: number };
+
+export const useGetCallCoinPricing = () =>
+  useQuery({
+    queryKey: ['support-call-coin-pricing'],
+    queryFn: async () => ((await apiClient.get('/api/support-entitlements/coin-pricing')) as any)?.data as CallCoinPrice[],
+    staleTime: 60_000,
+  });
+
+export const useUpdateCallCoinPrice = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ category, coinCost }: CallCoinPrice) =>
+      ((await apiClient.put(`/api/support-entitlements/coin-pricing/${category}`, { coinCost })) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-call-coin-pricing'] }),
+  });
+};
+
+export const useListCoinPackages = () =>
+  useQuery({
+    queryKey: ['coin-packages'],
+    queryFn: async () => ((await apiClient.get('/api/credits/coin-packages')) as any)?.data as CoinPackageRow[],
+    staleTime: 60_000,
+  });
+
+export const useSaveCoinPackage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: Omit<CoinPackageRow, 'id'> & { id?: string }) =>
+      ((id
+        ? await apiClient.put(`/api/credits/coin-packages/${id}`, data)
+        : await apiClient.post('/api/credits/coin-packages', data)) as any).data as CoinPackageRow,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coin-packages'] }),
+  });
+};
+
+export const useDeleteCoinPackage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => ((await apiClient.delete(`/api/credits/coin-packages/${id}`)) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coin-packages'] }),
   });
 };

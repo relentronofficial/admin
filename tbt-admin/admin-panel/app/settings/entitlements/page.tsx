@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Save, Shield, Users, Phone, Headphones, Star, CheckCircle2 } from "lucide-react";
+import { Loader2, Save, Shield, Users, Phone, Headphones, Star, CheckCircle2, Coins, Plus, Trash2 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useGetPlanEntitlements,
@@ -9,6 +9,12 @@ import {
   useListSupportUsage,
   useRecordSupportUsage,
   useDeleteSupportUsage,
+  useGetCallCoinPricing,
+  useUpdateCallCoinPrice,
+  useListCoinPackages,
+  useSaveCoinPackage,
+  useDeleteCoinPackage,
+  type CoinPackageRow,
 } from "@/lib/hooks/useTbt";
 import toast from "react-hot-toast";
 
@@ -42,6 +48,183 @@ type EntitlementRow = {
   sales_call_count: number;
   content_call_count: number;
 };
+
+const CALL_CATEGORY_LABELS: Record<string, string> = {
+  sales_support:   "Sales Calls",
+  tech_support:    "Tech Calls",
+  content_support: "Content Calls",
+  ad_support:      "Marketing Calls",
+  one_to_one:      "Mentor 1-On-1",
+  group_call:      "Live Group Q&A",
+};
+
+const inputCls = "w-full h-9 px-3 rounded-lg border border-[#2a2a2a] bg-[#1a1a1a] text-white text-sm outline-none focus:border-[#dc2626]";
+const labelCls = "text-[10px] font-bold uppercase tracking-widest text-[#606060]";
+
+/** Coin price for one extra call in a category. Empty = members can't unlock extra calls with coins. */
+function CoinPriceRow({ category, coinCost }: { category: string; coinCost: number | null }) {
+  const update = useUpdateCallCoinPrice();
+  const saved = coinCost == null ? "" : String(coinCost);
+  const [value, setValue] = useState(saved);
+  useEffect(() => setValue(saved), [saved]);
+
+  const save = async () => {
+    const trimmed = value.trim();
+    const next = trimmed === "" ? null : Number(trimmed);
+    if (next !== null && (!Number.isInteger(next) || next <= 0)) {
+      toast.error("Enter a whole number above 0, or leave empty to turn off");
+      return;
+    }
+    try {
+      await update.mutateAsync({ category, coinCost: next });
+      toast.success(next === null ? "Coin unlock turned off" : "Coin price saved");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save");
+    }
+  };
+
+  return (
+    <div className="flex items-end gap-3">
+      <div className="flex-1 space-y-1">
+        <label className={labelCls}>{CALL_CATEGORY_LABELS[category] ?? category}</label>
+        <input type="number" min={1} step={1} placeholder="Off" value={value} onChange={(e) => setValue(e.target.value)} className={inputCls} />
+      </div>
+      <button
+        onClick={save}
+        disabled={value === saved || update.isPending}
+        className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-bold text-white bg-[#dc2626] hover:bg-red-700 disabled:opacity-40 transition-colors"
+      >
+        {update.isPending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Save
+      </button>
+    </div>
+  );
+}
+
+type PackageForm = { label: string; coins: string; priceInr: string; isActive: boolean; sortOrder: string };
+const EMPTY_PACKAGE: PackageForm = { label: "", coins: "", priceInr: "", isActive: true, sortOrder: "0" };
+const toForm = (pkg?: CoinPackageRow): PackageForm =>
+  pkg
+    ? { label: pkg.label, coins: String(pkg.coins), priceInr: String(pkg.priceInr), isActive: pkg.isActive, sortOrder: String(pkg.sortOrder) }
+    : EMPTY_PACKAGE;
+
+function CoinPackageEditor({ pkg }: { pkg?: CoinPackageRow }) {
+  const save = useSaveCoinPackage();
+  const remove = useDeleteCoinPackage();
+  const [form, setForm] = useState<PackageForm>(() => toForm(pkg));
+  useEffect(() => { if (pkg) setForm(toForm(pkg)); }, [pkg]);
+
+  const submit = async () => {
+    const coins = Number(form.coins);
+    const priceInr = Number(form.priceInr);
+    if (!form.label.trim()) { toast.error("Label is required"); return; }
+    if (!Number.isInteger(coins) || coins <= 0) { toast.error("Coins must be a whole number above 0"); return; }
+    if (!(priceInr > 0)) { toast.error("Price must be above 0"); return; }
+    try {
+      await save.mutateAsync({ id: pkg?.id, label: form.label.trim(), coins, priceInr, isActive: form.isActive, sortOrder: Number(form.sortOrder) || 0 });
+      toast.success(pkg ? "Package saved" : "Package added");
+      if (!pkg) setForm(EMPTY_PACKAGE);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to save package");
+    }
+  };
+
+  const del = async () => {
+    if (!pkg || !confirm(`Delete "${pkg.label}"? Orders already paid are not affected.`)) return;
+    try {
+      await remove.mutateAsync(pkg.id);
+      toast.success("Package deleted");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete package");
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-[2fr,1fr,1fr,80px,auto] gap-3 items-end bg-[#141414] border border-[#2a2a2a] rounded-lg p-3">
+      <div className="space-y-1 col-span-2 sm:col-span-1">
+        <label className={labelCls}>Label</label>
+        <input value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className={inputCls} />
+      </div>
+      <div className="space-y-1">
+        <label className={labelCls}>Coins</label>
+        <input type="number" min={1} value={form.coins} onChange={(e) => setForm((f) => ({ ...f, coins: e.target.value }))} className={inputCls} />
+      </div>
+      <div className="space-y-1">
+        <label className={labelCls}>Price (₹)</label>
+        <input type="number" min={1} step="0.01" value={form.priceInr} onChange={(e) => setForm((f) => ({ ...f, priceInr: e.target.value }))} className={inputCls} />
+      </div>
+      <div className="space-y-1">
+        <label className={labelCls}>Order</label>
+        <input type="number" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value }))} className={inputCls} />
+      </div>
+      <div className="flex items-center gap-2 col-span-2 sm:col-span-1">
+        <label className="flex items-center gap-1.5 text-xs text-[#a0a0a0]">
+          <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} /> Active
+        </label>
+        <button
+          onClick={submit}
+          disabled={save.isPending}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-bold text-white bg-[#dc2626] hover:bg-red-700 disabled:opacity-50"
+        >
+          {save.isPending ? <Loader2 size={12} className="animate-spin" /> : pkg ? <Save size={12} /> : <Plus size={12} />}
+          {pkg ? "Save" : "Add"}
+        </button>
+        {pkg && (
+          <button onClick={del} disabled={remove.isPending} aria-label="Delete package" className="h-9 px-2 text-[#606060] hover:text-red-400">
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CoinsTab() {
+  const { data: pricing, isLoading: pricingLoading } = useGetCallCoinPricing();
+  const { data: packages, isLoading: packagesLoading } = useListCoinPackages();
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-[#181818] rounded-xl border border-[#2a2a2a] p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-[#f0f0f0] inline-flex items-center gap-2">
+            <Coins size={15} className="text-[#dc2626]" /> Extra call price (TBT coins)
+          </h2>
+          <p className="text-xs text-[#606060] mt-1">
+            Once a member has used or booked every included call in a category, they can unlock one more call for this many coins.
+            Leave a category empty to keep it locked. Categories a plan doesn&apos;t include stay locked either way.
+            Cancelling a paid booking refunds the coins.
+          </p>
+        </div>
+        {pricingLoading ? (
+          <div className="flex items-center gap-2 text-[#606060] text-sm"><Loader2 size={14} className="animate-spin" /> Loading...</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            {(pricing ?? []).map((p) => <CoinPriceRow key={p.category} category={p.category} coinCost={p.coinCost} />)}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-[#181818] rounded-xl border border-[#2a2a2a] p-5 space-y-4">
+        <div>
+          <h2 className="text-sm font-bold text-[#f0f0f0]">TBT coin packages</h2>
+          <p className="text-xs text-[#606060] mt-1">
+            Packages members can buy with Razorpay. With no active package, members see the original 200 coins for ₹99 package.
+            Changing a price never affects an order that has already been created.
+          </p>
+        </div>
+        {packagesLoading ? (
+          <div className="flex items-center gap-2 text-[#606060] text-sm"><Loader2 size={14} className="animate-spin" /> Loading...</div>
+        ) : (
+          <div className="space-y-2">
+            {(packages ?? []).map((pkg) => <CoinPackageEditor key={pkg.id} pkg={pkg} />)}
+            <p className={`${labelCls} pt-2`}>Add a package</p>
+            <CoinPackageEditor />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function EntitlementCard({ row, onSave }: { row: EntitlementRow; onSave: (plan: string, data: any) => Promise<void> }) {
   const [form, setForm] = useState({
@@ -139,7 +322,7 @@ export default function EntitlementsPage() {
   const recordUsage = useRecordSupportUsage();
   const deleteUsage = useDeleteSupportUsage();
 
-  const [tab, setTab] = useState<"plans" | "usage">("plans");
+  const [tab, setTab] = useState<"plans" | "usage" | "coins">("plans");
   const [recordForm, setRecordForm] = useState({ memberId: "", type: "tech_support", notes: "" });
   const [recording, setRecording] = useState(false);
 
@@ -177,7 +360,7 @@ export default function EntitlementsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-[#2a2a2a]">
-          {(["plans", "usage"] as const).map((t) => (
+          {(["plans", "usage", "coins"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -185,7 +368,7 @@ export default function EntitlementsPage() {
                 tab === t ? "border-[#dc2626] text-[#f0f0f0]" : "border-transparent text-[#606060] hover:text-[#a0a0a0]"
               }`}
             >
-              {t === "plans" ? "Plan Definitions" : "Usage Log"}
+              {t === "plans" ? "Plan Definitions" : t === "usage" ? "Usage Log" : "Coins & Extra Calls"}
             </button>
           ))}
         </div>
@@ -207,6 +390,8 @@ export default function EntitlementsPage() {
             )}
           </div>
         )}
+
+        {tab === "coins" && <CoinsTab />}
 
         {tab === "usage" && (
           <div className="space-y-5">

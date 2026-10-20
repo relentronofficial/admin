@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  callCardAction,
   canBook,
+  canBookWithCoins,
   canCancelBooking,
+  coinRefundFor,
   canManageSupportSession,
   canMarkAttendance,
   categoryQuota,
@@ -18,7 +21,7 @@ const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
 const session = (over: Partial<{ status: string; startsAt: Date; durationMinutes: number; capacity: number; hostAdminId: string | null }> = {}) => ({
   status: 'scheduled', startsAt: at(24 * 60), durationMinutes: 45, capacity: 1, hostAdminId: 'mentor-1', ...over,
 });
-const quota = (allocated: number, used = 0, reserved = 0) => categoryQuota({ allocated, used, remaining: Math.max(0, allocated - used) }, reserved);
+const quota = (allocated: number, used = 0, reserved = 0) => categoryQuota({ allocated, used, remaining: Math.max(0, allocated - used), unlocked: 0 }, reserved);
 
 describe('categories', () => {
   it('accepts exactly the six support_usage types', () => {
@@ -45,10 +48,10 @@ describe('categories', () => {
 
 describe('categoryQuota', () => {
   it('subtracts pending reservations from remaining', () => {
-    expect(quota(5, 2, 1)).toEqual({ allocated: 5, used: 2, reserved: 1, remaining: 2 });
+    expect(quota(5, 2, 1)).toEqual({ allocated: 5, used: 2, reserved: 1, remaining: 2, included: 5, unlocked: 0 });
   });
   it('never goes negative and handles a 0/0 category', () => {
-    expect(quota(0)).toEqual({ allocated: 0, used: 0, reserved: 0, remaining: 0 });
+    expect(quota(0)).toEqual({ allocated: 0, used: 0, reserved: 0, remaining: 0, included: 0, unlocked: 0 });
     expect(quota(1, 3, 2).remaining).toBe(0);
   });
 });
@@ -150,3 +153,93 @@ describe('one_to_one rules', () => {
     expect(isOneToOneSession({ capacity: 10 })).toBe(false);
   });
 });
+
+// A quota with `unlocked` coin calls on top of `included` plan calls.
+const paidQuota = (included: number, used = 0, reserved = 0, unlocked = 0) =>
+  categoryQuota({ allocated: included + unlocked, used, remaining: Math.max(0, included + unlocked - used), unlocked }, reserved);
+
+describe('quota states (free calls)', () => {
+  it('free quota remaining → Book Call', () => {
+    expect(callCardAction({ quota: paidQuota(3, 1), coinCost: 100, balance: 0, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'book', lockedReason: null });
+  });
+  it('completed (used) and pending (booked) calls both use up quota; cancelled ones do not', () => {
+    // 3 included: 1 attended/no-show (used) + 1 pending booking (reserved) → 1 left.
+    expect(paidQuota(3, 1, 1).remaining).toBe(1);
+    // A cancelled booking is neither used nor reserved, so it is simply absent.
+    expect(paidQuota(3, 1, 0).remaining).toBe(2);
+  });
+  it('free quota exhausted by completed + pending calls → no free booking', () => {
+    const q = paidQuota(2, 1, 1);
+    expect(q.remaining).toBe(0);
+    expect(canBook({ session: session(), now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active', quota: q }))
+      .toMatchObject({ ok: false, code: 'quota_exhausted' });
+  });
+  it('a coin-paid booking does not consume an included call', () => {
+    // 2 included both used, 1 coin booking pending → still 0 free left, included unchanged.
+    const q = paidQuota(2, 2, 1, 1);
+    expect(q).toMatchObject({ included: 2, unlocked: 1, remaining: 0 });
+  });
+});
+
+describe('callCardAction', () => {
+  const exhausted = paidQuota(2, 2);
+  it('locks a category the plan does not include, even with coins', () => {
+    expect(callCardAction({ quota: paidQuota(0), coinCost: 50, balance: 999, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'locked', lockedReason: 'not_included' });
+  });
+  it('locks when quota is used and no coin price is set', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: null, balance: 999, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'locked', lockedReason: 'quota_exhausted' });
+  });
+  it('offers Unlock with TBT Coins when the balance covers the price', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 100, coinPurchaseAvailable: true }).action).toBe('unlock_with_coins');
+  });
+  it('offers Purchase TBT Coins when the balance is short', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 99, coinPurchaseAvailable: true }).action).toBe('purchase_coins');
+  });
+  it('stays locked when the balance is short and coins cannot be bought', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 0, coinPurchaseAvailable: false }).action).toBe('locked');
+  });
+});
+
+describe('canBookWithCoins', () => {
+  const base = {
+    session: session(), now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active',
+    quota: paidQuota(2, 2), coinCost: 100 as number | null, expectedCoinCost: 100 as unknown, balance: 150,
+  };
+  it('allows an exhausted member with enough coins at the confirmed price', () => expect(canBookWithCoins(base)).toEqual({ ok: true }));
+  it('refuses to charge coins while free calls remain (attempting to exceed quota the free way is separate)', () =>
+    expect(canBookWithCoins({ ...base, quota: paidQuota(3, 2) })).toMatchObject({ ok: false, code: 'free_quota_available' }));
+  it('refuses a category not in the plan', () =>
+    expect(canBookWithCoins({ ...base, quota: paidQuota(0) })).toMatchObject({ ok: false, code: 'not_included' }));
+  it('refuses when the admin has not set a coin price', () =>
+    expect(canBookWithCoins({ ...base, coinCost: null })).toMatchObject({ ok: false, code: 'coin_unlock_unavailable' }));
+  it('refuses a price the member did not confirm', () => {
+    expect(canBookWithCoins({ ...base, expectedCoinCost: 80 })).toMatchObject({ ok: false, status: 409, code: 'coin_price_changed' });
+    expect(canBookWithCoins({ ...base, expectedCoinCost: undefined })).toMatchObject({ ok: false, code: 'coin_price_changed' });
+    expect(canBookWithCoins({ ...base, expectedCoinCost: '100' })).toMatchObject({ ok: false, code: 'coin_price_changed' });
+  });
+  it('sufficient vs insufficient balance', () => {
+    expect(canBookWithCoins({ ...base, balance: 100 })).toEqual({ ok: true });
+    expect(canBookWithCoins({ ...base, balance: 99 })).toMatchObject({ ok: false, status: 402, code: 'insufficient_coins' });
+    expect(canBookWithCoins({ ...base, balance: -20 })).toMatchObject({ ok: false, code: 'insufficient_coins' });
+  });
+  it('still enforces session, duplicate, membership and capacity rules', () => {
+    expect(canBookWithCoins({ ...base, alreadyBooked: true })).toMatchObject({ ok: false, code: 'already_booked' });
+    expect(canBookWithCoins({ ...base, memberStatus: 'paused' })).toMatchObject({ ok: false, code: 'member_inactive' });
+    expect(canBookWithCoins({ ...base, activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' });
+    expect(canBookWithCoins({ ...base, session: session({ status: 'cancelled' }) })).toMatchObject({ ok: false, code: 'session_unavailable' });
+    expect(canBookWithCoins({ ...base, session: session({ startsAt: NOW }) })).toMatchObject({ ok: false, code: 'session_started' });
+  });
+});
+
+describe('coinRefundFor', () => {
+  it('refunds exactly the coins paid, nothing for free bookings', () => {
+    expect(coinRefundFor(120)).toBe(120);
+    expect(coinRefundFor(null)).toBe(0);
+    expect(coinRefundFor(undefined)).toBe(0);
+    expect(coinRefundFor(0)).toBe(0);
+  });
+});
+

@@ -30,9 +30,44 @@ import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
-import { computeSupportQuota, SUPPORT_USAGE_COUNTS_SQL, APPROVED_CREDIT_PURCHASES_SQL } from '../../lib/supportQuota.js';
-import { canBook, canCancelBooking, isOneToOneSession, isSupportCallCategory, joinState } from '../../lib/supportCallLogic.js';
-import { loadCategoryQuota, mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
+import {
+  computeSupportQuota,
+  SUPPORT_USAGE_COUNTS_SQL,
+  APPROVED_CREDIT_PURCHASES_SQL,
+  COIN_UNLOCKED_BOOKINGS_SQL,
+} from '../../lib/supportQuota.js';
+import {
+  SUPPORT_CALL_CATEGORIES,
+  callCardAction,
+  canBook,
+  canBookWithCoins,
+  canCancelBooking,
+  categoryQuota,
+  coinRefundFor,
+  isSupportCallCategory,
+  joinState,
+  quotaBucketFor,
+} from '../../lib/supportCallLogic.js';
+import {
+  COIN_CALL_SPEND_SOURCE,
+  loadAllCallCoinCosts,
+  loadCallCoinCost,
+  loadCategoryQuota,
+  loadCoinBalance,
+  lockCoinWallet,
+  mapSession,
+  refundCallCoins,
+  SESSION_COLUMNS,
+} from '../../lib/supportCallData.js';
+import {
+  creditCoinOrder,
+  isLegacyCoinOrderFor,
+  LEGACY_COIN_PACKAGE,
+  legacyCoinPackage,
+  mapCoinPackage,
+  rupeesToPaise,
+  type CoinPackage,
+} from '../../lib/coinOrders.js';
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { handleLifelineWebhookEvent } from './lifelinePurchase.js';
@@ -6679,7 +6714,7 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   const plan = (member?.membershipPlan as string | null) ?? 'free';
 
-  const [entRows, usageRows, lifelineRows, purchasedRows] = await Promise.all([
+  const [entRows, usageRows, lifelineRows, purchasedRows, coinRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -6694,11 +6729,60 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
         )
       : Promise.resolve([]),
     request.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
+    request.server.prisma.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
   ]);
 
   // Same pure computation as the admin member-quota view (lib/supportQuota.ts),
   // so purchased credits and legacy rows are handled identically in both.
-  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows));
+  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows));
+}
+
+function coinPurchaseAvailable() {
+  return !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+}
+
+// GET /api/user/support-calls/summary — one row per call card: quota (incl.
+// reservations and coin unlocks), the admin coin price, and the next action.
+export async function getSupportCallsSummaryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const db = request.server.prisma;
+  const { plan } = await loadMemberPlanStatus(request);
+
+  const [entRows, usageRows, purchasedRows, coinRows, reservedRows, coinCosts, balance] = await Promise.all([
+    db.$queryRawUnsafe<any[]>(
+      `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
+              COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
+       FROM plan_entitlements WHERE plan = $1`,
+      plan,
+    ),
+    db.$queryRawUnsafe<any[]>(SUPPORT_USAGE_COUNTS_SQL, memberId),
+    db.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
+    db.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
+    db.$queryRawUnsafe<any[]>(
+      `SELECT s.category, COUNT(*)::int AS n FROM support_call_bookings b
+       JOIN support_call_sessions s ON s.id = b.session_id
+       WHERE b.member_id = $1::uuid AND b.status = 'booked' AND s.status = 'scheduled'
+       GROUP BY s.category`,
+      memberId,
+    ),
+    loadAllCallCoinCosts(db),
+    loadCoinBalance(db, memberId),
+  ]);
+
+  const quota = computeSupportQuota(plan, entRows, usageRows, [], purchasedRows, coinRows);
+  const reserved: Record<string, number> = {};
+  for (const r of reservedRows) reserved[r.category] = Number(r.n) || 0;
+  const purchaseAvailable = coinPurchaseAvailable();
+
+  return ok(reply, {
+    coinBalance: balance,
+    coinPurchaseAvailable: purchaseAvailable,
+    categories: SUPPORT_CALL_CATEGORIES.map((category) => {
+      const q = categoryQuota(quotaBucketFor(quota, category), reserved[category] ?? 0);
+      const coinCost = coinCosts[category] ?? null;
+      return { category, quota: q, coinCost, ...callCardAction({ quota: q, coinCost, balance, coinPurchaseAvailable: purchaseAvailable }) };
+    }),
+  });
 }
 
 // ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ───────────────────
@@ -6725,13 +6809,13 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
   const now = new Date();
   const { plan } = await loadMemberPlanStatus(request);
 
-  const [quota, sessionRows, historyRows] = await Promise.all([
+  const [quota, sessionRows, historyRows, coinCost, coinBalance] = await Promise.all([
     loadCategoryQuota(db, memberId, plan, category),
     // Upcoming + in-progress sessions (so Join is reachable during the call).
     db.$queryRawUnsafe<any[]>(
       `SELECT ${SESSION_COLUMNS},
               (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status <> 'cancelled') AS active_count,
-              mb.id AS my_booking_id, mb.status AS my_booking_status
+              mb.id AS my_booking_id, mb.status AS my_booking_status, mb.coin_cost AS my_booking_coin_cost
        FROM support_call_sessions s
        LEFT JOIN support_call_bookings mb
          ON mb.session_id = s.id AND mb.member_id = $1::uuid AND mb.status <> 'cancelled'
@@ -6742,7 +6826,7 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
       memberId, category, now,
     ),
     db.$queryRawUnsafe<any[]>(
-      `SELECT b.id, b.status, b.booked_at, s.title, s.starts_at, s.duration_minutes, s.status AS session_status
+      `SELECT b.id, b.status, b.booked_at, b.coin_cost, s.title, s.starts_at, s.duration_minutes, s.status AS session_status
        FROM support_call_bookings b
        JOIN support_call_sessions s ON s.id = b.session_id
        WHERE b.member_id = $1::uuid AND s.category = $2
@@ -6750,11 +6834,20 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
        LIMIT 20`,
       memberId, category,
     ),
+    loadCallCoinCost(db, category),
+    loadCoinBalance(db, memberId),
   ]);
+  const purchaseAvailable = coinPurchaseAvailable();
 
   const sessions = sessionRows.map((r) => {
     const s = mapSession(r);
-    const myBooking = r.my_booking_id ? { id: r.my_booking_id as string, status: r.my_booking_status as string } : null;
+    const myBooking = r.my_booking_id
+      ? {
+          id: r.my_booking_id as string,
+          status: r.my_booking_status as string,
+          coinCost: r.my_booking_coin_cost == null ? null : Number(r.my_booking_coin_cost),
+        }
+      : null;
     const join = myBooking
       ? joinState({ bookingStatus: myBooking.status, session: s, hasMeetingUrl: s.hasMeetingUrl, now })
       : null;
@@ -6781,6 +6874,12 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
   return ok(reply, {
     category,
     quota,
+    coin: {
+      cost: coinCost,
+      balance: coinBalance,
+      purchaseAvailable,
+      ...callCardAction({ quota, coinCost, balance: coinBalance, coinPurchaseAvailable: purchaseAvailable }),
+    },
     sessions,
     history: historyRows.map((r) => ({
       bookingId: r.id as string,
@@ -6788,6 +6887,7 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
       startsAt: new Date(r.starts_at).toISOString(),
       durationMinutes: Number(r.duration_minutes),
       status: r.session_status === 'cancelled' && r.status === 'cancelled' ? 'session_cancelled' : (r.status as string),
+      coinCost: r.coin_cost == null ? null : Number(r.coin_cost),
     })),
   });
 }
@@ -6796,6 +6896,10 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
   const memberId = request.memberId!;
   const { id: sessionId } = request.params as { id: string };
   if (!UUID_RE.test(sessionId)) return fail(reply, 404, 'Session not found');
+  // Coins are only ever spent when the member explicitly asks for it and
+  // confirms the price they were shown (expectedCoinCost).
+  const body = (request.body ?? {}) as { payWithCoins?: unknown; expectedCoinCost?: unknown };
+  const payWithCoins = body.payWithCoins === true;
   const { plan, status } = await loadMemberPlanStatus(request);
 
   try {
@@ -6821,27 +6925,52 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
         ),
       ]);
       const quota = await loadCategoryQuota(tx, memberId, plan, s.category);
-      const rule = canBook({
+      const base = {
         session: s,
         now: new Date(),
         activeBookingCount: countRows[0]?.n ?? 0,
         alreadyBooked: mineRows.length > 0,
         memberStatus: status,
         quota,
-      });
-      if (!rule.ok) return { error: rule };
+      };
 
+      if (!payWithCoins) {
+        const rule = canBook(base);
+        if (!rule.ok) return { error: rule };
+        const inserted = await tx.$queryRawUnsafe<any[]>(
+          `INSERT INTO support_call_bookings (session_id, member_id) VALUES ($1::uuid, $2::uuid)
+           RETURNING id, status, booked_at, coin_cost`,
+          sessionId, memberId,
+        );
+        return { booking: inserted[0], session: s, coinBalance: null as number | null };
+      }
+
+      // Coin-paid extra call: the wallet lock, balance check, debit and booking
+      // all happen in this transaction, so the coins and the booking commit
+      // together or not at all, and parallel requests can't overspend.
+      await lockCoinWallet(tx, memberId);
+      const [coinCost, balance] = await Promise.all([loadCallCoinCost(tx, s.category), loadCoinBalance(tx, memberId)]);
+      const rule = canBookWithCoins({ ...base, coinCost, expectedCoinCost: body.expectedCoinCost, balance });
+      if (!rule.ok) return { error: rule };
+      const cost = coinCost as number;
       const inserted = await tx.$queryRawUnsafe<any[]>(
-        `INSERT INTO support_call_bookings (session_id, member_id) VALUES ($1::uuid, $2::uuid)
-         RETURNING id, status, booked_at`,
-        sessionId, memberId,
+        `INSERT INTO support_call_bookings (session_id, member_id, coin_cost) VALUES ($1::uuid, $2::uuid, $3)
+         RETURNING id, status, booked_at, coin_cost`,
+        sessionId, memberId, cost,
       );
-      return { booking: inserted[0], session: s };
+      await tx.$executeRawUnsafe(
+        `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+         VALUES ($1::uuid, $2, '${COIN_CALL_SPEND_SOURCE}', $3::uuid, NOW()::DATE)`,
+        memberId, -cost, inserted[0].id,
+      );
+      return { booking: inserted[0], session: s, coinBalance: balance - cost };
     });
 
     if ('error' in result && result.error) return ruleFail(reply, result.error as any);
     const b = (result as any).booking;
     const sess = (result as any).session;
+    const coinsSpent = b.coin_cost == null ? 0 : Number(b.coin_cost);
+    if (coinsSpent > 0) void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
 
     // Non-blocking: notify admin that a member booked a support call.
     void (async () => {
@@ -6851,7 +6980,8 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
           select: { firstName: true, lastName: true },
         });
         const memberName = `${m?.firstName ?? ''} ${m?.lastName ?? ''}`.trim() || 'Member';
-        const callType = isOneToOneSession(sess) ? '1:1' : 'group';
+        const callType = sess.category === 'one_to_one' ? '1:1' : 'group';
+        const paidNote = coinsSpent > 0 ? ` (unlocked with ${coinsSpent} TBT coins)` : '';
         const notifPayload = {
           sessionId,
           bookingId: b.id,
@@ -6864,16 +6994,30 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
         request.server.io?.to('admin').emit('admin:support_call_booked', notifPayload);
         void createAdminNotification(request.server.prisma, {
           title: 'Support Call Booked',
-          body: `${memberName} booked a ${callType} support call: "${sess.title}".`,
+          body: `${memberName} booked a ${callType} support call: "${sess.title}"${paidNote}.`,
           type: 'support_call_booked',
           metadata: notifPayload,
         });
       } catch { /* notification failure is non-fatal */ }
     })();
 
+    // The confirmation the member sees is built from the committed booking row.
     return reply.status(201).send({
       success: true,
-      data: { id: b.id, sessionId, status: b.status, bookedAt: new Date(b.booked_at).toISOString() },
+      data: {
+        id: b.id,
+        sessionId,
+        status: b.status,
+        bookedAt: new Date(b.booked_at).toISOString(),
+        category: sess.category,
+        title: sess.title,
+        startsAt: sess.startsAt.toISOString(),
+        durationMinutes: sess.durationMinutes,
+        hostName: sess.hostName,
+        paidWithCoins: coinsSpent > 0,
+        coinsSpent,
+        coinBalance: (result as any).coinBalance,
+      },
       error: null,
     });
   } catch (err: any) {
@@ -6893,7 +7037,7 @@ export async function cancelSupportCallBookingHandler(request: FastifyRequest, r
   const result = await request.server.prisma.$transaction(async (tx) => {
     // Scoped to the caller: another member's booking id behaves as not found.
     const rows = await tx.$queryRawUnsafe<any[]>(
-      `SELECT b.id, b.status AS booking_status, ${SESSION_COLUMNS}
+      `SELECT b.id, b.status AS booking_status, b.coin_cost, ${SESSION_COLUMNS}
        FROM support_call_bookings b JOIN support_call_sessions s ON s.id = b.session_id
        WHERE b.id = $1::uuid AND b.member_id = $2::uuid
        FOR UPDATE OF b`,
@@ -6905,11 +7049,16 @@ export async function cancelSupportCallBookingHandler(request: FastifyRequest, r
     await tx.$executeRawUnsafe(
       `UPDATE support_call_bookings SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() WHERE id = $1::uuid`, id,
     );
-    return { ok: true };
+    // A coin-paid booking gets its coins back in the same transaction.
+    const paid = rows[0].coin_cost == null ? null : Number(rows[0].coin_cost);
+    const coinsRefunded = await refundCallCoins(tx, memberId, id, coinRefundFor(paid));
+    return { ok: true, coinsRefunded };
   });
 
   if ('error' in result && result.error) return ruleFail(reply, result.error as any);
-  return ok(reply, { id, status: 'cancelled' });
+  const coinsRefunded = (result as any).coinsRefunded ?? 0;
+  if (coinsRefunded > 0) void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
+  return ok(reply, { id, status: 'cancelled', coinsRefunded });
 }
 
 export async function joinSupportCallHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -7189,6 +7338,13 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
   if (body.event === 'payment.failed') {
     const failedOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
     if (failedOrderId) {
+      // A failed coin payment never credits coins; a later successful attempt on
+      // the same order can still be captured and credited.
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE coin_orders SET status = 'failed', failure_reason = $2
+         WHERE razorpay_order_id = $1 AND status = 'created'`,
+        failedOrderId, String(body?.payload?.payment?.entity?.error_description ?? 'payment.failed').slice(0, 500),
+      ).catch(() => {});
       await request.server.prisma.$executeRawUnsafe(
         `UPDATE course_payments SET status='failed', updated_at=NOW()
          WHERE razorpay_order_id = $1 AND method = 'razorpay' AND status = 'pending'`,
@@ -7235,6 +7391,25 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
   const rzpOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
   if (!rzpOrderId) return reply.send({ ok: true });
 
+  // TBT coin order — credited once even if /verify also ran (or never ran).
+  const coinResult = await creditCoinOrder(request.server.prisma as any, {
+    razorpayOrderId: rzpOrderId,
+    razorpayPaymentId: String(body?.payload?.payment?.entity?.id ?? ''),
+    amountPaise: Number(body?.payload?.payment?.entity?.amount),
+  }).catch((err) => {
+    request.log.error({ err, rzpOrderId }, 'coin order webhook credit failed');
+    return { status: 'error' as const };
+  });
+  if (coinResult.status === 'amount_mismatch') {
+    request.log.error({ rzpOrderId }, 'coin order webhook amount mismatch — not credited');
+  }
+  if (coinResult.status === 'credited') {
+    void invalidateCache((request.server as any).redis ?? null, `me:${coinResult.memberId}`);
+  }
+  // A database error is answered 500 so Razorpay retries the event later.
+  if (coinResult.status === 'error') return reply.status(500).send({ ok: false });
+  if (coinResult.status !== 'not_found') return reply.send({ ok: true });
+
   const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT cp.id, cp.status, cp.member_id, cp.course_id
      FROM course_payments cp
@@ -7269,70 +7444,112 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
 
 // ── TBT Coin Purchase via Razorpay ────────────────────────────────────────────
 
-const COIN_PACKAGE_COINS = 200;
-const COIN_PACKAGE_PRICE_INR = 99;
+async function loadActiveCoinPackages(request: FastifyRequest): Promise<CoinPackage[]> {
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, label, coins, price_inr FROM coin_packages WHERE is_active = TRUE ORDER BY sort_order ASC, price_inr ASC`,
+  );
+  return rows.map(mapCoinPackage);
+}
 
-// POST /api/user/coins/razorpay/create-order
+// GET /api/user/coins/packages — admin packages, or the original package when none are set up.
+export async function listCoinPackagesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const packages = await loadActiveCoinPackages(request);
+  return ok(reply, {
+    packages: packages.length ? packages : [legacyCoinPackage()],
+    purchaseAvailable: coinPurchaseAvailable(),
+  });
+}
+
+// POST /api/user/coins/razorpay/create-order — body { packageId? }; no packageId = the original package.
 export async function createCoinOrderHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
     return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
   }
+  const { packageId } = (request.body ?? {}) as { packageId?: unknown };
+  let pkg: CoinPackage = legacyCoinPackage();
+  if (packageId != null) {
+    if (typeof packageId !== 'string' || !UUID_RE.test(packageId)) return fail(reply, 404, 'PACKAGE_NOT_FOUND');
+    const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, label, coins, price_inr FROM coin_packages WHERE id = $1::uuid AND is_active = TRUE`, packageId,
+    );
+    if (!rows[0]) return fail(reply, 404, 'PACKAGE_NOT_FOUND');
+    pkg = mapCoinPackage(rows[0]);
+  }
+  const amountPaise = rupeesToPaise(pkg.priceInr);
+
   let rzpOrder: any;
   try {
     rzpOrder = await getRazorpay().orders.create({
-      amount: COIN_PACKAGE_PRICE_INR * 100,
+      amount: amountPaise,
       currency: 'INR',
       receipt: `tbt-coins-${memberId.slice(0, 8)}-${Date.now()}`,
-      notes: { memberId, type: 'coin_purchase', coins: String(COIN_PACKAGE_COINS) },
+      notes: { memberId, type: 'coin_purchase', coins: String(pkg.coins), packageId: pkg.id ?? '' },
     });
   } catch {
     return fail(reply, 500, 'ORDER_CREATE_FAILED');
   }
+  // The coins and amount are fixed here; /verify and the webhook read them back from this row.
+  try {
+    await request.server.prisma.$executeRawUnsafe(
+      `INSERT INTO coin_orders (member_id, razorpay_order_id, package_id, coins, amount_paise, currency)
+       VALUES ($1::uuid, $2, $3::uuid, $4, $5, 'INR')`,
+      memberId, rzpOrder.id, pkg.id, pkg.coins, amountPaise,
+    );
+  } catch (err) {
+    request.log.error({ err }, 'coin order record failed');
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
   return ok(reply, {
     orderId: rzpOrder.id,
-    amount: COIN_PACKAGE_PRICE_INR * 100,
+    amount: amountPaise,
     currency: 'INR',
     keyId: env.RAZORPAY_KEY_ID,
-    coins: COIN_PACKAGE_COINS,
+    coins: pkg.coins,
+    packageId: pkg.id,
   });
 }
 
 // POST /api/user/coins/razorpay/verify
 export async function verifyCoinPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
-  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = request.body as any;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature } = (request.body ?? {}) as any;
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
     return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
   }
-  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+  if (
+    typeof razorpayOrderId !== 'string' || typeof razorpayPaymentId !== 'string' || typeof razorpaySignature !== 'string' ||
+    !verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)
+  ) {
     return fail(reply, 400, 'SIGNATURE_INVALID');
   }
-  // Idempotent — use razorpay_payment_id as reference to prevent double-credit
-  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
-     VALUES ($1::uuid, $2, 'coin_purchase', $3, NOW()::DATE)
-     ON CONFLICT (member_id, source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING
-     RETURNING id`,
-    memberId, COIN_PACKAGE_COINS, razorpayPaymentId,
-  );
-  const inserted = rows.length > 0;
-  if (inserted) {
-    // Directly increment member.totalPoints so the value is immediately
-    // visible on re-fetch without waiting for the 60-second recalc throttle.
-    await request.server.prisma.$executeRawUnsafe(
-      `UPDATE members SET total_points = COALESCE(total_points, 0) + $1 WHERE id = $2::uuid`,
-      COIN_PACKAGE_COINS, memberId,
-    ).catch(() => {});
-    await invalidateCache((request.server as any).redis ?? null, `me:${memberId}`);
+
+  const prisma = request.server.prisma as any;
+  let result = await creditCoinOrder(prisma, { razorpayOrderId, razorpayPaymentId, memberId });
+  if (result.status === 'not_found') {
+    // An order created before coin_orders existed: accept it only if Razorpay's
+    // record says it is this member's coin order at the original price.
+    let rzpOrder: any = null;
+    try { rzpOrder = await getRazorpay().orders.fetch(razorpayOrderId); } catch { rzpOrder = null; }
+    if (isLegacyCoinOrderFor(rzpOrder, memberId)) {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO coin_orders (member_id, razorpay_order_id, coins, amount_paise, currency)
+         VALUES ($1::uuid, $2, $3, $4, 'INR') ON CONFLICT (razorpay_order_id) DO NOTHING`,
+        memberId, razorpayOrderId, LEGACY_COIN_PACKAGE.coins, rupeesToPaise(LEGACY_COIN_PACKAGE.priceInr),
+      );
+      result = await creditCoinOrder(prisma, { razorpayOrderId, razorpayPaymentId, memberId });
+    }
   }
-  const [statsRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT total_points FROM members WHERE id = $1::uuid`, memberId,
-  ).catch(() => [] as any[]);
+  if (result.status === 'not_found') return fail(reply, 404, 'ORDER_NOT_FOUND');
+  if (result.status === 'amount_mismatch') return fail(reply, 409, 'AMOUNT_MISMATCH');
+
+  const credited = result.status === 'credited';
+  if (credited) await invalidateCache((request.server as any).redis ?? null, `me:${memberId}`);
+  const balance = await loadCoinBalance(request.server.prisma, memberId);
   return ok(reply, {
-    coinsAdded: inserted ? COIN_PACKAGE_COINS : 0,
-    totalCoins: Number(statsRow?.total_points ?? 0),
-    alreadyProcessed: !inserted,
+    coinsAdded: credited ? result.coins : 0,
+    totalCoins: balance,
+    alreadyProcessed: !credited,
   });
 }
 

@@ -1,7 +1,8 @@
 import { render, screen, fireEvent, cleanup, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import SupportCallPanel from "./SupportCallPanel";
-import type { SupportCallSession, SupportCallsView } from "@/lib/api/services/supportCalls.service";
+import type { SupportCallCoinInfo, SupportCallSession, SupportCallsView } from "@/lib/api/services/supportCalls.service";
+import { toast } from "react-hot-toast";
 
 const NOW = Date.parse("2026-10-20T04:30:00Z"); // Tue 20 Oct 2026, 10:00 IST
 
@@ -11,6 +12,8 @@ const state: {
   cancel: { mutateAsync: ReturnType<typeof vi.fn>; isPending: boolean };
   join: { mutateAsync: ReturnType<typeof vi.fn>; isPending: boolean };
   categories: string[];
+  packages: { data?: any; isLoading: boolean; isError: boolean; refetch: ReturnType<typeof vi.fn> };
+  purchase: { state: any; busy: boolean; buy: ReturnType<typeof vi.fn>; reset: ReturnType<typeof vi.fn> };
 } = {} as any;
 
 vi.mock("@/lib/api/client", () => ({ getServerNow: () => NOW }));
@@ -23,6 +26,10 @@ vi.mock("@/lib/hooks/useSupportCalls", () => ({
   useBookSupportCall: () => state.book,
   useCancelSupportCallBooking: () => state.cancel,
   useJoinSupportCall: () => state.join,
+}));
+vi.mock("@/lib/hooks/useCoins", () => ({
+  useCoinPackages: () => state.packages,
+  useCoinPurchase: () => state.purchase,
 }));
 
 const session = (over: Partial<SupportCallSession>): SupportCallSession => ({
@@ -38,9 +45,19 @@ const session = (over: Partial<SupportCallSession>): SupportCallSession => ({
   ...over,
 });
 
-function view(sessions: SupportCallSession[], quota = { allocated: 5, used: 1, reserved: 0, remaining: 4 }): SupportCallsView {
-  return { category: "sales_support", quota, sessions, history: [] };
+function view(
+  sessions: SupportCallSession[],
+  quota: SupportCallsView["quota"] = { allocated: 5, used: 1, reserved: 0, remaining: 4 },
+  coin?: SupportCallCoinInfo,
+): SupportCallsView {
+  return { category: "sales_support", quota, sessions, history: [], coin };
 }
+
+const confirmation = (over: Record<string, unknown> = {}) => ({
+  id: "b1a2c3d4-0000-4000-8000-000000000000", sessionId: "thu-4pm", status: "booked", bookedAt: "2026-10-20T04:30:00Z",
+  category: "sales_support", title: "Pricing clinic", startsAt: "2026-10-22T10:30:00Z", durationMinutes: 45, hostName: "Coach K",
+  paidWithCoins: false, coinsSpent: 0, coinBalance: null, ...over,
+});
 
 const SESSIONS = [
   session({ id: "thu-4pm", startsAt: "2026-10-22T10:30:00Z" }), // Thu 22, 4:00 PM IST
@@ -58,10 +75,16 @@ const slotButtons = () => within(screen.getByRole("group", { name: "Available ti
 
 beforeEach(() => {
   state.calls = { data: view(SESSIONS), isLoading: false, isError: false, isFetching: false, refetch: vi.fn() };
-  state.book = { mutateAsync: vi.fn().mockResolvedValue({ id: "b1", status: "booked" }), isPending: false };
+  state.book = { mutateAsync: vi.fn().mockResolvedValue(confirmation()), isPending: false };
   state.cancel = { mutateAsync: vi.fn().mockResolvedValue({}), isPending: false };
   state.join = { mutateAsync: vi.fn().mockResolvedValue("https://meet.example.test/x"), isPending: false };
   state.categories = [];
+  state.packages = {
+    data: { packages: [{ id: "p1", label: "Starter", coins: 500, priceInr: 199 }, { id: "p2", label: "Pro", coins: 1200, priceInr: 399 }], purchaseAvailable: true },
+    isLoading: false, isError: false, refetch: vi.fn(),
+  };
+  state.purchase = { state: { status: "idle" }, busy: false, buy: vi.fn(), reset: vi.fn() };
+  vi.mocked(toast.success).mockClear();
 });
 afterEach(cleanup);
 
@@ -113,9 +136,17 @@ describe("SupportCallPanel — slot booking", () => {
     expect(summary.textContent).toMatch(/Thursday, 22 October 2026/);
     expect(summary.textContent).toMatch(/4:00\s*pm\s*–\s*4:45\s*pm IST \(45 min\)/i);
     expect(summary.textContent).toMatch(/Coach K/);
+    expect(summary.textContent).toMatch(/1 included call from your plan/);
     fireEvent.click(screen.getByRole("button", { name: /Confirm Booking/ }));
-    await waitFor(() => expect(state.book.mutateAsync).toHaveBeenCalledWith("thu-4pm"));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/Booked!/));
+    await waitFor(() => expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm" }));
+    // The confirmation shows what the server committed: status, call, time, reference.
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(/Booking confirmed/);
+    expect(status.textContent).toMatch(/StatusBooked/);
+    expect(status.textContent).toMatch(/Pricing clinic/);
+    expect(status.textContent).toMatch(/4:00\s*pm\s*–\s*4:45\s*pm IST/i);
+    expect(status.textContent).toMatch(/1 included call/);
+    expect(status.textContent).toMatch(/B1A2C3D4/);
   });
 
   it("shows the server's reason when a booking is rejected (e.g. slot just filled)", async () => {
@@ -208,5 +239,138 @@ describe("SupportCallPanel — slot booking", () => {
     expect(screen.getByText("Couldn't load available slots.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(state.calls.refetch).toHaveBeenCalled();
+  });
+});
+
+describe("SupportCallPanel — extra calls with TBT coins", () => {
+  const exhausted = { allocated: 2, used: 1, reserved: 1, remaining: 0, included: 2, unlocked: 0 };
+  const coin = (over: Partial<SupportCallCoinInfo> = {}): SupportCallCoinInfo => ({
+    cost: 120, balance: 300, purchaseAvailable: true, action: "unlock_with_coins", lockedReason: null, ...over,
+  });
+
+  it("without a coin price, an exhausted category stays locked", () => {
+    state.calls.data = view(SESSIONS, exhausted, coin({ cost: null, action: "locked", lockedReason: "quota_exhausted" }));
+    renderPanel();
+    expect(screen.getByText("You have no calls left to book in this category.")).toBeTruthy();
+    expect(screen.queryByTestId("coin-unlock-banner")).toBeNull();
+    expect((dayButton(22) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a category not in the plan stays locked even with coins", () => {
+    state.calls.data = view(SESSIONS, { allocated: 0, used: 0, reserved: 0, remaining: 0, included: 0, unlocked: 0 }, coin({ action: "locked", lockedReason: "not_included" }));
+    renderPanel();
+    expect(screen.queryByTestId("coin-unlock-banner")).toBeNull();
+    expect((dayButton(22) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("with enough coins: shows the price, and books only after an explicit unlock confirmation at that price", async () => {
+    state.calls.data = view(SESSIONS, exhausted, coin());
+    state.book.mutateAsync.mockResolvedValueOnce(confirmation({ paidWithCoins: true, coinsSpent: 120, coinBalance: 180 }));
+    renderPanel();
+    expect(screen.getByTestId("coin-unlock-banner").textContent).toMatch(/120 TBT coins/);
+    expect(state.book.mutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(slotButtons()[0]);
+    const summary = screen.getByText("Booking summary").parentElement!;
+    expect(summary.textContent).toMatch(/120 TBT coins \(extra call\)/);
+    expect(summary.textContent).toMatch(/300 coins → 180 after booking/);
+    expect(screen.queryByRole("button", { name: /Confirm Booking/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with 120 TBT Coins" }));
+    await waitFor(() =>
+      expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm", payWithCoins: true, expectedCoinCost: 120 }),
+    );
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toMatch(/120 TBT coins · balance now 180/);
+  });
+
+  it("disables the unlock button while the request is in flight", () => {
+    state.calls.data = view(SESSIONS, exhausted, coin());
+    state.book.isPending = true;
+    renderPanel();
+    fireEvent.click(slotButtons()[0]);
+    const btn = screen.getByRole("button", { name: /Unlock with 120 TBT Coins/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.click(btn);
+    expect(state.book.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("shows the server reason when the price changed or coins ran out", async () => {
+    state.calls.data = view(SESSIONS, exhausted, coin());
+    state.book.mutateAsync.mockRejectedValueOnce(new Error("The price for an extra call is now 150 TBT coins. Please review and confirm again."));
+    renderPanel();
+    fireEvent.click(slotButtons()[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Unlock with 120 TBT Coins" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/now 150 TBT coins/));
+  });
+
+  it("with too few coins: offers Purchase TBT Coins and never books or spends", () => {
+    state.calls.data = view(SESSIONS, exhausted, coin({ balance: 50, action: "purchase_coins" }));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /Purchase TBT Coins/ }));
+    expect(screen.getByTestId("coin-purchase").textContent).toMatch(/You need 70 more coins/);
+    fireEvent.click(slotButtons()[0]);
+    // The confirm step shows the shortfall + purchase, not an unlock button.
+    expect(screen.queryByRole("button", { name: /Unlock with/ })).toBeNull();
+    const boxes = screen.getAllByTestId("coin-purchase");
+    fireEvent.click(within(boxes[boxes.length - 1]).getByRole("radio", { name: /1,200 coins/ }));
+    fireEvent.click(within(boxes[boxes.length - 1]).getByRole("button", { name: "Pay ₹399" }));
+    expect(state.purchase.buy).toHaveBeenCalledWith({ id: "p2", label: "Pro", coins: 1200, priceInr: 399 });
+    expect(state.book.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ status: "success", coinsAdded: 500, balance: 550 }, /500 TBT coins added.*New balance: 550.*Nothing has been booked or spent/],
+    [{ status: "failed", message: "Card declined" }, /Payment failed: Card declined/],
+    [{ status: "cancelled" }, /Payment cancelled. You were not charged./],
+    [{ status: "pending", message: "Payment received. We're still confirming it." }, /still confirming/],
+  ])("shows the real payment result (%o)", (purchaseState, text) => {
+    state.calls.data = view(SESSIONS, exhausted, coin({ balance: 50, action: "purchase_coins" }));
+    state.purchase.state = purchaseState;
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /Purchase TBT Coins/ }));
+    expect(screen.getByTestId("coin-purchase").textContent).toMatch(text);
+    expect(state.book.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("blocks repeated purchase clicks while a payment is in progress", () => {
+    state.calls.data = view(SESSIONS, exhausted, coin({ balance: 50, action: "purchase_coins" }));
+    state.purchase = { ...state.purchase, state: { status: "working", step: "checkout" }, busy: true };
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /Purchase TBT Coins/ }));
+    const box = screen.getByTestId("coin-purchase");
+    expect(box.textContent).toMatch(/Complete the payment in the Razorpay window/);
+    const pay = within(box).getAllByRole("button").find((b) => /Pay|Choose/.test(b.textContent ?? "")) as HTMLButtonElement;
+    expect(pay.disabled).toBe(true);
+  });
+
+  it("a paid booking shows its coins and says the refund on cancel", async () => {
+    state.calls.data = view(
+      [session({ id: "mine", myBooking: { id: "b9", status: "booked", coinCost: 120, canCancel: true, canJoin: false, joinMessage: null } })],
+      { ...exhausted, unlocked: 1 },
+      coin(),
+    );
+    state.cancel.mutateAsync.mockResolvedValueOnce({ id: "b9", status: "cancelled", coinsRefunded: 120 });
+    renderPanel();
+    expect(screen.getByText("🪙 1 unlocked with coins")).toBeTruthy();
+    expect(screen.getAllByText("120 coins").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel booking" }));
+    expect(screen.getByText("Your 120 coins will be refunded.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Yes, cancel/ }));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Booking cancelled — 120 TBT coins refunded"));
+  });
+
+  it("call history marks completed, cancelled and refunded paid calls", () => {
+    state.calls.data = {
+      ...view([], exhausted, coin()),
+      history: [
+        { bookingId: "h1", title: "Done call", startsAt: "2026-10-10T10:30:00Z", durationMinutes: 45, status: "attended", coinCost: null },
+        { bookingId: "h2", title: "Paid then cancelled", startsAt: "2026-10-11T10:30:00Z", durationMinutes: 45, status: "cancelled", coinCost: 120 },
+        { bookingId: "h3", title: "Pending call", startsAt: "2026-10-25T10:30:00Z", durationMinutes: 45, status: "booked", coinCost: null },
+      ],
+    };
+    renderPanel();
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+    expect(items[0]).toMatch(/Done call.*Completed/);
+    expect(items[1]).toMatch(/120 coins refunded.*Cancelled/);
+    expect(items[2]).toMatch(/Pending call.*Booked/);
   });
 });

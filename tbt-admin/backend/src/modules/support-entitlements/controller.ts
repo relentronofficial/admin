@@ -4,15 +4,17 @@ import {
   computeSupportQuota,
   SUPPORT_USAGE_COUNTS_SQL,
   APPROVED_CREDIT_PURCHASES_SQL,
+  COIN_UNLOCKED_BOOKINGS_SQL,
 } from '../../lib/supportQuota.js';
 import {
   SUPPORT_CALL_CATEGORIES,
   canManageSupportSession,
   canMarkAttendance,
+  coinRefundFor,
   isFullAccessRole,
   isSupportCallCategory,
 } from '../../lib/supportCallLogic.js';
-import { mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
+import { loadAllCallCoinCosts, mapSession, refundCallCoins, SESSION_COLUMNS } from '../../lib/supportCallData.js';
 import { getActingAdmin } from '../../lib/adminRole.js';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 
@@ -175,7 +177,7 @@ export async function getMemberSupportQuotaHandler(
 
     const plan = (member.membershipPlan as string | null) ?? 'free';
 
-    const [entRows, usageRows, lifelineRows, purchasedRows] = await Promise.all([
+    const [entRows, usageRows, lifelineRows, purchasedRows, coinRows] = await Promise.all([
       req.server.prisma.$queryRawUnsafe<any[]>(
         `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
                 COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -190,9 +192,10 @@ export async function getMemberSupportQuotaHandler(
           )
         : Promise.resolve([]),
       req.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
+      req.server.prisma.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
     ]);
 
-    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows);
+    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows);
 
     return reply.send({ success: true, data, error: null });
   } catch (err: any) {
@@ -428,31 +431,53 @@ export async function cancelSupportSessionHandler(req: FastifyRequest<{ Params: 
     const affected = await tx.$queryRawUnsafe<any[]>(
       `UPDATE support_call_bookings SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
        WHERE session_id = $1::uuid AND status = 'booked'
-       RETURNING member_id`,
+       RETURNING id, member_id, coin_cost`,
       row.id,
     );
-    return { row, memberIds: affected.map((a) => a.member_id as string) };
+    // Coin-paid bookings get their coins back together with the cancellation.
+    const refunds: Record<string, number> = {};
+    for (const a of affected) {
+      const coins = await refundCallCoins(tx, a.member_id, a.id, coinRefundFor(a.coin_cost == null ? null : Number(a.coin_cost)));
+      if (coins > 0) refunds[a.member_id] = coins;
+    }
+    return { row, memberIds: affected.map((a) => a.member_id as string), refunds };
   });
   if (!result) return reply;
 
-  const { row, memberIds } = result;
+  const { row, memberIds, refunds } = result;
   if (memberIds.length) {
     const when = new Date(row.starts_at).toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
     });
     const title = 'Support call cancelled';
     const message = `"${row.title}" on ${when} IST was cancelled. The call has been returned to your quota.`;
+    const messageFor = (memberId: string) =>
+      refunds[memberId]
+        ? `"${row.title}" on ${when} IST was cancelled. Your ${refunds[memberId]} TBT coins have been refunded.`
+        : message;
     try {
-      await req.server.prisma.appNotification.create({
-        data: {
-          title, message, type: 'support_call_cancelled', actionUrl: '/courses',
-          recipients: { create: memberIds.map((memberId) => ({ memberId })) },
-        },
-      });
+      const freeIds = memberIds.filter((id) => !refunds[id]);
+      if (freeIds.length) {
+        await req.server.prisma.appNotification.create({
+          data: {
+            title, message, type: 'support_call_cancelled', actionUrl: '/courses',
+            recipients: { create: freeIds.map((memberId) => ({ memberId })) },
+          },
+        });
+      }
+      for (const memberId of Object.keys(refunds)) {
+        await req.server.prisma.appNotification.create({
+          data: {
+            title, message: messageFor(memberId), type: 'support_call_cancelled', actionUrl: '/courses',
+            recipients: { create: [{ memberId }] },
+          },
+        });
+      }
       const io = (req.server as any).io;
       for (const memberId of memberIds) {
-        io?.to(`user:${memberId}`).emit('notification', { type: 'support_call_cancelled', title, message, actionUrl: '/courses' });
-        await sendPushToMember(req.server.prisma, memberId, title, message, { type: 'support_call_cancelled' }).catch(() => {});
+        const text = messageFor(memberId);
+        io?.to(`user:${memberId}`).emit('notification', { type: 'support_call_cancelled', title, message: text, actionUrl: '/courses' });
+        await sendPushToMember(req.server.prisma, memberId, title, text, { type: 'support_call_cancelled' }).catch(() => {});
       }
     } catch (err) {
       req.server.log.error({ err, sessionId: row.id }, 'support call cancel notification failed');
@@ -468,7 +493,7 @@ export async function listSupportSessionBookingsHandler(req: FastifyRequest<{ Pa
   const row = await loadManagedSession(reply, req.server.prisma, req.params.id, acting);
   if (!row) return;
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT b.id, b.status, b.booked_at, b.cancelled_at, b.member_id,
+    `SELECT b.id, b.status, b.booked_at, b.cancelled_at, b.member_id, b.coin_cost,
             m.first_name, m.last_name, m.phone, m.email
      FROM support_call_bookings b JOIN members m ON m.id = b.member_id
      WHERE b.session_id = $1::uuid
@@ -486,6 +511,7 @@ export async function listSupportSessionBookingsHandler(req: FastifyRequest<{ Pa
       memberName: [r.first_name, r.last_name].filter(Boolean).join(' '),
       phone: r.phone,
       email: r.email,
+      coinCost: r.coin_cost == null ? null : Number(r.coin_cost),
     })),
     error: null,
   });
@@ -533,4 +559,41 @@ export async function markSupportBookingHandler(req: FastifyRequest<{ Params: { 
     );
     return reply.send({ success: true, data: { id: r.booking_id, status, usageId: usage[0].id }, error: null });
   });
+}
+
+// ── Coin price per extra support call ────────────────────────────────────────
+// GET  /api/support-entitlements/coin-pricing            — every category, null = coin unlock off
+// PUT  /api/support-entitlements/coin-pricing/:category  — { coinCost: positive int | null }; admin/super_admin only
+
+const coinPricingSchema = z.object({ coinCost: z.number().int().positive().max(1_000_000).nullable() });
+
+export async function listCallCoinPricingHandler(req: FastifyRequest, reply: FastifyReply) {
+  const acting = await getActingAdmin(req);
+  if (!acting) return sfail(reply, 403, 'Admin account not found');
+  const costs = await loadAllCallCoinCosts(req.server.prisma);
+  return reply.send({
+    success: true,
+    data: SUPPORT_CALL_CATEGORIES.map((category) => ({ category, coinCost: costs[category] ?? null })),
+    error: null,
+  });
+}
+
+export async function updateCallCoinPricingHandler(req: FastifyRequest<{ Params: { category: string } }>, reply: FastifyReply) {
+  const acting = await getActingAdmin(req);
+  if (!acting || !isFullAccessRole(acting.role)) {
+    return sfail(reply, 403, 'Only Admin and Super Admin accounts can change call prices.');
+  }
+  const { category } = req.params;
+  if (!isSupportCallCategory(category)) return sfail(reply, 404, 'Unknown support call category');
+  const parsed = coinPricingSchema.safeParse(req.body);
+  if (!parsed.success) return sfail(reply, 400, 'Coin cost must be a whole number above 0, or empty to turn coin unlock off');
+  const { coinCost } = parsed.data;
+  // Existing paid bookings keep the price they were paid at (support_call_bookings.coin_cost).
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO support_call_coin_pricing (category, coin_cost, updated_by, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (category) DO UPDATE SET coin_cost = EXCLUDED.coin_cost, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    category, coinCost, acting.id,
+  );
+  return reply.send({ success: true, data: { category, coinCost }, error: null });
 }
