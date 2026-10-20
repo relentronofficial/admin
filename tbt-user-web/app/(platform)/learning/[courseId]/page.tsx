@@ -3015,6 +3015,11 @@ export default function CourseDetailPage({
         </div>
       )}
 
+      {/* ── Two-column layout ── */}
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start">
+        {/* LEFT: video / content */}
+        <div className="flex-1 min-w-0 space-y-4">
+
       {/* Back */}
       <button
         onClick={() => { selectedLesson ? setSelectedLesson(null) : router.back(); }}
@@ -3436,6 +3441,42 @@ export default function CourseDetailPage({
         )}
       </div>
 
+        </div>{/* end left panel */}
+
+        {/* ── Right sidebar: Activities ── */}
+        <div className="w-full lg:w-[300px] shrink-0 lg:sticky lg:top-[68px] space-y-3">
+          {/* Activities header + overall progress ring */}
+          {(() => {
+            const pct = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 0;
+            const R = 28; const C = 2 * Math.PI * R;
+            const allDone = completedCount === lessons.length && lessons.length > 0;
+            return (
+              <div className="rounded-xl overflow-hidden" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                <div className="px-4 py-3 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Activities</p>
+                </div>
+                <div className="flex items-center gap-4 px-4 py-3">
+                  <div className="relative shrink-0 w-14 h-14">
+                    <svg width="56" height="56" viewBox="0 0 56 56">
+                      <circle cx="28" cy="28" r={R} fill="none" strokeWidth="4" stroke="var(--color-surface-overlay-md)" />
+                      <circle cx="28" cy="28" r={R} fill="none" strokeWidth="4" strokeLinecap="round"
+                        strokeDasharray={`${C}`} strokeDashoffset={C * (1 - pct / 100)}
+                        transform="rotate(-90 28 28)"
+                        style={{ stroke: allDone ? "var(--color-success)" : "var(--color-accent)", transition: "stroke-dashoffset 0.8s ease" }} />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-[11px] font-bold tabular-nums" style={{ color: "var(--color-text-normal)" }}>{pct}%</span>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>{allDone ? "All done!" : "Overall Progress"}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>{completedCount} of {lessons.length} lessons</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
       {/* Lesson list */}
       <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--color-border-subtle)" }}>
         <div
@@ -3492,9 +3533,9 @@ export default function CourseDetailPage({
           </div>
         </div>
 
-        <div className="p-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="divide-y" style={{ borderColor: "var(--color-border-subtle)", maxHeight: "55vh", overflowY: "auto" }}>
           {sidebarRows.length === 0 ? (
-            <p className="col-span-full text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
+            <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
               No lessons in this module yet.
             </p>
           ) : (
@@ -3525,7 +3566,7 @@ export default function CourseDetailPage({
                 <React.Fragment key={lesson.id}>
                   {/* Section header — full-width row spanning all columns */}
                   {isFirstInSection && courseSections.length > 0 && (
-                    <div className="col-span-full">
+                    <div>
                       {section ? (
                         <button
                           onClick={() => setCollapsedSections(prev => { const next = new Set(prev); if (next.has(lessonSectionId!)) next.delete(lessonSectionId!); else next.add(lessonSectionId!); return next; })}
@@ -3566,171 +3607,103 @@ export default function CourseDetailPage({
                   )}
                   {!isSectionCollapsed && (
                     <div
-                      className="flex flex-col rounded-xl overflow-hidden border transition-all"
                       style={{
-                        borderColor: isActive ? "var(--color-accent)" : "var(--color-border-subtle)",
-                        boxShadow: isActive ? "0 0 0 1px var(--color-accent)" : "none",
+                        background: isActive ? "color-mix(in srgb, var(--color-accent) 7%, var(--color-bg-surface))" : isFocusLocked ? "rgba(239,68,68,0.04)" : "var(--color-bg-surface)",
+                        borderLeft: isActive ? "3px solid var(--color-accent)" : "3px solid transparent",
                       }}
                     >
-                      {/* Thumbnail area */}
                       <button
                         onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
-                        disabled={!hasVideo}
-                        title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
                         aria-disabled={!canPlay}
-                        className={cn(
-                          "relative w-full overflow-hidden",
-                          canPlay ? "cursor-pointer" : "cursor-not-allowed",
-                        )}
-                        style={{ aspectRatio: "16 / 9" }}
+                        title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
+                        className={cn("w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors", canPlay ? "cursor-pointer hover:opacity-90" : "cursor-default")}
                       >
-                        {/* Thumbnail image or gradient placeholder */}
-                        {thumbUrl ? (
-                          <img
-                            src={thumbUrl}
-                            alt={lesson.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div
-                            className="w-full h-full"
-                            style={{ background: "linear-gradient(135deg, var(--color-surface-overlay-xs) 0%, var(--color-surface-overlay-md) 100%)" }}
-                          />
-                        )}
-
-                        {/* Dimming overlay */}
+                        {/* Status circle */}
                         <div
-                          className="absolute inset-0"
-                          style={{ background: isActive ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.35)" }}
-                        />
-
-                        {/* Completion tint */}
-                        {isCompleted && (
-                          <div className="absolute inset-0" style={{ background: "color-mix(in srgb, var(--color-success) 8%, transparent)" }} />
-                        )}
-
-                        {/* Lesson number badge */}
-                        <span
-                          className="absolute top-1.5 left-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
-                          style={{ background: "rgba(0,0,0,0.65)", color: "#fff" }}
+                          className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center"
+                          style={{
+                            background: isCompleted ? "color-mix(in srgb, var(--color-success) 15%, transparent)" : isActive ? "color-mix(in srgb, var(--color-accent) 15%, transparent)" : isLocked || isFocusLocked ? "rgba(255,255,255,0.05)" : "var(--color-surface-overlay-xs)",
+                            color: isCompleted ? "var(--color-success)" : isActive ? "var(--color-accent)" : isLocked || isFocusLocked ? "var(--color-text-disabled)" : "var(--color-text-subtle)",
+                          }}
                         >
-                          {idx + 1}
-                        </span>
-
-                        {/* Status icon overlay */}
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          {isLocked || isFocusLocked ? (
-                            <div
-                              className="w-9 h-9 rounded-full flex items-center justify-center"
-                              style={{ background: "rgba(0,0,0,0.6)" }}
-                            >
-                              <Lock size={15} style={{ color: isFocusLocked ? "#ef4444" : "#fff" }} />
-                            </div>
+                          {isCompleted ? (
+                            <CheckCircle2 size={13} />
+                          ) : isLocked ? (
+                            <Lock size={10} />
+                          ) : isFocusLocked ? (
+                            <Lock size={10} style={{ color: "#ef4444" }} />
                           ) : isActive ? (
-                            <div
-                              className="w-11 h-11 rounded-full flex items-center justify-center"
-                              style={{ background: "var(--color-accent)" }}
-                            >
-                              <Play size={18} fill="#fff" color="#fff" />
-                            </div>
-                          ) : isCompleted ? (
-                            <div
-                              className="w-9 h-9 rounded-full flex items-center justify-center"
-                              style={{ background: "rgba(0,0,0,0.5)" }}
-                            >
-                              <CheckCircle2 size={18} style={{ color: "var(--color-success)" }} />
-                            </div>
+                            <Play size={11} fill="currentColor" />
                           ) : (
-                            <div
-                              className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity opacity-70 hover:opacity-100"
-                              style={{ background: "rgba(0,0,0,0.5)" }}
-                            >
-                              <Play size={15} fill="#fff" color="#fff" />
-                            </div>
+                            <span className="text-[10px] font-bold">{idx + 1}</span>
                           )}
                         </div>
-
-                        {/* Live progress bar at bottom of thumbnail */}
-                        {isActive && livePct > 0 && (
-                          <div className="absolute bottom-0 left-0 right-0 h-1" style={{ background: "rgba(0,0,0,0.3)" }}>
-                            <div
-                              className="h-full transition-all duration-1000"
-                              style={{ width: `${livePct}%`, background: "var(--color-accent)" }}
-                            />
-                          </div>
-                        )}
-                      </button>
-
-                      {/* Info strip below thumbnail */}
-                      <div
-                        className="flex-1 flex flex-col px-2.5 py-2"
-                        style={{
-                          background: isActive
-                            ? "color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-surface))"
-                            : isFocusLocked
-                              ? "rgba(239,68,68,0.04)"
-                              : "var(--color-bg-surface)",
-                        }}
-                      >
-                        <p
-                          className={cn("text-xs font-semibold leading-snug line-clamp-2", !canPlay && "opacity-60")}
-                          style={{ color: "var(--color-text-strong)" }}
-                        >
-                          {lesson.title}
-                        </p>
-                        {duration > 0 && (
-                          <p className="text-[10px] flex items-center gap-0.5 mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                            <Clock size={9} /> {fmtDuration(duration)}
+                        {/* Title + meta badges */}
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={cn("text-xs font-semibold leading-snug line-clamp-2", !canPlay && "opacity-60")}
+                            style={{ color: "var(--color-text-strong)" }}
+                          >
+                            {lesson.title}
                           </p>
-                        )}
-                        {/* Badges row */}
-                        <div className="flex items-center gap-1 mt-1 flex-wrap">
-                          {(lesson as any).hasQuiz && (
-                            <span
-                              className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide"
-                              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
-                            >
-                              Quiz
-                            </span>
-                          )}
-                          {((course as any).xpPerEpisode ?? 0) > 0 && (
-                            <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "var(--color-text-disabled)" }}>
-                              <Zap size={8} />+{(course as any).xpPerEpisode}
-                            </span>
-                          )}
-                          {((lesson as any).streakPoints ?? 0) > 0 && (
-                            <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "#f59e0b" }}>
-                              <Coins size={8} />+{(lesson as any).streakPoints}
-                            </span>
-                          )}
-                          {reviewDueIds.includes(lesson.id) && (
-                            <span
-                              className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
-                              style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
-                            >
-                              <RefreshCw size={7} /> Review
-                            </span>
-                          )}
-                          {!isCompleted && focusTimerDuration > 0 && (
-                            <span
-                              className="flex items-center gap-0.5 text-[9px] font-bold px-1 py-0.5 rounded"
-                              style={{
-                                background: timerDone ? "rgba(34,197,94,0.12)" : timerWarn ? "rgba(239,68,68,0.1)" : timerStarted ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
-                                color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : timerStarted ? "var(--color-accent)" : "var(--color-text-secondary)",
-                              }}
-                            >
-                              <Timer size={8} />
-                              {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(focusTimerDuration)}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {duration > 0 && (
+                              <span className="text-[10px] flex items-center gap-0.5" style={{ color: "var(--color-text-subtle)" }}>
+                                <Clock size={8} /> {fmtDuration(duration)}
+                              </span>
+                            )}
+                            {!isCompleted && focusTimerDuration > 0 && (
+                              <span
+                                className="flex items-center gap-0.5 text-[9px] font-bold px-1 py-0.5 rounded"
+                                style={{
+                                  background: timerDone ? "rgba(34,197,94,0.12)" : timerWarn ? "rgba(239,68,68,0.1)" : timerStarted ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "color-mix(in srgb, var(--color-text-subtle) 12%, transparent)",
+                                  color: timerDone ? "#22c55e" : timerWarn ? "#ef4444" : timerStarted ? "var(--color-accent)" : "var(--color-text-secondary)",
+                                }}
+                              >
+                                <Timer size={8} />
+                                {timerDone ? "Time's up!" : timerStarted ? fmtTime(timerSecs!) : fmtTime(focusTimerDuration)}
+                              </span>
+                            )}
+                            {(lesson as any).hasQuiz && (
+                              <span
+                                className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide"
+                                style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+                              >
+                                Quiz
+                              </span>
+                            )}
+                            {((course as any).xpPerEpisode ?? 0) > 0 && (
+                              <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "var(--color-text-disabled)" }}>
+                                <Zap size={8} />+{(course as any).xpPerEpisode}
+                              </span>
+                            )}
+                            {((lesson as any).streakPoints ?? 0) > 0 && (
+                              <span className="text-[9px] flex items-center gap-0.5 font-semibold" style={{ color: "#f59e0b" }}>
+                                <Coins size={8} />+{(lesson as any).streakPoints}
+                              </span>
+                            )}
+                            {reviewDueIds.includes(lesson.id) && (
+                              <span
+                                className="text-[9px] px-1 py-0.5 rounded font-bold uppercase tracking-wide flex items-center gap-0.5"
+                                style={{ background: "color-mix(in srgb, #f59e0b 12%, transparent)", color: "#f59e0b" }}
+                              >
+                                <RefreshCw size={7} /> Review
+                              </span>
+                            )}
+                            {isActive && livePct > 0 && (
+                              <span className="text-[9px] font-semibold" style={{ color: "var(--color-accent)" }}>
+                                {livePct}%
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-
-                      {/* Focus-locked lifeline banner */}
+                        {isActive && <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: "var(--color-accent)" }} />}
+                      </button>
+                      {/* Focus-locked lifeline row */}
                       {isFocusLocked && (
                         <div
-                          className="flex items-center justify-between gap-2 px-2.5 py-2"
-                          style={{ background: "rgba(239,68,68,0.06)", borderTop: "1px solid rgba(239,68,68,0.15)" }}
+                          className="flex items-center justify-between gap-2 px-3 pb-2.5"
+                          style={{ borderTop: "1px solid rgba(239,68,68,0.15)" }}
                         >
                           <span className="text-[10px] font-bold" style={{ color: "#ef4444" }}>Timer expired</span>
                           <button
@@ -3745,10 +3718,9 @@ export default function CourseDetailPage({
                           </button>
                         </div>
                       )}
-
-                      {/* Per-lesson resources */}
-                      {(allEpisodeResourcesMap[lesson.id]?.length ?? 0) > 0 && (
-                        <div className="px-2.5 pb-2.5 pt-1" style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
+                      {/* Resources — shown inline for the active lesson */}
+                      {isActive && (allEpisodeResourcesMap[lesson.id]?.length ?? 0) > 0 && (
+                        <div className="px-3 pb-2.5 pt-1" style={{ borderTop: "1px solid var(--color-border-subtle)" }}>
                           <EpisodeResourcesSection
                             resources={allEpisodeResourcesMap[lesson.id] ?? []}
                             heading={uiStrings?.courseResourcesHeading ?? "Resources"}
@@ -3764,6 +3736,9 @@ export default function CourseDetailPage({
           )}
         </div>
       </div>
+
+        </div>{/* end right sidebar */}
+      </div>{/* end two-column layout */}
 
       {/* XP + Streak */}
       <XpStreakWidget courseId={courseId} />
