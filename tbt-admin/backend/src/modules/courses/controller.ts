@@ -1434,3 +1434,87 @@ export async function reorderCourseModulesHandler(req: FastifyRequest, reply: Fa
   bustHome(req);
   return reply.send({ success: true });
 }
+
+// ── Course Page FAQs ──────────────────────────────────────────────────
+// Global FAQs shown on the /courses catalog page. Admin CRUD only;
+// public read via GET /api/pub/course-faqs.
+
+function mapFaq(r: any) {
+  return {
+    id: r.id,
+    question: r.question,
+    answerType: r.answer_type,
+    answerText: r.answer_text ?? null,
+    answerVideoUrl: r.answer_video_url ?? null,
+    sortOrder: Number(r.sort_order),
+    isActive: r.is_active,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export async function listCourseFaqsAdminHandler(req: FastifyRequest, reply: FastifyReply) {
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT * FROM course_page_faqs ORDER BY sort_order ASC, created_at ASC`,
+  );
+  return reply.send({ success: true, data: rows.map(mapFaq) });
+}
+
+export async function createCourseFaqHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { question, answerType = 'text', answerText, answerVideoUrl, isActive = true } = req.body as any;
+  if (!question?.trim()) return reply.status(400).send({ success: false, error: 'question is required' });
+  if (!['text', 'video'].includes(answerType)) return reply.status(400).send({ success: false, error: 'answerType must be text or video' });
+  const [countRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*) AS cnt FROM course_page_faqs`,
+  );
+  const sortOrder = Number(countRow?.cnt ?? 0);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_page_faqs (question, answer_type, answer_text, answer_video_url, sort_order, is_active)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    question.trim(), answerType, answerText ?? null, answerVideoUrl ?? null, sortOrder, isActive,
+  );
+  return reply.status(201).send({ success: true, data: mapFaq(row) });
+}
+
+export async function updateCourseFaqHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { faqId } = req.params as any;
+  const { question, answerType, answerText, answerVideoUrl, isActive } = req.body as any;
+  const sets: string[] = [];
+  const params: any[] = [];
+  let idx = 1;
+  if (question !== undefined)       { sets.push(`question = $${idx++}`);          params.push(question); }
+  if (answerType !== undefined)      { sets.push(`answer_type = $${idx++}`);       params.push(answerType); }
+  if (answerText !== undefined)      { sets.push(`answer_text = $${idx++}`);       params.push(answerText); }
+  if (answerVideoUrl !== undefined)  { sets.push(`answer_video_url = $${idx++}`);  params.push(answerVideoUrl); }
+  if (isActive !== undefined)        { sets.push(`is_active = $${idx++}`);         params.push(isActive); }
+  if (sets.length === 0) return reply.status(400).send({ success: false, error: 'Nothing to update' });
+  sets.push(`updated_at = NOW()`);
+  params.push(faqId);
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE course_page_faqs SET ${sets.join(', ')} WHERE id = $${idx}::uuid RETURNING *`,
+    ...params,
+  );
+  if (!row) return reply.status(404).send({ success: false, error: 'FAQ not found' });
+  return reply.send({ success: true, data: mapFaq(row) });
+}
+
+export async function deleteCourseFaqHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { faqId } = req.params as any;
+  await req.server.prisma.$executeRawUnsafe(
+    `DELETE FROM course_page_faqs WHERE id = $1::uuid`, faqId,
+  );
+  return reply.send({ success: true });
+}
+
+export async function reorderCourseFaqsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { ids } = req.body as any;
+  if (!Array.isArray(ids)) return reply.status(400).send({ success: false, error: 'ids must be an array' });
+  await Promise.all(
+    ids.map((id: string, i: number) =>
+      req.server.prisma.$executeRawUnsafe(
+        `UPDATE course_page_faqs SET sort_order = $1 WHERE id = $2::uuid`, i, id,
+      ),
+    ),
+  );
+  return reply.send({ success: true });
+}

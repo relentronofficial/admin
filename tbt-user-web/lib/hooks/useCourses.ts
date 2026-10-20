@@ -390,3 +390,14 @@ export const useUseEpisodeLifeline = (episodeId: string | null | undefined) => {
     },
   });
 };
+
+export const useCourseFaqs = () =>
+  useQuery({
+    queryKey: ["pub", "course-faqs"],
+    queryFn: async () => {
+      const apiClient = (await import("@/lib/api/client")).default;
+      const res: any = await apiClient.get("/api/pub/course-faqs");
+      return (res.data ?? []) as Array<{ id: string; question: string; answerType: 'text' | 'video'; answerText: string | null; answerVideoUrl: string | null }>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });

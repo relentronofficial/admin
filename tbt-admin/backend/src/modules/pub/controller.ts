@@ -693,3 +693,26 @@ export async function whatsappIntakeHandler(req: FastifyRequest, reply: FastifyR
     req.server.log.error({ err }, '[WA-intake] handler error');
   }
 }
+
+// ── Public course-page FAQs ──────────────────────────────────────────────
+// GET /api/pub/course-faqs — unauthenticated; returns active FAQs only.
+export async function pubCourseFaqsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, question, answer_type, answer_text, answer_video_url, sort_order
+     FROM course_page_faqs
+     WHERE is_active = true
+     ORDER BY sort_order ASC, created_at ASC`,
+  ).catch(() => []);
+  return reply.send({
+    success: true,
+    data: rows.map(r => ({
+      id: r.id,
+      question: r.question,
+      answerType: r.answer_type,
+      answerText: r.answer_text ?? null,
+      answerVideoUrl: r.answer_video_url ?? null,
+    })),
+    error: null,
+  });
+}

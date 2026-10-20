@@ -2837,3 +2837,46 @@ export const useDeleteGraphMemberRecord = (memberId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
   });
 };
+
+// ── Course Page FAQs ──────────────────────────────────────────────────────
+
+const faqsKey = ['course-page-faqs'];
+
+export const useListCourseFaqsAdmin = () =>
+  useQuery({ queryKey: faqsKey, queryFn: async () => (await apiClient.get('/api/courses/faqs') as any).data });
+
+export const useCreateCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { question: string; answerType: string; answerText?: string; answerVideoUrl?: string; isActive?: boolean }) =>
+      (await apiClient.post('/api/courses/faqs', body) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useUpdateCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: { id: string; question?: string; answerType?: string; answerText?: string; answerVideoUrl?: string; isActive?: boolean }) =>
+      (await apiClient.put(`/api/courses/faqs/${id}`, body) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useDeleteCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await apiClient.delete(`/api/courses/faqs/${id}`) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useReorderCourseFaqs = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) =>
+      (await apiClient.put('/api/courses/faqs/reorder', { ids }) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};

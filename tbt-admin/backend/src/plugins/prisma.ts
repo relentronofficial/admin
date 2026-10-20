@@ -2324,6 +2324,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`
     ).catch(() => {});
 
+    // ── Course page FAQs (2026-10-20) ────────────────────────────────────────
+    // Global FAQ items shown on /courses. Admin CRUD at /api/courses/faqs;
+    // public read at /api/pub/course-faqs (active rows only).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS course_page_faqs (
+        id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        question         TEXT NOT NULL,
+        answer_type      VARCHAR(10) NOT NULL DEFAULT 'text'
+                           CHECK (answer_type IN ('text', 'video')),
+        answer_text      TEXT,
+        answer_video_url TEXT,
+        sort_order       INT NOT NULL DEFAULT 0,
+        is_active        BOOLEAN NOT NULL DEFAULT true,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_course_page_faqs_active ON course_page_faqs(sort_order ASC) WHERE is_active = true`
+    ).catch(() => {});
+
     // ── Member daily activity (Daily Time Spent) ─────────────────────────────
     // One row per member per local day (lib/memberActivity.ts ACTIVITY_TIMEZONE).
     // active_bits / media_bits hold one bit per minute of the day; setting a bit

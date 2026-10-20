@@ -1,5 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler, pubLegalPageHandler, pubEbookPreviewHandler, whatsappIntakeHandler } from './controller.js';
+import { pubSiteConfigHandler, pubNavItemsHandler, pubUiStringsHandler, pubMemberSyncHandler, livekitWebhookHandler, pubSessionCheckHandler, pubHomeHeroHandler, pubHomeSectionsHandler, pubCourseCertVerifyHandler, pubLegalPageHandler, pubEbookPreviewHandler, whatsappIntakeHandler, pubCourseFaqsHandler } from './controller.js';
 
 export async function pubRoutes(fastify: FastifyInstance) {
   fastify.get('/config/site', pubSiteConfigHandler);
@@ -19,6 +19,7 @@ export async function pubRoutes(fastify: FastifyInstance) {
 
   fastify.get('/certificates/course/:certId', pubCourseCertVerifyHandler);
   fastify.get('/ebooks/:slug', pubEbookPreviewHandler);
+  fastify.get('/course-faqs', pubCourseFaqsHandler);
 
   // WhatsApp → autonomous dev pipeline (no auth — verified by sender phone number)
   fastify.post('/whatsapp-intake', whatsappIntakeHandler);
