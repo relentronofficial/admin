@@ -151,6 +151,11 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     s.total += 1;
     return [{ lifelines_total: s.total, lifelines_used: s.used }];
   }
+  // The shared webhook also runs the TBT coin-order branch (controller.ts →
+  // lib/coinOrders.ts). These tests create no coin orders: the lookup finds none
+  // and the payment.failed update touches no rows — as the real database would.
+  if (q.startsWith('SELECT id, member_id, coins, amount_paise, status FROM coin_orders WHERE razorpay_order_id')) return [];
+  if (q.startsWith("UPDATE coin_orders SET status = 'failed'")) return 0;
   if (q.startsWith('SELECT lifelines_total, lifelines_used FROM member_batch_settings')) {
     return db.settings.filter((s) => s.memberId === a[0] && s.batchId === a[1]).map((s) => ({ lifelines_total: s.total, lifelines_used: s.used }));
   }
