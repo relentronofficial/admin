@@ -15,6 +15,7 @@
      */
     color-scheme: light;
     --color-locked: #4a4a4a;
+    --font-nexa: 'Nexa', system-ui, sans-serif;
 
     /* Light-mode values — active when html.dark is absent */
     --background: 0 0% 98%;           /* #f9f9f9 — warm white page bg */
@@ -135,6 +136,7 @@
     /* Use API-injected --color-bg-primary when available; fall back to Tailwind bg */
     background: var(--color-bg-primary, hsl(var(--background)));
     @apply text-foreground;
+    font-family: var(--font-nexa);
     font-feature-settings: "rlig" 1, "calt" 1;
     overflow-x: clip;
   }

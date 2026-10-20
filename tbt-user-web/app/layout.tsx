@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { Providers } from "@/components/Providers";
 import "./globals.css";
@@ -7,11 +6,6 @@ import type { SiteConfig, UiStrings } from "@/types";
 import type { NavConfigPayload } from "@/lib/context/SiteConfigContext";
 
 // Note: @livekit/components-styles is imported only in WorkshopLiveCall.tsx
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: {
@@ -123,6 +117,8 @@ export default async function RootLayout({
         {initialConfig?.faviconUrl && (
           <link rel="icon" href={initialConfig.faviconUrl} />
         )}
+        <link rel="preconnect" href="https://fonts.cdnfonts.com" crossOrigin="" />
+        <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/nexa" />
         <link rel="preconnect" href={API_BASE} />
         {cdnOrigin && (
           <>
@@ -132,7 +128,7 @@ export default async function RootLayout({
         )}
       </head>
       <body
-        className={`${inter.variable} antialiased min-h-screen bg-background`}
+        className={`antialiased min-h-screen bg-background`}
         suppressHydrationWarning
       >
         <Providers
