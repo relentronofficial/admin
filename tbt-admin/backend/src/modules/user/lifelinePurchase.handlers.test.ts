@@ -102,6 +102,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     db.courseSql.push(q.slice(0, 40));
     return q.startsWith('UPDATE') ? 0 : [];
   }
+  // Coin orders (#112) are looked up first on every webhook; none exist here.
+  if (q.includes('coin_orders')) return q.startsWith('UPDATE') ? 0 : [];
   if (q.startsWith('SELECT batch_id::text AS "batchId" FROM members')) {
     const m = db.members[a[0]];
     return m ? [{ batchId: m.batchId }] : [];

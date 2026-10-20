@@ -233,6 +233,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return o ? 1 : 0;
   }
   if (q.includes('FROM course_payments') || q.startsWith('UPDATE course_payments')) return q.startsWith('UPDATE') ? 0 : [];
+  if (q.includes('FROM lifeline_razorpay_orders') || q.startsWith('UPDATE lifeline_razorpay_orders')) return q.startsWith('UPDATE') ? 0 : [];
 
   unhandled.push(q.slice(0, 120));
   return q.startsWith('SELECT') || q.includes('RETURNING') ? [] : 0;
