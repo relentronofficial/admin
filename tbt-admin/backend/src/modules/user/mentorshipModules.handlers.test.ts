@@ -82,8 +82,17 @@ describe('onboarding step 2 — save mentorship modules', () => {
     columnMissing = true;
     const r = await save(['Product']);
     expect(r.status).toBe(503);
-    expect(r.body).toMatchObject({ success: false, data: null, error: { message: "We couldn't save your mentorship selection right now. Please try again in a moment." } });
+    // Fails closed at the access lookup — the missing column is never read as "no restrictions".
+    expect(r.body).toMatchObject({ success: false, data: null, error: { message: 'Could not load your mentorship modules' } });
     expect(JSON.stringify(r.body)).not.toMatch(/42703|mentorship_modules|relation/);
+    expect(updates).toEqual([]);
+  });
+
+  it('with the column missing, reading modules is a 503, not an unrestricted module list', async () => {
+    columnMissing = true;
+    const r = await load();
+    expect(r.status).toBe(503);
+    expect(r.body.data).toBeNull();
   });
 
   it.each([

@@ -55,23 +55,18 @@ export async function loadActiveModuleOptions(prisma: any, redis: RedisLike | nu
  */
 export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | null, memberId: string): Promise<ModuleAccess> {
   return cached<ModuleAccess>(redis, accessKey(memberId), 60, async () => {
+    // No error is special-cased here — including 42703 (a missing
+    // allowed_modules / mentorship_modules column). Returning no row for it
+    // used to drop the program ceiling too and grant every module.
     const [memberRows, options] = await Promise.all([
-      (prisma.$queryRawUnsafe(
+      prisma.$queryRawUnsafe(
         `SELECT m.allowed_modules, m.mentorship_modules, m.business_type, p.allowed_modules AS program_modules
          FROM members m
          LEFT JOIN batches b ON b.id = m.batch_id
          LEFT JOIN programs p ON p.id = b.program_id
          WHERE m.id = $1::uuid`,
         memberId,
-      ) as Promise<any[]>).catch((err: any) => {
-        // 42703 = undefined_column: startup DDL may have been skipped due to a
-        // connection-pool failure during rolling deploy. Fail open (unrestricted)
-        // so the courses page serves normally; the columns will be present once
-        // the startup DDL retry runs or the next deployment starts cleanly.
-        const pgCode: string = err?.meta?.code ?? err?.code ?? '';
-        if (pgCode === '42703' || String(err?.message ?? '').includes('does not exist')) return [] as any[];
-        throw err;
-      }),
+      ) as Promise<any[]>,
       loadActiveModuleOptions(prisma, redis),
     ]);
     const row = memberRows[0] ?? {};
