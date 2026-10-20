@@ -2237,6 +2237,26 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_support_call_bookings_member ON support_call_bookings(member_id)`
     ).catch(() => {});
 
+    // ── Modules page FAQ (2026-10-20) ────────────────────────────────────────
+    // Admin-managed questions/answers shown from the FAQ button on /courses.
+    // Members only ever receive published rows (GET /api/pub/module-faqs).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS module_faqs (
+        id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        question      VARCHAR(300) NOT NULL,
+        answer        TEXT NOT NULL,
+        is_published  BOOLEAN NOT NULL DEFAULT FALSE,
+        sort_order    INT NOT NULL DEFAULT 0,
+        created_by    TEXT,
+        updated_by    TEXT,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_module_faqs_published_order ON module_faqs(is_published, sort_order)`
+    ).catch(() => {});
+
     // ── Admin-configurable Weekly Activity Graph (2026-10-17) ───────────────
     // Per-program weeks (X axis) and milestones (Y axis), plus admin-recorded
     // member milestone achievements (the only way a revenue milestone is ever

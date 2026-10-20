@@ -2880,3 +2880,51 @@ export const useReorderCourseFaqs = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
   });
 };
+
+// ── Modules page FAQ (admin) ─────────────────────────────────────────────────
+
+export type ModuleFaq = { id: string; question: string; answer: string; isPublished: boolean; sortOrder: number; updatedAt: string | null };
+const moduleFaqsKey = ['module-faqs-admin'];
+
+export const useListModuleFaqs = () =>
+  useQuery({
+    queryKey: moduleFaqsKey,
+    queryFn: async () => ((await apiClient.get('/api/module-faqs/admin')) as any)?.data as ModuleFaq[],
+    staleTime: 30_000,
+  });
+
+export const useSaveModuleFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id?: string; question: string; answer: string; isPublished?: boolean }) =>
+      ((id
+        ? await apiClient.put(`/api/module-faqs/admin/${id}`, data)
+        : await apiClient.post('/api/module-faqs/admin', data)) as any).data as ModuleFaq,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useSetModuleFaqPublished = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPublished }: { id: string; isPublished: boolean }) =>
+      ((await apiClient.patch(`/api/module-faqs/admin/${id}/publish`, { isPublished })) as any).data as ModuleFaq,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useReorderModuleFaqs = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => ((await apiClient.put('/api/module-faqs/admin/reorder', { ids })) as any).data as ModuleFaq[],
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useDeleteModuleFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => ((await apiClient.delete(`/api/module-faqs/admin/${id}`)) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};

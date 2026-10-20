@@ -9,6 +9,7 @@ import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
+import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -294,9 +295,12 @@ function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg
             {programName}
           </div>
         )}
-        <h1 className="overlay-text" style={{ fontSize: 28, fontWeight: 700, marginBottom: 8, maxWidth: 480 }}>
-          {cfg.displayName ?? cfg.moduleName}
-        </h1>
+        <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginBottom: 8 }} data-testid="modules-heading-row">
+          <h1 className="overlay-text min-w-0" style={{ fontSize: 28, fontWeight: 700, margin: 0, maxWidth: 480 }}>
+            {cfg.displayName ?? cfg.moduleName}
+          </h1>
+          <ModulesFaqButton />
+        </div>
         {cfg.tagline && (
           <p className="overlay-meta" style={{ fontSize: 14, maxWidth: 380, marginBottom: 16 }}>
             {cfg.tagline}
@@ -768,8 +772,9 @@ export default function CoursesPage() {
       {/* ── Multi-Module Program View ─────────────────────────────────── */}
       {personalizationState === "program" && allowedModules.length > 1 && (
         <section>
-          {programName && (
-            <div className="mb-6">
+          <div className="mb-6 flex items-end justify-between gap-3 flex-wrap" data-testid="modules-heading-row">
+          {programName ? (
+            <div className="min-w-0">
               <div
                 style={{
                   display: "inline-block",
@@ -791,7 +796,11 @@ export default function CoursesPage() {
                 {uiStrings?.coursesProgramTitle ?? "Your Program Modules"}
               </h2>
             </div>
+          ) : (
+            <span />
           )}
+            <ModulesFaqButton />
+          </div>
 
           {/* Business type filter badge */}
           {memberBusinessType && (
@@ -845,11 +854,11 @@ export default function CoursesPage() {
       {(personalizationState === "direct" || personalizationState === "new") && (allCourses.length > 0 || catalogLoading) && (
         <section>
           {personalizationState === "direct" && (
-            <div className="mb-5 flex items-center justify-between flex-wrap gap-3">
+            <div className="mb-5 flex items-center justify-between flex-wrap gap-3" data-testid="modules-heading-row">
               <h2 style={{ margin: 0, fontSize: 22, fontWeight: 500, color: "#f5f5f7" }}>
                 {uiStrings?.coursesCatalogTitle ?? "Modules"}
               </h2>
-              <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap ml-auto">
                 {memberBusinessType && (
                   <div className="flex items-center gap-2">
                     <span style={{ fontSize: 12, color: "#92929b" }}>Filtered for:</span>
