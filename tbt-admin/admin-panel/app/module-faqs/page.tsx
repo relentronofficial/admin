@@ -94,7 +94,7 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
           className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-xs font-bold text-white bg-[#dc2626] hover:bg-red-700 disabled:opacity-50"
         >
           {save.isPending ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-          {form.id ? "Save changes" : "Create FAQ"}
+          Save
         </button>
         <button onClick={onDone} disabled={save.isPending} className="h-10 px-3 text-xs text-[#a0a0a0] hover:text-white">Cancel</button>
       </div>
