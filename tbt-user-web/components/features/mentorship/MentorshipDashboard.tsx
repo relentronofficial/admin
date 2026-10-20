@@ -3,13 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
-  TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus,
+  TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
-import { useMyBatchProgram, useBuyExtraLifeline, type ExtraLifelineOutcome } from "@/lib/hooks/useBatchProgram";
+import { useMyBatchProgram, useBuyExtraLifeline, extraLifelineMessage } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
@@ -87,8 +87,13 @@ function MentorshipHeader({
   /** Admin-configured Extra Lifeline price (credit_pricing), for the button label only. */
   lifelinePriceInr?: number | null;
 }) {
+  // lifelinesTotal = original 3 + any bought (member_batch_settings.lifelines_total);
+  // lifelinesUsed = lifelines spent. Remaining = total − used (never below 0).
   const totalHearts = lifelinesTotal ?? 0;
-  const filledHearts = lifelinesTotal != null ? lifelinesTotal - (lifelinesUsed ?? 0) : 0;
+  const filledHearts = lifelinesTotal != null ? Math.min(totalHearts, Math.max(0, lifelinesTotal - (lifelinesUsed ?? 0))) : 0;
+  // A single "+" only once every lifeline is spent — never one per used heart.
+  const showBuy = !!onBuyLifeline && totalHearts > 0 && filledHearts === 0;
+  const buyLabel = `Buy an extra lifeline${lifelinePriceInr != null ? ` for ₹${lifelinePriceInr}` : ""}`;
 
   return (
     <motion.div variants={fadeUp} className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
@@ -106,27 +111,24 @@ function MentorshipHeader({
             {Array.from({ length: filledHearts }).map((_, i) => (
               <span key={i} style={{ fontSize: 12 }}>❤️</span>
             ))}
-            {Array.from({ length: totalHearts - filledHearts }).map((_, i) => {
-              const label = `Buy an extra lifeline${lifelinePriceInr != null ? ` for ₹${lifelinePriceInr}` : ""}`;
-              return onBuyLifeline ? (
-                <button
-                  key={`e-${i}`}
-                  type="button"
-                  onClick={onBuyLifeline}
-                  disabled={buyingLifeline}
-                  aria-label={label}
-                  aria-busy={buyingLifeline || undefined}
-                  title={label}
-                  data-lifeline-buy
-                  className="inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
-                  style={{ width: 16, height: 16, background: "rgba(255,255,255,0.25)", color: "#fff", outlineColor: "#fff" }}
-                >
-                  <Plus size={11} strokeWidth={3} aria-hidden />
-                </button>
-              ) : (
-                <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
-              );
-            })}
+            {Array.from({ length: totalHearts - filledHearts }).map((_, i) => (
+              <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
+            ))}
+            {showBuy && (
+              <button
+                type="button"
+                onClick={onBuyLifeline}
+                disabled={buyingLifeline}
+                aria-label={buyLabel}
+                aria-busy={buyingLifeline || undefined}
+                title={buyLabel}
+                data-lifeline-buy
+                className="inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-wait focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1"
+                style={{ width: 16, height: 16, marginLeft: 2, background: "rgba(255,255,255,0.25)", color: "#fff", outlineColor: "#fff" }}
+              >
+                {buyingLifeline ? <Loader2 size={10} strokeWidth={3} className="animate-spin" aria-hidden /> : <Plus size={11} strokeWidth={3} aria-hidden />}
+              </button>
+            )}
           </span>
         )}
       </div>
@@ -1566,12 +1568,12 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
   const lifelinePrice = creditPricing?.find((p) => p.credit_type === "lifeline")?.price_inr;
   const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
   const handleBuyLifeline = useCallback(async () => {
-    const outcome: ExtraLifelineOutcome = await buyLifeline();
-    if (outcome === "success") toast.success("Extra lifeline added!", { id: "lifeline-buy" });
-    else if (outcome === "cancelled") toast("Payment cancelled — no lifeline added.", { id: "lifeline-buy" });
-    else if (outcome === "failed") toast.error("Payment failed — no lifeline added.", { id: "lifeline-buy" });
-    else if (outcome === "pending") toast("Payment is still processing. If your lifeline doesn't appear in a few minutes, contact support with your Razorpay payment ID.", { id: "lifeline-buy", duration: 10000 });
-    else if (outcome === "error") toast.error("Couldn't complete the purchase. If you were charged, contact support.", { id: "lifeline-buy", duration: 8000 });
+    const msg = extraLifelineMessage(await buyLifeline());
+    if (!msg) return;
+    const opts = { id: "lifeline-buy", duration: msg.kind === "success" ? 4000 : 9000 };
+    if (msg.kind === "success") toast.success(msg.text, opts);
+    else if (msg.kind === "error") toast.error(msg.text, opts);
+    else toast(msg.text, opts);
   }, [buyLifeline]);
 
   const dailyHrs = stats?.dailyTimeSpentHrs ?? 0;

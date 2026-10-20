@@ -10,9 +10,17 @@
 export const LIFELINE_CREDIT_TYPE = 'lifeline';
 export const LIFELINE_ORDER_TYPE = 'lifeline_purchase';
 
-/** credit_pricing.price_inr (DECIMAL → string or number) to paise; null when not a usable positive price. */
+/**
+ * credit_pricing.price_inr to paise; null when not a usable positive price.
+ * Prisma raw queries return a DECIMAL column as a Prisma.Decimal object (not a
+ * string or number) — its String() is the exact decimal, so convert via String.
+ */
 export function priceInrToPaise(price: unknown): number | null {
-  const n = typeof price === 'string' ? Number(price) : typeof price === 'number' ? price : NaN;
+  const n =
+    typeof price === 'number' ? price
+    : typeof price === 'string' ? (price.trim() === '' ? NaN : Number(price))
+    : price !== null && typeof price === 'object' && typeof (price as { toString?: unknown }).toString === 'function' ? Number(String(price))
+    : NaN;
   if (!Number.isFinite(n) || n <= 0) return null;
   return Math.round(n * 100);
 }

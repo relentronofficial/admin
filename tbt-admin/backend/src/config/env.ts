@@ -89,6 +89,8 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().or(z.literal('')),
   RAZORPAY_KEY_SECRET: z.string().optional().or(z.literal('')),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  // 'true' stops the Extra Lifeline reconciliation job from starting (jobs/lifelineReconcile.ts).
+  LIFELINE_RECONCILE_DISABLED: z.string().optional().or(z.literal('')),
   // GitHub token for WhatsApp-intake → autonomous dev pipeline (creates Issues from WA messages)
   GITHUB_TOKEN: z.string().optional().or(z.literal('')),
   // @zacx BSP webhook signing secret (whsec_... format) — verifies incoming webhook payloads
