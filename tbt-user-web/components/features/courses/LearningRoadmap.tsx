@@ -3,17 +3,21 @@
 // Floating Learning Roadmap. A small circular map button fixed to the bottom-right
 // corner opens a game-style level map in a modal popup: round level nodes on a
 // winding S-shaped road that flows down the page, alternating left and right —
-// one level per course section, in order.
+// one level per course section, in order. A second tab shows the member's
+// batch-program growth milestones (lib/utils/growthMilestones.ts) on the same map.
 // Levels come from buildRoadmapLevels (lib/utils/roadmapLevels.ts) over the same
 // section groups and progress the lesson sidebar uses, so nothing is stored or
 // computed separately: progress is the member's existing lesson progress, and
 // unlocking follows the course's existing rules. Clicking an open level hands its
 // next lesson to the page's normal lesson-open flow; locked levels never open.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { Check, Flag, Loader2, Lock, Map as MapIcon, MapPin, Trophy, X } from "lucide-react";
 import { usePodcastPlayer } from "@/lib/stores/usePodcastPlayer";
 import { roadmapSummary, type RoadmapLevel, type RoadmapLesson } from "@/lib/utils/roadmapLevels";
+import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
+import { buildGrowthMilestones, type GrowthMilestoneLevel } from "@/lib/utils/growthMilestones";
 
 // ── Map geometry ──────────────────────────────────────────────────────────────
 // Node centres alternate between two lanes (percent of the map width) and step
@@ -130,19 +134,36 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
       }
     };
     window.addEventListener("keydown", onKey);
-    // Centre the member's current level in the map (the popup only, never the page).
-    const scroller = scrollerRef.current;
-    const currentIndex = levels.findIndex((l) => l.state === "current");
-    if (scroller && currentIndex > 0) {
-      scroller.scrollTop = Math.max(0, levelPoint(currentIndex).y - scroller.clientHeight / 2);
-    }
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
     };
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps -- set up once per opening
 
-  const mapHeight = TOP_PAD + Math.max(0, levels.length - 1) * ROW_HEIGHT + BOTTOM_PAD;
+  const [tab, setTab] = useState<"growth" | "course">("growth");
+  const courseNodes = useMemo(
+    () =>
+      levels.map(
+        (lvl): MapNode => ({
+          key: lvl.id ?? "general",
+          kicker: `Level ${lvl.number}`,
+          number: lvl.number,
+          title: lvl.title,
+          state: lvl.state,
+          locked: lvl.state === "locked" || !lvl.target,
+          detail: `${lvl.total > 0 ? `${lvl.completed}/${lvl.total} lessons` : "No lessons yet"} · ${STATE_LABEL[lvl.state]}`,
+          ariaLabel: `Level ${lvl.number}: ${lvl.title} — ${STATE_LABEL[lvl.state]}, ${lvl.total > 0 ? `${lvl.completed} of ${lvl.total} lessons completed` : "no lessons yet"}`,
+          onActivate:
+            lvl.state === "locked" || !lvl.target
+              ? null
+              : () => {
+                  setOpen(false);
+                  onOpenLesson(lvl.target as L);
+                },
+        }),
+      ),
+    [levels, onOpenLesson],
+  );
   const progressPct = summary.total > 0 ? Math.round((summary.completed / summary.total) * 100) : 0;
 
   const popup =
@@ -235,21 +256,55 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                 )}
               </div>
 
+              {/* Tabs: growth milestones | this course */}
+              <div
+                role="tablist"
+                aria-label="Roadmap view"
+                className="flex gap-1 px-5 pt-3"
+                onKeyDown={(e) => {
+                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                  e.preventDefault();
+                  const next = tab === "growth" ? "course" : "growth";
+                  setTab(next);
+                  document.getElementById(`tbt-roadmap-tab-${next}`)?.focus();
+                }}
+              >
+                {(["growth", "course"] as const).map((t) => (
+                  <button
+                    key={t}
+                    id={`tbt-roadmap-tab-${t}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === t}
+                    aria-controls="tbt-roadmap-panel"
+                    tabIndex={tab === t ? 0 : -1}
+                    onClick={() => setTab(t)}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-bold focus-visible:outline focus-visible:outline-2"
+                    style={{
+                      background: tab === t ? "var(--color-accent)" : "var(--color-surface-overlay-xs)",
+                      color: tab === t ? "#fff" : "var(--color-text-secondary)",
+                      outlineColor: "var(--color-accent)",
+                    }}
+                  >
+                    {t === "growth" ? "Growth milestones" : "This course"}
+                  </button>
+                ))}
+              </div>
+
               {/* Map / states */}
-              <div ref={scrollerRef} className="tbt-roadmap-scroller flex-1 overflow-y-auto">
-                {status === "loading" ? (
-                  <div className="h-full flex items-center justify-center gap-2 text-sm" style={{ color: "var(--color-text-secondary)" }} aria-busy="true">
-                    <Loader2 size={18} className="animate-spin" /> Loading your roadmap…
-                  </div>
+              <div
+                ref={scrollerRef}
+                id="tbt-roadmap-panel"
+                role="tabpanel"
+                aria-labelledby={`tbt-roadmap-tab-${tab}`}
+                className="tbt-roadmap-scroller flex-1 overflow-y-auto"
+              >
+                {tab === "growth" ? (
+                  <GrowthMilestonesPanel scrollerRef={scrollerRef} onNavigate={() => setOpen(false)} />
+                ) : status === "loading" ? (
+                  <LoadingState />
                 ) : status === "error" ? (
-                  <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
-                    <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn&apos;t load your roadmap.</p>
-                    {onRetry && (
-                      <button type="button" onClick={onRetry} className="px-4 py-2 rounded-full text-sm font-semibold" style={{ background: "var(--color-accent)", color: "#fff" }}>
-                        Try again
-                      </button>
-                    )}
-                  </div>
+                  <ErrorState onRetry={onRetry} />
                 ) : levels.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
                     <MapIcon size={28} style={{ color: "var(--color-text-subtle)" }} aria-hidden />
@@ -257,150 +312,7 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                     <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Lessons for this course will appear here as levels.</p>
                   </div>
                 ) : (
-                  <div
-                    className="tbt-roadmap-map relative mx-auto w-full max-w-[460px] sm:max-w-[600px]"
-                    style={{ height: mapHeight }}
-                  >
-                    {/* Road: soft wide base, dashed centre line, then progress on top */}
-                    <svg
-                      data-roadmap-path
-                      className="absolute inset-0 w-full h-full"
-                      viewBox={`0 0 100 ${mapHeight}`}
-                      preserveAspectRatio="none"
-                      aria-hidden="true"
-                    >
-                      {levels.slice(0, -1).map((_, i) => (
-                        <path
-                          key={`base-${i}`}
-                          d={roadSegment(i)}
-                          fill="none"
-                          strokeWidth={26}
-                          strokeLinecap="round"
-                          vectorEffect="non-scaling-stroke"
-                          style={{ stroke: "color-mix(in srgb, var(--color-accent) 14%, var(--color-bg-surface))" }}
-                        />
-                      ))}
-                      {levels.slice(0, -1).map((lvl, i) => {
-                        const reached = levels[i + 1].state !== "locked";
-                        return (
-                          <path
-                            key={`road-${i}`}
-                            data-road-state={reached ? "reached" : "locked"}
-                            d={roadSegment(i)}
-                            fill="none"
-                            strokeWidth={reached ? 10 : 4}
-                            strokeLinecap="round"
-                            strokeDasharray={reached ? undefined : "1 12"}
-                            vectorEffect="non-scaling-stroke"
-                            style={{
-                              stroke: reached
-                                ? lvl.state === "completed" && levels[i + 1].state === "completed"
-                                  ? "var(--color-success)"
-                                  : "var(--color-accent)"
-                                : "var(--color-border-subtle)",
-                            }}
-                          />
-                        );
-                      })}
-                    </svg>
-
-                    {/* Start flag */}
-                    <div
-                      className="absolute flex flex-col items-center text-[10px] font-bold uppercase tracking-wider"
-                      style={{ left: `${LANES[0]}%`, top: TOP_PAD - NODE / 2 - 52, transform: "translateX(-50%)", color: "var(--color-text-secondary)" }}
-                      aria-hidden="true"
-                    >
-                      <Flag size={20} style={{ color: "var(--color-accent)" }} />
-                      Start
-                    </div>
-
-                    <ol aria-label="Levels" className="absolute inset-0">
-                      {levels.map((lvl, i) => {
-                        const p = levelPoint(i);
-                        const c = nodeColors(lvl.state);
-                        const locked = lvl.state === "locked" || !lvl.target;
-                        const leftLane = p.x < 50;
-                        const current = lvl.state === "current";
-                        return (
-                          <li key={lvl.id ?? "general"}>
-                            {current && (
-                              <span
-                                className="tbt-roadmap-here absolute z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap shadow"
-                                style={{ left: `${p.x}%`, top: p.y - NODE / 2 - 30, transform: "translateX(-50%)", background: "var(--color-accent)", color: "#fff" }}
-                              >
-                                <MapPin size={11} aria-hidden /> You are here
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              aria-disabled={locked || undefined}
-                              onClick={() => {
-                                if (locked || !lvl.target) return;
-                                setOpen(false);
-                                onOpenLesson(lvl.target);
-                              }}
-                              aria-label={`Level ${lvl.number}: ${lvl.title} — ${STATE_LABEL[lvl.state]}, ${lvl.total > 0 ? `${lvl.completed} of ${lvl.total} lessons completed` : "no lessons yet"}`}
-                              aria-current={current ? "step" : undefined}
-                              data-level-state={lvl.state}
-                              className={`tbt-roadmap-node absolute rounded-full flex items-center justify-center text-lg font-extrabold tabular-nums transition-transform duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 ${
-                                locked ? "cursor-not-allowed" : "hover:scale-110"
-                              } ${current ? "tbt-roadmap-node-current" : ""}`}
-                              style={{
-                                left: `calc(${p.x}% - ${NODE / 2}px)`,
-                                top: p.y - NODE / 2,
-                                width: NODE,
-                                height: NODE,
-                                background: c.fill,
-                                color: c.text,
-                                border: lvl.state === "available" ? "4px solid var(--color-accent)" : "4px solid #fff",
-                                boxShadow: `0 0 0 6px ${c.ring}, 0 6px 14px rgba(0,0,0,0.22)`,
-                                outlineColor: "var(--color-accent)",
-                              }}
-                            >
-                              {lvl.state === "completed" ? <Check size={26} strokeWidth={3.5} aria-hidden /> : locked ? <Lock size={20} aria-hidden /> : lvl.number}
-                            </button>
-                            {/* Label on the open side of the node */}
-                            <div
-                              className="absolute pointer-events-none"
-                              style={{
-                                top: p.y - 26,
-                                ...(leftLane
-                                  ? { left: `calc(${p.x}% + ${NODE / 2 + 14}px)`, right: 8, textAlign: "left" as const }
-                                  : { right: `calc(${100 - p.x}% + ${NODE / 2 + 14}px)`, left: 8, textAlign: "right" as const }),
-                              }}
-                              aria-hidden="true"
-                            >
-                              <span className="block text-[10px] font-bold uppercase tracking-wider" style={{ color: locked ? "var(--color-text-subtle)" : "var(--color-accent)" }}>
-                                Level {lvl.number}
-                              </span>
-                              <span className="block text-sm font-bold leading-tight line-clamp-2" style={{ color: locked ? "var(--color-text-subtle)" : "var(--color-text-normal)" }}>
-                                {lvl.title}
-                              </span>
-                              <span className="block text-[11px] tabular-nums" style={{ color: "var(--color-text-secondary)" }}>
-                                {lvl.total > 0 ? `${lvl.completed}/${lvl.total} lessons` : "No lessons yet"} · {STATE_LABEL[lvl.state]}
-                              </span>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ol>
-
-                    {/* Finish trophy */}
-                    {(() => {
-                      const last = levelPoint(levels.length - 1);
-                      const done = summary.completed === summary.total;
-                      return (
-                        <div
-                          className="absolute flex flex-col items-center text-[10px] font-bold uppercase tracking-wider"
-                          style={{ left: `${last.x}%`, top: last.y + NODE / 2 + 18, transform: "translateX(-50%)", color: done ? "var(--color-success)" : "var(--color-text-subtle)" }}
-                          aria-hidden="true"
-                        >
-                          <Trophy size={22} />
-                          Finish
-                        </div>
-                      );
-                    })()}
-                  </div>
+                  <LevelMap nodes={courseNodes} listLabel="Levels" scrollerRef={scrollerRef} />
                 )}
               </div>
             </div>
@@ -478,6 +390,250 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
       >
         <MapIcon size={22} strokeWidth={2.25} aria-hidden />
       </button>
+    </>
+  );
+}
+
+// ── Shared map ────────────────────────────────────────────────────────────────
+
+/** One round node on the map — a course level or a growth milestone. */
+interface MapNode {
+  key: string;
+  number: number;
+  /** Small caption above the title, e.g. "Level 2" / "Milestone 2". */
+  kicker: string;
+  title: string;
+  state: RoadmapLevel["state"];
+  /** Shown with a lock and greyed out. */
+  locked: boolean;
+  /** Line under the title. */
+  detail: string;
+  ariaLabel: string;
+  /** null = nothing to open (locked, or a milestone with no destination). */
+  onActivate: (() => void) | null;
+}
+
+function LoadingState() {
+  return (
+    <div className="h-full flex items-center justify-center gap-2 text-sm" style={{ color: "var(--color-text-secondary)" }} aria-busy="true">
+      <Loader2 size={18} className="animate-spin" /> Loading your roadmap…
+    </div>
+  );
+}
+
+function ErrorState({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
+      <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn&apos;t load your roadmap.</p>
+      {onRetry && (
+        <button type="button" onClick={onRetry} className="px-4 py-2 rounded-full text-sm font-semibold" style={{ background: "var(--color-accent)", color: "#fff" }}>
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+function LevelMap({ nodes, listLabel, scrollerRef }: { nodes: MapNode[]; listLabel: string; scrollerRef: RefObject<HTMLDivElement | null> }) {
+  const mapHeight = TOP_PAD + Math.max(0, nodes.length - 1) * ROW_HEIGHT + BOTTOM_PAD;
+  const allDone = nodes.length > 0 && nodes.every((n) => n.state === "completed");
+
+  // Centre the member's current node in the map (the popup only, never the page).
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    const currentIndex = nodes.findIndex((n) => n.state === "current");
+    if (scroller && currentIndex > 0) {
+      scroller.scrollTop = Math.max(0, levelPoint(currentIndex).y - scroller.clientHeight / 2);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once per map shown
+
+  return (
+    <div className="tbt-roadmap-map relative mx-auto w-full max-w-[460px] sm:max-w-[600px]" style={{ height: mapHeight }}>
+      {/* Road: soft wide base, dashed centre line, then progress on top */}
+      <svg data-roadmap-path className="absolute inset-0 w-full h-full" viewBox={`0 0 100 ${mapHeight}`} preserveAspectRatio="none" aria-hidden="true">
+        {nodes.slice(0, -1).map((_, i) => (
+          <path
+            key={`base-${i}`}
+            d={roadSegment(i)}
+            fill="none"
+            strokeWidth={26}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            style={{ stroke: "color-mix(in srgb, var(--color-accent) 14%, var(--color-bg-surface))" }}
+          />
+        ))}
+        {nodes.slice(0, -1).map((node, i) => {
+          const reached = nodes[i + 1].state !== "locked";
+          return (
+            <path
+              key={`road-${i}`}
+              data-road-state={reached ? "reached" : "locked"}
+              d={roadSegment(i)}
+              fill="none"
+              strokeWidth={reached ? 10 : 4}
+              strokeLinecap="round"
+              strokeDasharray={reached ? undefined : "1 12"}
+              vectorEffect="non-scaling-stroke"
+              style={{
+                stroke: reached
+                  ? node.state === "completed" && nodes[i + 1].state === "completed"
+                    ? "var(--color-success)"
+                    : "var(--color-accent)"
+                  : "var(--color-border-subtle)",
+              }}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Start flag */}
+      <div
+        className="absolute flex flex-col items-center text-[10px] font-bold uppercase tracking-wider"
+        style={{ left: `${LANES[0]}%`, top: TOP_PAD - NODE / 2 - 52, transform: "translateX(-50%)", color: "var(--color-text-secondary)" }}
+        aria-hidden="true"
+      >
+        <Flag size={20} style={{ color: "var(--color-accent)" }} />
+        Start
+      </div>
+
+      <ol aria-label={listLabel} className="absolute inset-0">
+        {nodes.map((node, i) => {
+          const p = levelPoint(i);
+          const c = nodeColors(node.state);
+          const leftLane = p.x < 50;
+          const current = node.state === "current";
+          const disabled = !node.onActivate;
+          return (
+            <li key={node.key}>
+              {current && (
+                <span
+                  className="tbt-roadmap-here absolute z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap shadow"
+                  style={{ left: `${p.x}%`, top: p.y - NODE / 2 - 30, transform: "translateX(-50%)", background: "var(--color-accent)", color: "#fff" }}
+                >
+                  <MapPin size={11} aria-hidden /> You are here
+                </span>
+              )}
+              <button
+                type="button"
+                aria-disabled={disabled || undefined}
+                onClick={() => node.onActivate?.()}
+                aria-label={node.ariaLabel}
+                aria-current={current ? "step" : undefined}
+                data-level-state={node.state}
+                className={`tbt-roadmap-node absolute rounded-full flex items-center justify-center text-lg font-extrabold tabular-nums transition-transform duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 ${
+                  disabled ? "cursor-not-allowed" : "hover:scale-110"
+                } ${current ? "tbt-roadmap-node-current" : ""}`}
+                style={{
+                  left: `calc(${p.x}% - ${NODE / 2}px)`,
+                  top: p.y - NODE / 2,
+                  width: NODE,
+                  height: NODE,
+                  background: c.fill,
+                  color: c.text,
+                  border: node.state === "available" ? "4px solid var(--color-accent)" : "4px solid #fff",
+                  boxShadow: `0 0 0 6px ${c.ring}, 0 6px 14px rgba(0,0,0,0.22)`,
+                  outlineColor: "var(--color-accent)",
+                }}
+              >
+                {node.state === "completed" ? <Check size={26} strokeWidth={3.5} aria-hidden /> : node.locked ? <Lock size={20} aria-hidden /> : node.number}
+              </button>
+              {/* Label on the open side of the node */}
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  top: p.y - 26,
+                  ...(leftLane
+                    ? { left: `calc(${p.x}% + ${NODE / 2 + 14}px)`, right: 8, textAlign: "left" as const }
+                    : { right: `calc(${100 - p.x}% + ${NODE / 2 + 14}px)`, left: 8, textAlign: "right" as const }),
+                }}
+                aria-hidden="true"
+              >
+                <span className="block text-[10px] font-bold uppercase tracking-wider" style={{ color: node.locked ? "var(--color-text-subtle)" : "var(--color-accent)" }}>
+                  {node.kicker}
+                </span>
+                <span className="block text-sm font-bold leading-tight line-clamp-2" style={{ color: node.locked ? "var(--color-text-subtle)" : "var(--color-text-normal)" }}>
+                  {node.title}
+                </span>
+                <span className="block text-[11px] tabular-nums" style={{ color: "var(--color-text-secondary)" }}>
+                  {node.detail}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {/* Finish trophy */}
+      {(() => {
+        const last = levelPoint(nodes.length - 1);
+        return (
+          <div
+            className="absolute flex flex-col items-center text-[10px] font-bold uppercase tracking-wider"
+            style={{ left: `${last.x}%`, top: last.y + NODE / 2 + 18, transform: "translateX(-50%)", color: allDone ? "var(--color-success)" : "var(--color-text-subtle)" }}
+            aria-hidden="true"
+          >
+            <Trophy size={22} />
+            Finish
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ── Growth milestones tab ─────────────────────────────────────────────────────
+
+const MILESTONE_STATE_LABEL: Record<GrowthMilestoneLevel["state"], string> = {
+  completed: "Reached",
+  current: "In progress",
+  locked: "Locked",
+};
+
+function milestoneDetail(m: GrowthMilestoneLevel, inBatch: boolean): string {
+  if (!inBatch) return "Locked";
+  if (m.kind === "revenue") {
+    if (m.state === "completed") return "Recorded by your mentor · Reached";
+    if (m.notRecordable) return "Not set up for your program yet";
+    return m.state === "locked" ? "Locked" : "Recorded by your mentor when achieved";
+  }
+  const day = m.href?.startsWith("/batch-program/") ? m.href.slice("/batch-program/".length) : null;
+  return `${day ? `Day ${day} · ` : ""}${MILESTONE_STATE_LABEL[m.state]}`;
+}
+
+function GrowthMilestonesPanel({ scrollerRef, onNavigate }: { scrollerRef: RefObject<HTMLDivElement | null>; onNavigate: () => void }) {
+  const router = useRouter();
+  const { data: graph, isLoading, isError, refetch } = useMyWeeklyGraph();
+
+  if (isLoading) return <LoadingState />;
+  if (isError) return <ErrorState onRetry={() => void refetch()} />;
+
+  const { inBatch, levels } = buildGrowthMilestones(graph ?? null);
+  const reached = levels.filter((m) => m.state === "completed").length;
+  const nodes = levels.map(
+    (m): MapNode => ({
+      key: m.id ?? `default-${m.number}`,
+      kicker: `Milestone ${m.number}`,
+      number: m.number,
+      title: m.title,
+      state: m.state,
+      locked: m.state === "locked",
+      detail: milestoneDetail(m, inBatch),
+      ariaLabel: `Milestone ${m.number}: ${m.title} — ${MILESTONE_STATE_LABEL[m.state]}${m.state !== "locked" && !m.href ? ", achievement status only" : ""}`,
+      onActivate: m.href
+        ? () => {
+            onNavigate();
+            router.push(m.href!);
+          }
+        : null,
+    }),
+  );
+
+  return (
+    <>
+      <p className="px-5 pt-3 text-xs font-semibold text-center" style={{ color: "var(--color-text-secondary)" }} role="status">
+        {inBatch ? `${reached} of ${levels.length} milestones reached` : "Join a batch program to unlock"}
+      </p>
+      <LevelMap nodes={nodes} listLabel="Growth milestones" scrollerRef={scrollerRef} />
     </>
   );
 }
