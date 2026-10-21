@@ -55,13 +55,14 @@ export async function loadActiveModuleOptions(prisma: any, redis: RedisLike | nu
  */
 export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | null, memberId: string): Promise<ModuleAccess> {
   return cached<ModuleAccess>(redis, accessKey(memberId), 60, async () => {
-    // No error is special-cased here — including 42703 (a missing
-    // allowed_modules / mentorship_modules column). Returning no row for it
-    // used to drop the program ceiling too and grant every module.
+    // No error is special-cased here — e.g. a missing member_module_settings
+    // table. Returning no row for it would drop the program ceiling too and
+    // grant every module.
     const [memberRows, options] = await Promise.all([
       prisma.$queryRawUnsafe(
-        `SELECT m.allowed_modules, m.mentorship_modules, m.business_type, p.allowed_modules AS program_modules
+        `SELECT s.allowed_modules, s.mentorship_modules, m.business_type, p.allowed_modules AS program_modules
          FROM members m
+         LEFT JOIN member_module_settings s ON s.member_id = m.id
          LEFT JOIN batches b ON b.id = m.batch_id
          LEFT JOIN programs p ON p.id = b.program_id
          WHERE m.id = $1::uuid`,
@@ -80,11 +81,31 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
   });
 }
 
-/** Call after any write to members.allowed_modules / mentorship_modules / batch_id. */
+/**
+ * The two writes to member_module_settings. Each upserts one column and leaves
+ * the other untouched. `modules` null clears it. Callers invalidate afterwards.
+ */
+export async function saveMemberAdminOverride(prisma: any, memberId: string, modules: string[] | null): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO member_module_settings (member_id, allowed_modules, updated_at) VALUES ($1::uuid, $2::jsonb, now())
+     ON CONFLICT (member_id) DO UPDATE SET allowed_modules = EXCLUDED.allowed_modules, updated_at = now()`,
+    memberId, modules === null ? null : JSON.stringify(modules),
+  );
+}
+
+export async function saveMemberModuleSelection(prisma: any, memberId: string, modules: string[]): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO member_module_settings (member_id, mentorship_modules, updated_at) VALUES ($1::uuid, $2::jsonb, now())
+     ON CONFLICT (member_id) DO UPDATE SET mentorship_modules = EXCLUDED.mentorship_modules, updated_at = now()`,
+    memberId, JSON.stringify(modules),
+  );
+}
+
+/** Call after any write to member_module_settings or members.batch_id. */
 export async function invalidateMemberModuleAccess(redis: RedisLike | null, memberId: string): Promise<void> {
   await Promise.all([
     invalidateCache(redis, accessKey(memberId)),
-    invalidateCache(redis, `courses:personalization:${memberId}`),
+    invalidateCache(redis, `courses:personalization:v2:${memberId}`), // key used by the /courses handler
   ]);
 }
 
