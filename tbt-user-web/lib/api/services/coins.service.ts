@@ -25,6 +25,10 @@ export interface CoinVerifyResult {
 }
 
 export const coinsService = {
+  /** Spendable TBT coins — the server's ledger sum, the same number coin spends check. */
+  balance: () =>
+    apiClient.get<never, ApiResponse<{ balance: number }>>("/api/user/coins/balance"),
+
   packages: () =>
     apiClient.get<never, ApiResponse<{ packages: CoinPackage[]; purchaseAvailable: boolean }>>("/api/user/coins/packages"),
 

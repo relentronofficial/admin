@@ -6,6 +6,7 @@ import {
   type BookSupportCallInput,
   type SupportCallCategory,
 } from "@/lib/api/services/supportCalls.service";
+import { invalidateCoinBalance } from "./useCoins";
 
 export const supportCallKeys = {
   category: (category: SupportCallCategory) => ["user", "support-calls", category] as const,
@@ -40,6 +41,7 @@ function useInvalidateSupportCalls() {
     void qc.invalidateQueries({ queryKey: supportCallKeys.all });
     void qc.invalidateQueries({ queryKey: ["user", "support-quota"] });
     void qc.invalidateQueries({ queryKey: ["user", "me"] });
+    void invalidateCoinBalance(qc);
   };
 }
 

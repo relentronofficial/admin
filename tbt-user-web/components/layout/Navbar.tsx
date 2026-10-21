@@ -23,6 +23,7 @@ import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { StreakButton } from "./StreakButton";
 import { TierAccessIndicator } from "./TierAccessIndicator";
+import { CoinBalanceIndicator } from "./CoinBalanceIndicator";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
@@ -583,9 +584,10 @@ export function Navbar() {
         <div className="flex items-center gap-0.5 sm:gap-1 ml-auto lg:ml-0">
 
           {/* Learning streak (dropdown) */}
-          {/* Streak and Tier Access: two independent indicators with a clear gap. */}
+          {/* Streak, TBT Coins and Tier Access: independent indicators with a clear gap. */}
           <div className="flex items-center gap-1 sm:gap-2 sm:mr-1">
             {!hiddenMenuKeys.includes("streak") && <StreakButton />}
+            <CoinBalanceIndicator />
             <TierAccessIndicator />
           </div>
 
