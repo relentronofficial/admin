@@ -10,6 +10,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
+import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -724,6 +725,11 @@ export default function CoursesPage() {
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
       <MentorshipDashboard />
+
+      {/* ── Weekly Activity Graph — X/Y axis dynamically configured from
+           Admin → Weekly Graph settings. Returns null when not in a batch
+           or when admin hides it via Settings → Navigation → "weekly_graph". */}
+      <WeeklyActivityGraph />
 
       {/* ── Catalog failed to load — never fall back to the "new member" view ── */}
       {catalogError && !catalogLoading && (
