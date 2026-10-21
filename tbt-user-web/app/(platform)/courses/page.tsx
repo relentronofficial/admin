@@ -3,8 +3,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, Play, BookOpen, HelpCircle, ChevronDown, Type, Video } from "lucide-react";
-import { useCourses, useMyEnrollments, useCourseFaqs } from "@/lib/hooks/useCourses";
+import { Lock, Play, BookOpen } from "lucide-react";
+import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
@@ -624,13 +624,9 @@ function NewMemberCoursesView({ uiStrings }: { uiStrings: any }) {
 
 export default function CoursesPage() {
   const [activeTab, setActiveTab] = useState<string | null>(null);
-  const [faqOpen, setFaqOpen] = useState(false);
-  const [openFaqId, setOpenFaqId] = useState<string | null>(null);
 
   const { uiStrings, config } = useSiteConfig();
   const coursesBannerUrl = (config as any)?.coursesBannerUrl?.trim() || null;
-
-  const { data: faqs = [] } = useCourseFaqs();
 
   const { data: enrollments } = useMyEnrollments();
   const { data: watchHistoryData } = useWatchHistory({ limit: 3 });
@@ -867,104 +863,7 @@ export default function CoursesPage() {
                     </span>
                   </div>
                 )}
-                {faqs.length > 0 && (
-                  <button
-                    onClick={() => setFaqOpen(v => !v)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      padding: "6px 14px", borderRadius: 8,
-                      background: faqOpen ? "rgba(220,38,38,0.12)" : "rgba(255,255,255,0.06)",
-                      border: faqOpen ? "1px solid rgba(220,38,38,0.35)" : "1px solid rgba(255,255,255,0.1)",
-                      color: faqOpen ? "var(--color-accent)" : "#c0c0c8",
-                      fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      transition: "all 0.2s",
-                    }}
-                  >
-                    <HelpCircle size={15} />
-                    FAQ
-                    <ChevronDown size={14} style={{ transition: "transform 0.25s", transform: faqOpen ? "rotate(180deg)" : "rotate(0deg)" }} />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── FAQ collapsible section ───────────────────────────────────── */}
-          {personalizationState === "direct" && faqs.length > 0 && (
-            <div
-              style={{
-                overflow: "hidden",
-                maxHeight: faqOpen ? `${faqs.length * 200}px` : "0px",
-                transition: "max-height 0.4s cubic-bezier(0.4,0,0.2,1)",
-                marginBottom: faqOpen ? 24 : 0,
-              }}
-            >
-              <div style={{ padding: "4px 0 8px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {faqs.map((faq) => (
-                    <div
-                      key={faq.id}
-                      style={{
-                        borderRadius: 10,
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        background: "rgba(255,255,255,0.03)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <button
-                        onClick={() => setOpenFaqId(openFaqId === faq.id ? null : faq.id)}
-                        style={{
-                          width: "100%", display: "flex", alignItems: "center",
-                          justifyContent: "space-between", gap: 12,
-                          padding: "14px 18px", background: "transparent", border: "none",
-                          color: "#f0f0f4", fontSize: 14, fontWeight: 600, cursor: "pointer",
-                          textAlign: "left",
-                        }}
-                      >
-                        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          {faq.answerType === "video"
-                            ? <Video size={15} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
-                            : <Type size={15} style={{ color: "#92929b", flexShrink: 0 }} />
-                          }
-                          {faq.question}
-                        </span>
-                        <ChevronDown
-                          size={16}
-                          style={{
-                            flexShrink: 0,
-                            color: "#92929b",
-                            transition: "transform 0.25s",
-                            transform: openFaqId === faq.id ? "rotate(180deg)" : "rotate(0deg)",
-                          }}
-                        />
-                      </button>
-                      <div
-                        style={{
-                          maxHeight: openFaqId === faq.id ? "600px" : "0px",
-                          overflow: "hidden",
-                          transition: "max-height 0.3s ease",
-                        }}
-                      >
-                        <div style={{ padding: "0 18px 16px" }}>
-                          {faq.answerType === "video" && faq.answerVideoUrl ? (
-                            <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, borderRadius: 8, overflow: "hidden" }}>
-                              <iframe
-                                src={faq.answerVideoUrl}
-                                style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: "none" }}
-                                allowFullScreen
-                                allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
-                              />
-                            </div>
-                          ) : (
-                            <p style={{ margin: 0, fontSize: 14, color: "#a0a0a8", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-                              {faq.answerText}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <ModulesFaqButton />
               </div>
             </div>
           )}

@@ -16,6 +16,12 @@ export type MentorshipStats = {
   activeDays?: number;
   totalDays: number;
   programName: string | null;
+  /**
+   * Required program videos: visible episodes of published courses in the
+   * member's program modules, and how many the member completed
+   * (course_episode_progress). null/absent when it can't be determined.
+   */
+  programVideos?: { total: number; completed: number } | null;
 };
 
 export type MentorshipRevenue = {
