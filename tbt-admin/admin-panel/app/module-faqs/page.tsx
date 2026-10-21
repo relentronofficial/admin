@@ -35,12 +35,19 @@ type Entry = {
   /** 0–100 while uploading, null otherwise */
   uploadPct: number | null;
   uploadError: string | null;
+  /** Name of the file chosen in this session (shown with its upload status). */
+  fileName: string | null;
 };
+
+/** Video formats the FAQ uploader accepts (Bunny Stream transcodes all three). */
+const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov";
+const isSupportedVideo = (file: File) =>
+  ["video/mp4", "video/webm", "video/quicktime"].includes(file.type) || /\.(mp4|webm|mov)$/i.test(file.name);
 type EntryErrors = { question?: string; answer?: string };
 
 let entrySeq = 0;
 const newEntry = (over: Partial<Entry> = {}): Entry => ({
-  key: `e${++entrySeq}`, question: "", answer: "", videoUrl: null, bunnyVideoId: null, uploadPct: null, uploadError: null, ...over,
+  key: `e${++entrySeq}`, question: "", answer: "", videoUrl: null, bunnyVideoId: null, uploadPct: null, uploadError: null, fileName: null, ...over,
 });
 
 /**
@@ -48,8 +55,9 @@ const newEntry = (over: Partial<Entry> = {}): Entry => ({
  * create the video server-side (useCreateBunnyVideo), upload the file with
  * tus-js-client (progress), then keep the returned embed URL + video id.
  */
-function FaqVideoField({ entry, inputId, disabled, onChange }: {
+function FaqVideoField({ entry, number, inputId, disabled, onChange }: {
   entry: Entry;
+  number: number;
   inputId: string;
   disabled: boolean;
   onChange: (patch: Partial<Entry>) => void;
@@ -59,11 +67,11 @@ function FaqVideoField({ entry, inputId, disabled, onChange }: {
   const uploading = entry.uploadPct !== null;
 
   const upload = async (file: File) => {
-    if (!file.type.startsWith("video/")) {
-      onChange({ uploadError: "Choose a video file" });
+    if (!isSupportedVideo(file)) {
+      onChange({ fileName: file.name, uploadError: "Unsupported format — choose an MP4, WebM or MOV video" });
       return;
     }
-    onChange({ uploadPct: 0, uploadError: null });
+    onChange({ fileName: file.name, uploadPct: 0, uploadError: null });
     try {
       const title = entry.question.trim() || file.name;
       const { videoId, tusUploadUrl, tusHeaders, embedUrl } = await createBunnyVideo.mutateAsync({ title });
@@ -97,12 +105,12 @@ function FaqVideoField({ entry, inputId, disabled, onChange }: {
 
   return (
     <div className="space-y-1">
-      <label htmlFor={inputId} className={labelCls}>Video (optional)</label>
+      <label htmlFor={inputId} className={labelCls}>Video {number} (Optional)</label>
       <input
         id={inputId}
         ref={fileRef}
         type="file"
-        accept="video/*"
+        accept={VIDEO_ACCEPT}
         className="hidden"
         disabled={disabled || uploading}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }}
@@ -115,7 +123,7 @@ function FaqVideoField({ entry, inputId, disabled, onChange }: {
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#f0f0f0] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#dc2626] disabled:opacity-50"
         >
           {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-          {uploading ? `Uploading… ${entry.uploadPct}%` : entry.videoUrl ? "Replace video" : "Upload video"}
+          {uploading ? `Uploading… ${entry.uploadPct}%` : entry.videoUrl ? "Replace Video" : "Choose Video / Upload Video"}
         </button>
         {entry.videoUrl && !uploading && (
           <>
@@ -133,6 +141,14 @@ function FaqVideoField({ entry, inputId, disabled, onChange }: {
           </>
         )}
       </div>
+      <p className="text-[11px] text-[#606060]">Supported formats: MP4, WebM, MOV</p>
+      {entry.fileName && (
+        <p className="text-[11px] text-[#a0a0a0]" data-video-status>
+          {entry.fileName}
+          {" — "}
+          {uploading ? `Uploading ${entry.uploadPct}%` : entry.uploadError ? "Upload failed" : entry.videoUrl ? "Uploaded" : ""}
+        </p>
+      )}
       {uploading && (
         <div className="h-1.5 w-full max-w-xs bg-[#2a2a2a] rounded-full overflow-hidden" role="progressbar" aria-label="Video upload progress" aria-valuenow={entry.uploadPct ?? 0} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full bg-[#dc2626]" style={{ width: `${entry.uploadPct}%` }} />
@@ -187,12 +203,9 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
       if (isEdit) {
         await save.mutateAsync({ id: initial.id, ...payload(entries[0]) });
         toast.success("FAQ updated");
-      } else if (entries.length === 1) {
-        await save.mutateAsync(payload(entries[0]));
-        toast.success("FAQ created");
       } else {
         await saveMany.mutateAsync(entries.map(payload));
-        toast.success(`${entries.length} FAQs created`);
+        toast.success(entries.length === 1 ? "FAQ created" : `${entries.length} FAQs created`);
       }
       onDone();
     } catch (err: any) {
@@ -212,22 +225,21 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
         const err = errors[entry.key] ?? {};
         return (
           <div key={entry.key} className={i === 0 ? "space-y-4" : "space-y-4 border-t border-[#2a2a2a] pt-4"} data-faq-entry={i + 1}>
-            {i > 0 && (
-              <div className="flex items-center justify-between">
-                <span className={labelCls}>Question {i + 1}</span>
-                <button
-                  type="button"
-                  onClick={() => removeEntry(entry.key)}
-                  disabled={saving || entry.uploadPct !== null}
-                  aria-label={`Remove question ${i + 1}`}
-                  className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-red-400 disabled:opacity-50"
-                >
-                  <Trash2 size={12} /> Remove
-                </button>
-              </div>
-            )}
             <div className="space-y-1">
-              <label htmlFor={qId} className={labelCls}>Question</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor={qId} className={labelCls}>Question {i + 1}</label>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => removeEntry(entry.key)}
+                    disabled={saving || entry.uploadPct !== null}
+                    aria-label={`Remove question ${i + 1}`}
+                    className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-red-400 disabled:opacity-50"
+                  >
+                    <Trash2 size={12} /> Remove
+                  </button>
+                )}
+              </div>
               <input
                 id={qId}
                 value={entry.question}
@@ -242,7 +254,7 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
               </div>
             </div>
             <div className="space-y-1">
-              <label htmlFor={aId} className={labelCls}>Answer</label>
+              <label htmlFor={aId} className={labelCls}>Answer {i + 1}</label>
               <textarea
                 id={aId}
                 value={entry.answer}
@@ -257,7 +269,7 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
                 <span className="text-[#606060]">{entry.answer.length}/{ANSWER_MAX}</span>
               </div>
             </div>
-            <FaqVideoField entry={entry} inputId={`faq-video-${i + 1}`} disabled={saving} onChange={(p) => patch(entry.key, p)} />
+            <FaqVideoField entry={entry} number={i + 1} inputId={`faq-video-${i + 1}`} disabled={saving} onChange={(p) => patch(entry.key, p)} />
           </div>
         );
       })}
@@ -282,7 +294,7 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
           className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-xs font-bold text-white bg-[#dc2626] hover:bg-red-700 disabled:opacity-50"
         >
           {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-          Save
+          Save FAQ
         </button>
         <button onClick={onDone} disabled={saving} className="h-10 px-3 text-xs text-[#a0a0a0] hover:text-white">Cancel</button>
       </div>
