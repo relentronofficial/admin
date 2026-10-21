@@ -7614,14 +7614,28 @@ export async function updateMentorshipModulesHandler(request: FastifyRequest, re
   const result = validateModuleSelection(modules, selectable);
   if (!result.ok) return fail(reply, 400, result.error);
 
-  await request.server.prisma.$executeRawUnsafe(
-    `UPDATE members SET mentorship_modules = $1::jsonb, updated_at = now() WHERE id = $2::uuid`,
-    JSON.stringify(result.modules), memberId,
-  );
-  await invalidateMemberModuleAccess(redis, memberId);
+  // A database failure must not surface as a bare 500 ("Internal Server Error"
+  // at onboarding step 2): log the real cause, tell the member to retry. Their
+  // selection stays on screen; saving again is idempotent.
+  const SAVE_FAILED = "We couldn't save your mentorship selection right now. Please try again in a moment.";
+  try {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE members SET mentorship_modules = $1::jsonb, updated_at = now() WHERE id = $2::uuid`,
+      JSON.stringify(result.modules), memberId,
+    );
+  } catch (err) {
+    request.log.error({ err, memberId }, 'mentorship modules save failed');
+    return fail(reply, 503, SAVE_FAILED);
+  }
+  await invalidateMemberModuleAccess(redis, memberId).catch(() => {});
   void invalidateCache(redis, `me:${memberId}`);
 
-  return ok(reply, await buildMentorshipModulesPayload(request));
+  try {
+    return ok(reply, await buildMentorshipModulesPayload(request));
+  } catch (err) {
+    request.log.error({ err, memberId }, 'mentorship modules reload after save failed');
+    return fail(reply, 503, SAVE_FAILED);
+  }
 }
 
 export async function getMentorshipStatsHandler(request: FastifyRequest, reply: FastifyReply) {
