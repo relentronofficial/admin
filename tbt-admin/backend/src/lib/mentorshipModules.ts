@@ -6,9 +6,9 @@
 //
 // Three layers (highest to lowest priority):
 //   1. Entitlement ceiling (admin/program-controlled, unchanged from CP-11):
-//      members.allowed_modules (admin override; [] = explicitly unrestricted)
+//      member_module_settings.allowed_modules (admin override; [] = explicitly unrestricted)
 //      → programs.allowed_modules (via batch; [] = unrestricted) → unrestricted.
-//   2. The member's own selection (members.mentorship_modules), made during
+//   2. The member's own selection (member_module_settings.mentorship_modules), made during
 //      onboarding. It can only narrow the ceiling, never widen it.
 //   3. Business-type derivation (members.business_type): when the member has
 //      no explicit selection, their business type is used as the default
@@ -23,11 +23,11 @@
 export interface ModuleAccessInput {
   /** module_config rows with is_active = true, in sort order. */
   activeModules: string[];
-  /** members.allowed_modules — null = no admin override; [] = explicit "all". */
+  /** member_module_settings.allowed_modules — null = no admin override; [] = explicit "all". */
   adminOverride: string[] | null;
   /** programs.allowed_modules of the member's batch program; [] = unrestricted. */
   programModules: string[];
-  /** members.mentorship_modules — null = never selected. */
+  /** member_module_settings.mentorship_modules — null = never selected. */
   selection: string[] | null;
   /** members.business_type — used as default effective when selection is null. */
   businessType?: string | null;

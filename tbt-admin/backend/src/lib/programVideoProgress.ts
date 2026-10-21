@@ -5,7 +5,7 @@
 // one of the member's program modules:
 //   • only modules the member can actually open — the same verdict the catalog
 //     and playback guards use (mentorshipModules.ts resolveModuleAccess /
-//     isCourseModuleAllowed): the member's admin override (members.allowed_modules)
+//     isCourseModuleAllowed): the member's admin override (member_module_settings.allowed_modules)
 //     when set, else programs.allowed_modules of their batch's program
 //     ([] = all), narrowed by the member's own module selection / business-type
 //     default (`effective`); an unrestricted member counts every active module;

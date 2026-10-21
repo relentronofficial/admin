@@ -125,13 +125,13 @@ describe('loadMemberModuleAccess', () => {
     await expect(loadMemberModuleAccess(prisma, null, id.services)).rejects.toThrow('db down');
   });
 
-  it('fails closed when a module column is missing (42703) instead of granting every module', async () => {
+  it('fails closed when member_module_settings is missing (42P01) instead of granting every module', async () => {
     const id = ids();
     const prisma = fakePrisma({}, ['Product', 'Service', 'Coaching']);
     const base = prisma.$queryRawUnsafe.bind(prisma);
     prisma.$queryRawUnsafe = async (sql: string, ...params: unknown[]) => {
       if (sql.includes('FROM members m')) {
-        throw Object.assign(new Error('column m.mentorship_modules does not exist'), { code: 'P2010', meta: { code: '42703' } });
+        throw Object.assign(new Error('relation "member_module_settings" does not exist'), { code: 'P2010', meta: { code: '42P01' } });
       }
       return base(sql, ...params);
     };

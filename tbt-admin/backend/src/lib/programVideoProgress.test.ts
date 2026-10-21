@@ -75,13 +75,13 @@ describe('loadProgramVideoProgress', () => {
     expect(seen.modules).toEqual(['Service']);
   });
 
-  it("applies the member's own module selection (members.mentorship_modules)", async () => {
+  it("applies the member's own module selection (member_module_settings.mentorship_modules)", async () => {
     const { prisma, seen } = fakeDb({ program_modules: ['Product', 'Service'], mentorship_modules: ['Product'] });
     await loadProgramVideoProgress(prisma, null, MEMBER, BATCH);
     expect(seen.modules).toEqual(['Product']);
   });
 
-  it('applies the member override (members.allowed_modules) over the program', async () => {
+  it('applies the member override (member_module_settings.allowed_modules) over the program', async () => {
     const { prisma, seen } = fakeDb({ program_modules: ['Service'], allowed_modules: ['Product'] });
     await loadProgramVideoProgress(prisma, null, MEMBER, BATCH);
     expect(seen.modules).toEqual(['Product']);
