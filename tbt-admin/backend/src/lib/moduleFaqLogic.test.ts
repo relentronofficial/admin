@@ -38,12 +38,12 @@ describe('validateFaqInput', () => {
     expect(validateFaqInput({ question: 'q'.repeat(FAQ_QUESTION_MAX), answer: 'a'.repeat(FAQ_ANSWER_MAX) }).ok).toBe(true);
   });
   it('defaults new FAQs to unpublished and rejects a non-boolean publish flag', () => {
-    expect(validateFaqInput({ question: 'Q?', answer: 'A' })).toEqual({ ok: true, value: { question: 'Q?', answer: 'A', isPublished: false } });
+    expect(validateFaqInput({ question: 'Q?', answer: 'A' })).toEqual({ ok: true, value: { question: 'Q?', answer: 'A', isPublished: false, videoUrl: null, bunnyVideoId: null } });
     expect(validateFaqInput({ question: 'Q?', answer: 'A', isPublished: 'yes' }).ok).toBe(false);
   });
   it('merges a partial update over the current values', () => {
     const current = { question: 'Old?', answer: 'Old', isPublished: true };
-    expect(validateFaqInput({ answer: 'New' }, current)).toEqual({ ok: true, value: { question: 'Old?', answer: 'New', isPublished: true } });
+    expect(validateFaqInput({ answer: 'New' }, current)).toEqual({ ok: true, value: { question: 'Old?', answer: 'New', isPublished: true, videoUrl: null, bunnyVideoId: null } });
   });
   it('rejects non-object bodies', () => {
     expect(validateFaqInput([] as any).ok).toBe(false);

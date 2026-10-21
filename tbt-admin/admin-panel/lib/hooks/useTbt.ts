@@ -2883,7 +2883,12 @@ export const useReorderCourseFaqs = () => {
 
 // ── Modules page FAQ (admin) ─────────────────────────────────────────────────
 
-export type ModuleFaq = { id: string; question: string; answer: string; isPublished: boolean; sortOrder: number; updatedAt: string | null };
+export type ModuleFaq = {
+  id: string; question: string; answer: string; isPublished: boolean; sortOrder: number; updatedAt: string | null;
+  /** Optional Bunny Stream video (embed URL + video id). */
+  videoUrl?: string | null; bunnyVideoId?: string | null;
+};
+export type ModuleFaqInput = { question: string; answer: string; isPublished?: boolean; videoUrl?: string | null; bunnyVideoId?: string | null };
 const moduleFaqsKey = ['module-faqs-admin'];
 
 export const useListModuleFaqs = () =>
@@ -2896,10 +2901,20 @@ export const useListModuleFaqs = () =>
 export const useSaveModuleFaq = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, ...data }: { id?: string; question: string; answer: string; isPublished?: boolean }) =>
+    mutationFn: async ({ id, ...data }: { id?: string } & ModuleFaqInput) =>
       ((id
         ? await apiClient.put(`/api/module-faqs/admin/${id}`, data)
         : await apiClient.post('/api/module-faqs/admin', data)) as any).data as ModuleFaq,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+/** Several new FAQs saved together (one transaction server-side). */
+export const useCreateModuleFaqsBulk = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: ModuleFaqInput[]) =>
+      ((await apiClient.post('/api/module-faqs/admin/bulk', { items })) as any).data as ModuleFaq[],
     onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
   });
 };

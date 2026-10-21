@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import {
   createFaqHandler,
+  createFaqsBulkHandler,
   deleteFaqHandler,
   listFaqsAdminHandler,
   reorderFaqsHandler,
@@ -15,6 +16,7 @@ export async function moduleFaqsRoutes(fastify: FastifyInstance) {
 
   fastify.get('/admin', listFaqsAdminHandler);
   fastify.post('/admin', createFaqHandler);
+  fastify.post('/admin/bulk', createFaqsBulkHandler);
   fastify.put('/admin/reorder', reorderFaqsHandler);
   fastify.put('/admin/:id', updateFaqHandler);
   fastify.patch('/admin/:id/publish', setFaqPublishedHandler);
