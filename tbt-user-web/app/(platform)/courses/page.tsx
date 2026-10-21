@@ -45,6 +45,7 @@ function ModuleCard({
   const progressPct = enrollment?.progressPercent ?? 0;
   const isCompleted = enrollment?.completedAt != null;
   const isInProgress = !!enrollment && !isCompleted && progressPct > 0;
+  const hasThumbnail = !!course.thumbnailUrl;
 
   const { uiStrings: lockStrings } = useSiteConfig();
   const lockMessages: Record<NonNullable<LockReason>, string> = {
@@ -65,8 +66,10 @@ function ModuleCard({
           background: "#242428",
           border: "1px solid #414146",
           cursor: "pointer",
-          transition: "border-color 0.2s",
+          transition: "border-color 0.2s, box-shadow 0.2s",
         }}
+        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#606066"; (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 20px rgba(0,0,0,0.4)"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#414146"; (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
       >
         {/* ── Cover (151px) ─── */}
         <div
@@ -74,28 +77,44 @@ function ModuleCard({
           style={{
             height: 151,
             padding: "12px 16px",
-            background:
-              "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
+            background: hasThumbnail
+              ? `url(${JSON.stringify(course.thumbnailUrl)}) center / cover no-repeat`
+              : "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
           }}
         >
+          {/* Dark overlay for thumbnail readability */}
           <div
             style={{
               position: "absolute",
               inset: 0,
-              opacity: 0.22,
-              background:
-                "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
+              background: hasThumbnail
+                ? "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 100%)"
+                : undefined,
+              opacity: hasThumbnail ? 1 : undefined,
             }}
           />
+          {/* Grid pattern (only when no thumbnail) */}
+          {!hasThumbnail && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: 0.22,
+                background:
+                  "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
+              }}
+            />
+          )}
           <div
             style={{
               position: "absolute",
               top: 8,
               right: 9,
               zIndex: 1,
-              color: "white",
+              color: "rgba(255,255,255,0.7)",
               fontSize: 7,
               fontWeight: 800,
+              letterSpacing: "0.5px",
             }}
           >
             ✦ TBT BUSINESS
@@ -107,8 +126,8 @@ function ModuleCard({
               width: 79,
               padding: 3,
               marginBottom: 8,
-              background: "#321b1d",
-              border: "1px solid #49292c",
+              background: "rgba(50,27,29,0.85)",
+              border: "1px solid rgba(73,41,44,0.9)",
               borderRadius: 5,
               color: "#ddd",
               fontSize: 6,
@@ -152,7 +171,7 @@ function ModuleCard({
               position: "relative",
               zIndex: 1,
               marginTop: 8,
-              color: "#c5cbd0",
+              color: "rgba(197,203,208,0.7)",
               fontSize: 5,
               letterSpacing: "1.5px",
             }}
@@ -166,13 +185,13 @@ function ModuleCard({
           className="relative flex flex-col justify-between"
           style={{ height: 96, padding: "10px 14px" }}
         >
-          <div style={{ color: "#8b8b93", fontSize: 13, lineHeight: 1.55 }}>
-            Video Duration -{" "}
+          <div style={{ color: "#8b8b93", fontSize: 12, lineHeight: 1.6 }}>
+            <span>Video </span>
             <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
               {course.durationDisplay ?? "—"}
             </strong>
-            <br />
-            Task Duration -{" "}
+            <span style={{ margin: "0 6px", color: "#414146" }}>·</span>
+            <span>Tasks </span>
             <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
               {course.taskDurationDisplay ?? "—"}
             </strong>
@@ -186,6 +205,7 @@ function ModuleCard({
             </div>
           )}
 
+          {/* Status badge — top right */}
           <div
             className="absolute flex items-center justify-center"
             style={{
@@ -194,31 +214,42 @@ function ModuleCard({
               width: 33,
               height: 33,
               borderRadius: "50%",
-              background: "transparent",
-              border: "1px solid #a4a4aa",
+              background: isCompleted
+                ? "rgba(34,197,94,0.15)"
+                : isInProgress
+                ? "rgba(220,38,38,0.15)"
+                : "rgba(164,164,170,0.1)",
+              border: `1px solid ${isCompleted ? "rgba(34,197,94,0.5)" : isInProgress ? "rgba(220,38,38,0.5)" : "#a4a4aa"}`,
               color: isCompleted ? "#22c55e" : isInProgress ? "#dc2626" : "#a4a4aa",
-              fontSize: 18,
+              fontSize: isCompleted ? 16 : 18,
             }}
+            title={isCompleted ? "Completed" : isInProgress ? "In progress" : "Not started"}
           >
-            {isCompleted ? "⟲" : isInProgress ? "▶" : "!"}
+            {isCompleted ? "✓" : isInProgress ? "▶" : "○"}
           </div>
 
+          {/* Progress bar */}
           <div>
+            <div className="flex justify-between items-center mb-1">
+              <span style={{ fontSize: 10, color: "#606066" }}>
+                {isCompleted ? "Completed" : isInProgress ? `${Math.round(progressPct)}%` : "Not started"}
+              </span>
+            </div>
             <div
               style={{
                 width: "100%",
-                height: 18,
+                height: 6,
                 background: "#3b3b40",
-                borderRadius: 12,
+                borderRadius: 6,
                 overflow: "hidden",
               }}
             >
               <div
                 style={{
-                  width: `${Math.min(100, progressPct)}%`,
+                  width: `${Math.min(100, isCompleted ? 100 : progressPct)}%`,
                   height: "100%",
-                  borderRadius: 12,
-                  background: isCompleted ? "#22c55e" : "#dc2626",
+                  borderRadius: 6,
+                  background: isCompleted ? "#22c55e" : "var(--color-accent)",
                   transition: "width 1s ease",
                 }}
               />
@@ -258,8 +289,25 @@ function ModuleCard({
 
 // ── ModuleHero (single-module dedicated banner) ───────────────────────────────
 
-function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg: ModuleConfig; programName: string | null; courseCount: number; memberBusinessType?: string | null }) {
+function ModuleHero({
+  cfg,
+  programName,
+  courseCount,
+  memberBusinessType,
+  primaryCourseTitle,
+}: {
+  cfg: ModuleConfig;
+  programName: string | null;
+  courseCount: number;
+  memberBusinessType?: string | null;
+  primaryCourseTitle?: string | null;
+}) {
   const accent = cfg.accentColor ?? "var(--color-accent)";
+  // When a single course dominates this module, show its title as the main heading.
+  // The module displayName becomes a secondary label shown below.
+  const mainTitle = primaryCourseTitle ?? cfg.displayName ?? cfg.moduleName;
+  const subLabel = primaryCourseTitle ? (cfg.displayName ?? cfg.moduleName) : null;
+
   return (
     <div
       className="relative overflow-hidden rounded-2xl mb-8"
@@ -277,11 +325,12 @@ function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg
       )}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.3) 100%)" }} />
       <div className="relative p-8 flex flex-col justify-center" style={{ minHeight: 180 }}>
+        {/* Program badge */}
         {programName && (
           <div
             style={{
               display: "inline-block",
-              marginBottom: 10,
+              marginBottom: 8,
               padding: "3px 12px",
               borderRadius: 999,
               background: `${accent}22`,
@@ -296,9 +345,24 @@ function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg
             {programName}
           </div>
         )}
+        {/* Module label — shown as secondary text when a course title takes the h1 */}
+        {subLabel && (
+          <div
+            style={{
+              marginBottom: 6,
+              color: "rgba(255,255,255,0.55)",
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.5px",
+              textTransform: "uppercase",
+            }}
+          >
+            {subLabel}
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3 flex-wrap" style={{ marginBottom: 8 }} data-testid="modules-heading-row">
-          <h1 className="overlay-text min-w-0" style={{ fontSize: 28, fontWeight: 700, margin: 0, maxWidth: 480 }}>
-            {cfg.displayName ?? cfg.moduleName}
+          <h1 className="overlay-text min-w-0" style={{ fontSize: 26, fontWeight: 700, margin: 0, maxWidth: 520, lineHeight: 1.25 }}>
+            {mainTitle}
           </h1>
           <ModulesFaqButton />
         </div>
@@ -307,14 +371,14 @@ function ModuleHero({ cfg, programName, courseCount, memberBusinessType }: { cfg
             {cfg.tagline}
           </p>
         )}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-1.5" style={{ color: "#ccc", fontSize: 12 }}>
             <BookOpen size={13} />
             <span>{courseCount} {courseCount === 1 ? "course" : "courses"}</span>
           </div>
           {memberBusinessType && (
             <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 999, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", fontSize: 11, fontWeight: 600 }}>
-              <span style={{ opacity: 0.7 }}>Filtered for:</span>
+              <span style={{ opacity: 0.7 }}>For:</span>
               <span>{memberBusinessType}</span>
             </div>
           )}
@@ -731,6 +795,18 @@ export default function CoursesPage() {
     return moduleConfigs.find(m => m.moduleName === allowedModules[0]) ?? null;
   }, [allowedModules, moduleConfigs]);
 
+  // Dynamic page title: when a member sees exactly one course in their module,
+  // use that course's actual title as the hero heading instead of the generic
+  // module display name (e.g. "Product Mastery"). This surfaces the real course
+  // name ("90-Day Product Business Program") for the member's business category.
+  const primaryCourseTitle = useMemo(() => {
+    if (allowedModules.length !== 1) return null;
+    const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
+    if (accessible.length === 1) return accessible[0].title as string;
+    if (accessible.length === 0 && filteredCourses.length === 1) return filteredCourses[0].title as string;
+    return null;
+  }, [allowedModules, filteredCourses, enrolledMap]);
+
   // Learning Roadmap course: the most recently watched enrolled course that isn't
   // finished, else the latest unfinished enrollment. None → no roadmap.
   const roadmapCourseId: string | null = useMemo(() => {
@@ -802,6 +878,7 @@ export default function CoursesPage() {
             programName={programName}
             courseCount={filteredCourses.length}
             memberBusinessType={memberBusinessType}
+            primaryCourseTitle={primaryCourseTitle}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
           <CourseGrid
@@ -882,6 +959,27 @@ export default function CoursesPage() {
               ))}
             </div>
           )}
+
+          {/* Dynamic course title for the active module tab */}
+          {(() => {
+            const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
+            const tabCourseTitle = accessible.length === 1 ? accessible[0].title
+              : accessible.length === 0 && filteredCourses.length === 1 ? filteredCourses[0].title
+              : null;
+            if (!tabCourseTitle) return null;
+            return (
+              <div className="mb-4 flex items-center gap-3">
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: "#f5f5f7" }}>
+                  {tabCourseTitle as string}
+                </h3>
+                {activeTab && (
+                  <span style={{ padding: "2px 10px", borderRadius: 999, background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.3)", color: "var(--color-accent)", fontSize: 11, fontWeight: 600 }}>
+                    {availableModules.find(m => m.name === activeTab)?.displayName ?? activeTab}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
 
