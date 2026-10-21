@@ -8,6 +8,8 @@ import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 import { loadGraphConfig, loadMemberGraphRecords } from '../../lib/weeklyGraphConfigData.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
+import { debitCoins } from '../../lib/supportCallData.js';
+import { invalidateCache } from '../../lib/cache.js';
 
 // Program calendar for the daily-activity ledger (lib/activityDays.ts): a batch
 // day / task counts on the member's local submission day, not the UTC date.
@@ -1020,50 +1022,64 @@ export async function requestBreakHandler(req: FastifyRequest, reply: FastifyRep
   return reply.send({ success: true, data: record, error: null });
 }
 
-// POST /api/user-batch/spend-coins — deduct TBT coins for an extra lifeline
+// Price of one coin-bought batch task lifeline. Set here, never by the client;
+// the web and mobile clients show the same figure.
+export const BATCH_LIFELINE_COIN_COST = 50;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// POST /api/user-batch/spend-coins — buy an extra lifeline for a batch task with TBT coins.
+// body { amount?, taskId?, dayNumber? }: `amount` is only the price the member saw;
+// a different figure is refused rather than charged.
 export async function spendCoinsHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
   const { amount, taskId, dayNumber } = (req.body as any) ?? {};
-  const cost = typeof amount === 'number' && amount > 0 ? amount : 50;
+  const cost = BATCH_LIFELINE_COIN_COST;
+  if (amount != null && amount !== cost) {
+    return reply.status(409).send({
+      success: false, data: null, error: `The lifeline price is ${cost} TBT coins. Please refresh and try again.`,
+    });
+  }
+  if (taskId != null && (typeof taskId !== 'string' || !UUID_RE.test(taskId))) {
+    return reply.status(400).send({ success: false, data: null, error: 'Invalid taskId' });
+  }
+  const day = typeof dayNumber === 'number' && Number.isInteger(dayNumber) ? dayNumber : null;
 
   const member = await req.server.prisma.member.findUnique({
     where: { id: memberId },
     select: { batchId: true },
   });
 
-  const [sumRow] = await req.server.prisma.$queryRawUnsafe<Array<{ sum: bigint }>>(
-    'SELECT COALESCE(SUM(points), 0)::bigint AS sum FROM tbt_activity_log WHERE member_id = $1::uuid',
-    memberId,
-  );
-  const currentCoins = Number(sumRow?.sum ?? 0);
+  // Debit, audit row and the timer reset commit together or not at all.
+  const result = await req.server.prisma.$transaction(async (tx) => {
+    const debit = await debitCoins(tx, memberId, cost, 'lifeline_spend');
+    if (!debit.ok) return debit;
+    await tx.$executeRawUnsafe(
+      `INSERT INTO lifeline_usages (member_id, batch_id, task_id, day_number, coins_spent)
+       VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)`,
+      memberId, member?.batchId ?? null, taskId ?? null, day, cost,
+    );
+    // The lifeline restarts this task's focus timer server-side too, so the
+    // submit-time expiry check measures from now rather than the first open.
+    if (member?.batchId && taskId && day != null) {
+      await tx.$executeRawUnsafe(
+        `UPDATE task_submissions SET timer_started_at = NOW(), submitted_after_expiry = FALSE, updated_at = NOW()
+         WHERE member_id = $1::uuid AND task_id = $2::uuid AND batch_id = $3::uuid AND day_number = $4`,
+        memberId, taskId, member.batchId, day,
+      );
+    }
+    return debit;
+  });
 
-  if (currentCoins < cost) {
+  if (!result.ok) {
     return reply.status(400).send({
       success: false,
       data: null,
-      error: `Insufficient TBT coins. You have ${currentCoins} coins but need ${cost}.`,
+      error: `Insufficient TBT coins. You have ${result.balance} coins but need ${cost}.`,
     });
   }
-
-  await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date)
-     VALUES ($1::uuid, $2::int, 'lifeline_spend', NOW()::date)`,
-    memberId,
-    -cost,
-  );
-
-  // Audit trail — log which task/day this lifeline was used for
-  await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO lifeline_usages (member_id, batch_id, task_id, day_number, coins_spent)
-     VALUES ($1::uuid, $2, $3, $4, $5)`,
-    memberId,
-    member?.batchId ?? null,
-    taskId ?? null,
-    typeof dayNumber === 'number' ? dayNumber : null,
-    cost,
-  );
-
-  return reply.send({ success: true, data: { remainingCoins: currentCoins - cost }, error: null });
+  void invalidateCache(req.server.redis ?? null, `me:${memberId}`);
+  return reply.send({ success: true, data: { remainingCoins: result.balance, coinsSpent: cost }, error: null });
 }
 
 // Admin: GET /api/batches/:id/pending — all pending approval records with task submissions
@@ -1319,7 +1335,7 @@ export async function useLifelineHandler(req: FastifyRequest, reply: FastifyRepl
   const used  = (rows[0] as any)?.lifelines_used  ?? 0;
 
   if (used >= total) {
-    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
+    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: BATCH_LIFELINE_COIN_COST });
   }
 
   // Conditional increment + usage log in one transaction: a rapid double-click can't
@@ -1343,7 +1359,7 @@ export async function useLifelineHandler(req: FastifyRequest, reply: FastifyRepl
   });
 
   if (!updated) {
-    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: 50 });
+    return reply.send({ success: false, data: null, error: 'exhausted', coinsRequired: BATCH_LIFELINE_COIN_COST });
   }
 
   const newTotal = Number(updated.lifelines_total);

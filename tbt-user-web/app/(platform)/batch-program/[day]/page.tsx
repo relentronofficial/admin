@@ -37,6 +37,7 @@ import {
   type TaskSubmissionProof,
 } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
+import { useCoinBalance } from "@/lib/hooks/useCoins";
 import { getServerNow } from "@/lib/api/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useSocket } from "@/lib/socket/useSocket";
@@ -96,7 +97,8 @@ export default function BatchDayPage() {
   const { upload: uploadProof } = useUploadTaskProof();
 
   const MAX_FREE_LIFELINES = 3;
-  const LIFELINE_COIN_COST = 50;
+  const LIFELINE_COIN_COST = 50; // BATCH_LIFELINE_COIN_COST in user-batch/controller.ts
+  const { data: coinBalance } = useCoinBalance();
 
   const totalDays: number = (program as any)?.totalDays ?? 90;
 
@@ -531,7 +533,7 @@ export default function BatchDayPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Your balance</span>
-                <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+                <span className="font-bold">{coinBalance ?? "—"} coins</span>
               </div>
             </div>
             <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
@@ -547,7 +549,7 @@ export default function BatchDayPage() {
               </button>
               <button
                 onClick={() => handleSpendCoins(coinDialog.taskId, coinDialog.duration)}
-                disabled={spendCoins.isPending || (me?.totalPoints ?? 0) < LIFELINE_COIN_COST}
+                disabled={spendCoins.isPending || (coinBalance ?? 0) < LIFELINE_COIN_COST}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
                 style={{ background: "#d97706" }}
               >

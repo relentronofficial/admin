@@ -50,6 +50,7 @@ import {
 } from '../../lib/supportCallLogic.js';
 import {
   COIN_CALL_SPEND_SOURCE,
+  debitCoins,
   loadAllCallCoinCosts,
   loadCallCoinCost,
   loadCategoryQuota,
@@ -5139,32 +5140,43 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
     });
   }
 
-  // type === 'coin' — deduct coins from tbt_activity_log
-  const coinCost = cfg.lifelineCoinCost ?? 50;
-  const purchasedSoFar = state.purchasedUsed ?? 0;
-  if (purchasedSoFar >= cfg.maxPurchasedLifelines) return fail(reply, 400, 'Max purchased lifelines reached');
-  const balanceRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT COALESCE(SUM(points), 0) AS balance FROM tbt_activity_log WHERE member_id = $1::uuid`,
-    memberId,
-  );
-  const balance = Number(balanceRows[0]?.balance ?? 0);
-  if (balance < coinCost) return fail(reply, 400, 'Insufficient TBT coins');
-  await request.server.prisma.$executeRawUnsafe(
-    `INSERT INTO tbt_activity_log (member_id, points, source, activity_date) VALUES ($1::uuid, $2, 'lifeline_spend', NOW()::DATE)`,
-    memberId, -coinCost,
-  );
-  await request.server.prisma.$executeRawUnsafe(
-    `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
-     VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
-     ON CONFLICT (member_id, episode_id) DO UPDATE SET
-       purchased_used = episode_lifeline_state.purchased_used + 1,
-       total_used = episode_lifeline_state.total_used + 1,
-       updated_at = NOW()`,
-    memberId, episodeId,
-  );
+  if (type !== 'coin') return fail(reply, 400, 'type must be free or coin');
+
+  // type === 'coin' — the wallet lock is taken first, then the purchase cap is
+  // re-read, the coins debited and the lifeline granted in one transaction, so
+  // parallel requests can neither overspend nor pass maxPurchasedLifelines.
+  const coinCost = Number(cfg.lifelineCoinCost ?? 50);
+  const result = await request.server.prisma.$transaction(async (tx) => {
+    await lockCoinWallet(tx, memberId);
+    const [cur] = await tx.$queryRawUnsafe<any[]>(
+      `SELECT purchased_used AS "purchasedUsed" FROM episode_lifeline_state WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
+      memberId, episodeId,
+    );
+    if (Number(cur?.purchasedUsed ?? 0) >= cfg.maxPurchasedLifelines) return { error: 'Max purchased lifelines reached' as const };
+    const debit = await debitCoins(tx, memberId, coinCost, 'lifeline_spend');
+    if (!debit.ok) return { error: 'Insufficient TBT coins' as const };
+    const [st] = await tx.$queryRawUnsafe<any[]>(
+      `INSERT INTO episode_lifeline_state (member_id, episode_id, purchased_used, total_used, updated_at)
+       VALUES ($1::uuid, $2::uuid, 1, 1, NOW())
+       ON CONFLICT (member_id, episode_id) DO UPDATE SET
+         purchased_used = episode_lifeline_state.purchased_used + 1,
+         total_used = episode_lifeline_state.total_used + 1,
+         updated_at = NOW()
+       RETURNING free_used AS "freeUsed", total_used AS "totalUsed"`,
+      memberId, episodeId,
+    );
+    return { state: st, balance: debit.balance, error: null };
+  });
+  if ('error' in result && result.error) return fail(reply, 400, result.error);
+  void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
   return reply.send({
     success: true,
-    data: { freeRemaining: Math.max(0, cfg.lifelineCount - state.freeUsed), totalUsed: state.totalUsed + 1, coinsDeducted: coinCost, remainingCoins: balance - coinCost },
+    data: {
+      freeRemaining: Math.max(0, cfg.lifelineCount - Number(result.state.freeUsed ?? 0)),
+      totalUsed: Number(result.state.totalUsed),
+      coinsDeducted: coinCost,
+      remainingCoins: result.balance,
+    },
     error: null,
   });
 }
