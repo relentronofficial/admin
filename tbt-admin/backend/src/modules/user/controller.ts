@@ -7454,6 +7454,17 @@ async function loadActiveCoinPackages(request: FastifyRequest): Promise<CoinPack
   return rows.map(mapCoinPackage);
 }
 
+// GET /api/user/coins/balance — the member's spendable TBT coins: the same
+// ledger sum (loadCoinBalance) every coin spend checks against. Own record only.
+export async function getCoinBalanceHandler(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    return ok(reply, { balance: await loadCoinBalance(request.server.prisma, request.memberId!) });
+  } catch (err) {
+    request.log.error({ err }, 'coin balance read failed');
+    return fail(reply, 503, 'Could not load your coin balance');
+  }
+}
+
 // GET /api/user/coins/packages — admin packages, or the original package when none are set up.
 export async function listCoinPackagesHandler(request: FastifyRequest, reply: FastifyReply) {
   const packages = await loadActiveCoinPackages(request);

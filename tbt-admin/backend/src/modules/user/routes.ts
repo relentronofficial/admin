@@ -125,6 +125,7 @@ import {
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
   listCoinPackagesHandler,
+  getCoinBalanceHandler,
   getSupportCallsSummaryHandler,
   getMentorshipStatsHandler,
   getMentorshipModulesHandler,
@@ -323,6 +324,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
 
   // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
+  fastify.get('/coins/balance', getCoinBalanceHandler);
   fastify.get('/coins/packages', listCoinPackagesHandler);
   fastify.post('/coins/razorpay/create-order', createCoinOrderHandler);
   fastify.post('/coins/razorpay/verify', verifyCoinPaymentHandler);

@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
 import { batchProgramService } from "@/lib/api/services/batchProgram.service";
+import { invalidateCoinBalance } from "./useCoins";
 
 export type TaskSubmissionProof = { value?: string; url?: string; type: string };
 
@@ -134,6 +135,7 @@ export const useSubmitBatchDay = () => {
       qc.invalidateQueries({ queryKey: ["my-batch"] });
       qc.invalidateQueries({ queryKey: ["user", "streak"] });
       qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
+      void invalidateCoinBalance(qc); // early-completion bonus coins
     },
   });
 };
@@ -163,7 +165,10 @@ export const useSpendCoins = () => {
       const res: any = await apiClient.post('/api/user-batch/spend-coins', { amount, taskId, dayNumber });
       return res.data as { remainingCoins: number };
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["user", "me"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user", "me"] });
+      void invalidateCoinBalance(qc);
+    },
   });
 };
 
