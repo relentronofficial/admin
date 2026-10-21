@@ -146,10 +146,16 @@ export function adminFaqDto(r: FaqRow) {
   };
 }
 
-/** What members get: only id/question/answer, and only for published rows, in display order. */
+/** What members get: published rows in display order, including optional video. */
 export function publicFaqList(rows: FaqRow[]) {
   return rows
     .filter((r) => !!r.is_published)
     .sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
-    .map((r) => ({ id: r.id, question: r.question, answer: r.answer }));
+    .map((r) => ({
+      id: r.id,
+      question: r.question,
+      answer: r.answer,
+      videoUrl: r.video_url ?? null,
+      bunnyVideoId: r.bunny_video_id ?? null,
+    }));
 }

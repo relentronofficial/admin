@@ -6,6 +6,8 @@ export interface ModuleFaq {
   id: string;
   question: string;
   answer: string;
+  videoUrl?: string | null;
+  bunnyVideoId?: string | null;
 }
 
 export const moduleFaqsService = {

@@ -119,10 +119,26 @@ function FaqModal({ onClose }: { onClose: () => void }) {
                         id={panelId}
                         role="region"
                         aria-label={faq.question}
-                        className="px-4 pb-4 whitespace-pre-line break-words"
-                        style={{ fontSize: 13, lineHeight: 1.65, color: "#c8c8ce" }}
+                        className="px-4 pb-4 space-y-3"
                       >
-                        {faq.answer}
+                        {faq.answer && (
+                          <p className="whitespace-pre-line break-words m-0" style={{ fontSize: 13, lineHeight: 1.65, color: "#c8c8ce" }}>
+                            {faq.answer}
+                          </p>
+                        )}
+                        {faq.videoUrl && (
+                          <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                            <iframe
+                              src={faq.videoUrl}
+                              title={faq.question}
+                              allow="autoplay; fullscreen"
+                              allowFullScreen
+                              loading="lazy"
+                              className="absolute inset-0 w-full h-full border-0"
+                              style={{ borderRadius: 8 }}
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </li>
