@@ -64,22 +64,23 @@ function WeeklyActivityGraphContent() {
     );
   }
 
-  const weeks = graph!.weeks;
+  const weeks = graph!.weeks as any[];
   if (weeks.length === 0) return null;
 
   const weekPrefix = s?.batchGraphWeekPrefix ?? "W";
-  // Y axis bottom → top: the program's configured milestones from the API, or
-  // the original five when talking to a backend that predates the config.
-  const configured = graph!.config?.milestones;
-  const milestones = configured?.length
-    ? configured.map((m) => m.label)
+
+  // Build the milestone list with reached status from the API response.
+  const configured = graph!.config?.milestones as any[] | undefined;
+  const milestones: { label: string; reached: boolean }[] = configured?.length
+    ? configured.map((m: any) => ({ label: m.label as string, reached: !!m.reached }))
     : [
-        s?.batchGraphMilestoneAds ?? "Ads",
-        s?.batchGraphMilestoneWebsite ?? "Website",
-        s?.batchGraphMilestoneFunnels ?? "Funnels",
-        s?.batchGraphMilestoneLakh ?? "1 lakh",
-        s?.batchGraphMilestoneCrore ?? "1 crore",
+        { label: s?.batchGraphMilestoneAds ?? "Ads", reached: false },
+        { label: s?.batchGraphMilestoneWebsite ?? "Website", reached: false },
+        { label: s?.batchGraphMilestoneFunnels ?? "Funnels", reached: false },
+        { label: s?.batchGraphMilestoneLakh ?? "1 lakh", reached: false },
+        { label: s?.batchGraphMilestoneCrore ?? "1 crore", reached: false },
       ];
+
   const weekLabel = (w: { label?: string; weekNumber: number }) => w.label || `${weekPrefix}${w.weekNumber}`;
   const PLOT_H = LEVEL_GAP * Math.max(milestones.length, 1);
   const yFor = (level: number) => TOP + PLOT_H - Math.min(level, milestones.length) * LEVEL_GAP;
@@ -91,44 +92,126 @@ function WeeklyActivityGraphContent() {
 
   // Weeks that have started, in order — the line never extends into the future.
   const plotted = weeks
-    .map((w, i) => ({ w, x: colX(i) }))
-    .filter(({ w }) => w.progressLevel !== null);
-  const linePoints = plotted.map(({ w, x }) => `${x},${yFor(w.progressLevel!)}`).join(" ");
+    .map((w: any, i: number) => ({ w, x: colX(i) }))
+    .filter(({ w }: { w: any }) => w.progressLevel !== null);
+  const linePoints = plotted
+    .map(({ w, x }: { w: any; x: number }) => `${x},${yFor(w.progressLevel!)}`)
+    .join(" ");
+
+  const summary = graph!.summary as any;
 
   return (
     <div>
       {header}
+
+      {/* Overall progress summary row */}
+      <div className="flex items-center gap-2 mb-3 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+        <span>
+          {summary.completed} of {summary.total} tasks approved
+        </span>
+        {(summary.completionPercent ?? 0) > 0 && (
+          <span
+            className="px-2 py-0.5 rounded-full text-white text-[10px] font-semibold"
+            style={{ background: "var(--color-accent)" }}
+          >
+            {summary.completionPercent}%
+          </span>
+        )}
+      </div>
+
       <div
         ref={boxRef}
         className="rounded-xl border p-3 overflow-x-auto"
         style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
       >
-        <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} className="block">
-          {/* Milestone gridlines + labels */}
-          {milestones.map((label, i) => (
+        <svg
+          width={width}
+          height={height}
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={title}
+          className="block"
+        >
+          {/* Current week column background highlight */}
+          {weeks.map((w: any, i: number) =>
+            w.isCurrent ? (
+              <rect
+                key={`col-${i}`}
+                x={LEFT + i * col + 2}
+                y={TOP}
+                width={col - 4}
+                height={PLOT_H}
+                rx={3}
+                fill="var(--color-accent)"
+                opacity={0.08}
+              />
+            ) : null
+          )}
+
+          {/* Milestone gridlines + labels.
+              Reached milestones render in accent; unreached render as dashed gray. */}
+          {milestones.map((m, i) => (
             <g key={i}>
               <line
-                x1={LEFT} x2={width - RIGHT} y1={yFor(i + 1)} y2={yFor(i + 1)}
-                stroke="var(--color-border-subtle)"
+                x1={LEFT}
+                x2={width - RIGHT}
+                y1={yFor(i + 1)}
+                y2={yFor(i + 1)}
+                stroke={m.reached ? "var(--color-accent)" : "var(--color-border-subtle)"}
+                strokeWidth={m.reached ? 1.5 : 1}
+                strokeDasharray={m.reached ? undefined : "3,3"}
+                opacity={m.reached ? 0.55 : 0.9}
               />
-              <text x={LEFT - 10} y={yFor(i + 1) + 4} textAnchor="end" fontSize="11" fill="var(--color-text-secondary)">
-                {label}
+              <text
+                x={LEFT - 8}
+                y={yFor(i + 1) + 4}
+                textAnchor="end"
+                fontSize="10"
+                fill={m.reached ? "var(--color-accent)" : "var(--color-text-secondary)"}
+                fontWeight={m.reached ? "600" : "400"}
+              >
+                {m.label}
               </text>
             </g>
           ))}
 
           {/* Axes */}
           <line x1={LEFT} x2={LEFT} y1={TOP - 4} y2={yFor(0)} stroke="var(--color-text-subtle)" />
-          <line x1={LEFT} x2={width - RIGHT} y1={yFor(0)} y2={yFor(0)} stroke="var(--color-text-subtle)" />
+          <line
+            x1={LEFT}
+            x2={width - RIGHT}
+            y1={yFor(0)}
+            y2={yFor(0)}
+            stroke="var(--color-text-subtle)"
+          />
 
-          {/* Week labels */}
-          {weeks.map((w, i) => (
-            <text key={w.weekNumber} x={colX(i)} y={yFor(0) + 17} textAnchor="middle" fontSize="11" fill="var(--color-text-secondary)">
+          {/* Y-axis baseline label */}
+          <text
+            x={LEFT - 8}
+            y={yFor(0) + 4}
+            textAnchor="end"
+            fontSize="10"
+            fill="var(--color-text-subtle)"
+          >
+            Start
+          </text>
+
+          {/* Week labels — current week in accent + bold */}
+          {weeks.map((w: any, i: number) => (
+            <text
+              key={w.weekNumber}
+              x={colX(i)}
+              y={yFor(0) + 17}
+              textAnchor="middle"
+              fontSize="10"
+              fill={w.isCurrent ? "var(--color-accent)" : "var(--color-text-secondary)"}
+              fontWeight={w.isCurrent ? "700" : "400"}
+            >
               {weekLabel(w)}
             </text>
           ))}
 
-          {/* Progress line + weekly points */}
+          {/* Progress line */}
           {plotted.length > 1 && (
             <polyline
               points={linePoints}
@@ -139,11 +222,65 @@ function WeeklyActivityGraphContent() {
               strokeLinecap="round"
             />
           )}
-          {plotted.map(({ w, x }) => (
-            <circle key={w.weekNumber} cx={x} cy={yFor(w.progressLevel!)} r={4} fill="var(--color-accent)">
-              <title>{weekLabel(w)}</title>
-            </circle>
-          ))}
+
+          {/* Weekly dots with rich tooltips.
+              Hollow ring = work submitted/in-progress but not yet approved by admin.
+              Filled circle = approved progress recorded. */}
+          {plotted.map(({ w, x }: { w: any; x: number }) => {
+            const activities: any[] = w.activities ?? [];
+            const pendingCount = activities.filter(
+              (a: any) => a.status === "submitted" || a.status === "in_progress"
+            ).length;
+            const hasPendingWork = (w.progressLevel ?? 0) === 0 && pendingCount > 0;
+            const cy = yFor(w.progressLevel!);
+            const pct = w.completionPercent ?? 0;
+
+            // Milestone name this level corresponds to (floor — "at or past X level").
+            const levelFloor = Math.floor(w.progressLevel!);
+            const levelName =
+              w.progressLevel! >= 1 && milestones[levelFloor - 1]
+                ? milestones[levelFloor - 1].label
+                : null;
+
+            const tooltip = [
+              weekLabel(w),
+              w.total > 0 ? `${w.completed}/${w.total} tasks approved` : "No tasks",
+              pct > 0 ? `(${pct}%)` : null,
+              levelName ? `Level: ${levelName}` : null,
+              pendingCount > 0 ? `${pendingCount} pending approval` : null,
+              w.isCurrent ? "← Current week" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+
+            return hasPendingWork ? (
+              // Hollow ring: work done but awaiting admin approval
+              <circle
+                key={w.weekNumber}
+                cx={x}
+                cy={cy}
+                r={5}
+                fill="none"
+                stroke="var(--color-accent)"
+                strokeWidth={2}
+                strokeDasharray="3,2"
+                opacity={0.6}
+              >
+                <title>{tooltip}</title>
+              </circle>
+            ) : (
+              // Solid dot: approved progress
+              <circle
+                key={w.weekNumber}
+                cx={x}
+                cy={cy}
+                r={5}
+                fill="var(--color-accent)"
+              >
+                <title>{tooltip}</title>
+              </circle>
+            );
+          })}
         </svg>
       </div>
     </div>
