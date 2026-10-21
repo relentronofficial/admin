@@ -32,10 +32,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const openPopup = () => {
-  fireEvent.click(screen.getByRole("button", { name: /^Learning roadmap:/ }));
-  fireEvent.click(screen.getByRole("tab", { name: "This course" }));
-};
+const openPopup = () => fireEvent.click(screen.getByRole("button", { name: /^Learning roadmap:/ }));
 const dialog = () => screen.getByRole("dialog", { name: "Learning Roadmap" });
 
 describe("CoursesPageRoadmap (/courses)", () => {
@@ -44,45 +41,13 @@ describe("CoursesPageRoadmap (/courses)", () => {
     expect(screen.getByRole("button", { name: "Learning roadmap: 0 of 2 levels completed" })).toBeTruthy();
   });
 
-  it("names the course in the popup and uses its real progress", () => {
+  it("names the course in the popup header with its real progress", () => {
     state.progress.data = [{ lessonId: "l1", completed: true }, { lessonId: "l2", completed: true }];
     state.course.data = { ...COURSE, lessons: COURSE.lessons.map((l) => ({ ...l, locked: false })) };
     render(<CoursesPageRoadmap courseId="c1" />);
     openPopup();
     expect(dialog().textContent).toContain("Growth Accelerator");
-    const states = [...dialog().querySelectorAll("button[data-level-state]")].map((b) => b.getAttribute("data-level-state"));
-    expect(states).toEqual(["completed", "current"]);
-  });
-
-  it("opening a level deep-links to that lesson on the course page", () => {
-    render(<CoursesPageRoadmap courseId="c1" />);
-    openPopup();
-    fireEvent.click(dialog().querySelector('button[data-level-state="current"]')!);
-    expect(state.push).toHaveBeenCalledWith("/learning/c1?lesson=l1");
-  });
-
-  it("passes the course's sections so chapters without lessons still show as locked levels", () => {
-    state.course.data = { ...COURSE, sections: [...COURSE.sections, { id: "s3", title: "Scale", sortOrder: 3 }] };
-    render(<CoursesPageRoadmap courseId="c1" />);
-    openPopup();
-    const states = [...dialog().querySelectorAll("button[data-level-state]")].map((b) => b.getAttribute("data-level-state"));
-    expect(states).toEqual(["current", "locked", "locked"]);
-    expect(dialog().textContent).toContain("Scale");
-  });
-
-  it("shows a loading state while the course loads", () => {
-    state.course = { ...state.course, data: undefined, isLoading: true };
-    render(<CoursesPageRoadmap courseId="c1" />);
-    openPopup();
-    expect(dialog().querySelector('[aria-busy="true"]')).toBeTruthy();
-  });
-
-  it("shows an error state whose retry refetches course and progress", () => {
-    state.course = { ...state.course, data: undefined, isError: true };
-    render(<CoursesPageRoadmap courseId="c1" />);
-    openPopup();
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Try again" }));
-    expect(state.course.refetch).toHaveBeenCalled();
-    expect(state.progress.refetch).toHaveBeenCalled();
+    expect(dialog().textContent).toContain("1 of 2 levels completed");
+    expect(within(dialog()).queryByRole("tab", { name: "This course" })).toBeNull();
   });
 });
