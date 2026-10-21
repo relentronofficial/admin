@@ -379,19 +379,27 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
 // ── SavedVideoCard ─────────────────────────────────────────────────────────────
 
 function SavedVideoCard({ item }: { item: any }) {
+  // Course: deep-link to the specific lesson.
+  // Workshop: pass ?ep= so the workshop detail page can auto-play the right episode.
   const href =
     item.type === "course"
-      ? `/learning/${item.courseId}?lesson=${item.episodeId}`
-      : `/workshop/${item.workshopSlug}`;
+      ? `/learning/${item.courseId ?? ""}?lesson=${item.episodeId}`
+      : `/workshop/${item.workshopSlug ?? ""}?ep=${item.episodeId}`;
+
+  const isCompleted = item.isCompleted as boolean;
+  const progressPct = Math.min(100, item.progressPercent ?? 0);
+  const contextTitle: string =
+    item.type === "course"
+      ? (item.courseTitle ?? "")
+      : (item.workshopTitle ?? "");
 
   return (
     <Link href={href} className="block">
       <div
-        className="relative flex flex-col items-center justify-center text-center overflow-hidden"
+        className="relative flex flex-col justify-end overflow-hidden"
         style={{
           height: 151,
           borderRadius: 12,
-          padding: "12px 16px",
           border: "1px solid #414146",
           cursor: "pointer",
           background:
@@ -413,7 +421,7 @@ function SavedVideoCard({ item }: { item: any }) {
             }}
           />
         )}
-        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} />
+        <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.55)" }} />
         {!item.thumbnailUrl && (
           <div
             style={{
@@ -425,47 +433,82 @@ function SavedVideoCard({ item }: { item: any }) {
             }}
           />
         )}
+
+        {/* Play / Done badge */}
+        <div
+          className="absolute flex items-center justify-center"
+          style={{
+            top: 8,
+            left: 10,
+            zIndex: 1,
+            width: 28,
+            height: 28,
+            borderRadius: "50%",
+            background: isCompleted ? "rgba(34,197,94,0.2)" : "rgba(255,255,255,0.15)",
+            border: `1px solid ${isCompleted ? "rgba(34,197,94,0.6)" : "rgba(255,255,255,0.3)"}`,
+            color: isCompleted ? "#22c55e" : "white",
+          }}
+        >
+          {isCompleted ? (
+            <span style={{ fontSize: 13 }}>✓</span>
+          ) : (
+            <Play size={12} fill="white" />
+          )}
+        </div>
+
+        {/* Type badge */}
         <div
           style={{
             position: "absolute",
             top: 8,
             right: 9,
             zIndex: 1,
-            color: "white",
-            fontSize: 7,
-            fontWeight: 800,
+            padding: "2px 6px",
+            borderRadius: 4,
+            background: "rgba(0,0,0,0.5)",
+            color: "#a0a0a8",
+            fontSize: 9,
+            fontWeight: 700,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
           }}
         >
-          ✦ TBT BUSINESS
+          {item.type === "course" ? "Course" : "Workshop"}
         </div>
-        <div
-          className="relative flex items-center justify-center"
-          style={{
-            zIndex: 1,
-            marginBottom: 8,
-            width: 36,
-            height: 36,
-            borderRadius: "50%",
-            background: "rgba(255,255,255,0.15)",
-            border: "1px solid rgba(255,255,255,0.3)",
-            color: "white",
-            fontSize: 14,
-          }}
-        >
-          <Play size={14} />
-        </div>
-        <div
-          className="line-clamp-2 relative"
-          style={{
-            zIndex: 1,
-            color: "white",
-            fontSize: 12,
-            fontWeight: 600,
-            lineHeight: 1.3,
-            padding: "0 4px",
-          }}
-        >
-          {item.episodeTitle ?? item.workshopTitle ?? item.courseTitle}
+
+        {/* Text + progress at bottom */}
+        <div className="relative" style={{ zIndex: 1, padding: "0 10px 10px" }}>
+          {contextTitle && (
+            <div
+              className="truncate"
+              style={{ color: "#a0a0b0", fontSize: 9, fontWeight: 600, marginBottom: 2, letterSpacing: "0.3px" }}
+            >
+              {contextTitle}
+            </div>
+          )}
+          <div
+            className="line-clamp-2"
+            style={{
+              color: "white",
+              fontSize: 12,
+              fontWeight: 600,
+              lineHeight: 1.3,
+              marginBottom: 8,
+            }}
+          >
+            {item.episodeTitle}
+          </div>
+          {/* Progress bar */}
+          <div style={{ height: 3, background: "rgba(255,255,255,0.15)", borderRadius: 3, overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${isCompleted ? 100 : progressPct}%`,
+                height: "100%",
+                borderRadius: 3,
+                background: isCompleted ? "#22c55e" : "var(--color-accent)",
+              }}
+            />
+          </div>
         </div>
       </div>
     </Link>
