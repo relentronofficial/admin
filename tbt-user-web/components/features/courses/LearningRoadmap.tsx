@@ -261,15 +261,8 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                 role="tablist"
                 aria-label="Roadmap view"
                 className="flex gap-1 px-5 pt-3"
-                onKeyDown={(e) => {
-                  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-                  e.preventDefault();
-                  const next = tab === "growth" ? "course" : "growth";
-                  setTab(next);
-                  document.getElementById(`tbt-roadmap-tab-${next}`)?.focus();
-                }}
               >
-                {(["growth", "course"] as const).map((t) => (
+                {(["growth"] as const).map((t) => (
                   <button
                     key={t}
                     id={`tbt-roadmap-tab-${t}`}
@@ -286,7 +279,7 @@ export default function LearningRoadmap<L extends RoadmapLesson>({
                       outlineColor: "var(--color-accent)",
                     }}
                   >
-                    {t === "growth" ? "Growth milestones" : "This course"}
+                    Growth milestones
                   </button>
                 ))}
               </div>
