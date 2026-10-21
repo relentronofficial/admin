@@ -2635,6 +2635,27 @@ export interface SupportSession {
   seatsLeft: number;
 }
 
+// Sample-data mode for /support-calls (lib/mocks/supportCallsDemo.ts), `next dev` only.
+// The two list queries repeat the env check inline instead of using this constant:
+// webpack can only drop a branch, and the import() inside it, when the condition is
+// written out in place, which keeps the sample data out of production bundles.
+export const SUPPORT_CALLS_DEMO =
+  process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1';
+const SUPPORT_CALLS_DEMO_READONLY =
+  'Sample data mode: changes are not saved. Unset NEXT_PUBLIC_SUPPORT_CALLS_DEMO to manage real sessions.';
+
+export interface SupportSessionBooking {
+  id: string;
+  status: 'booked' | 'cancelled' | 'attended' | 'no_show';
+  bookedAt: string;
+  cancelledAt: string | null;
+  memberId: string;
+  memberName: string;
+  phone: string | null;
+  email: string | null;
+  coinCost?: number | null;
+}
+
 export interface SupportSessionInput {
   category?: SupportCallCategory;
   title?: string;
@@ -2651,6 +2672,9 @@ export const useListSupportSessions = (params: { category?: string; scope?: 'upc
   useQuery({
     queryKey: ['support-sessions', params],
     queryFn: async () => {
+      if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1') {
+        return (await import('../mocks/supportCallsDemo')).demoSupportSessions(params);
+      }
       const res: any = await apiClient.get('/api/support-entitlements/sessions', { params });
       return (res?.data ?? []) as SupportSession[];
     },
@@ -2662,6 +2686,7 @@ export const useCreateSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: SupportSessionInput) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.post('/api/support-entitlements/sessions', data);
       return res?.data as SupportSession;
     },
@@ -2673,6 +2698,7 @@ export const useUpdateSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: SupportSessionInput }) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.put(`/api/support-entitlements/sessions/${id}`, data);
       return res?.data as SupportSession;
     },
@@ -2684,6 +2710,7 @@ export const useCancelSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.post(`/api/support-entitlements/sessions/${id}/cancel`);
       return res?.data as { id: string; status: string; cancelledBookings: number };
     },
@@ -2698,11 +2725,11 @@ export const useSupportSessionBookings = (sessionId: string | null) =>
   useQuery({
     queryKey: ['support-session-bookings', sessionId],
     queryFn: async () => {
+      if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1') {
+        return (await import('../mocks/supportCallsDemo')).demoSupportSessionBookings(sessionId!);
+      }
       const res: any = await apiClient.get(`/api/support-entitlements/sessions/${sessionId}/bookings`);
-      return (res?.data ?? []) as Array<{
-        id: string; status: 'booked' | 'cancelled' | 'attended' | 'no_show'; bookedAt: string;
-        cancelledAt: string | null; memberId: string; memberName: string; phone: string | null; email: string | null; coinCost?: number | null;
-      }>;
+      return (res?.data ?? []) as SupportSessionBooking[];
     },
     enabled: !!sessionId,
     staleTime: 15_000,
@@ -2712,6 +2739,7 @@ export const useMarkSupportBooking = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'attended' | 'no_show' }) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.put(`/api/support-entitlements/bookings/${id}/status`, { status });
       return res?.data;
     },

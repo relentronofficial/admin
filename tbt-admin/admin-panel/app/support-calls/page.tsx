@@ -16,6 +16,7 @@ import {
   useSupportSessionBookings,
   useMarkSupportBooking,
   useSupportCallHosts,
+  SUPPORT_CALLS_DEMO,
   type SupportCallCategory,
   type SupportSession,
   type SupportSessionInput,
@@ -363,6 +364,12 @@ export default function SupportCallsPage() {
             </button>
           )}
         </div>
+
+        {SUPPORT_CALLS_DEMO && (
+          <div className="rounded-lg border border-[rgba(234,179,8,0.35)] bg-[rgba(234,179,8,0.08)] px-4 py-2.5 text-[12px] text-[#eab308]">
+            Showing sample data (NEXT_PUBLIC_SUPPORT_CALLS_DEMO=1). Names and contacts are fictional and nothing is saved.
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-3 items-center">
           <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1">
