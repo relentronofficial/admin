@@ -280,28 +280,20 @@ describe("MentorshipDashboard", () => {
 });
 
 describe("MentorshipDashboard — lifeline hearts", () => {
-  /** The red lifeline pill: filled ❤️ = remaining, faded 🤍 = used, and the + buy button. */
+  /** The red lifeline pill: filled ❤️ = remaining, faded 🤍 = used. */
   const pill = () => {
     const el = [...document.querySelectorAll("span")].find((s) => /❤️|🤍/.test(s.textContent ?? "") && s.style.background !== "")!;
     return {
-      el,
       filled: (el.textContent!.match(/❤️/g) ?? []).length,
       used: (el.textContent!.match(/🤍/g) ?? []).length,
-      plus: [...el.querySelectorAll<HTMLButtonElement>("button[data-lifeline-buy]")],
+      buttons: el.querySelectorAll("button").length,
     };
   };
-  const plusCount = () => document.querySelectorAll("button[data-lifeline-buy]").length;
   const withLifelines = (total: number, used: number) => {
     state.batch = { data: { lifelinesTotal: total, lifelinesUsed: used }, isLoading: false };
   };
-  /** Backend stats.programVideos — the single source of truth for the "+". */
-  const withVideos = (pv: { total: number; completed: number } | null | undefined) => {
-    state.stats = { ...state.stats, data: { ...state.stats.data, programVideos: pv } };
-    if (pv === undefined) delete state.stats.data.programVideos;
-  };
-  const ALL_DONE = { total: 10, completed: 10 };
 
-  it("hearts keep showing the lifeline balance (filled = remaining, faded = used)", () => {
+  it("shows filled hearts for remaining lifelines and faded hearts for used ones", () => {
     for (const used of [0, 1, 2, 3]) {
       withLifelines(3, used);
       render(<MentorshipDashboard />);
@@ -310,114 +302,20 @@ describe("MentorshipDashboard — lifeline hearts", () => {
     }
   });
 
-  it("no required videos completed: no +", () => {
-    withVideos({ total: 10, completed: 0 });
-    render(<MentorshipDashboard />);
-    expect(plusCount()).toBe(0);
-  });
-
-  it("some required videos completed: no +", () => {
-    withVideos({ total: 10, completed: 9 });
-    render(<MentorshipDashboard />);
-    expect(plusCount()).toBe(0);
-  });
-
-  it("all required videos completed: exactly ONE +", () => {
-    withVideos(ALL_DONE);
-    render(<MentorshipDashboard />);
-    expect(pill().plus).toHaveLength(1);
-    expect(plusCount()).toBe(1);
-  });
-
-  it("missing / null completion data keeps the + hidden", () => {
-    for (const pv of [undefined, null]) {
-      withVideos(pv);
+  it("never shows a + (no purchase button in the pill), whatever the lifelines or video completion", () => {
+    state.stats = { ...state.stats, data: { ...state.stats.data, programVideos: { total: 10, completed: 10 } } };
+    for (const used of [0, 3]) {
+      withLifelines(3, used);
       render(<MentorshipDashboard />);
-      expect(plusCount()).toBe(0);
+      expect(pill().buttons).toBe(0);
+      expect(document.querySelectorAll("button[data-lifeline-buy]")).toHaveLength(0);
       cleanup();
     }
   });
 
-  it("zero eligible required videos keeps the + hidden", () => {
-    withVideos({ total: 0, completed: 0 });
-    render(<MentorshipDashboard />);
-    expect(plusCount()).toBe(0);
-  });
-
-  it("the + follows video completion, not the lifeline balance", () => {
-    // all three hearts used, videos not finished → no +
-    withLifelines(3, 3);
-    withVideos({ total: 10, completed: 4 });
-    render(<MentorshipDashboard />);
-    expect(pill()).toMatchObject({ filled: 0, used: 3 });
-    expect(plusCount()).toBe(0);
-    cleanup();
-    // videos finished with hearts still unused → one +
-    withLifelines(3, 0);
-    withVideos(ALL_DONE);
-    render(<MentorshipDashboard />);
-    expect(pill()).toMatchObject({ filled: 3, used: 0 });
-    expect(plusCount()).toBe(1);
-  });
-
-  it("repeated renders never add more + buttons", () => {
-    withVideos(ALL_DONE);
-    const { rerender } = render(<MentorshipDashboard />);
-    for (let i = 0; i < 4; i++) rerender(<MentorshipDashboard />);
-    expect(plusCount()).toBe(1);
-  });
-
-  it("no lifeline data (not in a batch): no hearts and no +, even with all videos done", () => {
-    withVideos(ALL_DONE);
+  it("no lifeline data: no hearts", () => {
     state.batch = { data: null, isLoading: false };
     render(<MentorshipDashboard />);
-    expect(plusCount()).toBe(0);
     expect(document.body.textContent).not.toMatch(/❤️|🤍/);
-  });
-
-  it("labels the + with the admin-configured Extra Lifeline price", () => {
-    withVideos(ALL_DONE);
-    state.pricing = [{ credit_type: "tech_support", price_inr: 999 }, { credit_type: "lifeline", price_inr: "249.00" }];
-    render(<MentorshipDashboard />);
-    expect(screen.getByRole("button", { name: "Buy an extra lifeline for ₹249" })).toBeTruthy();
-  });
-
-  it("clicking + starts one purchase and shows its message (purchase flow unchanged)", async () => {
-    withVideos(ALL_DONE);
-    state.buy = { buy: vi.fn(async () => ({ outcome: "error", stage: "order", code: "PRICE_NOT_CONFIGURED" })), busy: false };
-    render(<MentorshipDashboard />);
-    fireEvent.click(pill().plus[0]);
-    expect(state.buy.buy).toHaveBeenCalledTimes(1);
-    await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalled());
-    expect(toastMock.error.mock.calls[0][0]).toContain("ref: PRICE_NOT_CONFIGURED");
-  });
-
-  it("a successful purchase shows the success message", async () => {
-    withVideos(ALL_DONE);
-    state.buy = { buy: vi.fn(async () => ({ outcome: "success" })), busy: false };
-    render(<MentorshipDashboard />);
-    fireEvent.click(pill().plus[0]);
-    await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Extra lifeline added!", expect.anything()));
-  });
-
-  it("a cancelled checkout shows the cancel message and nothing else", async () => {
-    withVideos(ALL_DONE);
-    state.buy = { buy: vi.fn(async () => ({ outcome: "cancelled" })), busy: false };
-    render(<MentorshipDashboard />);
-    fireEvent.click(pill().plus[0]);
-    await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("Payment cancelled — no lifeline added.", expect.anything()));
-    expect(toastMock.success).not.toHaveBeenCalled();
-  });
-
-  it("while a purchase is in progress the + is disabled, busy and shows a spinner", () => {
-    withVideos(ALL_DONE);
-    state.buy = { buy: vi.fn(), busy: true };
-    render(<MentorshipDashboard />);
-    const btn = pill().plus[0];
-    expect(btn.disabled).toBe(true);
-    expect(btn.getAttribute("aria-busy")).toBe("true");
-    expect(btn.querySelector(".animate-spin")).toBeTruthy();
-    fireEvent.click(btn);
-    expect(state.buy.buy).not.toHaveBeenCalled();
   });
 });
