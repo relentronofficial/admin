@@ -141,6 +141,8 @@ export default function MembersListPage() {
   // CP-14: per-member course module override state
   const [editModuleOverride, setEditModuleOverride] = useState<boolean>(false);
   const [editAllowedModules, setEditAllowedModules] = useState<string[]>([]);
+  // CV-09: admin-assigned business category visibility
+  const [editBusinessCategories, setEditBusinessCategories] = useState<string[]>([]);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
@@ -307,6 +309,7 @@ export default function MembersListPage() {
       setOriginalBatchId(editingMember.batchId || "");
       setApproveBatchId(editingMember.batchId || "");
       setEditProfilePhotoUrl(editingMember.profilePhotoUrl || "");
+      setEditBusinessCategories(Array.isArray((editingMember as any).businessCategories) ? (editingMember as any).businessCategories : []);
       reset({
         firstName: editingMember.firstName || "",
         lastName: editingMember.lastName || "",
@@ -427,6 +430,8 @@ export default function MembersListPage() {
       } else if (hadOverride) {
         payload.overrideModules = false;
       }
+      // CV-09: always send businessCategories (empty array = no restriction)
+      payload.businessCategories = editBusinessCategories;
       await updateMember.mutateAsync({ id: editingMember.id, data: payload });
       toast.success("Member updated successfully");
       setEditingMember(null);
@@ -690,6 +695,7 @@ export default function MembersListPage() {
                                     const mods = (member as any).allowedModules;
                                     setEditModuleOverride(Array.isArray(mods));
                                     setEditAllowedModules(Array.isArray(mods) ? mods : []);
+                                    setEditBusinessCategories(Array.isArray((member as any).businessCategories) ? (member as any).businessCategories : []);
                                     setActiveMenuId(null);
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-[12px] text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a] transition-colors font-bold uppercase tracking-wider font-rajdhani"
@@ -816,6 +822,14 @@ export default function MembersListPage() {
                       <InfoItem label="Enterprise Name" value={viewingMember.businessName || 'N/A'} />
                       <InfoItem label="Business Type" value={viewingMember.productServiceType || 'N/A'} />
                       <InfoItem label="Course Module" value={(viewingMember as any).businessType || 'Not set'} />
+                      <InfoItem
+                        label="Assigned Categories"
+                        value={
+                          Array.isArray((viewingMember as any).businessCategories) && (viewingMember as any).businessCategories.length > 0
+                            ? (viewingMember as any).businessCategories.join(", ")
+                            : "All courses (no restriction)"
+                        }
+                      />
                       <InfoItem label="Established" value={safeFormatDate(viewingMember.businessEstablishedOn)} />
                       <InfoItem label="Annual Turnover" value={viewingMember.annualTurnover || 'N/A'} />
                       <InfoItem label="GST Identifier" value={viewingMember.gstNumber || 'N/A'} />
@@ -1362,6 +1376,38 @@ export default function MembersListPage() {
                       )}
                     </div>
                   </div>
+                </section>
+
+                {/* CV-09: Assigned Business Categories */}
+                <section className="px-8 py-6 border-b border-[#2a2a2a]">
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-4">
+                    Assigned Business Categories
+                  </h3>
+                  <p className="text-[#606060] text-xs mb-4">
+                    Controls which courses are visible to this member. Leave all unchecked to show all courses.
+                  </p>
+                  <div className="space-y-2">
+                    {(["Product", "Service", "Coaching"] as const).map((cat) => (
+                      <label key={cat} className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={editBusinessCategories.includes(cat)}
+                          onChange={(e) => {
+                            setEditBusinessCategories(prev =>
+                              e.target.checked ? [...prev, cat] : prev.filter((c) => c !== cat)
+                            );
+                          }}
+                          className="accent-[#dc2626] w-4 h-4"
+                        />
+                        <span className="text-sm text-[#f0f0f0]">
+                          {cat === "Product" ? "Product-Based Business" : cat === "Service" ? "Service-Based Business" : "Coaching Business"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {editBusinessCategories.length === 0 && (
+                    <p className="text-[11px] text-[#606060] mt-2">No restriction — member sees all courses.</p>
+                  )}
                 </section>
 
                 {/* CP-14: Course Module Access Override */}

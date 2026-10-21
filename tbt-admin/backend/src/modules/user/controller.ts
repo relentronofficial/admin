@@ -30,6 +30,7 @@ import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess, saveMemberModuleSelection } from '../../lib/memberModuleAccess.js';
+import { isCourseVisible } from '../../lib/courseVisibility.js';
 import {
   computeSupportQuota,
   SUPPORT_USAGE_COUNTS_SQL,
@@ -593,6 +594,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
     instructor: any; module: string | null; requiredTier: number;
     applicableBusinessTypes: string[] | null;
+    batchVisibilityIds: string[];
     _count: { lessons: number; enrollments: number };
   };
   type CatalogCache = { entries: CatalogEntry[]; total: number };
@@ -625,7 +627,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         SELECT
           c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
           c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-          c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types,
+          c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types, c.batch_visibility_ids,
           a.id AS creator_id, a.full_name AS creator_full_name,
           a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -684,6 +686,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
           instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
           applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
+          batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
           _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
         };
       });
@@ -715,7 +718,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       SELECT
         c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
         c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
-        c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types,
+        c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types, c.batch_visibility_ids,
         a.id AS creator_id, a.full_name AS creator_full_name,
         a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -773,6 +776,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         isFeatured: r.is_featured, createdAt: r.created_at, xpPerEpisode: r.xp_per_episode ?? 10,
         instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
         applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
+        batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
         _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
       };
     });
@@ -804,13 +808,13 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   let allowedModules: string[] = [];
   let programName: string | null = null;
 
-  // v2: added businessType to the cached payload for business-type course filtering
-  const personKey = `courses:personalization:v2:${request.memberId}`;
-  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none'; memberTier: number; businessType: string | null };
+  // v3: added businessCategories + batchId for CV-04 admin-assigned category filter
+  const personKey = `courses:personalization:v3:${request.memberId}`;
+  type PersonCtx = { state: 'program' | 'direct' | 'new'; modules: string[]; name: string | null; sourceType: 'member_override' | 'program' | 'none'; memberTier: number; businessType: string | null; businessCategories: string[]; batchId: string | null };
   const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
-    // Fetch batch_id + allowed_modules + current_tier + business_type in one raw SQL call
+    // Fetch batch_id + allowed_modules + current_tier + business_type + business_categories in one call
     const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT m.batch_id, s.allowed_modules, m.current_tier, m.business_type
+      `SELECT m.batch_id, s.allowed_modules, m.current_tier, m.business_type, m.business_categories
        FROM members m LEFT JOIN member_module_settings s ON s.member_id = m.id
        WHERE m.id = $1::uuid`,
       request.memberId
@@ -818,6 +822,8 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     const memberRow = memberRows[0];
     const memberTier = Number(memberRow?.current_tier ?? 1);
     const businessType: string | null = memberRow?.business_type ?? null;
+    const businessCategories: string[] = (memberRow?.business_categories as string[] | null) ?? [];
+    const batchId: string | null = memberRow?.batch_id ?? null;
 
     // CP-11: member-level override takes priority over program
     const memberModuleOverride = memberRow?.allowed_modules;
@@ -826,7 +832,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         ? memberModuleOverride
         : JSON.parse(memberModuleOverride);
       const overrideState: PersonCtx['state'] = parsed.length > 0 ? 'program' : 'direct';
-      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const, memberTier, businessType };
+      return { state: overrideState, modules: parsed, name: null, sourceType: 'member_override' as const, memberTier, businessType, businessCategories, batchId };
     }
 
     if (memberRow?.batch_id) {
@@ -842,10 +848,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         const raw = b.allowed_modules;
         const mods: string[] = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
         if (mods.length > 0) {
-          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const, memberTier, businessType };
+          return { state: 'program' as const, modules: mods, name: b.name ?? null, sourceType: 'program' as const, memberTier, businessType, businessCategories, batchId };
         }
       }
-      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType };
+      return { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType, businessCategories, batchId };
     }
 
     const anyAccess = await (request.server.prisma as any).courseAccess.findFirst({
@@ -853,8 +859,8 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       select: { id: true },
     }).catch(() => null);
     return anyAccess
-      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType }
-      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType };
+      ? { state: 'direct' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType, businessCategories, batchId }
+      : { state: 'new' as const, modules: [], name: null, sourceType: 'none' as const, memberTier, businessType, businessCategories, batchId };
   });
 
   personalizationState = personCtx.state;
@@ -887,16 +893,32 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   data = data.filter((c) => (c.requiredTier ?? 1) <= memberTier || c.hasAccess);
   total = Math.max(0, total - (beforeTierFilter - data.length));
 
-  // Filter courses by the member's business type. Courses with no tags (null / empty)
-  // are visible to everyone. Only apply when the member has a business type set.
+  // CV-04: Admin-assigned category visibility gate (business_categories).
+  // When admin has categorised the member, only matching or General Content
+  // courses are shown. Falls back to the legacy single-businessType filter
+  // for members with no admin-assigned categories (backward compat).
   const memberBusinessType = personCtx.businessType;
-  if (memberBusinessType) {
-    const beforeBizFilter = data.length;
-    data = data.filter((c) => {
-      const tags = c.applicableBusinessTypes;
-      return !tags || tags.length === 0 || tags.includes(memberBusinessType);
-    });
-    total = Math.max(0, total - (beforeBizFilter - data.length));
+  const memberBusinessCategories: string[] = personCtx.businessCategories ?? [];
+  if (memberBusinessCategories.length > 0) {
+    const beforeCatFilter = data.length;
+    data = data.filter((c) =>
+      isCourseVisible(
+        { applicableBusinessTypes: c.applicableBusinessTypes, batchVisibilityIds: c.batchVisibilityIds },
+        { businessCategories: memberBusinessCategories, batchId: personCtx.batchId ?? null },
+      )
+    );
+    total = Math.max(0, total - (beforeCatFilter - data.length));
+  } else {
+    // Legacy: single self-selected business type (BT-06 system)
+    const memberBusinessType = personCtx.businessType;
+    if (memberBusinessType) {
+      const beforeBizFilter = data.length;
+      data = data.filter((c) => {
+        const tags = c.applicableBusinessTypes;
+        return !tags || tags.length === 0 || tags.includes(memberBusinessType);
+      });
+      total = Math.max(0, total - (beforeBizFilter - data.length));
+    }
   }
 
   // CP-12/CP-13: Fetch module configs (shared across all members, longer TTL)
@@ -982,6 +1004,33 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   // Deactivated courses are hidden from the catalog; refuse direct URL access as well.
   if (!(course as any).isActive && !hasAccess) return fail(reply, 404, 'Course not found');
+
+  // CV-05: business-category visibility gate. Runs before the mentorship module
+  // check. Members with explicit CourseAccess bypass this via hasAccess above
+  // (they keep access to already-enrolled courses regardless of category changes).
+  // General Content (empty applicable_business_types) always passes.
+  {
+    const [visRows, memberVisRows] = await Promise.all([
+      request.server.prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
+        `SELECT applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
+      ).catch(() => []),
+      request.server.prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null }[]>(
+        `SELECT business_categories, batch_id FROM members WHERE id = $1::uuid`, request.memberId!,
+      ).catch(() => []),
+    ]);
+    if (!isCourseVisible(
+      {
+        applicableBusinessTypes: (visRows[0]?.applicable_business_types as string[] | null) ?? null,
+        batchVisibilityIds: (visRows[0]?.batch_visibility_ids as string[] | null) ?? [],
+      },
+      {
+        businessCategories: (memberVisRows[0]?.business_categories as string[] | null) ?? [],
+        batchId: memberVisRows[0]?.batch_id ?? null,
+      },
+    )) {
+      return fail(reply, 403, 'Course not available for your account');
+    }
+  }
 
   if (!(await isCourseInMemberModules(request, id))) return fail(reply, 403, MODULE_NOT_SELECTED);
 

@@ -77,4 +77,6 @@ export const updateMemberSchema = createMemberSchema.partial().extend({
   // CP-14: per-member course module override
   overrideModules: z.boolean().optional(),
   allowedModules: z.array(z.string()).optional(),
+  // CV-06: admin-assigned business category visibility gate
+  businessCategories: z.array(z.string()).nullable().optional(),
 });

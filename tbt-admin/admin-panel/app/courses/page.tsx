@@ -37,6 +37,7 @@ import {
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
 import { useListMembers } from "@/lib/hooks/useMembers";
+import { useListBatches } from "@/lib/hooks/useTbt";
 import { useBusinessTypes } from "@/lib/hooks/useMasters";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
@@ -55,6 +56,7 @@ const EMPTY_COURSE = {
   paymentLinkUrl: "",
   module: "" as string,
   applicableBusinessTypes: [] as string[],
+  batchVisibilityIds: [] as string[],
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
 };
@@ -157,6 +159,8 @@ export default function CoursesPage() {
   const tiers: any[] = (tiersData as any)?.data || [];
   const { data: businessTypesData } = useBusinessTypes();
   const businessTypeOptions: string[] = (businessTypesData ?? []).map((b: any) => b.name);
+  const { data: batchesData } = useListBatches();
+  const batches: any[] = (batchesData as any)?.data || [];
   const createCourse = useCreateVodCourse();
   const updateCourse = useUpdateVodCourse();
   const deleteCourse = useDeleteVodCourse();
@@ -226,6 +230,7 @@ export default function CoursesPage() {
       paymentLinkUrl: c.paymentLinkUrl || "",
       module: c.module || "",
       applicableBusinessTypes: c.applicableBusinessTypes ?? [],
+      batchVisibilityIds: c.batchVisibilityIds ?? [],
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -247,6 +252,7 @@ export default function CoursesPage() {
     payload.paymentLinkUrl = courseForm.paymentLinkUrl.trim() || null;
     payload.module = courseForm.module || null;
     payload.applicableBusinessTypes = courseForm.applicableBusinessTypes?.length ? courseForm.applicableBusinessTypes : null;
+    payload.batchVisibilityIds = courseForm.batchVisibilityIds ?? [];
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
@@ -382,7 +388,27 @@ export default function CoursesPage() {
                         {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
                         {c.module && <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">{c.module}</span>}
-                        {c.applicableBusinessTypes?.length > 0 && <span className="text-[10px] text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded font-bold shrink-0" title={c.applicableBusinessTypes.join(", ")}>{c.applicableBusinessTypes.length} biz type{c.applicableBusinessTypes.length > 1 ? "s" : ""}</span>}
+                        {(c.applicableBusinessTypes ?? []).length === 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-[#2a2a2a] text-[#888] shrink-0">General</span>
+                        ) : (
+                          (c.applicableBusinessTypes ?? []).map((t: string) => (
+                            <span
+                              key={t}
+                              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold shrink-0"
+                              style={{
+                                background: t === "Product" ? "#1e3a5f" : t === "Service" ? "#1a3d2b" : "#3d1a3d",
+                                color: t === "Product" ? "#60a5fa" : t === "Service" ? "#4ade80" : "#c084fc",
+                              }}
+                            >
+                              {t}
+                            </span>
+                          ))
+                        )}
+                        {(c.batchVisibilityIds ?? []).length > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-[#3a2a1a] text-[#fb923c] shrink-0">
+                            +{c.batchVisibilityIds.length} batch{c.batchVisibilityIds.length > 1 ? "es" : ""}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
                       <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episodes · {c.xpPerEpisode ?? 10} XP/ep</p>
@@ -453,34 +479,62 @@ export default function CoursesPage() {
                   <option value="Coaching">Coaching</option>
                 </select>
               </div>
+              {/* CV-10: Course Visibility */}
               <div>
-                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Business Type Visibility</label>
-                <p className="text-[11px] text-[#606060] mb-2">Leave empty to show to all members. Select types to restrict.</p>
-                {businessTypeOptions.length === 0 ? (
-                  <p className="text-[11px] text-[#606060] italic">No business types configured yet — add them via Masters.</p>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Course Visibility</label>
+                <p className="text-[11px] text-[#606060] mb-2">Who can see this course? Leave all unchecked (General Content) to show to all members.</p>
+                <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={(courseForm.applicableBusinessTypes ?? []).length === 0}
+                    onChange={() => setCourseField("applicableBusinessTypes", [])}
+                    className="accent-[#dc2626] w-4 h-4"
+                  />
+                  <span className="text-sm text-[#f0f0f0] font-medium">General Content (visible to all members)</span>
+                </label>
+                <div className={`space-y-2 pl-1 transition-opacity ${(courseForm.applicableBusinessTypes ?? []).length === 0 ? "opacity-40 pointer-events-none" : ""}`}>
+                  {(["Product", "Service", "Coaching"] as const).map((cat) => (
+                    <label key={cat} className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={(courseForm.applicableBusinessTypes ?? []).includes(cat)}
+                        onChange={(e) => {
+                          const current: string[] = courseForm.applicableBusinessTypes ?? [];
+                          setCourseField("applicableBusinessTypes",
+                            e.target.checked ? [...current, cat] : current.filter((c) => c !== cat));
+                        }}
+                        className="accent-[#dc2626] w-4 h-4"
+                      />
+                      <span className="text-sm text-[#d0d0d0]">
+                        {cat === "Product" ? "Product-Based Business" : cat === "Service" ? "Service-Based Business" : "Coaching Business"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {/* CV-11: Batch Visibility */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Batch Visibility (Optional)</label>
+                <p className="text-[11px] text-[#606060] mb-2">Members of selected batches can see this course regardless of their assigned business categories. Does not grant enrollment access.</p>
+                {batches.length === 0 ? (
+                  <p className="text-[11px] text-[#606060] italic">No batches configured yet.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {businessTypeOptions.map((bt) => {
-                      const selected = courseForm.applicableBusinessTypes?.includes(bt);
-                      return (
-                        <button
-                          key={bt}
-                          type="button"
-                          onClick={() => {
-                            const current: string[] = courseForm.applicableBusinessTypes ?? [];
-                            setCourseField("applicableBusinessTypes",
-                              selected ? current.filter((x) => x !== bt) : [...current, bt]);
+                  <div className="space-y-2">
+                    {batches.map((batch: any) => (
+                      <label key={batch.id} className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={(courseForm.batchVisibilityIds ?? []).includes(batch.id)}
+                          onChange={(e) => {
+                            const current: string[] = courseForm.batchVisibilityIds ?? [];
+                            setCourseField("batchVisibilityIds",
+                              e.target.checked ? [...current, batch.id] : current.filter((id: string) => id !== batch.id));
                           }}
-                          className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border transition-all ${
-                            selected
-                              ? "bg-[#dc2626] border-[#dc2626] text-white"
-                              : "bg-transparent border-[#333] text-[#888] hover:border-[#dc2626] hover:text-white"
-                          }`}
-                        >
-                          {bt}
-                        </button>
-                      );
-                    })}
+                          className="accent-[#dc2626] w-4 h-4"
+                        />
+                        <span className="text-sm text-[#d0d0d0]">{batch.name}</span>
+                      </label>
+                    ))}
                   </div>
                 )}
               </div>

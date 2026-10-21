@@ -615,7 +615,7 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
         },
       }),
       request.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt" FROM members WHERE id = $1::uuid`,
+        `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt", business_categories AS "businessCategories" FROM members WHERE id = $1::uuid`,
         id,
       ),
       request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
@@ -662,6 +662,7 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       revenueGoalAfterTbt,
       overrideModules,
       allowedModules,
+      businessCategories,
       ...restBody
     } = body as any;
 
@@ -786,6 +787,16 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
         overrideModules === false ? null : (Array.isArray(allowedModules) ? allowedModules : []),
       );
     }
+    // CV-06: persist admin-assigned business category visibility gate
+    if (businessCategories !== undefined) {
+      await request.server.prisma.$executeRawUnsafe(
+        `UPDATE members SET business_categories = $1::jsonb WHERE id = $2::uuid`,
+        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
+        id,
+      );
+      void invalidateCache(request.server.redis ?? null, `courses:personalization:v3:${id}`);
+    }
+
     // Override and batch (program ceiling) both feed the mentorship module verdict.
     void invalidateMemberModuleAccess(request.server.redis ?? null, id);
 
@@ -819,7 +830,11 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       });
     }
 
-    return reply.send({ success: true, data: member, meta: { previousBatchProgressDays }, error: null });
+    const responseExtra: Record<string, unknown> = {};
+    if (businessCategories !== undefined) {
+      responseExtra.businessCategories = Array.isArray(businessCategories) ? businessCategories : [];
+    }
+    return reply.send({ success: true, data: { ...member, ...responseExtra }, meta: { previousBatchProgressDays }, error: null });
   } catch (err: any) {
     if (err.name === 'ZodError') {
       return reply.status(400).send({
