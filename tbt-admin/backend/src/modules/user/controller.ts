@@ -6495,7 +6495,8 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
   const take = Number(limit);
   const skip = (Number(page) - 1) * take;
   const redis = request.server.redis ?? null;
-  const cacheKey = `watch-hist:v1:${request.memberId}:${page}:${take}:${filter}`;
+  // v2: raw items are cached; visibility filtering happens post-cache with fresh member data
+  const cacheKey = `watch-hist:v2:${request.memberId}:${page}:${take}:${filter}`;
   const cached = await cacheGetOrCompute<{ items: any[]; total: number }>(redis, cacheKey, 60, async () => {
 
   const workshopWhere = {
@@ -6620,7 +6621,53 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
     return { items, total };
   });
 
-  return ok(reply, cached.items, { total: cached.total, page: Number(page), limit: take });
+  // Apply CV-06 visibility gate to course items using fresh member data (post-cache so
+  // category changes take effect immediately without needing cache invalidation)
+  const memberVisRow = await request.server.prisma.$queryRawUnsafe<
+    { business_categories: unknown; batch_id: string | null }[]
+  >(
+    `SELECT business_categories, batch_id FROM members WHERE id = $1::uuid`,
+    request.memberId,
+  );
+  const memberVis = {
+    businessCategories: Array.isArray(memberVisRow[0]?.business_categories)
+      ? (memberVisRow[0].business_categories as string[])
+      : [],
+    batchId: memberVisRow[0]?.batch_id ?? null,
+  };
+
+  const courseIds = cached.items
+    .filter((i: any) => i.type === 'course' && i.courseId)
+    .map((i: any) => i.courseId as string);
+
+  const courseVisMap = new Map<string, { applicableBusinessTypes: string[]; batchVisibilityIds: string[] }>();
+  if (courseIds.length > 0) {
+    const visRows = await request.server.prisma.$queryRawUnsafe<
+      { id: string; applicable_business_types: unknown; batch_visibility_ids: unknown }[]
+    >(
+      `SELECT id, applicable_business_types, batch_visibility_ids FROM courses WHERE id = ANY($1::uuid[])`,
+      courseIds,
+    );
+    for (const r of visRows) {
+      courseVisMap.set(r.id, {
+        applicableBusinessTypes: Array.isArray(r.applicable_business_types)
+          ? (r.applicable_business_types as string[])
+          : [],
+        batchVisibilityIds: Array.isArray(r.batch_visibility_ids)
+          ? (r.batch_visibility_ids as string[])
+          : [],
+      });
+    }
+  }
+
+  const visibleItems = cached.items.filter((item: any) => {
+    if (item.type !== 'course') return true;
+    const vis = courseVisMap.get(item.courseId);
+    if (!vis) return true;
+    return isCourseVisible(vis, memberVis);
+  });
+
+  return ok(reply, visibleItems, { total: cached.total, page: Number(page), limit: take });
 }
 
 export async function removeFromHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
