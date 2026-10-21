@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { loadProgramVideoProgress } from './programVideoProgress.js';
-import { invalidateMemberModuleAccess, invalidateModuleOptions } from './memberModuleAccess.js';
+import { invalidateMemberModuleAccess, invalidateModuleOptions, saveMemberAdminOverride, saveMemberModuleSelection } from './memberModuleAccess.js';
 
 // loadProgramVideoProgress against a REAL PostgreSQL — the real module-access
 // queries (memberModuleAccess.ts) and the real count query.
@@ -65,7 +65,7 @@ const progress = async (memberId = ME) => {
 };
 const setProgram = (modules: string[]) => prisma.$executeRawUnsafe(`UPDATE programs SET allowed_modules = $1::jsonb WHERE id = $2::uuid`, JSON.stringify(modules), PROGRAM);
 const setOverride = (memberId: string, modules: string[] | null) =>
-  prisma.$executeRawUnsafe(`UPDATE members SET allowed_modules = $1::jsonb WHERE id = $2::uuid`, modules === null ? null : JSON.stringify(modules), memberId);
+  saveMemberAdminOverride(prisma, memberId, modules);
 
 describe.skipIf(!RAW_URL)('loadProgramVideoProgress — real PostgreSQL', () => {
   beforeAll(async () => {
@@ -78,8 +78,9 @@ describe.skipIf(!RAW_URL)('loadProgramVideoProgress — real PostgreSQL', () => 
     for (const ddl of [
       `CREATE TABLE programs (id UUID PRIMARY KEY, allowed_modules JSONB DEFAULT '[]'::jsonb)`,
       `CREATE TABLE batches (id UUID PRIMARY KEY, program_id UUID REFERENCES programs(id))`,
-      `CREATE TABLE members (id UUID PRIMARY KEY, batch_id UUID REFERENCES batches(id), allowed_modules JSONB DEFAULT NULL,
-         mentorship_modules JSONB DEFAULT NULL, business_type VARCHAR(50))`,
+      `CREATE TABLE members (id UUID PRIMARY KEY, batch_id UUID REFERENCES batches(id), business_type VARCHAR(50))`,
+      `CREATE TABLE member_module_settings (member_id UUID PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+         allowed_modules JSONB, mentorship_modules JSONB, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
       `CREATE TABLE module_config (module_name VARCHAR(100) PRIMARY KEY, display_name TEXT, tagline TEXT, description TEXT,
          icon_url TEXT, accent_color TEXT, sort_order INT DEFAULT 0, is_active BOOLEAN DEFAULT true)`,
       `CREATE TABLE courses (id UUID PRIMARY KEY, module VARCHAR(100), is_published BOOLEAN NOT NULL DEFAULT false,
@@ -169,12 +170,12 @@ describe.skipIf(!RAW_URL)('loadProgramVideoProgress — real PostgreSQL', () => 
     await episodes(await course('Service'), 2);
     await episodes(await course('Product'), 3);
     await setProgram(['Product', 'Service']);
-    await prisma.$executeRawUnsafe(`UPDATE members SET mentorship_modules = '["Service"]'::jsonb WHERE id = $1::uuid`, ME);
+    await saveMemberModuleSelection(prisma, ME, ['Service']);
     try {
       expect(await progress(ME)).toEqual({ total: 2, completed: 0 });
       expect(await progress(OTHER)).toEqual({ total: 5, completed: 0 }); // no selection → whole ceiling
     } finally {
-      await prisma.$executeRawUnsafe(`UPDATE members SET mentorship_modules = NULL WHERE id = $1::uuid`, ME);
+      await prisma.$executeRawUnsafe(`UPDATE member_module_settings SET mentorship_modules = NULL WHERE member_id = $1::uuid`, ME);
     }
   });
 

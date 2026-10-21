@@ -29,7 +29,7 @@ import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
-import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
+import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess, saveMemberModuleSelection } from '../../lib/memberModuleAccess.js';
 import {
   computeSupportQuota,
   SUPPORT_USAGE_COUNTS_SQL,
@@ -809,7 +809,9 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
     // Fetch batch_id + allowed_modules + current_tier + business_type in one raw SQL call
     const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT batch_id, allowed_modules, current_tier, business_type FROM members WHERE id = $1::uuid`,
+      `SELECT m.batch_id, s.allowed_modules, m.current_tier, m.business_type
+       FROM members m LEFT JOIN member_module_settings s ON s.member_id = m.id
+       WHERE m.id = $1::uuid`,
       request.memberId
     ).catch(() => []);
     const memberRow = memberRows[0];
@@ -7630,10 +7632,7 @@ export async function updateMentorshipModulesHandler(request: FastifyRequest, re
   // selection stays on screen; saving again is idempotent.
   const SAVE_FAILED = "We couldn't save your mentorship selection right now. Please try again in a moment.";
   try {
-    await request.server.prisma.$executeRawUnsafe(
-      `UPDATE members SET mentorship_modules = $1::jsonb, updated_at = now() WHERE id = $2::uuid`,
-      JSON.stringify(result.modules), memberId,
-    );
+    await saveMemberModuleSelection(request.server.prisma, memberId, result.modules);
   } catch (err) {
     request.log.error({ err, memberId }, 'mentorship modules save failed');
     return fail(reply, 503, SAVE_FAILED);

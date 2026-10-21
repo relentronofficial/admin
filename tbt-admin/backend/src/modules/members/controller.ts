@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
-import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
+import { invalidateMemberModuleAccess, saveMemberAdminOverride } from '../../lib/memberModuleAccess.js';
 import { parseModuleList } from '../../lib/mentorshipModules.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
@@ -349,13 +349,16 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
     request.server.prisma.member.count({ where: where as any }),
   ]);
 
-  // CP-14: augment with allowed_modules (raw SQL column)
+  // CP-14: augment with module settings (raw SQL side table; no row = both null)
   if (members.length > 0) {
     const ids = members.map(m => m.id);
     const modRows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string; allowed_modules: any; mentorship_modules: any }>>(
-      `SELECT id::text, allowed_modules, mentorship_modules FROM members WHERE id = ANY($1::uuid[])`,
+      `SELECT member_id::text AS id, allowed_modules, mentorship_modules FROM member_module_settings WHERE member_id = ANY($1::uuid[])`,
       ids,
-    ).catch(() => []);
+    ).catch((err: unknown) => {
+      request.log.error({ err }, 'member module settings lookup failed');
+      return [];
+    });
     const modMap = new Map(modRows.map(r => [r.id, r.allowed_modules]));
     const selMap = new Map(modRows.map(r => [r.id, r.mentorship_modules]));
     for (const m of members as any[]) {
@@ -776,18 +779,12 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
 
     // CP-14: per-member course module override
     if (overrideModules !== undefined || allowedModules !== undefined) {
-      let newValue: string | null;
-      if (overrideModules === false) {
-        newValue = null; // remove override — fall back to program default
-      } else {
-        newValue = JSON.stringify(Array.isArray(allowedModules) ? allowedModules : []);
-      }
-      await request.server.prisma.$executeRawUnsafe(
-        `UPDATE members SET allowed_modules = $1::jsonb WHERE id = $2::uuid`,
-        newValue,
+      // false removes the override — fall back to the program default
+      await saveMemberAdminOverride(
+        request.server.prisma,
         id,
+        overrideModules === false ? null : (Array.isArray(allowedModules) ? allowedModules : []),
       );
-      void invalidateCache(request.server.redis ?? null, `courses:personalization:${id}`);
     }
     // Override and batch (program ceiling) both feed the mentorship module verdict.
     void invalidateMemberModuleAccess(request.server.redis ?? null, id);
