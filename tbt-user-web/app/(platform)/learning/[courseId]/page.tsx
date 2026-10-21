@@ -29,7 +29,7 @@ import {
   useCreateCoinOrder, useVerifyCoinPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
-import { invalidateCoinBalance } from "@/lib/hooks/useCoins";
+import { invalidateCoinBalance, useCoinBalance } from "@/lib/hooks/useCoins";
 import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
@@ -1508,7 +1508,6 @@ export default function CourseDetailPage({
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
   const MAX_FREE_LIFELINES = 3; // fallback until config/batch loads
-  const LIFELINE_COIN_COST = 50;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
@@ -1554,6 +1553,10 @@ export default function CourseDetailPage({
   const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
   const useEpisodeLifelineMutation = useUseEpisodeLifeline(selectedLesson?.id);
   const { data: episodeLifelineData } = useEpisodeLifelines(selectedLesson?.id);
+  // The server charges this episode's configured price against the ledger balance;
+  // show and gate on the same two values (the navbar reads the same balance query).
+  const LIFELINE_COIN_COST = Number(episodeLifelineData?.lifelineCoinCost ?? 50);
+  const { data: coinBalance } = useCoinBalance();
   const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
   // Stable refs for mutation functions (safe inside setInterval callbacks)
   const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
@@ -2879,7 +2882,7 @@ export default function CourseDetailPage({
 
       {/* ── Coin-Spend Lifeline Dialog ──────────────────────────────────── */}
       {coinDialog && (() => {
-        const hasEnoughCoins = (me?.totalPoints ?? 0) >= LIFELINE_COIN_COST;
+        const hasEnoughCoins = (coinBalance ?? 0) >= LIFELINE_COIN_COST;
         const allLifelinesUsed = lifelinesLeft === 0;
         const showGetCoinsPath = allLifelinesUsed && !hasEnoughCoins && razorpayOn;
         return (
@@ -2912,7 +2915,7 @@ export default function CourseDetailPage({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Your balance</span>
-                      <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+                      <span className="font-bold">{coinBalance ?? "—"} coins</span>
                     </div>
                   </>
                 ) : (
@@ -2923,7 +2926,7 @@ export default function CourseDetailPage({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Your balance</span>
-                      <span className="font-bold">{me?.totalPoints ?? "—"} coins</span>
+                      <span className="font-bold">{coinBalance ?? "—"} coins</span>
                     </div>
                   </>
                 )}
@@ -3144,7 +3147,7 @@ export default function CourseDetailPage({
                 totalSeconds={timerDurationRef.current || getLessonTimerDuration(selectedLesson)}
                 lifelinesLeft={lifelinesLeft}
                 maxLifelines={maxLifelines}
-                coinBalance={me?.totalPoints ?? undefined}
+                coinBalance={coinBalance ?? undefined}
                 lifelineCoinCost={LIFELINE_COIN_COST}
                 onBuyWithCoins={() => {
                   const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
@@ -3499,14 +3502,14 @@ export default function CourseDetailPage({
                 />
               ))}
             </span>
-            {me?.totalPoints != null && (
+            {coinBalance != null && (
               <span
                 className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
                 style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}
                 title="Your TBT coin balance"
               >
                 <Coins size={9} />
-                {me.totalPoints} coins
+                {coinBalance} coins
               </span>
             )}
             <button

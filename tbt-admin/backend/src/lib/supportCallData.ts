@@ -85,6 +85,32 @@ export async function lockCoinWallet(tx: TxDb, memberId: string): Promise<void> 
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `coin_wallet:${memberId}`);
 }
 
+export type CoinDebitResult = { ok: true; balance: number } | { ok: false; balance: number };
+
+/**
+ * Spends `cost` coins inside the caller's transaction: wallet lock, balance
+ * check and the negative ledger row, so parallel spends can't take the balance
+ * below zero. On `ok: false` nothing is written. `balance` is the balance after
+ * the debit (or the unchanged balance when refused).
+ */
+export async function debitCoins(
+  tx: TxDb,
+  memberId: string,
+  cost: number,
+  source: string,
+  referenceId: string | null = null,
+): Promise<CoinDebitResult> {
+  await lockCoinWallet(tx, memberId);
+  const balance = await loadCoinBalance(tx, memberId);
+  if (!(cost > 0) || balance < cost) return { ok: false, balance };
+  await tx.$executeRawUnsafe(
+    `INSERT INTO tbt_activity_log (member_id, points, source, reference_id, activity_date)
+     VALUES ($1::uuid, $2, $3, $4::uuid, NOW()::DATE)`,
+    memberId, -cost, source, referenceId,
+  );
+  return { ok: true, balance: balance - cost };
+}
+
 /** Admin-set coin price for one extra call, or null when coin unlock is off. */
 export async function loadCallCoinCost(db: Db, category: string): Promise<number | null> {
   const rows = await db.$queryRawUnsafe<any[]>(
