@@ -304,14 +304,11 @@ model Member {
   notificationPrefs     Json?              @map("notification_prefs")
   lastActiveAt          DateTime?          @map("last_active_at") @db.Timestamptz(6)
   lastSeenAt            DateTime?          @map("last_seen_at") @db.Timestamptz(6)
-  // Course-module access (lib/mentorshipModules.ts): admin override and the
-  // member's own onboarding choice (NULL = never chosen). Declared here — not
-  // only in the startup DDL — so the guarded CI schema sync creates them before
-  // a deploy; the startup ALTER on the busy members table could fail silently,
-  // which left production without mentorship_modules (PUT /api/user/mentorship/
-  // modules → 500 at onboarding step 2). Read/written via raw SQL.
-  allowedModules        Json?              @map("allowed_modules")
-  mentorshipModules     Json?              @map("mentorship_modules")
+  // Do not add columns to this model. Production `members` is at Postgres's
+  // 1600-column limit (dropped columns keep their slots; the old
+  // `db push --accept-data-loss` deploys dropped and re-added startup columns
+  // until the slots ran out). Put new per-member data in a side table keyed by
+  // member_id — see MemberModuleSettings.
   onboardingCompleted   Boolean            @default(false) @map("onboarding_completed")
   passwordHash          String?            @map("password_hash")
 
@@ -417,8 +414,25 @@ model Member {
   notificationDevices   NotificationDevice[]
   onboardingMeetings    OnboardingMeeting[]
   onboardingMeetingParticipations OnboardingMeetingParticipant[]
+  moduleSettings        MemberModuleSettings?
 
   @@map("members")
+}
+
+// Course-module access inputs (lib/mentorshipModules.ts), one row per member;
+// no row = both NULL. Kept off `members`, which cannot take new columns (see
+// the note on Member). Declared here so the guarded CI schema sync creates it
+// before a deploy. Read/written via raw SQL (lib/memberModuleAccess.ts).
+model MemberModuleSettings {
+  memberId          String   @id @map("member_id") @db.Uuid
+  /// Admin override — NULL = none; [] = explicitly all modules.
+  allowedModules    Json?    @map("allowed_modules")
+  /// The member's onboarding choice — NULL = never chosen.
+  mentorshipModules Json?    @map("mentorship_modules")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  member            Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@map("member_module_settings")
 }
 
 model Course {

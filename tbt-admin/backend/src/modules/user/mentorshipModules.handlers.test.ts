@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Real GET/PUT /api/user/mentorship/modules handlers against a small in-memory
-// store. Reproduces the onboarding step-2 production failure (members.
-// mentorship_modules missing → Postgres 42703 → bare 500) and checks the fixed
-// behaviour: validation, own-record-only writes, persistence across reloads,
-// and a clear 503 instead of "Internal Server Error" when the database fails.
+// store. The production failure was members.mentorship_modules missing (the
+// members table is at Postgres's 1600-column limit) → 42703 → bare 500. The
+// selection now lives in member_module_settings. Checks validation,
+// own-record-only writes, persistence across reloads, and a clear 503 (never an
+// unrestricted verdict) when the settings can't be read or written.
 
 vi.mock('../../config/env.js', () => ({ env: { PROGRAM_TIMEZONE: 'Asia/Kolkata', MENTORSHIP_DEMO_MEMBER_ID: '', MENTORSHIP_DEMO_EMAIL: '' } }));
 
@@ -21,13 +22,13 @@ const MODULES = [
 ];
 
 let selections: Record<string, unknown>;
-let columnMissing: boolean;
+let tableMissing: boolean;
 let updateFails: boolean;
 const updates: Array<{ memberId: string; value: string }> = [];
 
-const missingColumn = () =>
-  Object.assign(new Error('Raw query failed. Code: `42703`. Message: `column "mentorship_modules" of relation "members" does not exist`'), {
-    code: 'P2010', meta: { code: '42703' },
+const missingTable = () =>
+  Object.assign(new Error('Raw query failed. Code: `42P01`. Message: `relation "member_module_settings" does not exist`'), {
+    code: 'P2010', meta: { code: '42P01' },
   });
 
 async function sql(text: string, ...a: any[]): Promise<any> {
@@ -35,16 +36,16 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.includes('FROM module_config WHERE is_active = true')) {
     return MODULES.map((m) => ({ ...m, tagline: null, description: null, icon_url: null, accent_color: null }));
   }
-  if (q.startsWith('SELECT m.allowed_modules, m.mentorship_modules')) {
-    if (columnMissing) throw missingColumn();
+  if (q.startsWith('SELECT s.allowed_modules, s.mentorship_modules') && q.includes('LEFT JOIN member_module_settings s')) {
+    if (tableMissing) throw missingTable();
     const sel = selections[a[0]];
     return [{ allowed_modules: null, mentorship_modules: sel === undefined ? null : sel, business_type: null, program_modules: null }];
   }
-  if (q.startsWith('UPDATE members SET mentorship_modules')) {
-    if (columnMissing) throw missingColumn();
+  if (q.startsWith('INSERT INTO member_module_settings (member_id, mentorship_modules')) {
+    if (tableMissing) throw missingTable();
     if (updateFails) throw new Error('connection terminated');
-    updates.push({ memberId: a[1], value: a[0] });
-    selections[a[1]] = JSON.parse(a[0]);
+    updates.push({ memberId: a[0], value: a[1] });
+    selections[a[0]] = JSON.parse(a[1]);
     return 1;
   }
   throw new Error(`unhandled SQL: ${q.slice(0, 80)}`);
@@ -70,7 +71,7 @@ const load = (memberId?: string) => call(user.getMentorshipModulesHandler, { mem
 
 beforeEach(async () => {
   selections = {};
-  columnMissing = false;
+  tableMissing = false;
   updateFails = false;
   updates.length = 0;
   await invalidateMemberModuleAccess(null, MEMBER);
@@ -78,18 +79,18 @@ beforeEach(async () => {
 });
 
 describe('onboarding step 2 — save mentorship modules', () => {
-  it('reproduces the production failure: with the column missing, the save is a clear 503, not a bare 500', async () => {
-    columnMissing = true;
+  it('reproduces the production failure: with the settings table missing, the save is a clear 503, not a bare 500', async () => {
+    tableMissing = true;
     const r = await save(['Product']);
     expect(r.status).toBe(503);
-    // Fails closed at the access lookup — the missing column is never read as "no restrictions".
+    // Fails closed at the access lookup — a missing table is never read as "no restrictions".
     expect(r.body).toMatchObject({ success: false, data: null, error: { message: 'Could not load your mentorship modules' } });
-    expect(JSON.stringify(r.body)).not.toMatch(/42703|mentorship_modules|relation/);
+    expect(JSON.stringify(r.body)).not.toMatch(/42P01|42703|member_module_settings|relation/);
     expect(updates).toEqual([]);
   });
 
-  it('with the column missing, reading modules is a 503, not an unrestricted module list', async () => {
-    columnMissing = true;
+  it('with the settings table missing, reading modules is a 503, not an unrestricted module list', async () => {
+    tableMissing = true;
     const r = await load();
     expect(r.status).toBe(503);
     expect(r.body.data).toBeNull();
