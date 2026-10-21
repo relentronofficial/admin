@@ -101,6 +101,8 @@ export interface SupportCallsSummary {
 
 export interface BookSupportCallInput {
   sessionId: string;
+  /** The slot start the member was shown; the server refuses if the slot has moved since. */
+  expectedStartsAt?: string;
   /** Only with an explicit member confirmation of `expectedCoinCost`. */
   payWithCoins?: boolean;
   expectedCoinCost?: number;
@@ -114,10 +116,13 @@ export const supportCallsService = {
       params: { category },
     }),
 
-  book: ({ sessionId, payWithCoins, expectedCoinCost }: BookSupportCallInput) =>
+  book: ({ sessionId, payWithCoins, expectedCoinCost, expectedStartsAt }: BookSupportCallInput) =>
     apiClient.post<never, ApiResponse<SupportCallBookingConfirmation>>(
       `/api/user/support-calls/sessions/${sessionId}/book`,
-      payWithCoins ? { payWithCoins: true, expectedCoinCost } : {},
+      {
+        ...(payWithCoins ? { payWithCoins: true, expectedCoinCost } : {}),
+        ...(expectedStartsAt ? { expectedStartsAt } : {}),
+      },
     ),
 
   cancel: (bookingId: string) =>

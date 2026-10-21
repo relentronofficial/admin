@@ -73,6 +73,11 @@ interface Store {
 }
 let db: Store;
 let failNextSpend = false;
+const broadcasts: Array<{ event: string; payload: any }> = [];
+const fakeIo = {
+  emit: (event: string, payload: any) => { broadcasts.push({ event, payload }); },
+  to: () => ({ emit: () => {} }),
+};
 
 function fresh(): Store {
   const future = new Date(Date.now() + 48 * HOUR);
@@ -107,6 +112,7 @@ const sessionRow = (s: Store['sessions'][number]) => ({
   created_at: s.startsAt, updated_at: s.startsAt, has_meeting_url: false, meeting_url: null, created_by: null,
   active_count: db.bookings.filter((b) => b.sessionId === s.id && b.status !== 'cancelled').length,
   booked_count: db.bookings.filter((b) => b.sessionId === s.id && b.status === 'booked').length,
+  total_count: db.bookings.filter((b) => b.sessionId === s.id).length,
 });
 const sessionOf = (id: string) => db.sessions.find((s) => s.id === id)!;
 const balanceOf = (m: string) => db.ledger.filter((l) => l.memberId === m).reduce((a, l) => a + l.points, 0);
@@ -148,6 +154,9 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.includes('FROM tbt_activity_log WHERE member_id = $1::uuid')) return [{ balance: BigInt(balanceOf(a[0])) }];
 
   // Sessions
+  if (q.startsWith('SELECT id FROM support_call_sessions WHERE id = $1::uuid FOR UPDATE')) {
+    return db.sessions.filter((s) => s.id === a[0]).map((s) => ({ id: s.id }));
+  }
   if (q.includes('FROM support_call_sessions s WHERE s.id = $1::uuid')) {
     const s = db.sessions.find((x) => x.id === a[0]);
     return s ? [sessionRow(s)] : [];
@@ -165,6 +174,42 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     });
   }
   if (q.startsWith("UPDATE support_call_sessions SET status = 'cancelled'")) { sessionOf(a[0]).status = 'cancelled'; return 1; }
+  // Admin availability (publish / edit / delete slots)
+  if (q.startsWith('SELECT s.starts_at, s.duration_minutes FROM support_call_sessions s WHERE')) {
+    const byHost = q.includes('s.host_admin_id = $1::uuid');
+    return db.sessions
+      .filter((s) => (byHost ? s.hostAdminId === a[0] : s.hostAdminId === null && s.category === a[0]))
+      .filter((s) => s.status === 'scheduled' && s.startsAt.getTime() + s.durationMinutes * 60_000 > Date.now())
+      .filter((s) => !q.includes('s.id <> $2::uuid') || s.id !== a[1])
+      .map((s) => ({ starts_at: s.startsAt, duration_minutes: s.durationMinutes }));
+  }
+  if (q.startsWith('INSERT INTO support_call_sessions')) {
+    const s = { id: uuid(), category: a[0], title: a[1], hostAdminId: a[3], startsAt: a[5], durationMinutes: a[6], capacity: a[7], status: 'scheduled' };
+    db.sessions.push(s);
+    return [{ id: s.id }];
+  }
+  if (q.includes('FROM support_call_sessions s WHERE s.id = ANY($1::uuid[])')) {
+    return db.sessions.filter((s) => a[0].includes(s.id)).sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime()).map(sessionRow);
+  }
+  if (q.startsWith('UPDATE support_call_sessions SET category = $2')) {
+    Object.assign(sessionOf(a[0]), { category: a[1], title: a[2], hostAdminId: a[4], startsAt: a[6], durationMinutes: a[7], capacity: a[8] });
+    return 1;
+  }
+  if (q.startsWith('DELETE FROM support_call_sessions WHERE id = $1::uuid')) {
+    db.sessions = db.sessions.filter((s) => s.id !== a[0]);
+    db.bookings = db.bookings.filter((b) => b.sessionId !== a[0]); // ON DELETE CASCADE
+    return 1;
+  }
+  if (q.startsWith('SELECT') && q.includes('FROM support_call_sessions s WHERE') && q.includes('ORDER BY s.starts_at')) {
+    // Admin list; the date range (if any) is the last two params.
+    const ranged = q.includes('s.starts_at >= $');
+    const [start, end] = ranged ? a.slice(-2) : [null, null];
+    return db.sessions
+      .filter((s) => !ranged || (s.startsAt >= start && s.startsAt < end))
+      .filter((s) => !q.includes('s.category = $1') || s.category === a[0])
+      .sort((x, y) => x.startsAt.getTime() - y.startsAt.getTime())
+      .map(sessionRow);
+  }
 
   // Bookings
   if (q.startsWith("SELECT COUNT(*)::int AS n FROM support_call_bookings WHERE session_id = $1::uuid AND status <> 'cancelled'")) {
@@ -242,17 +287,42 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   return q.startsWith('SELECT') || q.includes('RETURNING') ? [] : 0;
 }
 
-function prisma(): any {
+// Postgres row locks (FOR UPDATE) and advisory xact locks, held until the
+// transaction ends, so parallel handler calls interleave the way they would
+// against a real database instead of running one after the other.
+const heldLocks = new Map<string, Promise<void>>();
+async function acquire(key: string, owned: Map<string, () => void>) {
+  if (owned.has(key)) return;
+  while (heldLocks.has(key)) await heldLocks.get(key);
+  let release!: () => void;
+  heldLocks.set(key, new Promise<void>((r) => (release = r)));
+  owned.set(key, () => { heldLocks.delete(key); release(); });
+}
+function lockKey(q: string, a: any[]): string | null {
+  if (q.startsWith('SELECT pg_advisory_xact_lock')) return `advisory:${a[0]}`;
+  if (q.includes('FOR UPDATE') && typeof a[0] === 'string') return `row:${a[0]}`;
+  return null;
+}
+
+function prisma(owned?: Map<string, () => void>): any {
+  const run = async (text: string, ...a: any[]) => {
+    const key = owned ? lockKey(text.replace(/\s+/g, ' ').trim(), a) : null;
+    if (key) await acquire(key, owned!);
+    return sql(text, ...a);
+  };
   const client: any = {
-    $queryRawUnsafe: sql,
-    $executeRawUnsafe: sql,
+    $queryRawUnsafe: run,
+    $executeRawUnsafe: run,
     $transaction: async (fn: (tx: any) => Promise<any>) => {
+      const locks = new Map<string, () => void>();
       const snapshot = structuredClone(db);
       try {
-        return await fn(client);
+        return await fn(prisma(locks));
       } catch (err) {
         db = snapshot;
         throw err;
+      } finally {
+        for (const release of locks.values()) release();
       }
     },
     member: {
@@ -261,7 +331,12 @@ function prisma(): any {
         return m ? { membershipPlan: m.plan, status: m.status, batchId: null, firstName: 'Test', lastName: 'Member' } : null;
       },
     },
-    admin: { findUnique: async ({ where }: any) => db.admins[where.clerkId] ?? null },
+    admin: {
+      findUnique: async ({ where }: any) =>
+        where.clerkId !== undefined
+          ? db.admins[where.clerkId] ?? null
+          : Object.values(db.admins).find((x) => x.id === where.id) ?? null,
+    },
     appNotification: { create: async () => ({}) },
   };
   return client;
@@ -278,7 +353,7 @@ async function call(handler: any, opts: { memberId?: string; clerk?: string; par
   const req: any = {
     memberId: opts.memberId, user: opts.clerk, params: opts.params ?? {}, body: opts.body, query: opts.query ?? {},
     headers: opts.headers ?? {}, rawBody: opts.rawBody,
-    server: { prisma: prisma(), redis: null, io: undefined, log: { error() {}, warn() {} } },
+    server: { prisma: prisma(), redis: null, io: fakeIo, log: { error() {}, warn() {} } },
     log: { error() {}, warn() {} },
   };
   await handler(req, reply);
@@ -301,6 +376,7 @@ beforeEach(() => {
   rzp.created = [];
   rzp.fetched = {};
   unhandled.length = 0;
+  broadcasts.length = 0;
 });
 
 describe('booking with free quota', () => {
@@ -631,5 +707,167 @@ describe('admin configuration and authorization', () => {
     const r = await call(user.bookSupportCallHandler, { memberId: MEMBER, params: { id: S1 }, body: { payWithCoins: true, expectedCoinCost: 120, memberId: OTHER } });
     expect(r.status).toBe(402);
     expect(balanceOf(OTHER)).toBe(500);
+  });
+});
+
+describe('admin-published availability and the member calendar', () => {
+  const ADMIN_ID = '70000000-0000-4000-8000-000000000001';
+  const MENTOR_ID = '70000000-0000-4000-8000-000000000002';
+  const BASE = Math.ceil(Date.now() / 60_000) * 60_000; // one fixed, minute-aligned clock for the block
+  const inHours = (h: number) => new Date(BASE + h * HOUR).toISOString();
+  const slots = (startsAt: string[], over: Record<string, unknown> = {}) => ({
+    category: 'one_to_one', title: 'Mentor 1-On-1', durationMinutes: 30, capacity: 1, hostAdminId: ADMIN_ID, startsAt, ...over,
+  });
+  const publish = (body: any, clerk = 'clerk_admin') => call(admin.publishSupportSlotsHandler, { clerk, body });
+  const listMember = (memberId = MEMBER, category = 'one_to_one') =>
+    call(user.listSupportCallsHandler, { memberId, query: { category } });
+
+  beforeEach(() => {
+    db.sessions = [];
+    db.entitlements.premium.call_credit_count = 2;
+  });
+
+  it('publishes several admin-chosen slots on different dates in one go', async () => {
+    const r = await publish(slots([inHours(26), inHours(24), inHours(50)]));
+    expect(r.status).toBe(201);
+    expect(r.body.data.map((s: any) => s.startsAt)).toEqual([inHours(24), inHours(26), inHours(50)]);
+    expect(r.body.data.every((s: any) => s.slotStatus === 'available' && s.canDelete)).toBe(true);
+    expect(db.sessions).toHaveLength(3);
+    expect(broadcasts).toContainEqual({ event: 'support_calls:changed', payload: { category: 'one_to_one' } });
+  });
+
+  it('is all-or-nothing: a past or overlapping time rejects the whole batch', async () => {
+    expect((await publish(slots([inHours(24), inHours(-1)]))).status).toBe(400);
+    expect((await publish(slots([inHours(24), new Date(BASE + 24 * HOUR + 10 * 60_000).toISOString()]))).status).toBe(400);
+    expect(db.sessions).toHaveLength(0);
+    await publish(slots([inHours(24)]));
+    const clash = await publish(slots([new Date(BASE + 24 * HOUR + 15 * 60_000).toISOString()]));
+    expect(clash.status).toBe(409);
+    expect(db.sessions).toHaveLength(1);
+  });
+
+  it('a mentor always publishes as host, and only sees their own slots', async () => {
+    const r = await publish(slots([inHours(30)], { hostAdminId: ADMIN_ID }), 'clerk_mentor');
+    expect(r.status).toBe(201);
+    expect(db.sessions[0].hostAdminId).toBe(MENTOR_ID);
+    await publish(slots([inHours(40)]));
+    const mine = await call(admin.listSupportSessionsHandler, { clerk: 'clerk_mentor', query: { scope: 'upcoming' } });
+    expect(unhandled).toEqual([]);
+    expect(mine.status).toBe(200);
+  });
+
+  it('members see exactly the published slots; once booked a slot is gone for everyone else', async () => {
+    await publish(slots([inHours(24), inHours(48)]));
+    const view = await listMember();
+    expect(view.body.data.sessions.map((s: any) => s.seatsLeft)).toEqual([1, 1]);
+
+    const [first] = view.body.data.sessions;
+    expect((await book(first.id)).status).toBe(201);
+    const other = await listMember(OTHER);
+    expect(other.body.data.sessions.find((s: any) => s.id === first.id).seatsLeft).toBe(0);
+    const late = await book(first.id, undefined, OTHER);
+    expect(late.status).toBe(409);
+    expect(late.body.error.code).toBe('session_full');
+    expect(broadcasts.filter((b) => b.event === 'support_calls:changed').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('two members booking the same 1-seat slot at the same moment: exactly one wins', async () => {
+    await publish(slots([inHours(24)]));
+    const id = db.sessions[0].id;
+    const results = await Promise.all([book(id, undefined, MEMBER), book(id, undefined, OTHER)]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('session_full');
+    expect(db.bookings.filter((b) => b.sessionId === id && b.status !== 'cancelled')).toHaveLength(1);
+  });
+
+  it('many simultaneous requests never overfill a group slot', async () => {
+    db.entitlements.premium.group_call_count = 5;
+    const extra = Array.from({ length: 6 }, (_, i) => `30000000-0000-4000-8000-00000000010${i}`);
+    for (const m of extra) db.members[m] = { plan: 'premium', status: 'active', totalPoints: 0 };
+    await publish(slots([inHours(24)], { category: 'group_call', title: 'Live Q&A', capacity: 3 }));
+    const id = db.sessions[0].id;
+    const results = await Promise.all(extra.map((m) => book(id, undefined, m)));
+    expect(results.filter((r) => r.status === 201)).toHaveLength(3);
+    expect(db.bookings.filter((b) => b.sessionId === id && b.status !== 'cancelled')).toHaveLength(3);
+  });
+
+  it('a slot moved after the member saw it is refused instead of booked at the new time', async () => {
+    await publish(slots([inHours(24)]));
+    const id = db.sessions[0].id;
+    await call(admin.updateSupportSessionHandler, { clerk: 'clerk_admin', params: { id }, body: { startsAt: inHours(25) } });
+    const r = await book(id, { expectedStartsAt: inHours(24) });
+    expect(r.status).toBe(409);
+    expect(r.body.error.code).toBe('slot_changed');
+    expect(db.bookings).toHaveLength(0);
+    expect((await book(id, { expectedStartsAt: inHours(25) })).status).toBe(201);
+  });
+
+  it('expired slots cannot be booked even if a stale calendar still shows them', async () => {
+    db.sessions.push({ id: S1, category: 'one_to_one', title: 'Old', startsAt: new Date(Date.now() - 5 * 60_000), durationMinutes: 30, capacity: 1, status: 'scheduled', hostAdminId: ADMIN_ID });
+    const r = await book(S1);
+    expect(r.status).toBe(409);
+    expect(r.body.error.code).toBe('session_started');
+  });
+
+  it('an unbooked slot can be edited or removed; the calendar updates', async () => {
+    await publish(slots([inHours(24), inHours(48)]));
+    const [a1, a2] = db.sessions;
+    const moved = await call(admin.updateSupportSessionHandler, { clerk: 'clerk_admin', params: { id: a1.id }, body: { startsAt: inHours(30) } });
+    expect(moved.status).toBe(200);
+    expect(sessionOf(a1.id).startsAt.toISOString()).toBe(inHours(30));
+    const del = await call(admin.deleteSupportSessionHandler, { clerk: 'clerk_admin', params: { id: a2.id } });
+    expect(del.status).toBe(200);
+    expect((await listMember()).body.data.sessions.map((s: any) => s.id)).toEqual([a1.id]);
+  });
+
+  it('a booked slot cannot be moved or removed; cancelling notifies and keeps history', async () => {
+    await publish(slots([inHours(24)]));
+    const id = db.sessions[0].id;
+    await book(id);
+
+    const move = await call(admin.updateSupportSessionHandler, { clerk: 'clerk_admin', params: { id }, body: { startsAt: inHours(30) } });
+    expect(move.status).toBe(409);
+    expect(sessionOf(id).startsAt.toISOString()).toBe(inHours(24));
+    // Non-time edits (e.g. the meeting link) are still allowed.
+    const link = await call(admin.updateSupportSessionHandler, { clerk: 'clerk_admin', params: { id }, body: { meetingUrl: 'https://meet.example/x' } });
+    expect(link.status).toBe(200);
+
+    const del = await call(admin.deleteSupportSessionHandler, { clerk: 'clerk_admin', params: { id } });
+    expect(del.status).toBe(409);
+    expect(db.sessions).toHaveLength(1);
+
+    const cancelled = await call(admin.cancelSupportSessionHandler, { clerk: 'clerk_admin', params: { id } });
+    expect(cancelled.body.data.cancelledBookings).toBe(1);
+    expect(db.bookings[0].status).toBe('cancelled');
+    // History survives, and the slot still can't be hard-deleted.
+    expect((await call(admin.deleteSupportSessionHandler, { clerk: 'clerk_admin', params: { id } })).status).toBe(409);
+    const hist = await listMember();
+    expect(hist.body.data.sessions).toHaveLength(0);
+    expect(hist.body.data.history[0].status).toBe('session_cancelled');
+  });
+
+  it('a member cancellation frees the seat for the next member', async () => {
+    await publish(slots([inHours(24)]));
+    const id = db.sessions[0].id;
+    const mine = await book(id);
+    await cancel(mine.body.data.id);
+    expect((await listMember(OTHER)).body.data.sessions[0].seatsLeft).toBe(1);
+    expect((await book(id, undefined, OTHER)).status).toBe(201);
+  });
+
+  it('the admin calendar lists a date range with each slot status', async () => {
+    await publish(slots([inHours(24), inHours(48)]));
+    await book(db.sessions[0].id);
+    const today = new Date(Date.now() + 5.5 * HOUR).toISOString().slice(0, 10);
+    const far = new Date(Date.now() + 5.5 * HOUR + 30 * 24 * HOUR).toISOString().slice(0, 10);
+    const r = await call(admin.listSupportSessionsHandler, { clerk: 'clerk_admin', query: { from: today, to: far } });
+    expect(r.status).toBe(200);
+    expect(r.body.data.map((s: any) => s.slotStatus)).toEqual(['booked', 'available']);
+    expect((await call(admin.listSupportSessionsHandler, { clerk: 'clerk_admin', query: { from: 'bad', to: far } })).status).toBe(400);
+  });
+
+  it('members cannot reach admin slot management', async () => {
+    expect((await publish(slots([inHours(24)]), 'nobody')).status).toBe(403);
+    expect(db.sessions).toHaveLength(0);
   });
 });

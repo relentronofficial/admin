@@ -3,8 +3,10 @@
 // Expert Support Call sessions (SUPPORT_CALLS_SPECKIT.md). Admins/super admins
 // manage every session; mentor accounts see and manage only the sessions they
 // host (enforced by the backend — the UI just hides the host picker).
+// Availability: the admin publishes the exact dates/times they are free
+// (Publish Availability); each time is one bookable slot on the member calendar.
 import { useMemo, useState } from "react";
-import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX } from "lucide-react";
+import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX, Trash2, CalendarDays, List } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -13,6 +15,7 @@ import {
   useCreateSupportSession,
   useUpdateSupportSession,
   useCancelSupportSession,
+  useDeleteSupportSession,
   useSupportSessionBookings,
   useMarkSupportBooking,
   useSupportCallHosts,
@@ -22,16 +25,15 @@ import {
   type SupportSessionInput,
 } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
-
-const CATEGORIES: { id: SupportCallCategory; label: string; icon: string }[] = [
-  { id: "sales_support", label: "Sales Calls", icon: "☎" },
-  { id: "tech_support", label: "Tech Calls", icon: "⚙" },
-  { id: "content_support", label: "Content Calls", icon: "▶" },
-  { id: "ad_support", label: "Marketing Calls", icon: "📢" },
-  { id: "one_to_one", label: "Mentor 1-On-1", icon: "♟" },
-  { id: "group_call", label: "Live Group Q&A", icon: "👥" },
-];
-const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, `${c.icon} ${c.label}`])) as Record<string, string>;
+import { SLOT_STATUS_BADGE, slotStatusLabel } from "@/lib/utils/supportSlots";
+import {
+  AvailabilityCalendar,
+  CATEGORY_LABEL,
+  PublishAvailabilityModal,
+  SUPPORT_CALL_CATEGORIES as CATEGORIES,
+  matchesCallType,
+  type CallTypeFilter,
+} from "@/components/support-calls/SlotAvailability";
 
 const BOOKING_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   booked: { label: "Booked", color: "#a78bfa", bg: "rgba(167,139,250,0.15)" },
@@ -88,6 +90,8 @@ function SessionFormModal({
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
   const busy = create.isPending || update.isPending;
   const isOneToOne = form.category === "one_to_one";
+  // A booked slot never moves under its members: cancel and republish instead.
+  const timeLocked = !!initial && initial.activeBookings > 0;
 
   const submit = async () => {
     if (busy) return;
@@ -98,8 +102,9 @@ function SessionFormModal({
       title: form.title.trim(),
       description: form.description.trim() || null,
       hostName: form.hostName.trim() || null,
-      startsAt: fromIstInput(form.startsAt),
-      durationMinutes: Number(form.durationMinutes),
+      // Only send the time when it changed, so other edits never touch it.
+      ...(!initial || form.startsAt !== toIstInput(initial.startsAt) ? { startsAt: fromIstInput(form.startsAt) } : {}),
+      ...(!initial || Number(form.durationMinutes) !== initial.durationMinutes ? { durationMinutes: Number(form.durationMinutes) } : {}),
       capacity: isOneToOne ? 1 : Number(form.capacity),
       meetingUrl: form.meetingUrl.trim() || null,
       ...(canPickHost ? { hostAdminId: form.hostAdminId || null } : {}),
@@ -183,11 +188,12 @@ function SessionFormModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-1">
               <label className={LABEL}>Starts (IST)</label>
-              <input type="datetime-local" className={INPUT} value={form.startsAt} onChange={(e) => set("startsAt", e.target.value)} />
+              <input type="datetime-local" className={INPUT} value={form.startsAt} disabled={timeLocked}
+                onChange={(e) => set("startsAt", e.target.value)} />
             </div>
             <div>
               <label className={LABEL}>Duration (min)</label>
-              <input type="number" min={5} max={480} className={INPUT} value={form.durationMinutes}
+              <input type="number" min={5} max={480} className={INPUT} value={form.durationMinutes} disabled={timeLocked}
                 onChange={(e) => set("durationMinutes", Number(e.target.value))} />
             </div>
             <div>
@@ -196,6 +202,11 @@ function SessionFormModal({
                 disabled={isOneToOne} onChange={(e) => set("capacity", Number(e.target.value))} />
             </div>
           </div>
+          {timeLocked && (
+            <p className="text-[11px] text-[#f59e0b] -mt-2">
+              Members have booked this slot, so its time and length are locked. To reschedule, cancel the slot (booked members are notified and get their call back) and publish a new time.
+            </p>
+          )}
           <div>
             <label className={LABEL}>Meeting link (private)</label>
             <input className={INPUT} value={form.meetingUrl} placeholder="https://…" onChange={(e) => set("meetingUrl", e.target.value)} />
@@ -313,17 +324,27 @@ export default function SupportCallsPage() {
   const canPickHost = me?.role === "admin" || me?.role === "super_admin";
   const [category, setCategory] = useState<string>("");
   const [scope, setScope] = useState<"upcoming" | "past" | "all">("upcoming");
-  const [callType, setCallType] = useState<"all" | "one_to_one" | "group">("all");
+  const [callType, setCallType] = useState<CallTypeFilter>("all");
+  const [view, setView] = useState<"calendar" | "list">("calendar");
   const [editing, setEditing] = useState<SupportSession | null | "new">(null);
   const [viewing, setViewing] = useState<SupportSession | null>(null);
+  // null = closed; "" = open with today; a date = open on that IST date.
+  const [publishDate, setPublishDate] = useState<string | null>(null);
   const params = useMemo(() => ({ ...(category ? { category } : {}), scope }), [category, scope]);
   const { data: sessions = [], isLoading, isError, error, refetch } = useListSupportSessions(params);
   const cancel = useCancelSupportSession();
-  const filteredSessions = useMemo(() => {
-    if (callType === "all") return sessions;
-    if (callType === "one_to_one") return sessions.filter((s) => s.capacity === 1);
-    return sessions.filter((s) => s.capacity > 1);
-  }, [sessions, callType]);
+  const remove = useDeleteSupportSession();
+  const filteredSessions = useMemo(() => sessions.filter((s) => matchesCallType(s, callType)), [sessions, callType]);
+
+  const doDelete = async (s: SupportSession) => {
+    if (!window.confirm(`Remove the ${fmtIst(s.startsAt)} slot? Nobody has booked it, so it is deleted.`)) return;
+    try {
+      await remove.mutateAsync(s.id);
+      toast.success("Slot removed");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not remove the slot");
+    }
+  };
 
   const doCancel = async (s: SupportSession) => {
     const msg = s.activeBookings > 0
@@ -351,17 +372,25 @@ export default function SupportCallsPage() {
                 <PhoneCall size={20} /> Support Calls
               </h1>
               <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">
-                Publish Expert Support Call sessions members can book from their course page.
+                Publish the dates and times you are available. Members book them from their calendar.
               </p>
             </div>
           </div>
           {!forbidden && (
-            <button
-              onClick={() => setEditing("new")}
-              className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
-            >
-              <Plus size={15} /> New Session
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setEditing("new")}
+                className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
+              >
+                <Plus size={15} /> Single Session
+              </button>
+              <button
+                onClick={() => setPublishDate("")}
+                className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
+              >
+                <CalendarDays size={15} /> Publish Availability
+              </button>
+            </div>
           )}
         </div>
 
@@ -372,6 +401,23 @@ export default function SupportCallsPage() {
         )}
 
         <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1" role="tablist" aria-label="View">
+            {([["calendar", CalendarDays, "Calendar"], ["list", List, "List"]] as const).map(([id, Icon, label]) => (
+              <button
+                key={id}
+                role="tab"
+                aria-selected={view === id}
+                onClick={() => setView(id)}
+                className={cn(
+                  "px-3.5 py-2 rounded-lg text-[13px] font-semibold transition-all flex items-center gap-1.5",
+                  view === id ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#1f1f1f]",
+                )}
+              >
+                <Icon size={14} /> {label}
+              </button>
+            ))}
+          </div>
+          {view === "list" && (
           <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1">
             {(["upcoming", "past", "all"] as const).map((s) => (
               <button
@@ -386,6 +432,7 @@ export default function SupportCallsPage() {
               </button>
             ))}
           </div>
+          )}
           <select className={cn(INPUT, "w-auto h-10")} value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
@@ -397,12 +444,23 @@ export default function SupportCallsPage() {
           </select>
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16"><Loader2 size={18} className="animate-spin" /> Loading sessions…</div>
-        ) : forbidden ? (
+        {forbidden ? (
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#888]">
             Support call sessions are available to Admin, Super Admin and Mentor accounts.
           </div>
+        ) : view === "calendar" ? (
+          <AvailabilityCalendar
+            category={category}
+            callType={callType}
+            onPublishForDate={(d) => setPublishDate(d)}
+            onEdit={(s) => setEditing(s)}
+            onViewBookings={(s) => setViewing(s)}
+            onCancel={doCancel}
+            onDelete={doDelete}
+            busy={cancel.isPending || remove.isPending}
+          />
+        ) : isLoading ? (
+          <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16"><Loader2 size={18} className="animate-spin" /> Loading sessions…</div>
         ) : isError ? (
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#ef4444]">
             Could not load sessions. <button className="underline" onClick={() => refetch()}>Retry</button>
@@ -426,11 +484,12 @@ export default function SupportCallsPage() {
                         {isOneToOne && (
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#818cf8", background: "rgba(129,140,248,0.15)" }}>1:1</span>
                         )}
-                        {cancelled && (
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: BOOKING_BADGE.cancelled.color, background: BOOKING_BADGE.cancelled.bg }}>
-                            Cancelled
-                          </span>
-                        )}
+                        <span
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ color: SLOT_STATUS_BADGE[s.slotStatus]?.color, background: SLOT_STATUS_BADGE[s.slotStatus]?.bg }}
+                        >
+                          {slotStatusLabel(s)}
+                        </span>
                         {!s.hasMeetingUrl && !cancelled && (
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#f59e0b", background: "rgba(245,158,11,0.15)" }}>No meeting link</span>
                         )}
@@ -455,9 +514,14 @@ export default function SupportCallsPage() {
                             <Edit2 size={13} /> Edit
                           </button>
                         )}
-                        {!cancelled && (
+                        {!cancelled && s.slotStatus !== "completed" && (
                           <button onClick={() => doCancel(s)} disabled={cancel.isPending} className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-[#ef4444] hover:text-red-400 disabled:opacity-50">
                             <Ban size={13} /> Cancel
+                          </button>
+                        )}
+                        {s.canDelete && (
+                          <button onClick={() => doDelete(s)} disabled={remove.isPending} className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-[#ef4444] hover:text-red-400 disabled:opacity-50">
+                            <Trash2 size={13} /> Remove
                           </button>
                         )}
                         {s.meetingUrl && (
@@ -483,6 +547,13 @@ export default function SupportCallsPage() {
         />
       )}
       {viewing && <BookingsModal session={viewing} onClose={() => setViewing(null)} />}
+      {publishDate !== null && (
+        <PublishAvailabilityModal
+          initialDate={publishDate || null}
+          canPickHost={canPickHost}
+          onClose={() => setPublishDate(null)}
+        />
+      )}
     </DashboardLayout>
   );
 }

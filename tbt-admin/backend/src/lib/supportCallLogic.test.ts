@@ -13,6 +13,15 @@ import {
   joinState,
   quotaBucketFor,
   sessionEndsAt,
+  slotStatus,
+  isDateKey,
+  istDateKey,
+  istRangeBounds,
+  validateSlotBatch,
+  canChangeSlotTime,
+  canDeleteSlot,
+  MAX_SLOTS_PER_PUBLISH,
+  slotTimeMatches,
 } from './supportCallLogic.js';
 import { computeSupportQuota } from './supportQuota.js';
 
@@ -243,3 +252,108 @@ describe('coinRefundFor', () => {
   });
 });
 
+describe('slotStatus (admin availability view)', () => {
+  it('is available while a seat is free and booked once every seat is taken', () => {
+    expect(slotStatus(session({ capacity: 1 }), 0, NOW)).toBe('available');
+    expect(slotStatus(session({ capacity: 1 }), 1, NOW)).toBe('booked');
+    expect(slotStatus(session({ capacity: 3 }), 2, NOW)).toBe('available');
+    expect(slotStatus(session({ capacity: 3 }), 3, NOW)).toBe('booked');
+  });
+
+  it('reports cancelled, in-progress and completed slots regardless of seats', () => {
+    expect(slotStatus(session({ status: 'cancelled' }), 0, NOW)).toBe('cancelled');
+    expect(slotStatus(session({ startsAt: at(-10) }), 0, NOW)).toBe('in_progress');
+    expect(slotStatus(session({ startsAt: at(-45) }), 0, NOW)).toBe('completed');
+  });
+});
+
+describe('IST date helpers', () => {
+  it('validates real calendar dates only', () => {
+    expect(isDateKey('2026-10-21')).toBe(true);
+    expect(isDateKey('2026-02-30')).toBe(false);
+    expect(isDateKey('2026-1-2')).toBe(false);
+    expect(isDateKey(undefined)).toBe(false);
+  });
+
+  it('keys instants by their IST calendar date', () => {
+    expect(istDateKey(new Date('2026-10-20T18:29:00Z'))).toBe('2026-10-20'); // 23:59 IST
+    expect(istDateKey(new Date('2026-10-20T18:30:00Z'))).toBe('2026-10-21'); // 00:00 IST
+  });
+
+  it('bounds an IST date range in UTC, end-exclusive', () => {
+    const { start, end } = istRangeBounds('2026-10-21', '2026-10-21');
+    expect(start.toISOString()).toBe('2026-10-20T18:30:00.000Z');
+    expect(end.toISOString()).toBe('2026-10-21T18:30:00.000Z');
+  });
+});
+
+describe('validateSlotBatch', () => {
+  const ok = { durationMinutes: 30, now: NOW, existing: [] as { startsAt: Date; durationMinutes: number }[] };
+
+  it('accepts several future slots on different dates', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(120), at(26 * 60)] }).ok).toBe(true);
+  });
+
+  it('rejects an empty batch, past times and oversize batches', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [] })).toMatchObject({ ok: false, code: 'no_slots' });
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(-5)] })).toMatchObject({ ok: false, code: 'slot_in_past' });
+    expect(validateSlotBatch({ ...ok, startsAt: [NOW] })).toMatchObject({ ok: false, code: 'slot_in_past' });
+    const many = Array.from({ length: MAX_SLOTS_PER_PUBLISH + 1 }, (_, i) => at(60 + i * 60));
+    expect(validateSlotBatch({ ...ok, startsAt: many })).toMatchObject({ ok: false, code: 'too_many_slots' });
+  });
+
+  it('rejects duplicate or overlapping slots within the batch', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(60)] })).toMatchObject({ ok: false, code: 'slots_overlap' });
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(80)] })).toMatchObject({ ok: false, code: 'slots_overlap' });
+    // Back-to-back is fine: 60–90 then 90–120.
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(90)] }).ok).toBe(true);
+  });
+
+  it('rejects a slot that overlaps one the host already published', () => {
+    const existing = [{ startsAt: at(100), durationMinutes: 45 }];
+    expect(validateSlotBatch({ ...ok, existing, startsAt: [at(120)] })).toMatchObject({ ok: false, status: 409, code: 'slot_conflict' });
+    expect(validateSlotBatch({ ...ok, existing, startsAt: [at(145)] }).ok).toBe(true);
+  });
+});
+
+describe('canChangeSlotTime', () => {
+  const current = { startsAt: at(120), durationMinutes: 30 };
+
+  it('lets an unbooked slot move freely', () => {
+    expect(canChangeSlotTime({ activeBookings: 0, current, next: { startsAt: at(180), durationMinutes: 45 } }).ok).toBe(true);
+  });
+
+  it('never moves a booked slot under its members', () => {
+    expect(canChangeSlotTime({ activeBookings: 1, current, next: { startsAt: at(180), durationMinutes: 30 } }))
+      .toMatchObject({ ok: false, status: 409, code: 'slot_has_bookings' });
+    expect(canChangeSlotTime({ activeBookings: 1, current, next: { startsAt: at(120), durationMinutes: 60 } }))
+      .toMatchObject({ ok: false, code: 'slot_has_bookings' });
+  });
+
+  it('allows other edits on a booked slot when the time is unchanged', () => {
+    expect(canChangeSlotTime({ activeBookings: 2, current, next: { ...current } }).ok).toBe(true);
+  });
+});
+
+describe('canDeleteSlot', () => {
+  it('deletes only a slot nobody ever booked; anything else must be cancelled', () => {
+    expect(canDeleteSlot({ totalBookings: 0 }).ok).toBe(true);
+    expect(canDeleteSlot({ totalBookings: 1 })).toMatchObject({ ok: false, status: 409, code: 'slot_has_history' });
+  });
+});
+
+describe('slotTimeMatches', () => {
+  const t = new Date('2026-10-22T10:30:00Z');
+  it('accepts the time the member was shown, in any ISO offset', () => {
+    expect(slotTimeMatches('2026-10-22T10:30:00.000Z', t)).toBe(true);
+    expect(slotTimeMatches('2026-10-22T16:00:00+05:30', t)).toBe(true);
+  });
+  it('refuses a slot that moved, or a malformed time', () => {
+    expect(slotTimeMatches('2026-10-22T11:00:00Z', t)).toBe(false);
+    expect(slotTimeMatches('soon', t)).toBe(false);
+    expect(slotTimeMatches(123, t)).toBe(false);
+  });
+  it('skips the check for older clients that do not send it', () => {
+    expect(slotTimeMatches(undefined, t)).toBe(true);
+  });
+});

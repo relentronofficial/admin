@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getSocket } from "@/lib/socket/client";
 import {
   supportCallsService,
   type BookSupportCallInput,
@@ -14,15 +16,46 @@ export const supportCallKeys = {
   all: ["user", "support-calls"] as const,
 };
 
-/** Sessions, quota (incl. reservations) and the member's own call history for one category. */
+/**
+ * Sessions, quota (incl. reservations) and the member's own call history for one category.
+ * Stays in sync with the admin's availability: the server broadcasts
+ * `support_calls:changed` whenever a slot is published, edited, cancelled, removed,
+ * booked or freed, and the calendar refetches. A slow poll covers missed events.
+ */
 export function useSupportCalls(category: SupportCallCategory | null) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!category) return;
+    let mounted = true;
+    let off: (() => void) | null = null;
+    const onChanged = (p: { category?: string } | undefined) => {
+      if (p?.category && p.category !== category) return;
+      void qc.invalidateQueries({ queryKey: supportCallKeys.category(category) });
+      void qc.invalidateQueries({ queryKey: supportCallKeys.summary });
+    };
+    getSocket()
+      .then((socket) => {
+        if (!mounted) return;
+        socket.on("support_calls:changed", onChanged);
+        off = () => socket.off("support_calls:changed", onChanged);
+      })
+      .catch(() => {});
+    return () => {
+      mounted = false;
+      off?.();
+    };
+  }, [category, qc]);
+
   return useQuery({
     queryKey: category ? supportCallKeys.category(category) : supportCallKeys.all,
     queryFn: async () => (await supportCallsService.list(category!)).data,
     enabled: !!category,
     staleTime: 15_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
+
 
 /** Per-card quota, coin price, coin balance and next action for all six call types. */
 export function useSupportCallsSummary() {

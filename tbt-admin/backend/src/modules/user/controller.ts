@@ -46,6 +46,7 @@ import {
   categoryQuota,
   coinRefundFor,
   isSupportCallCategory,
+  slotTimeMatches,
   joinState,
   quotaBucketFor,
 } from '../../lib/supportCallLogic.js';
@@ -6922,7 +6923,8 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
 
   const [quota, sessionRows, historyRows, coinCost, coinBalance] = await Promise.all([
     loadCategoryQuota(db, memberId, plan, category),
-    // Upcoming + in-progress sessions (so Join is reachable during the call).
+    // Upcoming + in-progress sessions (so Join is reachable during the call). This
+    // feeds the booking calendar, so it covers every published slot, not a page.
     db.$queryRawUnsafe<any[]>(
       `SELECT ${SESSION_COLUMNS},
               (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status <> 'cancelled') AS active_count,
@@ -6933,7 +6935,7 @@ export async function listSupportCallsHandler(request: FastifyRequest, reply: Fa
        WHERE s.category = $2 AND s.status = 'scheduled'
          AND s.starts_at + make_interval(mins => s.duration_minutes) > $3
        ORDER BY s.starts_at ASC
-       LIMIT 50`,
+       LIMIT 500`,
       memberId, category, now,
     ),
     db.$queryRawUnsafe<any[]>(
@@ -7009,7 +7011,8 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
   if (!UUID_RE.test(sessionId)) return fail(reply, 404, 'Session not found');
   // Coins are only ever spent when the member explicitly asks for it and
   // confirms the price they were shown (expectedCoinCost).
-  const body = (request.body ?? {}) as { payWithCoins?: unknown; expectedCoinCost?: unknown };
+  // expectedStartsAt = the slot time the member saw; a slot moved since is refused.
+  const body = (request.body ?? {}) as { payWithCoins?: unknown; expectedCoinCost?: unknown; expectedStartsAt?: unknown };
   const payWithCoins = body.payWithCoins === true;
   const { plan, status } = await loadMemberPlanStatus(request);
 
@@ -7022,6 +7025,9 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
       if (!rows[0]) return { error: { status: 404, code: 'not_found', message: 'Session not found' } };
       const s = mapSession(rows[0]);
       if (!isSupportCallCategory(s.category)) return { error: { status: 404, code: 'not_found', message: 'Session not found' } };
+      if (!slotTimeMatches(body.expectedStartsAt, s.startsAt)) {
+        return { error: { status: 409, code: 'slot_changed', message: 'The time of this slot was just changed. Please pick a time again.' } };
+      }
       // Serialise this member's bookings in this category so parallel requests
       // on different sessions can't spend the same remaining call twice.
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `support_call:${memberId}:${s.category}`);
@@ -7080,6 +7086,8 @@ export async function bookSupportCallHandler(request: FastifyRequest, reply: Fas
     if ('error' in result && result.error) return ruleFail(reply, result.error as any);
     const b = (result as any).booking;
     const sess = (result as any).session;
+    // Other members' calendars refetch so a now-full slot stops being offered.
+    request.server.io?.emit('support_calls:changed', { category: sess.category });
     const coinsSpent = b.coin_cost == null ? 0 : Number(b.coin_cost);
     if (coinsSpent > 0) void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
 
@@ -7163,12 +7171,14 @@ export async function cancelSupportCallBookingHandler(request: FastifyRequest, r
     // A coin-paid booking gets its coins back in the same transaction.
     const paid = rows[0].coin_cost == null ? null : Number(rows[0].coin_cost);
     const coinsRefunded = await refundCallCoins(tx, memberId, id, coinRefundFor(paid));
-    return { ok: true, coinsRefunded };
+    return { ok: true, coinsRefunded, category: rows[0].category as string };
   });
 
   if ('error' in result && result.error) return ruleFail(reply, result.error as any);
   const coinsRefunded = (result as any).coinsRefunded ?? 0;
   if (coinsRefunded > 0) void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
+  // The freed seat shows up again on other members' calendars.
+  request.server.io?.emit('support_calls:changed', { category: (result as any).category });
   return ok(reply, { id, status: 'cancelled', coinsRefunded });
 }
 

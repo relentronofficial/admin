@@ -200,6 +200,131 @@ export function canMarkAttendance(input: { bookingStatus: string; session: Sessi
   return { ok: true };
 }
 
+// ── Admin-published availability (slots) ────────────────────────────────────
+// A slot IS a support_call_sessions row: the admin picks the exact date and
+// time. Nothing is generated from office hours. IST is fixed at UTC+05:30 (no
+// DST), which is the timezone slots are published and shown in.
+
+export const SLOT_TIMEZONE = 'Asia/Kolkata';
+const IST_OFFSET_MS = 330 * 60_000;
+export const MAX_SLOTS_PER_PUBLISH = 60;
+
+export type SlotStatus = 'available' | 'booked' | 'cancelled' | 'in_progress' | 'completed';
+
+/** What a slot looks like on the admin calendar. "booked" = every seat is taken. */
+export function slotStatus(session: SessionLike, activeBookings: number, now: Date): SlotStatus {
+  if (session.status !== 'scheduled') return 'cancelled';
+  if (now.getTime() >= sessionEndsAt(session).getTime()) return 'completed';
+  if (now.getTime() >= session.startsAt.getTime()) return 'in_progress';
+  return activeBookings >= session.capacity ? 'booked' : 'available';
+}
+
+/**
+ * The member books the time they were shown. When the client sends that start
+ * time and the slot has since been moved, the booking is refused rather than
+ * landing on a time the member never picked. Omitted = older client, no check.
+ */
+export function slotTimeMatches(expectedStartsAt: unknown, startsAt: Date): boolean {
+  if (expectedStartsAt === undefined) return true;
+  if (typeof expectedStartsAt !== 'string') return false;
+  const t = Date.parse(expectedStartsAt);
+  return !Number.isNaN(t) && t === startsAt.getTime();
+}
+
+export function isDateKey(v: unknown): v is string {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+
+/** YYYY-MM-DD of an instant in IST. */
+export function istDateKey(d: Date): string {
+  return new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** UTC instants bounding an IST calendar range: [start of `from`, start of the day after `to`). */
+export function istRangeBounds(from: string, to: string): { start: Date; end: Date } {
+  const start = new Date(Date.parse(`${from}T00:00:00Z`) - IST_OFFSET_MS);
+  const end = new Date(Date.parse(`${to}T00:00:00Z`) - IST_OFFSET_MS + 24 * 3_600_000);
+  return { start, end };
+}
+
+interface Interval { startsAt: Date; durationMinutes: number }
+const endMs = (i: Interval) => i.startsAt.getTime() + i.durationMinutes * 60_000;
+const overlaps = (a: Interval, b: Interval) => a.startsAt.getTime() < endMs(b) && b.startsAt.getTime() < endMs(a);
+
+/**
+ * Validates a batch of slots the admin is publishing. Every start must be in the
+ * future, unique, and must not overlap another slot in the batch or a live
+ * (scheduled, unfinished) slot the same host already has. Returns the first
+ * problem so the admin can fix it before anything is written.
+ */
+export function validateSlotBatch(input: {
+  startsAt: Date[];
+  durationMinutes: number;
+  now: Date;
+  existing: Interval[];
+}): RuleResult {
+  const { startsAt, durationMinutes, now, existing } = input;
+  if (startsAt.length === 0) return deny(400, 'no_slots', 'Add at least one time slot.');
+  if (startsAt.length > MAX_SLOTS_PER_PUBLISH) {
+    return deny(400, 'too_many_slots', `Publish at most ${MAX_SLOTS_PER_PUBLISH} slots at a time.`);
+  }
+  const fmt = (d: Date) => `${istDateKey(d)} ${new Date(d.getTime() + IST_OFFSET_MS).toISOString().slice(11, 16)} IST`;
+  const sorted = [...startsAt].sort((a, b) => a.getTime() - b.getTime());
+  for (let i = 0; i < sorted.length; i++) {
+    const s = sorted[i];
+    if (Number.isNaN(s.getTime())) return deny(400, 'invalid_time', 'A slot has an invalid time.');
+    if (s.getTime() <= now.getTime()) return deny(400, 'slot_in_past', `${fmt(s)} is in the past.`);
+    const slot = { startsAt: s, durationMinutes };
+    if (i > 0 && overlaps({ startsAt: sorted[i - 1], durationMinutes }, slot)) {
+      return deny(400, 'slots_overlap', `${fmt(sorted[i - 1])} and ${fmt(s)} overlap.`);
+    }
+    const clash = existing.find((e) => overlaps(e, slot));
+    if (clash) return deny(409, 'slot_conflict', `${fmt(s)} overlaps a slot already published at ${fmt(clash.startsAt)}.`);
+  }
+  return { ok: true };
+}
+
+/**
+ * Editing a slot that members have booked must never move it under them: the
+ * time and length stay fixed. To reschedule, the admin cancels the slot (which
+ * notifies the members and returns their call or coins) and publishes a new one.
+ */
+export function canChangeSlotTime(input: {
+  activeBookings: number;
+  current: Interval;
+  next: Interval;
+}): RuleResult {
+  const { activeBookings, current, next } = input;
+  const moved =
+    current.startsAt.getTime() !== next.startsAt.getTime() || current.durationMinutes !== next.durationMinutes;
+  if (moved && activeBookings > 0) {
+    return deny(
+      409,
+      'slot_has_bookings',
+      'This slot has bookings, so its time cannot change. Cancel it (booked members are notified and get their call back) and publish a new slot.',
+    );
+  }
+  return { ok: true };
+}
+
+/**
+ * Removing a slot deletes it only when nobody ever booked it. A slot with any
+ * booking, including cancelled ones, keeps its history and must be cancelled.
+ */
+export function canDeleteSlot(input: { totalBookings: number }): RuleResult {
+  if (input.totalBookings > 0) {
+    return deny(
+      409,
+      'slot_has_history',
+      'This slot has bookings, so it cannot be removed. Cancel it instead: booked members are notified and the booking history is kept.',
+    );
+  }
+  return { ok: true };
+}
+
 const FULL_ACCESS_ROLES = new Set(['super_admin', 'admin']);
 
 /** super_admin/admin manage every session; mentors only sessions they host. */

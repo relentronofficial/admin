@@ -2633,6 +2633,23 @@ export interface SupportSession {
   activeBookings: number;
   pendingAttendance: number;
   seatsLeft: number;
+  /** Bookings ever made, including cancelled ones (a slot with any can't be deleted). */
+  totalBookings: number;
+  /** Server-computed: available | booked (every seat taken) | cancelled | in_progress | completed. */
+  slotStatus: SupportSlotStatus;
+  /** True only when nobody ever booked the slot. Otherwise it must be cancelled. */
+  canDelete: boolean;
+}
+
+export type SupportSlotStatus = 'available' | 'booked' | 'cancelled' | 'in_progress' | 'completed';
+
+/** One publish of admin-chosen slots: shared details + every start time (ISO, with offset). */
+export interface PublishSupportSlotsInput extends Omit<SupportSessionInput, 'startsAt'> {
+  category: SupportCallCategory;
+  title: string;
+  durationMinutes: number;
+  capacity: number;
+  startsAt: string[];
 }
 
 // Sample-data mode for /support-calls (lib/mocks/supportCallsDemo.ts), `next dev` only.
@@ -2668,7 +2685,13 @@ export interface SupportSessionInput {
   meetingUrl?: string | null;
 }
 
-export const useListSupportSessions = (params: { category?: string; scope?: 'upcoming' | 'past' | 'all' }) =>
+export const useListSupportSessions = (params: {
+  category?: string;
+  scope?: 'upcoming' | 'past' | 'all';
+  /** IST dates (YYYY-MM-DD, inclusive); when set, scope is ignored. */
+  from?: string;
+  to?: string;
+}) =>
   useQuery({
     queryKey: ['support-sessions', params],
     queryFn: async () => {
@@ -2747,6 +2770,32 @@ export const useMarkSupportBooking = () => {
       qc.invalidateQueries({ queryKey: ['support-session-bookings'] });
       qc.invalidateQueries({ queryKey: ['support-sessions'] });
     },
+  });
+};
+
+/** Publish several admin-chosen slots at once (all or nothing). */
+export const usePublishSupportSlots = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: PublishSupportSlotsInput) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
+      const res: any = await apiClient.post('/api/support-entitlements/sessions/bulk', data);
+      return (res?.data ?? []) as SupportSession[];
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
+  });
+};
+
+/** Removes a slot nobody ever booked; the server refuses (409) once it has any booking. */
+export const useDeleteSupportSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
+      const res: any = await apiClient.delete(`/api/support-entitlements/sessions/${id}`);
+      return res?.data as { id: string; deleted: boolean };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
   });
 };
 

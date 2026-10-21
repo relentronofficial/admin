@@ -112,6 +112,32 @@ describe("SupportCallPanel — slot booking", () => {
     expect(dayButton(22).getAttribute("data-day-state")).toBe("selected"); // first open date auto-selected
   });
 
+  it("a picked date whose last slot gets taken stays selected and says so", () => {
+    const { rerender } = renderPanel();
+    fireEvent.click(dayButton(23));
+    expect(slotButtons()).toHaveLength(1);
+    // Another member books the last Friday seats; the live refresh brings the new data.
+    state.calls = {
+      ...state.calls,
+      data: view(SESSIONS.map((s) => (s.id === "fri-11am" ? { ...s, seatsLeft: 0 } : s))),
+    };
+    rerender(<SupportCallPanel category="sales_support" label="☎ Sales Calls" onClose={vi.fn()} />);
+    expect(screen.getByText("No available slots for this date. Please choose another date.")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Available time slots" })).toBeNull();
+    expect((dayButton(23) as HTMLButtonElement).disabled).toBe(true);
+    // Thursday is still bookable.
+    fireEvent.click(dayButton(22));
+    expect(slotButtons()).toHaveLength(2);
+  });
+
+  it("an admin-removed slot disappears from the calendar on refresh", () => {
+    const { rerender } = renderPanel();
+    expect((dayButton(23) as HTMLButtonElement).disabled).toBe(false);
+    state.calls = { ...state.calls, data: view(SESSIONS.filter((s) => s.id !== "fri-11am")) };
+    rerender(<SupportCallPanel category="sales_support" label="☎ Sales Calls" onClose={vi.fn()} />);
+    expect((dayButton(23) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("shows the selected date's real slots with start–end times and states", () => {
     renderPanel();
     const slots = slotButtons();
@@ -138,7 +164,7 @@ describe("SupportCallPanel — slot booking", () => {
     expect(summary.textContent).toMatch(/Coach K/);
     expect(summary.textContent).toMatch(/1 included call from your plan/);
     fireEvent.click(screen.getByRole("button", { name: /Confirm Booking/ }));
-    await waitFor(() => expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm" }));
+    await waitFor(() => expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm", expectedStartsAt: "2026-10-22T10:30:00Z" }));
     // The confirmation shows what the server committed: status, call, time, reference.
     const status = await screen.findByRole("status");
     expect(status.textContent).toMatch(/Booking confirmed/);
@@ -276,7 +302,7 @@ describe("SupportCallPanel — extra calls with TBT coins", () => {
     expect(screen.queryByRole("button", { name: /Confirm Booking/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Unlock with 120 TBT Coins" }));
     await waitFor(() =>
-      expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm", payWithCoins: true, expectedCoinCost: 120 }),
+      expect(state.book.mutateAsync).toHaveBeenCalledWith({ sessionId: "thu-4pm", expectedStartsAt: "2026-10-22T10:30:00Z", payWithCoins: true, expectedCoinCost: 120 }),
     );
     const status = await screen.findByRole("status");
     expect(status.textContent).toMatch(/120 TBT coins · balance now 180/);
