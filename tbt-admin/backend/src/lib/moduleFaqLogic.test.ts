@@ -63,13 +63,13 @@ describe('validateFaqReorder', () => {
 describe('publicFaqList', () => {
   it('returns only published FAQs, in display order, without admin fields', () => {
     const out = publicFaqList([
-      { id: '2', question: 'Second', answer: 'B', is_published: true, sort_order: 1, updated_at: new Date() },
+      { id: '2', question: 'Second', answer: 'B', is_published: true, sort_order: 1, updated_at: new Date(), video_url: 'https://iframe.mediadelivery.net/embed/1/abc', bunny_video_id: 'abc' },
       { id: '3', question: 'Draft', answer: 'C', is_published: false, sort_order: 0 },
       { id: '1', question: 'First', answer: 'A', is_published: true, sort_order: 0 },
     ]);
     expect(out).toEqual([
-      { id: '1', question: 'First', answer: 'A' },
-      { id: '2', question: 'Second', answer: 'B' },
+      { id: '1', question: 'First', answer: 'A', videoUrl: null, bunnyVideoId: null },
+      { id: '2', question: 'Second', answer: 'B', videoUrl: 'https://iframe.mediadelivery.net/embed/1/abc', bunnyVideoId: 'abc' },
     ]);
   });
 });
