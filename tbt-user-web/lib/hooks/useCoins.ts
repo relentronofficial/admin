@@ -1,9 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { coinsService, type CoinPackage } from "@/lib/api/services/coins.service";
 import { loadRazorpayCheckout, openRazorpayCheckout } from "@/lib/razorpayCheckout";
+
+export const coinBalanceKey = ["user", "coin-balance"] as const;
+
+/**
+ * The member's spendable TBT coins, straight from the server's ledger (the
+ * value every coin spend checks). The client never computes or adjusts it:
+ * anything that earns or spends coins calls invalidateCoinBalance() so this
+ * one shared query refetches. Window focus refetches catch server-side
+ * changes (admin grants, approvals) made while the tab was in the background.
+ */
+export function useCoinBalance() {
+  return useQuery({
+    queryKey: coinBalanceKey,
+    queryFn: async () => (await coinsService.balance()).data.balance,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    retry: 1,
+  });
+}
+
+export function invalidateCoinBalance(qc: QueryClient) {
+  return qc.invalidateQueries({ queryKey: coinBalanceKey });
+}
 
 export function useCoinPackages(enabled = true) {
   return useQuery({
@@ -35,6 +58,7 @@ export function useCoinPurchase() {
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["user", "support-calls"] });
     void qc.invalidateQueries({ queryKey: ["user", "me"] });
+    void invalidateCoinBalance(qc);
   };
 
   const buy = async (pkg: CoinPackage) => {

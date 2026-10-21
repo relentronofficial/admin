@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
+import { invalidateCoinBalance } from "./useCoins";
 export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, RazorpayOrderResult, CoinOrderResult } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
@@ -94,6 +95,7 @@ export const useMarkLessonComplete = (courseId: string) => {
         // awardVideoStreakPoints fires fire-and-forget on the backend — bust
         // the cache so the profile streak-points section reflects the award.
         queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
+        void invalidateCoinBalance(queryClient); // course XP is credited as TBT coins
       }
     },
   });
@@ -109,6 +111,7 @@ export const useSubmitCourseQuiz = (courseId: string, episodeId: string) => {
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
       queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
       queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
+      void invalidateCoinBalance(queryClient);
     },
   });
 };
@@ -199,6 +202,7 @@ export const useVerifyCoinPayment = () => {
       coursesService.verifyCoinPayment(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      void invalidateCoinBalance(queryClient);
     },
   });
 };
@@ -311,6 +315,7 @@ export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
       // Submitting a lesson task counts toward the daily streak.
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
       queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
+      void invalidateCoinBalance(queryClient); // course_task points
     },
   });
 };
@@ -387,6 +392,7 @@ export const useUseEpisodeLifeline = (episodeId: string | null | undefined) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["episode-lifelines", episodeId] });
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      void invalidateCoinBalance(queryClient);
     },
   });
 };

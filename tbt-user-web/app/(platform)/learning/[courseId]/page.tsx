@@ -29,6 +29,7 @@ import {
   useCreateCoinOrder, useVerifyCoinPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
+import { invalidateCoinBalance } from "@/lib/hooks/useCoins";
 import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useMe } from "@/lib/hooks/useUser";
@@ -2625,6 +2626,7 @@ export default function CourseDetailPage({
       // Call the service directly so the coin deduction always targets lesson.id regardless
       // of which lesson is currently selected (avoids stale hook binding for cross-episode clicks)
       const res = await coursesService.useEpisodeLifeline(lesson.id, 'coin');
+      void invalidateCoinBalance(qc);
       unlockAfterLifeline(lesson, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
@@ -2675,6 +2677,7 @@ export default function CourseDetailPage({
               setCoinDialog(null);
               try {
                 const res = await coursesService.useEpisodeLifeline(lesson.id, "coin");
+                void invalidateCoinBalance(qc);
                 setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
                 startLessonTimer(lesson.id, duration);
                 handleSelectLesson(lesson);
