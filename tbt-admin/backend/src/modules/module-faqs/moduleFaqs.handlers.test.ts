@@ -105,7 +105,7 @@ async function call(handler: any, opts: { clerk?: string; params?: any; body?: a
 }
 
 const create = (body: any, clerk = 'clerk_admin') => call(admin.createFaqHandler, { clerk, body });
-const publicList = async () => (await call(pub.pubModuleFaqsHandler)).body.data as Array<{ id: string; question: string; answer: string }>;
+const publicList = async () => (await call(pub.pubModuleFaqsHandler)).body.data as Array<{ id: string; question: string; answer: string; videoUrl: string | null; bunnyVideoId: string | null }>;
 
 beforeEach(() => {
   table = [];
@@ -126,7 +126,7 @@ describe('admin FAQ management', () => {
     expect(e.body.data).toMatchObject({ question: 'How do modules unlock?', answer: 'Updated answer' });
 
     await call(admin.setFaqPublishedHandler, { clerk: 'clerk_admin', params: { id }, body: { isPublished: true } });
-    expect(await publicList()).toEqual([{ id, question: 'How do modules unlock?', answer: 'Updated answer' }]);
+    expect(await publicList()).toEqual([{ id, question: 'How do modules unlock?', answer: 'Updated answer', videoUrl: null, bunnyVideoId: null }]);
 
     await call(admin.setFaqPublishedHandler, { clerk: 'clerk_super', params: { id }, body: { isPublished: false } });
     expect(await publicList()).toEqual([]);
@@ -198,13 +198,13 @@ describe('authorization', () => {
 });
 
 describe('public endpoint', () => {
-  it('exposes only id/question/answer of published FAQs and is not cached', async () => {
+  it('exposes id/question/answer/videoUrl/bunnyVideoId of published FAQs and is not cached', async () => {
     await create({ question: 'Published?', answer: 'Yes', isPublished: true });
     await create({ question: 'Draft?', answer: 'Secret', isPublished: false });
     const res = await call(pub.pubModuleFaqsHandler);
     expect(res.headers['Cache-Control']).toBe('no-store');
     expect(res.body.data).toHaveLength(1);
-    expect(Object.keys(res.body.data[0]).sort()).toEqual(['answer', 'id', 'question']);
+    expect(Object.keys(res.body.data[0]).sort()).toEqual(['answer', 'bunnyVideoId', 'id', 'question', 'videoUrl']);
     expect(JSON.stringify(res.body)).not.toContain('Secret');
   });
 
@@ -273,8 +273,8 @@ describe('FAQ videos and multiple questions', () => {
     expect(list.map((f: any) => [f.question, f.sortOrder, f.isPublished, f.videoUrl])).toEqual([
       ['First?', 0, true, VIDEO], ['Second?', 1, true, null], ['Third?', 2, true, null],
     ]);
-    // members still get only question/answer (display unchanged)
-    expect(await publicList()).toEqual(list.map((f: any) => ({ id: f.id, question: f.question, answer: f.answer })));
+    // members get question/answer plus video fields
+    expect(await publicList()).toEqual(list.map((f: any) => ({ id: f.id, question: f.question, answer: f.answer, videoUrl: f.videoUrl, bunnyVideoId: f.bunnyVideoId })));
   });
 
   it('appends after existing FAQs', async () => {
