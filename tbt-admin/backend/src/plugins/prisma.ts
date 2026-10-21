@@ -2463,6 +2463,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_member_daily_activity_date ON member_daily_activity (activity_date)`
     ).catch(() => {});
 
+    // ── Course visibility: business category gates (CV-01/CV-02 2026-10-21) ───
+    // CV-01: admin-assigned multi-value member audience.
+    // Empty = uncategorised = backward compat (member sees all courses).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`
+    ).catch(() => {});
+    // CV-02: batch-level visibility override on courses.
+    // Empty = no override. Grants catalog visibility only; not CourseAccess.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`
+    ).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
@@ -2473,6 +2485,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     setTimeout(async () => {
       try {
         await prisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
+        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`).catch(() => {});
+        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`).catch(() => {});
         fastify.log.info('✅ Startup DDL retry completed');
       } catch (retryErr) {
         fastify.log.warn('⚠️ Startup DDL retry failed:', retryErr as any);

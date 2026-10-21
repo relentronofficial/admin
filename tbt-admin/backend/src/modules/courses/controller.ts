@@ -43,15 +43,20 @@ export async function listCoursesHandler(req: FastifyRequest, reply: FastifyRepl
   ]);
   const ids = courses.map((c) => c.id);
   const moduleRows = ids.length
-    ? await req.server.prisma.$queryRawUnsafe<{ id: string; module: string | null; applicable_business_types: string[] | null }[]>(
-        `SELECT id, module, applicable_business_types FROM courses WHERE id = ANY($1::uuid[])`, ids,
+    ? await req.server.prisma.$queryRawUnsafe<{ id: string; module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
+        `SELECT id, module, applicable_business_types, batch_visibility_ids FROM courses WHERE id = ANY($1::uuid[])`, ids,
       ).catch(() => [])
     : [];
-  const moduleMap = new Map(moduleRows.map((r) => [r.id, { module: r.module, applicableBusinessTypes: r.applicable_business_types ?? null }]));
+  const moduleMap = new Map(moduleRows.map((r) => [r.id, {
+    module: r.module,
+    applicableBusinessTypes: r.applicable_business_types ?? null,
+    batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? null,
+  }]));
   const data = courses.map((c) => ({
     ...c,
     module: moduleMap.get(c.id)?.module ?? null,
     applicableBusinessTypes: moduleMap.get(c.id)?.applicableBusinessTypes ?? null,
+    batchVisibilityIds: moduleMap.get(c.id)?.batchVisibilityIds ?? null,
   }));
   return reply.send({ success: true, data, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
@@ -93,10 +98,12 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
     });
     const module = body.module ?? null;
     const applicableBusinessTypes: string[] | null = Array.isArray(body.applicableBusinessTypes) ? body.applicableBusinessTypes : null;
+    const batchVisibilityIds: string[] | null = Array.isArray(body.batchVisibilityIds) ? body.batchVisibilityIds : null;
     const rawSets: string[] = [];
     const rawVals: any[] = [];
     if (module) { rawSets.push(`module = $${rawVals.length + 1}`); rawVals.push(module); }
     if (applicableBusinessTypes !== null) { rawSets.push(`applicable_business_types = $${rawVals.length + 1}`); rawVals.push(applicableBusinessTypes); }
+    if (batchVisibilityIds !== null) { rawSets.push(`batch_visibility_ids = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(batchVisibilityIds)); }
     if (rawSets.length) {
       rawVals.push(course.id);
       await req.server.prisma.$executeRawUnsafe(
@@ -104,7 +111,7 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
       );
     }
     bustHome(req);
-    return reply.status(201).send({ success: true, data: { ...course, module, applicableBusinessTypes }, error: null });
+    return reply.status(201).send({ success: true, data: { ...course, module, applicableBusinessTypes, batchVisibilityIds }, error: null });
   } catch (err: any) {
     req.log.error({ err }, 'createCourseHandler failed');
     return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to create course' });
@@ -118,8 +125,8 @@ export async function getCourseHandler(req: FastifyRequest, reply: FastifyReply)
       where: { id },
       include: { courseEpisodes: { orderBy: { order: 'asc' } } },
     }),
-    req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null }[]>(
-      `SELECT module, applicable_business_types FROM courses WHERE id = $1::uuid`, id,
+    req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
+      `SELECT module, applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
     ).catch(() => []),
   ]);
   if (!course) return reply.status(404).send({ success: false, data: null, error: 'Not found' });
@@ -127,6 +134,7 @@ export async function getCourseHandler(req: FastifyRequest, reply: FastifyReply)
     ...course,
     module: moduleRows[0]?.module ?? null,
     applicableBusinessTypes: moduleRows[0]?.applicable_business_types ?? null,
+    batchVisibilityIds: (moduleRows[0]?.batch_visibility_ids as string[] | null) ?? null,
   }, error: null });
 }
 
@@ -158,6 +166,7 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
     const course = await req.server.prisma.course.update({ where: { id }, data });
     let module: string | null = null;
     let applicableBusinessTypes: string[] | null = null;
+    let batchVisibilityIds: string[] | null = null;
     const rawSets: string[] = [];
     const rawVals: any[] = [];
     if ('module' in body) {
@@ -170,20 +179,26 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
       rawSets.push(`applicable_business_types = $${rawVals.length + 1}`);
       rawVals.push(applicableBusinessTypes);
     }
+    if ('batchVisibilityIds' in body) {
+      batchVisibilityIds = Array.isArray(body.batchVisibilityIds) ? body.batchVisibilityIds : null;
+      rawSets.push(`batch_visibility_ids = $${rawVals.length + 1}::jsonb`);
+      rawVals.push(JSON.stringify(batchVisibilityIds ?? []));
+    }
     if (rawSets.length) {
       rawVals.push(id);
       await req.server.prisma.$executeRawUnsafe(
         `UPDATE courses SET ${rawSets.join(', ')} WHERE id = $${rawVals.length}::uuid`, ...rawVals,
       );
     }
-    // Always read back raw columns for the response (module / applicableBusinessTypes may not have been in body)
-    const rawRows = await req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null }[]>(
-      `SELECT module, applicable_business_types FROM courses WHERE id = $1::uuid`, id,
+    // Always read back raw columns for the response
+    const rawRows = await req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
+      `SELECT module, applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
     ).catch(() => []);
     module = rawRows[0]?.module ?? null;
     applicableBusinessTypes = rawRows[0]?.applicable_business_types ?? null;
+    batchVisibilityIds = (rawRows[0]?.batch_visibility_ids as string[] | null) ?? null;
     bustHome(req);
-    return reply.send({ success: true, data: { ...course, module, applicableBusinessTypes }, error: null });
+    return reply.send({ success: true, data: { ...course, module, applicableBusinessTypes, batchVisibilityIds }, error: null });
   } catch (err: any) {
     req.log.error({ err, courseId: id }, 'updateCourseHandler failed');
     return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to update course' });
