@@ -38,6 +38,36 @@ export interface FaqInput {
   question: string;
   answer: string;
   isPublished: boolean;
+  /** Optional Bunny Stream video (embed URL + video id); null = no video. */
+  videoUrl?: string | null;
+  bunnyVideoId?: string | null;
+}
+
+export const FAQ_VIDEO_URL_MAX = 1000;
+export const FAQ_BATCH_MAX = 20;
+const BUNNY_VIDEO_ID = /^[A-Za-z0-9-]{1,100}$/;
+
+/**
+ * Optional video fields. Omitted → keep `current` (update) / none (create);
+ * null or '' → no video. A video URL must be an https URL; the Bunny id is
+ * kept only alongside a URL.
+ */
+function validateFaqVideo(b: Record<string, unknown>, current?: FaqInput): Validation<{ videoUrl: string | null; bunnyVideoId: string | null }> {
+  const rawUrl = 'videoUrl' in b ? b.videoUrl : current?.videoUrl ?? null;
+  const rawId = 'bunnyVideoId' in b ? b.bunnyVideoId : 'videoUrl' in b ? null : current?.bunnyVideoId ?? null;
+  if (rawUrl === null || rawUrl === undefined || rawUrl === '') return { ok: true, value: { videoUrl: null, bunnyVideoId: null } };
+  if (typeof rawUrl !== 'string' || rawUrl.length > FAQ_VIDEO_URL_MAX) return { ok: false, error: 'Video URL is invalid' };
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    return { ok: false, error: 'Video URL is invalid' };
+  }
+  if (parsed.protocol !== 'https:') return { ok: false, error: 'Video URL must use https' };
+  if (rawId !== null && rawId !== undefined && rawId !== '' && (typeof rawId !== 'string' || !BUNNY_VIDEO_ID.test(rawId))) {
+    return { ok: false, error: 'Video id is invalid' };
+  }
+  return { ok: true, value: { videoUrl: parsed.toString(), bunnyVideoId: typeof rawId === 'string' && rawId ? rawId : null } };
 }
 
 /** Validates a create (no `current`) or a partial update merged over `current`. */
@@ -58,7 +88,26 @@ export function validateFaqInput(body: unknown, current?: FaqInput): Validation<
 
   const rawP = b.isPublished ?? current?.isPublished ?? false;
   if (typeof rawP !== 'boolean') return { ok: false, error: 'isPublished must be true or false' };
-  return { ok: true, value: { question, answer, isPublished: rawP } };
+  const video = validateFaqVideo(b, current);
+  if (!video.ok) return video;
+  return { ok: true, value: { question, answer, isPublished: rawP, ...video.value } };
+}
+
+/**
+ * Several new FAQs saved together: { items: [{ question, answer, isPublished?, videoUrl?, bunnyVideoId? }] }.
+ * Every item must be valid — the error names the entry, and nothing is saved otherwise.
+ */
+export function validateFaqBatch(body: unknown): Validation<FaqInput[]> {
+  const items = (body as { items?: unknown } | null)?.items;
+  if (!Array.isArray(items) || items.length === 0) return { ok: false, error: 'Add at least one question' };
+  if (items.length > FAQ_BATCH_MAX) return { ok: false, error: `Save at most ${FAQ_BATCH_MAX} questions at a time` };
+  const out: FaqInput[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const v = validateFaqInput(items[i]);
+    if (!v.ok) return { ok: false, error: `Question ${i + 1}: ${v.error}` };
+    out.push(v.value);
+  }
+  return { ok: true, value: out };
 }
 
 /** A reorder must list every existing FAQ id exactly once. */
@@ -80,6 +129,8 @@ export interface FaqRow {
   is_published: boolean;
   sort_order: number;
   updated_at?: Date | string | null;
+  video_url?: string | null;
+  bunny_video_id?: string | null;
 }
 
 export function adminFaqDto(r: FaqRow) {
@@ -90,6 +141,8 @@ export function adminFaqDto(r: FaqRow) {
     isPublished: !!r.is_published,
     sortOrder: Number(r.sort_order),
     updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+    videoUrl: r.video_url ?? null,
+    bunnyVideoId: r.bunny_video_id ?? null,
   };
 }
 
