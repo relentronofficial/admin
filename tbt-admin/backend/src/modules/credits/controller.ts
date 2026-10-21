@@ -85,10 +85,16 @@ export async function approvePurchaseHandler(
     return reply.status(409).send({ success: false, data: null, error: 'Already reviewed' });
   }
 
-  await req.server.prisma.$executeRawUnsafe(
-    `UPDATE credit_purchases SET status = 'approved', reviewed_by = $1, reviewed_at = NOW() WHERE id = $2::uuid`,
+  // Conditional on still being pending, so two admins approving at once can't
+  // both pass the check above and grant a lifeline purchase twice.
+  const approved = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `UPDATE credit_purchases SET status = 'approved', reviewed_by = $1, reviewed_at = NOW()
+     WHERE id = $2::uuid AND status = 'pending' RETURNING id`,
     reviewedBy, id,
   );
+  if (approved.length === 0) {
+    return reply.status(409).send({ success: false, data: null, error: 'Already reviewed' });
+  }
 
   const { credit_type, quantity, member_id } = purchase;
 

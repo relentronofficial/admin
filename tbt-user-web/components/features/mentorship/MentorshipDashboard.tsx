@@ -238,7 +238,10 @@ function callCardHint(card: CallCard | undefined): { text: string; color: string
   }
 }
 
-function SupportCallTile({ label, used, total, card, onClick }: { label: string; used: number; total: number; card?: CallCard; onClick: () => void }) {
+function SupportCallTile({ label, used: quotaUsed, total: quotaTotal, card, onClick }: { label: string; used: number; total: number; card?: CallCard; onClick: () => void }) {
+  // Counts and the next-step hint come from the same server response when it's loaded, so they never disagree.
+  const used = card?.quota.used ?? quotaUsed;
+  const total = card?.quota.allocated ?? quotaTotal;
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const hint = callCardHint(card);
   return (
