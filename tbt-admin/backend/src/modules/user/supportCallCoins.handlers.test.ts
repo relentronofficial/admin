@@ -233,6 +233,10 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return o ? 1 : 0;
   }
   if (q.includes('FROM course_payments') || q.startsWith('UPDATE course_payments')) return q.startsWith('UPDATE') ? 0 : [];
+  // The shared webhook checks for an Extra Lifeline order first (lifelinePurchase.ts
+  // handleLifelineWebhookEvent). These tests create none, so the lookup finds no rows
+  // and the event falls through to the coin / course logic — as the real database would.
+  if (q.startsWith('SELECT 1 FROM lifeline_razorpay_orders WHERE order_id')) return [];
 
   unhandled.push(q.slice(0, 120));
   return q.startsWith('SELECT') || q.includes('RETURNING') ? [] : 0;
