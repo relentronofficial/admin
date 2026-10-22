@@ -17,14 +17,14 @@ const ADMINS: Record<string, { id: string; fullName: string; role: string }> = {
 
 type Row = {
   id: string; question: string; answer: string; is_published: boolean; sort_order: number; created_at: number; updated_at: Date;
-  updated_by: string | null; video_url: string | null; bunny_video_id: string | null;
+  updated_by: string | null; video_url: string | null; bunny_video_id: string | null; category: string | null;
 };
 let table: Row[];
 let seq = 0;
 const uuid = () => `9${String(++seq).padStart(7, '0')}-0000-4000-8000-000000000000`;
 const out = (r: Row) => ({
   id: r.id, question: r.question, answer: r.answer, is_published: r.is_published, sort_order: r.sort_order, updated_at: r.updated_at,
-  video_url: r.video_url, bunny_video_id: r.bunny_video_id,
+  video_url: r.video_url, bunny_video_id: r.bunny_video_id, category: r.category,
 });
 const ordered = () => [...table].sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at);
 const unhandled: string[] = [];
@@ -45,6 +45,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     const r: Row = {
       id: uuid(), question: a[0], answer: a[1], is_published: a[2], video_url: a[3], bunny_video_id: a[4],
       sort_order: Math.max(-1, ...table.map((x) => x.sort_order)) + 1, created_at: seq, updated_at: new Date(), updated_by: a[5],
+      category: a[6] ?? null,
     };
     table.push(r);
     return [out(r)];
@@ -52,7 +53,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('UPDATE module_faqs SET question')) {
     const r = table.find((x) => x.id === a[0]);
     if (!r) return [];
-    Object.assign(r, { question: a[1], answer: a[2], is_published: a[3], updated_by: a[4], video_url: a[5], bunny_video_id: a[6] });
+    Object.assign(r, { question: a[1], answer: a[2], is_published: a[3], updated_by: a[4], video_url: a[5], bunny_video_id: a[6], category: a[7] });
     return [out(r)];
   }
   if (q.startsWith('UPDATE module_faqs SET is_published')) {
@@ -104,7 +105,10 @@ async function call(handler: any, opts: { clerk?: string; params?: any; body?: a
   return sent;
 }
 
-const create = (body: any, clerk = 'clerk_admin') => call(admin.createFaqHandler, { clerk, body });
+/** Existing tests predate categories: default one so they keep testing what they tested. */
+const withCategory = (body: any) => (body && typeof body === 'object' && !Array.isArray(body) && !('category' in body) ? { category: 'service', ...body } : body);
+const create = (body: any, clerk = 'clerk_admin') => call(admin.createFaqHandler, { clerk, body: withCategory(body) });
+const createRaw = (body: any, clerk = 'clerk_admin') => call(admin.createFaqHandler, { clerk, body });
 const publicList = async () => (await call(pub.pubModuleFaqsHandler)).body.data as Array<{ id: string; question: string; answer: string; videoUrl: string | null; bunnyVideoId: string | null }>;
 
 beforeEach(() => {
@@ -126,7 +130,7 @@ describe('admin FAQ management', () => {
     expect(e.body.data).toMatchObject({ question: 'How do modules unlock?', answer: 'Updated answer' });
 
     await call(admin.setFaqPublishedHandler, { clerk: 'clerk_admin', params: { id }, body: { isPublished: true } });
-    expect(await publicList()).toEqual([{ id, question: 'How do modules unlock?', answer: 'Updated answer', videoUrl: null, bunnyVideoId: null }]);
+    expect(await publicList()).toEqual([{ id, question: 'How do modules unlock?', answer: 'Updated answer', videoUrl: null, bunnyVideoId: null, category: 'service' }]);
 
     await call(admin.setFaqPublishedHandler, { clerk: 'clerk_super', params: { id }, body: { isPublished: false } });
     expect(await publicList()).toEqual([]);
@@ -198,13 +202,13 @@ describe('authorization', () => {
 });
 
 describe('public endpoint', () => {
-  it('exposes id/question/answer/videoUrl/bunnyVideoId of published FAQs and is not cached', async () => {
+  it('exposes id/question/answer/videoUrl/bunnyVideoId/category of published FAQs and is not cached', async () => {
     await create({ question: 'Published?', answer: 'Yes', isPublished: true });
     await create({ question: 'Draft?', answer: 'Secret', isPublished: false });
     const res = await call(pub.pubModuleFaqsHandler);
     expect(res.headers['Cache-Control']).toBe('no-store');
     expect(res.body.data).toHaveLength(1);
-    expect(Object.keys(res.body.data[0]).sort()).toEqual(['answer', 'bunnyVideoId', 'id', 'question', 'videoUrl']);
+    expect(Object.keys(res.body.data[0]).sort()).toEqual(['answer', 'bunnyVideoId', 'category', 'id', 'question', 'videoUrl']);
     expect(JSON.stringify(res.body)).not.toContain('Secret');
   });
 
@@ -220,7 +224,8 @@ describe('public endpoint', () => {
 
 const VIDEO = 'https://iframe.mediadelivery.net/embed/12345/0b8a7c1e-1111-4222-8333-444455556666';
 const VIDEO_ID = '0b8a7c1e-1111-4222-8333-444455556666';
-const bulk = (body: any, clerk = 'clerk_admin') => call(admin.createFaqsBulkHandler, { clerk, body });
+const bulk = (body: any, clerk = 'clerk_admin') =>
+  call(admin.createFaqsBulkHandler, { clerk, body: Array.isArray(body?.items) ? { ...body, items: body.items.map(withCategory) } : body });
 const adminList = async () => (await call(admin.listFaqsAdminHandler, { clerk: 'clerk_admin' })).body.data as any[];
 
 describe('FAQ videos and multiple questions', () => {
@@ -274,7 +279,7 @@ describe('FAQ videos and multiple questions', () => {
       ['First?', 0, true, VIDEO], ['Second?', 1, true, null], ['Third?', 2, true, null],
     ]);
     // members get question/answer plus video fields
-    expect(await publicList()).toEqual(list.map((f: any) => ({ id: f.id, question: f.question, answer: f.answer, videoUrl: f.videoUrl, bunnyVideoId: f.bunnyVideoId })));
+    expect(await publicList()).toEqual(list.map((f: any) => ({ id: f.id, question: f.question, answer: f.answer, videoUrl: f.videoUrl, bunnyVideoId: f.bunnyVideoId, category: f.category })));
   });
 
   it('appends after existing FAQs', async () => {
@@ -303,5 +308,59 @@ describe('FAQ videos and multiple questions', () => {
     expect((await bulk({ items: many })).status).toBe(400);
     expect((await bulk({ items: [{ question: 'Q?', answer: 'A.' }] }, 'clerk_mentor')).status).toBe(403);
     expect(table).toEqual([]);
+  });
+});
+
+describe('FAQ category (Ecommerce / Service / CoachX)', () => {
+  const update = (id: string, body: any) => call(admin.updateFaqHandler, { clerk: 'clerk_admin', params: { id }, body });
+
+  it('a new FAQ must have a category — nothing is saved without one or with an unknown one', async () => {
+    expect(await createRaw({ question: 'Q?', answer: 'A.' })).toMatchObject({ status: 400, body: { error: 'Category is required' } });
+    expect((await createRaw({ question: 'Q?', answer: 'A.', category: 'coaching' })).status).toBe(400);
+    expect((await createRaw({ question: 'Q?', answer: 'A.', category: null })).status).toBe(400);
+    expect(table).toEqual([]);
+  });
+
+  it('saves each category and returns it to the admin list and to members', async () => {
+    for (const category of ['ecommerce', 'service', 'coachx']) {
+      const c = await createRaw({ question: `${category}?`, answer: 'A.', isPublished: true, category });
+      expect(c.status).toBe(201);
+      expect(c.body.data.category).toBe(category);
+    }
+    expect((await adminList()).map((f: any) => f.category)).toEqual(['ecommerce', 'service', 'coachx']);
+    expect((await publicList()).map((f: any) => [f.question, (f as any).category])).toEqual([
+      ['ecommerce?', 'ecommerce'], ['service?', 'service'], ['coachx?', 'coachx'],
+    ]);
+  });
+
+  it('editing loads and keeps the saved category, and it can be changed', async () => {
+    const id = (await createRaw({ question: 'Q?', answer: 'A.', category: 'ecommerce' })).body.data.id;
+    expect((await update(id, { answer: 'B.' })).body.data.category).toBe('ecommerce');
+    expect((await update(id, { category: 'coachx' })).body.data.category).toBe('coachx');
+    expect((await update(id, { category: 'nope' })).status).toBe(400);
+    expect(table[0].category).toBe('coachx');
+  });
+
+  it('older FAQs without a category stay valid and are listed with category null', async () => {
+    table.push({
+      id: '80000000-0000-4000-8000-000000000001', question: 'Old?', answer: 'Old.', is_published: true, sort_order: 0, created_at: 0,
+      updated_at: new Date(), updated_by: null, video_url: null, bunny_video_id: null, category: null,
+    });
+    expect((await publicList())[0]).toMatchObject({ question: 'Old?', category: null });
+    // editing text without choosing a category keeps it uncategorised; choosing one sets it
+    expect((await update('80000000-0000-4000-8000-000000000001', { answer: 'New.' })).body.data).toMatchObject({ answer: 'New.', category: null });
+    expect((await update('80000000-0000-4000-8000-000000000001', { category: 'service' })).body.data.category).toBe('service');
+  });
+
+  it('several new questions save with their category; a missing category rejects the whole batch', async () => {
+    const ok = await call(admin.createFaqsBulkHandler, { clerk: 'clerk_admin', body: { items: [
+      { question: 'A?', answer: 'a', category: 'service' }, { question: 'B?', answer: 'b', category: 'service' },
+    ] } });
+    expect(ok.body.data.map((f: any) => f.category)).toEqual(['service', 'service']);
+    const bad = await call(admin.createFaqsBulkHandler, { clerk: 'clerk_admin', body: { items: [
+      { question: 'C?', answer: 'c', category: 'ecommerce' }, { question: 'D?', answer: 'd' },
+    ] } });
+    expect(bad).toMatchObject({ status: 400, body: { error: 'Question 2: Category is required' } });
+    expect(table).toHaveLength(2);
   });
 });

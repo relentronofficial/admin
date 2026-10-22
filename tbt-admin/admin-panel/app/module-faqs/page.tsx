@@ -15,6 +15,7 @@ import {
   useSaveModuleFaq,
   useSetModuleFaqPublished,
   type ModuleFaq,
+  type ModuleFaqCategory,
 } from "@/lib/hooks/useTbt";
 
 const QUESTION_MAX = 300;
@@ -23,7 +24,17 @@ const ANSWER_MAX = 5000;
 const labelCls = "text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani";
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 text-white text-sm outline-none focus:border-[#dc2626]";
 
-type Draft = { id?: string; question: string; answer: string; isPublished: boolean; videoUrl?: string | null; bunnyVideoId?: string | null };
+type Draft = {
+  id?: string; question: string; answer: string; isPublished: boolean; videoUrl?: string | null; bunnyVideoId?: string | null;
+  category?: ModuleFaqCategory | null;
+};
+
+/** FAQ categories — the sections members see in the FAQ popup. */
+const FAQ_CATEGORY_OPTIONS: Array<{ value: ModuleFaqCategory; label: string }> = [
+  { value: "ecommerce", label: "Ecommerce" },
+  { value: "service", label: "Service" },
+  { value: "coachx", label: "CoachX" },
+];
 
 /** One Question/Answer (+ optional video) entry in the form. */
 type Entry = {
@@ -164,6 +175,9 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
   const saveMany = useCreateModuleFaqsBulk();
   const isEdit = !!initial.id;
   const [isPublished, setIsPublished] = useState(initial.isPublished);
+  // No preselection: the admin must choose (older FAQs without one start empty too).
+  const [category, setCategory] = useState<ModuleFaqCategory | "">(initial.category ?? "");
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>(() => [
     newEntry({ question: initial.question, answer: initial.answer, videoUrl: initial.videoUrl ?? null, bunnyVideoId: initial.bunnyVideoId ?? null }),
   ]);
@@ -197,8 +211,10 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
       if (err.question || err.answer) next[e.key] = err;
     }
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    const payload = (e: Entry) => ({ question: e.question, answer: e.answer, isPublished, videoUrl: e.videoUrl, bunnyVideoId: e.bunnyVideoId });
+    const catErr = category ? null : "Category is required";
+    setCategoryError(catErr);
+    if (Object.keys(next).length > 0 || catErr || !category) return;
+    const payload = (e: Entry) => ({ question: e.question, answer: e.answer, isPublished, videoUrl: e.videoUrl, bunnyVideoId: e.bunnyVideoId, category });
     try {
       if (isEdit) {
         await save.mutateAsync({ id: initial.id, ...payload(entries[0]) });
@@ -218,6 +234,23 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold text-[#f0f0f0]">{isEdit ? "Edit FAQ" : "New FAQ"}</h2>
         <button onClick={onDone} aria-label="Close form" className="text-[#606060] hover:text-[#a0a0a0]"><X size={16} /></button>
+      </div>
+      <div className="space-y-1">
+        <label htmlFor="faq-category" className={labelCls}>Category</label>
+        <select
+          id="faq-category"
+          required
+          value={category}
+          onChange={(e) => { setCategory(e.target.value as ModuleFaqCategory | ""); setCategoryError(null); }}
+          className={`${inputCls} h-11`}
+          aria-invalid={categoryError ? true : undefined}
+        >
+          <option value="" disabled>Select a category</option>
+          {FAQ_CATEGORY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {categoryError && <p className="text-[11px] text-red-400">{categoryError}</p>}
       </div>
       {entries.map((entry, i) => {
         const qId = i === 0 ? "faq-question" : `faq-question-${i + 1}`;
@@ -468,7 +501,7 @@ export default function ModuleFaqsPage() {
                   {canEdit && (
                     <div className="flex items-center gap-3 pt-1">
                       <button
-                        onClick={() => setEditing({ id: faq.id, question: faq.question, answer: faq.answer, isPublished: faq.isPublished, videoUrl: faq.videoUrl ?? null, bunnyVideoId: faq.bunnyVideoId ?? null })}
+                        onClick={() => setEditing({ id: faq.id, question: faq.question, answer: faq.answer, isPublished: faq.isPublished, videoUrl: faq.videoUrl ?? null, bunnyVideoId: faq.bunnyVideoId ?? null, category: faq.category ?? null })}
                         className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-white"
                       >
                         <Pencil size={12} /> Edit
