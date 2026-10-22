@@ -1447,6 +1447,7 @@ export default function CourseDetailPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
+  const targetSectionId = searchParams.get("section"); // null = full course view
   const { uiStrings, config } = useSiteConfig();
   const qc = useQueryClient();
   const { data: course, isLoading, error: courseError } = useCourse(courseId);
@@ -2448,10 +2449,23 @@ export default function CourseDetailPage({
 
   const lessons: Lesson[] = course.lessons ?? [];
 
-  // Next lesson for up-next UI
-  const currentLessonIdx = lessons.findIndex((l: any) => l.id === selectedLesson?.id);
-  const nextLesson = currentLessonIdx >= 0 && currentLessonIdx < lessons.length - 1
-    ? lessons[currentLessonIdx + 1]
+  // When arriving from a section module card (?section=...) scope the sidebar
+  // and next/prev navigation to only that section's lessons.
+  const sectionFilteredLessons: Lesson[] = useMemo(() => {
+    if (!targetSectionId) return lessons;
+    return lessons.filter((l: any) => l.sectionId === targetSectionId);
+  }, [lessons, targetSectionId]);
+
+  const courseSectionsEarly: any[] = (course as any)?.sections ?? [];
+  const activeSectionMeta = useMemo(() =>
+    targetSectionId ? (courseSectionsEarly.find((s: any) => s.id === targetSectionId) ?? null) : null,
+    [targetSectionId, courseSectionsEarly],
+  );
+
+  // Next lesson respects section scope when active
+  const currentLessonIdx = sectionFilteredLessons.findIndex((l: any) => l.id === selectedLesson?.id);
+  const nextLesson = currentLessonIdx >= 0 && currentLessonIdx < sectionFilteredLessons.length - 1
+    ? sectionFilteredLessons[currentLessonIdx + 1]
     : null;
 
   const handleSelectLesson = (lesson: any) => {
@@ -2479,7 +2493,8 @@ export default function CourseDetailPage({
       sectionId: (lesson as any).sectionId ?? null,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
-    router.replace(`/learning/${courseId}?lesson=${lesson.id}`, { scroll: false });
+    const sectionParam = targetSectionId ? `&section=${targetSectionId}` : "";
+    router.replace(`/learning/${courseId}?lesson=${lesson.id}${sectionParam}`, { scroll: false });
   };
 
   // ── Focus timer helpers ───────────────────────────────────────────────────
@@ -2794,21 +2809,19 @@ export default function CourseDetailPage({
   // Modules — topic-area tabs that filter the lesson sidebar
   const courseModules: any[] = (course as any)?.modules ?? [];
   // Sidebar rows grouped by section (admin order: sections by sortOrder, then
-  // "General"). Each group's completed/total covers all of its lessons for
-  // this member, independent of the module filter. Without sections this is a
-  // single group in course order, i.e. the plain lesson list.
+  // "General"). When ?section= is active, only that section's lessons are shown.
   const sectionGroups = buildSectionGroups(
-    lessons as any[], courseSections, completedIds,
+    sectionFilteredLessons as any[], courseSections, completedIds,
     selectedModule ? (l: any) => ((l as any).moduleIds ?? []).includes(selectedModule) : undefined,
   );
   const sidebarRows = sectionGroups.flatMap((group) =>
     group.visibleLessons.map((lesson: any, i: number) => ({ lesson: lesson as Lesson, group, isFirstInSection: i === 0 })),
   );
-  // Course totals count only progress for lessons in this course response —
-  // progress rows for hidden episodes would otherwise push it past 100%.
+  // Sidebar-scoped counts (may differ from full course when section filter active)
+  const sidebarCompletedCount = completedLessonIds(sectionFilteredLessons, completedIds).size;
+  // Course-wide count (for gamification stat tiles, not the sidebar header)
   const completedCount = completedLessonIds(lessons, completedIds).size;
-  // Floating Learning Roadmap: one level per section, from the same groups and
-  // progress as the sidebar (all lessons — not the module-filtered view).
+  // Floating Learning Roadmap always shows full-course progress regardless of filter
   const roadmapLevels = buildRoadmapLevels(
     buildSectionGroups(lessons as any[], courseSections, completedIds),
     completedIds,
@@ -3434,15 +3447,28 @@ export default function CourseDetailPage({
 
         {/* ── Right sidebar: Activities ── */}
         <div className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-[68px] space-y-4">
-          {/* Activities header + overall progress ring */}
+          {/* Activities header + progress ring (section-scoped when ?section= active) */}
           {(() => {
-            const pct = lessons.length > 0 ? Math.round((completedCount / lessons.length) * 100) : 0;
-            const R = 28; const C = 2 * Math.PI * R; // cx/cy=32 in 64x64 viewBox, ring still fits with r=28
-            const allDone = completedCount === lessons.length && lessons.length > 0;
+            const ringTotal = sectionFilteredLessons.length;
+            const ringDone = sidebarCompletedCount;
+            const pct = ringTotal > 0 ? Math.round((ringDone / ringTotal) * 100) : 0;
+            const R = 28; const C = 2 * Math.PI * R;
+            const allDone = ringDone === ringTotal && ringTotal > 0;
             return (
               <div className="rounded-xl overflow-hidden" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
-                <div className="px-5 py-4 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
-                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>Activities</p>
+                <div className="px-5 py-4 border-b flex items-center justify-between gap-2" style={{ borderColor: "var(--color-border-subtle)" }}>
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+                    {activeSectionMeta ? activeSectionMeta.title : "Activities"}
+                  </p>
+                  {activeSectionMeta && (
+                    <Link
+                      href="/courses"
+                      className="flex items-center gap-1 text-xs font-semibold shrink-0 transition-opacity hover:opacity-70"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      <ChevronLeft size={12} /> All Modules
+                    </Link>
+                  )}
                 </div>
                 <div className="flex items-center gap-5 px-5 py-5">
                   <div className="relative shrink-0 w-16 h-16">
@@ -3458,8 +3484,10 @@ export default function CourseDetailPage({
                     </div>
                   </div>
                   <div>
-                    <p className="text-base font-semibold" style={{ color: "var(--color-text-normal)" }}>{allDone ? "All done!" : "Overall Progress"}</p>
-                    <p className="text-sm mt-1" style={{ color: "var(--color-text-subtle)" }}>{completedCount} of {lessons.length} lessons</p>
+                    <p className="text-base font-semibold" style={{ color: "var(--color-text-normal)" }}>
+                      {allDone ? "Module done!" : activeSectionMeta ? "Module Progress" : "Overall Progress"}
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: "var(--color-text-subtle)" }}>{ringDone} of {ringTotal} lessons</p>
                   </div>
                 </div>
               </div>
@@ -3473,10 +3501,12 @@ export default function CourseDetailPage({
           style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
         >
           <div className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-            {lessons.length} {lessons.length === 1 ? "Lesson" : "Lessons"}
-            {completedCount > 0 && (
+            {activeSectionMeta
+              ? activeSectionMeta.title
+              : `${lessons.length} ${lessons.length === 1 ? "Lesson" : "Lessons"}`}
+            {sidebarCompletedCount > 0 && (
               <span className="ml-2 text-xs font-normal" style={{ color: "var(--color-text-subtle)" }}>
-                · {completedCount} done
+                · {sidebarCompletedCount}/{sectionFilteredLessons.length} done
               </span>
             )}
           </div>

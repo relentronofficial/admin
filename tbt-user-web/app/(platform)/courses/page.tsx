@@ -312,8 +312,8 @@ function SectionCard({
   const isInProgress = completed > 0 && !isCompleted;
   const thumbnail = section.thumbnail ?? courseThumbnail ?? null;
   const href = section.firstLessonId
-    ? `/learning/${courseId}?lesson=${section.firstLessonId}`
-    : `/learning/${courseId}`;
+    ? `/learning/${courseId}?lesson=${section.firstLessonId}&section=${section.id}`
+    : `/learning/${courseId}?section=${section.id}`;
 
   return (
     <Link href={href} className="block">
