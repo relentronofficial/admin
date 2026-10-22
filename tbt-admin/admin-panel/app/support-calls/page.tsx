@@ -379,16 +379,16 @@ export default function SupportCallsPage() {
           {!forbidden && (
             <div className="flex gap-2 flex-wrap">
               <button
-                onClick={() => setEditing("new")}
-                className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
-              >
-                <Plus size={15} /> New Session
-              </button>
-              <button
                 onClick={() => setPublishDate("")}
                 className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
               >
                 <CalendarDays size={15} /> Assign Slots
+              </button>
+              <button
+                onClick={() => setEditing("new")}
+                className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
+              >
+                <Plus size={15} /> New Session
               </button>
             </div>
           )}

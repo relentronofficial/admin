@@ -147,6 +147,13 @@ export function PublishAvailabilityModal({
     setStaged({ ...staged, [date]: [...list, time].sort() });
   };
 
+  /** Puts a staged time back in the time field to change it, then "Add Time Slot" re-adds it. */
+  const editTime = (k: string, t: string) => {
+    removeTime(k, t);
+    setTime(t);
+    setError(null);
+  };
+
   const removeTime = (k: string, t: string) => {
     const list = (staged[k] ?? []).filter((x) => x !== t);
     const next = { ...staged };
@@ -287,6 +294,9 @@ export function PublishAvailabilityModal({
                     {staged[date].map((t) => (
                       <span key={t} className="inline-flex items-center gap-1.5 bg-[rgba(220,38,38,0.12)] border border-[rgba(220,38,38,0.4)] text-[#f0f0f0] text-[12px] font-semibold pl-3 pr-1.5 py-1 rounded-full">
                         {formatSlotRange({ startsAt: istToIso(date, t), durationMinutes: details.durationMinutes })}
+                        <button type="button" onClick={() => editTime(date, t)} aria-label={`Edit ${t}`} className="p-0.5 rounded-full hover:bg-black/30 text-[#a0a0a0] hover:text-white">
+                          <Edit2 size={12} />
+                        </button>
                         <button type="button" onClick={() => removeTime(date, t)} aria-label={`Remove ${t}`} className="p-0.5 rounded-full hover:bg-black/30 text-[#a0a0a0] hover:text-white">
                           <X size={12} />
                         </button>
