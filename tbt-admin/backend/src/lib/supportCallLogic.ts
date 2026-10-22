@@ -209,6 +209,8 @@ export function canMarkAttendance(input: { bookingStatus: string; session: Sessi
 export const SLOT_TIMEZONE = 'Asia/Kolkata';
 const IST_OFFSET_MS = 330 * 60_000;
 export const MAX_SLOTS_PER_PUBLISH = 60;
+/** Most bookable slots one host (or, with no host, one category) can have on an IST date. */
+export const MAX_SLOTS_PER_DAY = 5;
 
 export type SlotStatus = 'available' | 'booked' | 'cancelled' | 'in_progress' | 'completed';
 
@@ -258,8 +260,9 @@ const overlaps = (a: Interval, b: Interval) => a.startsAt.getTime() < endMs(b) &
 /**
  * Validates a batch of slots the admin is publishing. Every start must be in the
  * future, unique, and must not overlap another slot in the batch or a live
- * (scheduled, unfinished) slot the same host already has. Returns the first
- * problem so the admin can fix it before anything is written.
+ * (scheduled, unfinished) slot the same host already has, and no IST date may
+ * end up with more than MAX_SLOTS_PER_DAY of them. Returns the first problem so
+ * the admin can fix it before anything is written.
  */
 export function validateSlotBatch(input: {
   startsAt: Date[];
@@ -284,6 +287,27 @@ export function validateSlotBatch(input: {
     }
     const clash = existing.find((e) => overlaps(e, slot));
     if (clash) return deny(409, 'slot_conflict', `${fmt(s)} overlaps a slot already published at ${fmt(clash.startsAt)}.`);
+  }
+  const perDay = new Map<string, { added: number; existing: number }>();
+  for (const s of sorted) {
+    const key = istDateKey(s);
+    const day = perDay.get(key) ?? { added: 0, existing: 0 };
+    perDay.set(key, { ...day, added: day.added + 1 });
+  }
+  for (const e of existing) {
+    const day = perDay.get(istDateKey(e.startsAt));
+    if (day) day.existing += 1;
+  }
+  for (const [date, { added, existing: already }] of perDay) {
+    if (added + already > MAX_SLOTS_PER_DAY) {
+      return deny(
+        already ? 409 : 400,
+        'day_limit',
+        already
+          ? `${date} already has ${already} slot${already === 1 ? '' : 's'}. At most ${MAX_SLOTS_PER_DAY} slots per day.`
+          : `At most ${MAX_SLOTS_PER_DAY} slots per day (${date} has ${added}).`,
+      );
+    }
   }
   return { ok: true };
 }

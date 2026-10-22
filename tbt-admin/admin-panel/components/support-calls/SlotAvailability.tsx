@@ -22,6 +22,7 @@ import {
   groupByIstDate,
   istDateKey,
   istToIso,
+  MAX_SLOTS_PER_DAY,
   monthGrid,
   monthOf,
   monthRange,
@@ -142,6 +143,7 @@ export function PublishAvailabilityModal({
     if (new Date(iso).getTime() <= Date.now()) return setError("That time has already passed. Pick a later time.");
     const list = staged[date] ?? [];
     if (list.includes(time)) return setError("That time is already added for this date.");
+    if (list.length >= MAX_SLOTS_PER_DAY) return setError(`At most ${MAX_SLOTS_PER_DAY} slots per day. Remove one to add another.`);
     setStaged({ ...staged, [date]: [...list, time].sort() });
   };
 
@@ -273,7 +275,7 @@ export function PublishAvailabilityModal({
                     <Plus size={14} /> Add Time Slot
                   </button>
                 </div>
-                <p className="text-[11px] text-[#606060] mt-1.5">Each time becomes one {details.durationMinutes}-minute slot.</p>
+                <p className="text-[11px] text-[#606060] mt-1.5">Each time becomes one {details.durationMinutes}-minute slot. Up to {MAX_SLOTS_PER_DAY} slots per day.</p>
               </div>
 
               <div>
