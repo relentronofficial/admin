@@ -12,6 +12,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
 vi.mock("@/components/features/mentorship/MentorshipDashboard", () => ({ default: () => <div data-testid="mentorship-dashboard" /> }));
 vi.mock("@/components/features/courses/CoursesPageRoadmap", () => ({ default: () => null }));
+vi.mock("@/components/features/batch/WeeklyActivityGraph", () => ({ default: () => <div data-testid="weekly-activity-graph" /> }));
 vi.mock("@/lib/hooks/useDashboard", () => ({ useWatchHistory: () => ({ data: { data: [] } }) }));
 vi.mock("@/lib/hooks/useModuleFaqs", () => ({ useModuleFaqs: () => ({ data: [], isLoading: false, isError: false }) }));
 vi.mock("@/lib/hooks/useCourses", () => ({
@@ -78,5 +79,13 @@ describe("Modules page FAQ placement", () => {
     state.courses = [course("c1", "Product")];
     render(<CoursesPage />);
     expect(screen.getAllByRole("button", { name: /FAQ/ })).toHaveLength(1);
+  });
+
+  it("no standalone Weekly Activity Graph below the Mentorship Dashboard", () => {
+    state.meta = { personalizationState: "direct" };
+    state.courses = [course("c1", "Product")];
+    render(<CoursesPage />);
+    expect(screen.getByTestId("mentorship-dashboard")).toBeTruthy();
+    expect(screen.queryByTestId("weekly-activity-graph")).toBeNull();
   });
 });

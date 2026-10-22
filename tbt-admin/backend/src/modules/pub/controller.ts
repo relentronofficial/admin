@@ -609,7 +609,7 @@ export async function pubModuleFaqsHandler(req: FastifyRequest, reply: FastifyRe
   reply.header('Cache-Control', 'no-store');
   try {
     const rows = await req.server.prisma.$queryRawUnsafe<FaqRow[]>(
-      `SELECT id::text AS id, question, answer, is_published, sort_order, video_url, bunny_video_id
+      `SELECT id::text AS id, question, answer, is_published, sort_order, video_url, bunny_video_id, category
        FROM module_faqs WHERE is_published = TRUE
        ORDER BY sort_order ASC, created_at ASC`,
     );

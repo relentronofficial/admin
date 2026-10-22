@@ -642,7 +642,8 @@ export default function SupportCallPanel({
   // bookable as extra, coin-paid calls (the server still decides).
   const coinPath = !!quota && quota.remaining <= 0 && (coin?.action === "unlock_with_coins" || coin?.action === "purchase_coins");
   const member = useMemo(
-    () => ({ notIncluded: !!quota && quota.allocated <= 0, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
+    // Same rule as the server: only plan-included calls make a category bookable (coin unlocks don't).
+    () => ({ notIncluded: !!quota && (quota.included ?? quota.allocated) <= 0, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
     [quota, coinPath],
   );
   const byDate = useMemo(() => groupByDate(data?.sessions ?? []), [data?.sessions]);
@@ -763,7 +764,9 @@ export default function SupportCallPanel({
                     You can book an extra call for <strong style={{ color: GOLD }}>{coin.cost} TBT coins</strong>. Your balance: {coin.balance} coins.
                     {coin.action === "unlock_with_coins" ? " Pick a slot and confirm. Coins are only deducted when you confirm." : ""}
                   </p>
-                  {coin.action === "purchase_coins" && (
+                  {/* Stays open once used, so the purchase result is still shown after the
+                      refreshed balance flips the action to unlock_with_coins. */}
+                  {(coin.action === "purchase_coins" || showCoinShop) && (
                     showCoinShop ? (
                       <CoinPurchaseBox needed={Math.max(0, coin.cost - coin.balance)} />
                     ) : (

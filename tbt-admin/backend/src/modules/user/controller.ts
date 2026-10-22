@@ -31,6 +31,7 @@ import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess, saveMemberModuleSelection } from '../../lib/memberModuleAccess.js';
 import { isCourseVisible } from '../../lib/courseVisibility.js';
+import { summarizeDmReactions, type DmReactionSummary } from '../../lib/dmMessageActionRules.js';
 import {
   computeSupportQuota,
   SUPPORT_USAGE_COUNTS_SQL,
@@ -5455,10 +5456,12 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
 
   await request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
 
+  // Messages the member deleted "for me" are hidden from them (the TBT team still sees them).
+  const visibleWhere = { conversationId: id, NOT: { AND: [{ deletedAt: { not: null } }, { deletedForEveryone: false }] } };
   const [total, messages] = await Promise.all([
-    request.server.prisma.directMessage.count({ where: { conversationId: id } }),
+    request.server.prisma.directMessage.count({ where: visibleWhere }),
     request.server.prisma.directMessage.findMany({
-      where: { conversationId: id },
+      where: visibleWhere,
       orderBy: { createdAt: 'asc' },
       skip: (Number(page) - 1) * Number(limit),
       take: Number(limit),
@@ -5481,6 +5484,21 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
   const adminMap = Object.fromEntries(admins.map((a) => [a.id, a]));
   const memberName = `${memberProfile?.firstName ?? ''} ${memberProfile?.lastName ?? ''}`.trim() || 'You';
 
+  // Reactions are best-effort: a reactions read failure must never hide the conversation.
+  let reactionMap = new Map<string, DmReactionSummary[]>();
+  if (messages.length > 0) {
+    try {
+      const reactionRows = await request.server.prisma.$queryRawUnsafe<Array<{ message_id: string; sender_type: string; sender_id: string; emoji: string }>>(
+        `SELECT message_id::text AS message_id, sender_type, sender_id::text AS sender_id, emoji
+           FROM direct_message_reactions WHERE message_id = ANY($1::uuid[]) ORDER BY created_at ASC`,
+        messages.map((m) => m.id),
+      );
+      reactionMap = summarizeDmReactions(reactionRows, memberId);
+    } catch (err) {
+      request.log.warn({ err }, 'conversation reactions read failed');
+    }
+  }
+
   const data = messages.map((m) => {
     const admin = m.senderType === 'admin' ? adminMap[m.senderId] : null;
     return {
@@ -5498,6 +5516,8 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
       editedAt:           m.editedAt,
       deletedAt:          m.deletedAt,
       deletedForEveryone: m.deletedForEveryone,
+      forwarded:          !!m.forwardedFromMessageId,
+      reactions:          m.deletedForEveryone ? [] : (reactionMap.get(m.id) ?? []),
       readByAdminAt:      m.readByAdminAt,
       readByMemberAt:     m.readByMemberAt,
       createdAt:          m.createdAt,

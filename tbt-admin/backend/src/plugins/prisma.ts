@@ -1322,6 +1322,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // DM reactions — mirrors chat_group_reactions but keys on
       // (message, sender_type, sender_id) since senders can be admins or
       // members.
+      // One statement per call: a multi-statement call fails as a prepared
+      // statement, which left this table uncreated.
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS direct_message_reactions (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1331,9 +1333,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           emoji TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           UNIQUE (message_id, sender_type, sender_id, emoji)
-        );
-        CREATE INDEX IF NOT EXISTS idx_direct_message_reactions_message ON direct_message_reactions(message_id);
-      `),
+        )
+      `).then(() => prisma.$executeRawUnsafe(
+        `CREATE INDEX IF NOT EXISTS idx_direct_message_reactions_message ON direct_message_reactions(message_id)`
+      )),
       // Presence — "last seen at" per member. Written on socket disconnect;
       // exposed by chat-groups/presence + DM headers.
       prisma.$executeRawUnsafe(`
@@ -2260,6 +2263,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Optional video per FAQ (Bunny Stream, uploaded from the admin Modules FAQ page).
     await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(() => {});
     await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS bunny_video_id TEXT`).catch(() => {});
+    // FAQ category shown as a section in the member FAQ popup (ecommerce | service | coachx); NULL = older FAQ ("General").
+    await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS category VARCHAR(20)`).catch(() => {});
+    // Optional thumbnail image per FAQ (R2 public URL, uploaded from the admin Modules FAQ page).
+    await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`).catch(() => {});
 
     // ── Support calls unlocked with TBT coins (2026-10-20) ──────────────────
     // coin_cost on a booking = the coins it was paid with (NULL = free quota).

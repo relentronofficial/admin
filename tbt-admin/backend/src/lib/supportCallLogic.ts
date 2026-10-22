@@ -89,7 +89,8 @@ export function canBook(input: {
   if (session.startsAt.getTime() <= now.getTime()) return deny(409, 'session_started', 'This session has already started.');
   if (alreadyBooked) return deny(409, 'already_booked', 'You have already booked this session.');
   if (memberStatus !== 'active') return deny(403, 'member_inactive', 'Your membership must be active to book calls.');
-  if (quota.allocated <= 0) return deny(403, 'not_included', 'This call type is not included in your plan.');
+  // `included`, not `allocated`: coin-unlocked calls never make a category part of the plan.
+  if (quota.included <= 0) return deny(403, 'not_included', 'This call type is not included in your plan.');
   if (quota.remaining <= 0) return deny(403, 'quota_exhausted', 'You have no calls left in this category.');
   if (activeBookingCount >= session.capacity) return deny(409, 'session_full', 'This session is full.');
   return { ok: true };

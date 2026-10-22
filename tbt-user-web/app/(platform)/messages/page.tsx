@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Archive,
+  Check,
   ChevronLeft,
   Copy,
   Edit3,
@@ -26,6 +27,10 @@ import { useSiteConfig } from '@/lib/context/SiteConfigContext';
 import {
   useConversations,
   useConversationMessages,
+  useEditChatMessage,
+  useDeleteChatMessage,
+  useReactChatMessage,
+  useForwardChatMessage,
   useStartConversation,
   useSendChatMessage,
   useArchiveConversation,
@@ -33,6 +38,7 @@ import {
 import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
 import { useMe } from '@/lib/hooks/useUser';
 import { getSocket } from '@/lib/socket/client';
+import { getServerNow } from '@/lib/api/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { timeAgo } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
@@ -270,6 +276,7 @@ export default function MessagesPage() {
       socketRef.current = s;
       s.emit('chat:join', { conversationId: activeId });
       s.on('chat:message', handleMessage);
+      s.on('chat:message_updated', handleMessage);
       s.on('chat:typing', handleTyping);
       s.on('chat:conversation_closed', handleClosed);
       s.on('chat:conversation_reopened', handleReopened);
@@ -280,6 +287,7 @@ export default function MessagesPage() {
       if (socketRef.current) {
         socketRef.current.emit('chat:leave', { conversationId: activeId });
         socketRef.current.off('chat:message', handleMessage);
+        socketRef.current.off('chat:message_updated', handleMessage);
         socketRef.current.off('chat:typing', handleTyping);
         socketRef.current.off('chat:conversation_closed', handleClosed);
         socketRef.current.off('chat:conversation_reopened', handleReopened);
@@ -578,6 +586,8 @@ export default function MessagesPage() {
                         message={m}
                         isMe={isMe}
                         me={me}
+                        conversationId={activeId!}
+                        conversations={conversations}
                         onReply={() => setReplyingTo(m)}
                       />
                     );
@@ -799,23 +809,104 @@ export default function MessagesPage() {
 
 // ── DM bubble with hover menu ────────────────────────────────────────────────
 
+/** Same quick reactions as group chat. */
+const DM_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+/** Same edit window the server enforces (group-chat rule). */
+const DM_EDIT_WINDOW_MS = 5 * 60 * 1000;
+
 function DmBubble({
   message,
   isMe,
   me,
+  conversationId,
+  conversations,
   onReply,
 }: {
   message: any;
   isMe: boolean;
   me: any;
+  conversationId: string;
+  conversations: any[];
   onReply: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [reactPickerOpen, setReactPickerOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardTo, setForwardTo] = useState<Set<string>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
 
-  function comingSoon(label: string) {
-    toast(`${label}: coming soon`, { icon: '⏳' });
+  const editMsg = useEditChatMessage();
+  const deleteMsg = useDeleteChatMessage();
+  const reactMsg = useReactChatMessage();
+  const forwardMsg = useForwardChatMessage();
+
+  const deleted = !!message.deletedForEveryone;
+  const canEdit =
+    isMe && !deleted && !!message.body &&
+    getServerNow() - new Date(message.createdAt).getTime() < DM_EDIT_WINDOW_MS;
+  const forwardTargets = conversations.filter((c: any) => c.id !== conversationId);
+  const reactions: Array<{ emoji: string; count: number; reactedByMe: boolean }> = message.reactions ?? [];
+
+  const ids = { conversationId, messageId: message.id };
+  const failed = (fallback: string) => (err: any) => toast.error(err?.message || fallback);
+
+  function startEdit() {
     setMenuOpen(false);
+    setEditText(message.body ?? '');
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    const body = editText.trim();
+    if (!body) {
+      toast.error('Message cannot be empty');
+      return;
+    }
+    if (body === message.body) {
+      setEditing(false);
+      return;
+    }
+    editMsg.mutate({ ...ids, body }, {
+      onSuccess: () => {
+        setEditing(false);
+        toast.success('Message edited');
+      },
+      onError: failed('Could not edit the message'),
+    });
+  }
+
+  function react(emoji: string) {
+    setReactPickerOpen(false);
+    reactMsg.mutate({ ...ids, emoji }, { onError: failed('Could not save the reaction') });
+  }
+
+  function submitForward() {
+    if (forwardTo.size === 0) {
+      toast.error('Choose a conversation');
+      return;
+    }
+    forwardMsg.mutate({ ...ids, toConversationIds: [...forwardTo] }, {
+      onSuccess: () => {
+        setForwardOpen(false);
+        setForwardTo(new Set());
+        toast.success('Message forwarded');
+      },
+      onError: failed('Could not forward the message'),
+    });
+  }
+
+  function doDelete() {
+    if (!confirmDelete) return;
+    deleteMsg.mutate({ ...ids, forEveryone: confirmDelete === 'everyone' }, {
+      onSuccess: () => {
+        setConfirmDelete(null);
+        toast.success('Message deleted');
+      },
+      onError: failed('Could not delete the message'),
+    });
   }
 
   function handleCopy() {
@@ -872,6 +963,14 @@ function DmBubble({
             </div>
           )}
 
+          {message.forwarded && !deleted && (
+            <p className="px-3.5 pt-1.5 text-[10px] italic text-muted-foreground">Forwarded</p>
+          )}
+
+          {deleted && (
+            <p className="text-sm italic text-muted-foreground px-3.5 py-2">This message was deleted</p>
+          )}
+
           {/* Media */}
           {message.mediaUrl && message.mediaType && (
             <DmMediaBlock
@@ -881,21 +980,112 @@ function DmBubble({
             />
           )}
 
-          {message.body && (
-            <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
-              {message.body}
-            </p>
+          {editing ? (
+            <div className="px-2 pt-2 pb-1 space-y-1.5">
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                rows={3}
+                maxLength={5000}
+                autoFocus
+                aria-label="Edit message"
+                className="w-full min-w-[220px] rounded-lg px-2.5 py-2 text-sm outline-none border text-foreground resize-none"
+                style={{
+                  background: 'var(--color-bg-primary)',
+                  borderColor: 'color-mix(in srgb, var(--color-accent) 30%, transparent)',
+                }}
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setEditing(false)}
+                  disabled={editMsg.isPending}
+                  className="px-3 h-7 rounded-md text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={editMsg.isPending}
+                  className="px-3 h-7 rounded-md text-xs font-semibold text-white flex items-center gap-1.5 disabled:opacity-50"
+                  style={{ background: 'var(--color-accent)' }}
+                >
+                  {editMsg.isPending && <Loader2 size={11} className="animate-spin" />}
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            message.body && (
+              <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
+                {message.body}
+              </p>
+            )
           )}
           <p className="text-[10px] text-muted-foreground mt-0 px-3.5 pb-1.5 text-right">
+            {message.editedAt && !deleted ? 'edited · ' : ''}
             {timeAgo(message.createdAt)}
           </p>
         </div>
+
+        {reactions.length > 0 && !deleted && (
+          <div className={cn('flex gap-1 mt-1 flex-wrap', isMe ? 'justify-end' : 'justify-start')}>
+            {reactions.map((r) => (
+              <button
+                key={r.emoji}
+                onClick={() => react(r.emoji)}
+                disabled={reactMsg.isPending}
+                title={r.reactedByMe ? 'Remove your reaction' : 'React with this'}
+                aria-pressed={r.reactedByMe}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px]"
+                style={{
+                  background: r.reactedByMe
+                    ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
+                    : 'var(--color-bg-surface)',
+                  border: r.reactedByMe
+                    ? '1px solid var(--color-accent)'
+                    : '1px solid var(--color-border-subtle)',
+                }}
+              >
+                <span>{r.emoji}</span>
+                <span className="text-muted-foreground">{r.count}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {reactPickerOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setReactPickerOpen(false)} />
+            <div
+              className={cn('relative z-50 mt-1 flex gap-1 px-2 py-1 rounded-full self-start', isMe && 'self-end')}
+              style={{
+                background: 'var(--color-modal-bg)',
+                border: '1px solid var(--color-border-medium)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              }}
+              role="group"
+              aria-label="Pick a reaction"
+            >
+              {DM_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => react(emoji)}
+                  className="text-lg leading-none p-1 rounded-full hover:bg-[var(--color-surface-overlay)]"
+                  aria-label={`React ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Hover / persistent action button. Sits on the bubble edge; opens a
-          small menu with Reply, Copy, Edit, Delete, React, Forward. Except
-          Reply and Copy, the actions currently show a "coming soon" toast
-          until the DM edit/delete/react backend ships. */}
+          small menu with Reply, Copy, React, Forward, Edit (own, within 5
+          minutes) and Delete (for me / for everyone on own messages). Hidden
+          on messages deleted for everyone. */}
+      {!deleted && !editing && (
       <button
         onClick={() => setMenuOpen((v) => !v)}
         className={cn(
@@ -911,6 +1101,7 @@ function DmBubble({
       >
         <MoreVertical size={12} />
       </button>
+      )}
       {menuOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
@@ -941,34 +1132,46 @@ function DmBubble({
               <Copy size={13} /> Copy
             </button>
             <button
-              onClick={() => comingSoon('React')}
+              onClick={() => {
+                setMenuOpen(false);
+                setReactPickerOpen(true);
+              }}
               className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
             >
               <Smile size={13} /> React
             </button>
             <button
-              onClick={() => comingSoon('Forward')}
+              onClick={() => {
+                setMenuOpen(false);
+                setForwardOpen(true);
+              }}
               className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
             >
               <Reply size={13} className="scale-x-[-1]" /> Forward
             </button>
-            {isMe && (
+            {canEdit && (
               <button
-                onClick={() => comingSoon('Edit')}
+                onClick={startEdit}
                 className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
               >
                 <Edit3 size={13} /> Edit
               </button>
             )}
             <button
-              onClick={() => comingSoon('Delete for me')}
+              onClick={() => {
+                setMenuOpen(false);
+                setConfirmDelete('me');
+              }}
               className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
             >
               <Trash2 size={13} /> Delete for me
             </button>
             {isMe && (
               <button
-                onClick={() => comingSoon('Delete for everyone')}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setConfirmDelete('everyone');
+                }}
                 className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
               >
                 <Trash2 size={13} /> Delete for everyone
@@ -976,6 +1179,125 @@ function DmBubble({
             )}
           </div>
         </>
+      )}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={() => !deleteMsg.isPending && setConfirmDelete(null)}>
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby={`dm-del-${message.id}`}
+            className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+            style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1.5">
+              <p id={`dm-del-${message.id}`} className="font-semibold text-sm text-foreground">
+                {confirmDelete === 'everyone' ? 'Delete for everyone?' : 'Delete for me?'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {confirmDelete === 'everyone'
+                  ? 'This message will be removed for you and the TBT team. This cannot be undone.'
+                  : 'This message will be removed from your view. The TBT team will still see it.'}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doDelete}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deleteMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forwardOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={() => !forwardMsg.isPending && setForwardOpen(false)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`dm-fwd-${message.id}`}
+            className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+            style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <p id={`dm-fwd-${message.id}`} className="font-semibold text-sm text-foreground">Forward to</p>
+              <button onClick={() => setForwardOpen(false)} disabled={forwardMsg.isPending} aria-label="Close" className="text-muted-foreground hover:text-foreground">
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground truncate">
+              {message.body || (message.mediaType ? `📎 ${message.mediaType}` : '')}
+            </p>
+            {forwardTargets.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                You have no other conversations to forward to. Start a new conversation first.
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-y-auto space-y-1">
+                {forwardTargets.map((c: any) => {
+                  const picked = forwardTo.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() =>
+                        setForwardTo((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(c.id)) next.delete(c.id);
+                          else next.add(c.id);
+                          return next;
+                        })
+                      }
+                      aria-pressed={picked}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-foreground hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <span
+                        className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0"
+                        style={{
+                          borderColor: picked ? 'var(--color-accent)' : 'var(--color-border-medium)',
+                          background: picked ? 'var(--color-accent)' : 'transparent',
+                        }}
+                      >
+                        {picked && <Check size={11} className="text-white" />}
+                      </span>
+                      <span className="truncate">{c.subject}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setForwardOpen(false)}
+                disabled={forwardMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitForward}
+                disabled={forwardMsg.isPending || forwardTo.size === 0}
+                className="px-4 h-9 rounded-lg text-sm font-semibold text-white flex items-center gap-1.5 disabled:opacity-50"
+                style={{ background: 'var(--color-accent)' }}
+              >
+                {forwardMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                Forward
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {lightboxOpen && message.mediaUrl && message.mediaType === 'image' && (

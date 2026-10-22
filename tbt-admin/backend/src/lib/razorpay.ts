@@ -16,8 +16,13 @@ export function getRazorpay(): Razorpay {
 
 /** Constant-time hex comparison; false for a missing or malformed signature. */
 function safeEqualHex(expected: string, signature: unknown): boolean {
-  if (typeof signature !== 'string' || signature.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(signature, 'utf8'));
+  if (typeof signature !== 'string') return false;
+  // Compare byte lengths, not string lengths: a same-length string with
+  // multi-byte characters would otherwise make timingSafeEqual throw (→ 500).
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(signature, 'utf8');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {
