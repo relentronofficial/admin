@@ -9,6 +9,15 @@ import { ChevronDown, HelpCircle, X } from "lucide-react";
 import { useModuleFaqs } from "@/lib/hooks/useModuleFaqs";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
+// FAQ sections in the popup (admin-chosen category), in this order; "general" = no category.
+const FAQ_SECTIONS = [
+  { key: "ecommerce", label: "Ecommerce" },
+  { key: "service", label: "Service" },
+  { key: "coachx", label: "CoachX" },
+  { key: "general", label: "General" },
+] as const;
+const CATEGORY_KEYS: string[] = ["ecommerce", "service", "coachx"];
+
 // Same dark palette as the rest of the Modules page.
 const SURFACE = "#1a1a1d";
 const CARD = "#242428";
@@ -44,6 +53,72 @@ function FaqModal({ onClose }: { onClose: () => void }) {
     });
 
   const faqs = data ?? [];
+
+  // FAQs are grouped by the category the admin chose: Ecommerce, Service, CoachX,
+  // then older FAQs without one under "General". Until any FAQ has a category the
+  // popup stays the single list it always was.
+  const sections = FAQ_SECTIONS.map(({ key, label }) => ({
+    key,
+    label: s?.[`modulesFaqSection_${key}`] ?? label,
+    items: faqs.filter((f) => (key === "general" ? !CATEGORY_KEYS.includes(f.category as string) : f.category === key)),
+  })).filter((sec) => sec.items.length > 0);
+  const showSections = faqs.some((f) => CATEGORY_KEYS.includes(f.category as string));
+
+  const renderList = (items: typeof faqs) => (
+    <ul className="space-y-2" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+      {items.map((faq) => {
+        const open = openIds.has(faq.id);
+        const panelId = `faq-answer-${faq.id}`;
+        return (
+          <li key={faq.id} className="rounded-[10px] overflow-hidden" style={{ background: CARD, border: `1px solid ${open ? BORDER : "transparent"}` }}>
+            <button
+              type="button"
+              onClick={() => toggle(faq.id)}
+              aria-expanded={open}
+              aria-controls={panelId}
+              className="w-full flex items-center justify-between gap-3 text-left px-4 py-3"
+              style={{ color: TEXT, fontSize: 14, fontWeight: 600 }}
+            >
+              <span className="min-w-0 break-words">{faq.question}</span>
+              <ChevronDown
+                size={16}
+                aria-hidden="true"
+                className="shrink-0 transition-transform"
+                style={{ color: MUTED, transform: open ? "rotate(180deg)" : undefined }}
+              />
+            </button>
+            {open && (
+              <div
+                id={panelId}
+                role="region"
+                aria-label={faq.question}
+                className="px-4 pb-4 space-y-3"
+              >
+                {faq.answer && (
+                  <p className="whitespace-pre-line break-words m-0" style={{ fontSize: 13, lineHeight: 1.65, color: "#c8c8ce" }}>
+                    {faq.answer}
+                  </p>
+                )}
+                {faq.videoUrl && (
+                  <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
+                    <iframe
+                      src={faq.videoUrl}
+                      title={faq.question}
+                      allow="autoplay; fullscreen"
+                      allowFullScreen
+                      loading="lazy"
+                      className="absolute inset-0 w-full h-full border-0"
+                      style={{ borderRadius: 8 }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/60 sm:p-4" onClick={onClose}>
@@ -92,59 +167,23 @@ function FaqModal({ onClose }: { onClose: () => void }) {
               </p>
             </div>
           ) : (
-            <ul className="space-y-2" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {faqs.map((faq) => {
-                const open = openIds.has(faq.id);
-                const panelId = `faq-answer-${faq.id}`;
-                return (
-                  <li key={faq.id} className="rounded-[10px] overflow-hidden" style={{ background: CARD, border: `1px solid ${open ? BORDER : "transparent"}` }}>
-                    <button
-                      type="button"
-                      onClick={() => toggle(faq.id)}
-                      aria-expanded={open}
-                      aria-controls={panelId}
-                      className="w-full flex items-center justify-between gap-3 text-left px-4 py-3"
-                      style={{ color: TEXT, fontSize: 14, fontWeight: 600 }}
+            showSections ? (
+              <div className="space-y-5">
+                {sections.map((sec) => (
+                  <section key={sec.key} aria-labelledby={`modules-faq-section-${sec.key}`} data-faq-section={sec.key}>
+                    <h3
+                      id={`modules-faq-section-${sec.key}`}
+                      style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: MUTED }}
                     >
-                      <span className="min-w-0 break-words">{faq.question}</span>
-                      <ChevronDown
-                        size={16}
-                        aria-hidden="true"
-                        className="shrink-0 transition-transform"
-                        style={{ color: MUTED, transform: open ? "rotate(180deg)" : undefined }}
-                      />
-                    </button>
-                    {open && (
-                      <div
-                        id={panelId}
-                        role="region"
-                        aria-label={faq.question}
-                        className="px-4 pb-4 space-y-3"
-                      >
-                        {faq.answer && (
-                          <p className="whitespace-pre-line break-words m-0" style={{ fontSize: 13, lineHeight: 1.65, color: "#c8c8ce" }}>
-                            {faq.answer}
-                          </p>
-                        )}
-                        {faq.videoUrl && (
-                          <div className="relative w-full overflow-hidden rounded-lg" style={{ paddingBottom: "56.25%" }}>
-                            <iframe
-                              src={faq.videoUrl}
-                              title={faq.question}
-                              allow="autoplay; fullscreen"
-                              allowFullScreen
-                              loading="lazy"
-                              className="absolute inset-0 w-full h-full border-0"
-                              style={{ borderRadius: 8 }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      {sec.label}
+                    </h3>
+                    {renderList(sec.items)}
+                  </section>
+                ))}
+              </div>
+            ) : (
+              renderList(faqs)
+            )
           )}
         </div>
       </div>

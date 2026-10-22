@@ -41,7 +41,16 @@ export interface FaqInput {
   /** Optional Bunny Stream video (embed URL + video id); null = no video. */
   videoUrl?: string | null;
   bunnyVideoId?: string | null;
+  /** FAQ category (section in the member FAQ popup); null only for older FAQs created before categories. */
+  category?: FaqCategory | null;
+  /** Optional thumbnail image (public https URL of the uploaded image); null = none. */
+  thumbnailUrl?: string | null;
 }
+
+/** FAQ categories, in the order members see them. */
+export const FAQ_CATEGORIES = ['ecommerce', 'service', 'coachx'] as const;
+export type FaqCategory = (typeof FAQ_CATEGORIES)[number];
+const isFaqCategory = (v: unknown): v is FaqCategory => typeof v === 'string' && (FAQ_CATEGORIES as readonly string[]).includes(v);
 
 export const FAQ_VIDEO_URL_MAX = 1000;
 export const FAQ_BATCH_MAX = 20;
@@ -70,6 +79,24 @@ function validateFaqVideo(b: Record<string, unknown>, current?: FaqInput): Valid
   return { ok: true, value: { videoUrl: parsed.toString(), bunnyVideoId: typeof rawId === 'string' && rawId ? rawId : null } };
 }
 
+/**
+ * Optional thumbnail. Omitted → keep `current` (update) / none (create);
+ * null or '' → no thumbnail. Must be an https URL (the uploaded image's public URL).
+ */
+function validateFaqThumbnail(b: Record<string, unknown>, current?: FaqInput): Validation<string | null> {
+  const raw = 'thumbnailUrl' in b ? b.thumbnailUrl : current?.thumbnailUrl ?? null;
+  if (raw === null || raw === undefined || raw === '') return { ok: true, value: null };
+  if (typeof raw !== 'string' || raw.length > FAQ_VIDEO_URL_MAX) return { ok: false, error: 'Thumbnail URL is invalid' };
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    return { ok: false, error: 'Thumbnail URL is invalid' };
+  }
+  if (parsed.protocol !== 'https:') return { ok: false, error: 'Thumbnail URL must use https' };
+  return { ok: true, value: parsed.toString() };
+}
+
 /** Validates a create (no `current`) or a partial update merged over `current`. */
 export function validateFaqInput(body: unknown, current?: FaqInput): Validation<FaqInput> {
   const b = (body ?? {}) as Record<string, unknown>;
@@ -90,7 +117,21 @@ export function validateFaqInput(body: unknown, current?: FaqInput): Validation<
   if (typeof rawP !== 'boolean') return { ok: false, error: 'isPublished must be true or false' };
   const video = validateFaqVideo(b, current);
   if (!video.ok) return video;
-  return { ok: true, value: { question, answer, isPublished: rawP, ...video.value } };
+  const thumbnail = validateFaqThumbnail(b, current);
+  if (!thumbnail.ok) return thumbnail;
+
+  // Category: required for a new FAQ; on update, omitted keeps the current one
+  // (older FAQs may have none until an admin picks one).
+  let category: FaqCategory | null;
+  if ('category' in b) {
+    if (!isFaqCategory(b.category)) return { ok: false, error: 'Choose a category: Ecommerce, Service or CoachX' };
+    category = b.category;
+  } else if (current) {
+    category = current.category ?? null;
+  } else {
+    return { ok: false, error: 'Category is required' };
+  }
+  return { ok: true, value: { question, answer, isPublished: rawP, ...video.value, category, thumbnailUrl: thumbnail.value } };
 }
 
 /**
@@ -131,6 +172,8 @@ export interface FaqRow {
   updated_at?: Date | string | null;
   video_url?: string | null;
   bunny_video_id?: string | null;
+  category?: string | null;
+  thumbnail_url?: string | null;
 }
 
 export function adminFaqDto(r: FaqRow) {
@@ -143,6 +186,8 @@ export function adminFaqDto(r: FaqRow) {
     updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
     videoUrl: r.video_url ?? null,
     bunnyVideoId: r.bunny_video_id ?? null,
+    category: isFaqCategory(r.category) ? r.category : null,
+    thumbnailUrl: r.thumbnail_url ?? null,
   };
 }
 
@@ -157,5 +202,6 @@ export function publicFaqList(rows: FaqRow[]) {
       answer: r.answer,
       videoUrl: r.video_url ?? null,
       bunnyVideoId: r.bunny_video_id ?? null,
+      category: isFaqCategory(r.category) ? r.category : null,
     }));
 }

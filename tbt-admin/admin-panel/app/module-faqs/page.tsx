@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { HelpCircle, Loader2, Plus, Save, Trash2, GripVertical, Pencil, Eye, EyeOff, X, Upload, Video } from "lucide-react";
 import toast from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useMe, useCreateBunnyVideo } from "@/lib/hooks/useAdmin";
+import { useMe, useCreateBunnyVideo, useUploadImage } from "@/lib/hooks/useAdmin";
 import {
   useCreateModuleFaqsBulk,
   useDeleteModuleFaq,
@@ -15,6 +15,7 @@ import {
   useSaveModuleFaq,
   useSetModuleFaqPublished,
   type ModuleFaq,
+  type ModuleFaqCategory,
 } from "@/lib/hooks/useTbt";
 
 const QUESTION_MAX = 300;
@@ -23,7 +24,18 @@ const ANSWER_MAX = 5000;
 const labelCls = "text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani";
 const inputCls = "w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 text-white text-sm outline-none focus:border-[#dc2626]";
 
-type Draft = { id?: string; question: string; answer: string; isPublished: boolean; videoUrl?: string | null; bunnyVideoId?: string | null };
+type Draft = {
+  id?: string; question: string; answer: string; isPublished: boolean; videoUrl?: string | null; bunnyVideoId?: string | null;
+  category?: ModuleFaqCategory | null;
+  thumbnailUrl?: string | null;
+};
+
+/** FAQ categories — the sections members see in the FAQ popup. */
+const FAQ_CATEGORY_OPTIONS: Array<{ value: ModuleFaqCategory; label: string }> = [
+  { value: "ecommerce", label: "Ecommerce" },
+  { value: "service", label: "Service" },
+  { value: "coachx", label: "CoachX" },
+];
 
 /** One Question/Answer (+ optional video) entry in the form. */
 type Entry = {
@@ -37,6 +49,11 @@ type Entry = {
   uploadError: string | null;
   /** Name of the file chosen in this session (shown with its upload status). */
   fileName: string | null;
+  /** Optional thumbnail image (public URL) and its upload state. */
+  thumbnailUrl: string | null;
+  thumbPct: number | null;
+  thumbError: string | null;
+  thumbFileName: string | null;
 };
 
 /** Video formats the FAQ uploader accepts (Bunny Stream transcodes all three). */
@@ -47,7 +64,8 @@ type EntryErrors = { question?: string; answer?: string };
 
 let entrySeq = 0;
 const newEntry = (over: Partial<Entry> = {}): Entry => ({
-  key: `e${++entrySeq}`, question: "", answer: "", videoUrl: null, bunnyVideoId: null, uploadPct: null, uploadError: null, fileName: null, ...over,
+  key: `e${++entrySeq}`, question: "", answer: "", videoUrl: null, bunnyVideoId: null, uploadPct: null, uploadError: null, fileName: null,
+  thumbnailUrl: null, thumbPct: null, thumbError: null, thumbFileName: null, ...over,
 });
 
 /**
@@ -123,7 +141,7 @@ function FaqVideoField({ entry, number, inputId, disabled, onChange }: {
           className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#f0f0f0] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#dc2626] disabled:opacity-50"
         >
           {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
-          {uploading ? `Uploading… ${entry.uploadPct}%` : entry.videoUrl ? "Replace Video" : "Choose Video / Upload Video"}
+          {uploading ? `Uploading… ${entry.uploadPct}%` : entry.videoUrl ? "Replace Video" : "Upload Video"}
         </button>
         {entry.videoUrl && !uploading && (
           <>
@@ -159,32 +177,137 @@ function FaqVideoField({ entry, number, inputId, disabled, onChange }: {
   );
 }
 
+/** Thumbnail image formats the FAQ uploader accepts. */
+const THUMB_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
+/** Same limit as the backend image upload route (POST /api/upload/image). */
+const THUMB_MAX_BYTES = 50 * 1024 * 1024;
+const isSupportedThumb = (file: File) =>
+  ["image/jpeg", "image/png", "image/webp"].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+
+/**
+ * Optional FAQ thumbnail — uploaded through the backend image route (useUploadImage →
+ * POST /api/upload/image), the same server-side upload the other admin image fields use.
+ * The backend writes to the configured storage and returns the public URL; the browser
+ * never talks to the storage bucket directly (its CORS policy blocks browser PUTs).
+ */
+function FaqThumbnailField({ entry, inputId, disabled, onChange }: {
+  entry: Entry;
+  inputId: string;
+  disabled: boolean;
+  onChange: (patch: Partial<Entry>) => void;
+}) {
+  const uploadImage = useUploadImage();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploading = entry.thumbPct !== null;
+
+  const upload = async (file: File) => {
+    if (!isSupportedThumb(file)) {
+      onChange({ thumbFileName: file.name, thumbError: "Unsupported format — choose a JPG, JPEG, PNG or WebP image" });
+      return;
+    }
+    if (file.size > THUMB_MAX_BYTES) {
+      onChange({ thumbFileName: file.name, thumbError: "Image is too large — the limit is 50 MB" });
+      return;
+    }
+    onChange({ thumbFileName: file.name, thumbPct: 0, thumbError: null });
+    try {
+      // Some systems report no MIME type; send the type the extension implies.
+      const contentType = file.type || (/\.png$/i.test(file.name) ? "image/png" : /\.webp$/i.test(file.name) ? "image/webp" : "image/jpeg");
+      const body = file.type ? file : new File([file], file.name, { type: contentType });
+      const { publicUrl } = await uploadImage.mutateAsync({
+        file: body, pathPrefix: "module-faqs/thumbnails", onProgress: (pct) => onChange({ thumbPct: pct }),
+      });
+      if (!publicUrl) throw new Error("Upload failed — the server returned no image URL");
+      onChange({ thumbnailUrl: publicUrl, thumbPct: null, thumbError: null });
+      toast.success("Thumbnail uploaded");
+    } catch (err: any) {
+      // A server reply carries its own message; no reply at all means the request never got through.
+      const message = err?.response ? err?.message : "Upload failed — check your connection";
+      onChange({ thumbPct: null, thumbError: message || "Thumbnail upload failed" });
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <label htmlFor={inputId} className={labelCls}>Thumbnail (Optional)</label>
+      <input
+        id={inputId}
+        ref={fileRef}
+        type="file"
+        accept={THUMB_ACCEPT}
+        className="hidden"
+        disabled={disabled || uploading}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); }}
+      />
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={disabled || uploading}
+          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#f0f0f0] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#dc2626] disabled:opacity-50"
+        >
+          {uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+          {uploading ? `Uploading… ${entry.thumbPct}%` : entry.thumbnailUrl ? "Replace Thumbnail" : "Upload Thumbnail"}
+        </button>
+        {entry.thumbnailUrl && !uploading && (
+          <button
+            type="button"
+            onClick={() => onChange({ thumbnailUrl: null })}
+            disabled={disabled}
+            className="text-xs text-[#a0a0a0] hover:text-red-400"
+          >
+            Remove thumbnail
+          </button>
+        )}
+      </div>
+      {entry.thumbFileName && (
+        <p className="text-[11px] text-[#a0a0a0]" data-thumb-status>
+          {entry.thumbFileName}
+          {" — "}
+          {uploading ? `Uploading ${entry.thumbPct}%` : entry.thumbError ? "Upload failed" : entry.thumbnailUrl ? "Uploaded" : ""}
+        </p>
+      )}
+      {uploading && (
+        <div className="h-1.5 w-full max-w-xs bg-[#2a2a2a] rounded-full overflow-hidden" role="progressbar" aria-label="Thumbnail upload progress" aria-valuenow={entry.thumbPct ?? 0} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full bg-[#dc2626]" style={{ width: `${entry.thumbPct}%` }} />
+        </div>
+      )}
+      {entry.thumbnailUrl && !uploading && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={entry.thumbnailUrl} alt="Thumbnail preview" className="h-24 w-auto max-w-[200px] rounded-lg border border-[#2a2a2a] object-cover" />
+      )}
+      {entry.thumbError && <p className="text-[11px] text-red-400" role="alert">{entry.thumbError}</p>}
+    </div>
+  );
+}
+
 function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
   const save = useSaveModuleFaq();
   const saveMany = useCreateModuleFaqsBulk();
   const isEdit = !!initial.id;
   const [isPublished, setIsPublished] = useState(initial.isPublished);
+  // No preselection: the admin must choose (older FAQs without one start empty too).
+  const [category, setCategory] = useState<ModuleFaqCategory | "">(initial.category ?? "");
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>(() => [
-    newEntry({ question: initial.question, answer: initial.answer, videoUrl: initial.videoUrl ?? null, bunnyVideoId: initial.bunnyVideoId ?? null }),
+    newEntry({ question: initial.question, answer: initial.answer, videoUrl: initial.videoUrl ?? null, bunnyVideoId: initial.bunnyVideoId ?? null, thumbnailUrl: initial.thumbnailUrl ?? null }),
   ]);
   const [errors, setErrors] = useState<Record<string, EntryErrors>>({});
   const saving = save.isPending || saveMany.isPending;
   const anyUploading = entries.some((e) => e.uploadPct !== null);
+  const anyThumbUploading = entries.some((e) => e.thumbPct !== null);
 
   const patch = (key: string, p: Partial<Entry>) => setEntries((list) => list.map((e) => (e.key === key ? { ...e, ...p } : e)));
-  const addEntry = () => setEntries((list) => [...list, newEntry()]);
-  const removeEntry = (key: string) => {
-    setEntries((list) => list.filter((e) => e.key !== key));
-    setErrors((errs) => {
-      const next = { ...errs };
-      delete next[key];
-      return next;
-    });
-  };
 
   const submit = async () => {
     if (anyUploading) {
       toast.error("Wait for the video upload to finish");
+      return;
+    }
+    if (anyThumbUploading) {
+      toast.error("Wait for the thumbnail upload to finish");
       return;
     }
     const next: Record<string, EntryErrors> = {};
@@ -197,8 +320,10 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
       if (err.question || err.answer) next[e.key] = err;
     }
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
-    const payload = (e: Entry) => ({ question: e.question, answer: e.answer, isPublished, videoUrl: e.videoUrl, bunnyVideoId: e.bunnyVideoId });
+    const catErr = category ? null : "Category is required";
+    setCategoryError(catErr);
+    if (Object.keys(next).length > 0 || catErr || !category) return;
+    const payload = (e: Entry) => ({ question: e.question, answer: e.answer, isPublished, videoUrl: e.videoUrl, bunnyVideoId: e.bunnyVideoId, category, thumbnailUrl: e.thumbnailUrl });
     try {
       if (isEdit) {
         await save.mutateAsync({ id: initial.id, ...payload(entries[0]) });
@@ -219,6 +344,23 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
         <h2 className="text-sm font-bold text-[#f0f0f0]">{isEdit ? "Edit FAQ" : "New FAQ"}</h2>
         <button onClick={onDone} aria-label="Close form" className="text-[#606060] hover:text-[#a0a0a0]"><X size={16} /></button>
       </div>
+      <div className="space-y-1">
+        <label htmlFor="faq-category" className={labelCls}>Category</label>
+        <select
+          id="faq-category"
+          required
+          value={category}
+          onChange={(e) => { setCategory(e.target.value as ModuleFaqCategory | ""); setCategoryError(null); }}
+          className={`${inputCls} h-11`}
+          aria-invalid={categoryError ? true : undefined}
+        >
+          <option value="" disabled>Select a category</option>
+          {FAQ_CATEGORY_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {categoryError && <p className="text-[11px] text-red-400">{categoryError}</p>}
+      </div>
       {entries.map((entry, i) => {
         const qId = i === 0 ? "faq-question" : `faq-question-${i + 1}`;
         const aId = i === 0 ? "faq-answer" : `faq-answer-${i + 1}`;
@@ -228,17 +370,6 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label htmlFor={qId} className={labelCls}>Question {i + 1}</label>
-                {i > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => removeEntry(entry.key)}
-                    disabled={saving || entry.uploadPct !== null}
-                    aria-label={`Remove question ${i + 1}`}
-                    className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-red-400 disabled:opacity-50"
-                  >
-                    <Trash2 size={12} /> Remove
-                  </button>
-                )}
               </div>
               <input
                 id={qId}
@@ -270,19 +401,10 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
               </div>
             </div>
             <FaqVideoField entry={entry} number={i + 1} inputId={`faq-video-${i + 1}`} disabled={saving} onChange={(p) => patch(entry.key, p)} />
+            <FaqThumbnailField entry={entry} inputId={`faq-thumbnail-${i + 1}`} disabled={saving} onChange={(p) => patch(entry.key, p)} />
           </div>
         );
       })}
-      {!isEdit && (
-        <button
-          type="button"
-          onClick={addEntry}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#f0f0f0] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#dc2626] disabled:opacity-50"
-        >
-          <Plus size={13} /> Add Question
-        </button>
-      )}
       <label className="flex items-center gap-2 text-sm text-[#a0a0a0]">
         <input type="checkbox" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} />
         Published (visible to members)
@@ -290,7 +412,7 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
       <div className="flex items-center gap-2">
         <button
           onClick={submit}
-          disabled={saving || anyUploading}
+          disabled={saving || anyUploading || anyThumbUploading}
           className="inline-flex items-center gap-1.5 h-10 px-4 rounded-lg text-xs font-bold text-white bg-[#dc2626] hover:bg-red-700 disabled:opacity-50"
         >
           {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
@@ -468,7 +590,7 @@ export default function ModuleFaqsPage() {
                   {canEdit && (
                     <div className="flex items-center gap-3 pt-1">
                       <button
-                        onClick={() => setEditing({ id: faq.id, question: faq.question, answer: faq.answer, isPublished: faq.isPublished, videoUrl: faq.videoUrl ?? null, bunnyVideoId: faq.bunnyVideoId ?? null })}
+                        onClick={() => setEditing({ id: faq.id, question: faq.question, answer: faq.answer, isPublished: faq.isPublished, videoUrl: faq.videoUrl ?? null, bunnyVideoId: faq.bunnyVideoId ?? null, category: faq.category ?? null, thumbnailUrl: faq.thumbnailUrl ?? null })}
                         className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-white"
                       >
                         <Pencil size={12} /> Edit

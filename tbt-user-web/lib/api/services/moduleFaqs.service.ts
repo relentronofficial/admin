@@ -8,6 +8,8 @@ export interface ModuleFaq {
   answer: string;
   videoUrl?: string | null;
   bunnyVideoId?: string | null;
+  /** Admin-chosen section: "ecommerce" | "service" | "coachx"; null for older FAQs. */
+  category?: "ecommerce" | "service" | "coachx" | null;
 }
 
 export const moduleFaqsService = {

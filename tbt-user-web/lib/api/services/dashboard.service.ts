@@ -66,6 +66,18 @@ export const dashboardService = {
   archiveConversation: (id: string, hidden: boolean) =>
     apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),
 
+  editChatMessage: (id: string, messageId: string, body: string) =>
+    apiClient.put(`/api/user/conversations/${id}/messages/${messageId}`, { body }),
+
+  deleteChatMessage: (id: string, messageId: string, forEveryone: boolean) =>
+    apiClient.delete(`/api/user/conversations/${id}/messages/${messageId}`, { params: forEveryone ? { forEveryone: "true" } : {} }),
+
+  reactChatMessage: (id: string, messageId: string, emoji: string) =>
+    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/react`, { emoji }),
+
+  forwardChatMessage: (id: string, messageId: string, toConversationIds: string[]) =>
+    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/forward`, { toConversationIds }),
+
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),
 

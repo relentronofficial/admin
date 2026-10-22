@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2,
@@ -108,7 +108,7 @@ function MentorshipHeader({
 
   return (
     <motion.div variants={fadeUp} className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
-      <h2 className="flex-1 min-w-0 truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
+      <h2 className="flex-1 min-w-0 line-clamp-2 sm:truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
         {programName ?? "Mentorship Program"}
       </h2>
       <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -238,7 +238,10 @@ function callCardHint(card: CallCard | undefined): { text: string; color: string
   }
 }
 
-function SupportCallTile({ label, used, total, card, onClick }: { label: string; used: number; total: number; card?: CallCard; onClick: () => void }) {
+function SupportCallTile({ label, used: quotaUsed, total: quotaTotal, card, onClick }: { label: string; used: number; total: number; card?: CallCard; onClick: () => void }) {
+  // Counts and the next-step hint come from the same server response when it's loaded, so they never disagree.
+  const used = card?.quota.used ?? quotaUsed;
+  const total = card?.quota.allocated ?? quotaTotal;
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const hint = callCardHint(card);
   return (
@@ -799,10 +802,10 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
       style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        <span className="text-[9px] font-bold uppercase tracking-wide sm:tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
         {topRight}
       </div>
-      <div className="text-3xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
+      <div className="text-2xl sm:text-3xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
       {badge && (
         <span className="self-start text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badge.color}26`, color: badge.color }}>
           {badge.text}
@@ -909,7 +912,23 @@ function WeeklyLineChart({
   const displayRev = mode === "cumulative" ? cum(revData) : revData;
   const displayOrd = mode === "cumulative" ? cum(ordData) : ordData;
 
-  const W = 700, H = 200;
+  // Draw at the container's real width (1 unit = 1px) so the plot fills the card
+  // instead of letterboxing a fixed 700-wide canvas. Below 360 it scales down so
+  // the seven day labels never overlap.
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [W, setW] = useState(700);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w > 0) setW(Math.max(w, 360));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 200;
   const PL = 58, PR = 16, PT = 20, PB = 32;
   const PW = W - PL - PR;
   const PH = H - PT - PB;
@@ -954,7 +973,7 @@ function WeeklyLineChart({
   }));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly revenue and order trajectory">
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly revenue and order trajectory">
       <defs>
         <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
@@ -1029,14 +1048,14 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
 
   return (
     <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
-      <div className="flex items-start justify-between mb-1 gap-3">
+      <div className="flex flex-wrap items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
-          <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
             Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day}
           </p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex flex-wrap items-center gap-1">
           <div className="flex items-center gap-2 mr-3">
             <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
               <span className="inline-block w-5 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Daily Revenue (₹)
@@ -1376,10 +1395,10 @@ function SocialGrowthSection() {
         </div>
 
         {/* Toggle to show/hide the update form */}
-        <div className="flex justify-end">
+        <div className="flex justify-end mt-1">
           <button
             onClick={() => setShowForm(v => !v)}
-            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+            className="w-full sm:w-auto text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
             style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
           >
             {showForm ? "Close" : "Update social stats"}
@@ -1583,7 +1602,7 @@ function NowLearningSection() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MentorshipDashboard({ showBackLink = false }: { showBackLink?: boolean }) {
+export default function MentorshipDashboard({ showBackLink = false, titleOverride = null }: { showBackLink?: boolean; titleOverride?: string | null }) {
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
@@ -1681,7 +1700,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
       animate="show"
     >
       <MentorshipHeader
-        programName={programName}
+        programName={titleOverride ?? programName}
         weeklyReportSubmitted={weeklyReportSubmitted}
         streakDays={streakDays}
         lifelinesTotal={lifelinesTotal}

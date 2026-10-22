@@ -4,15 +4,25 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, Play, BookOpen } from "lucide-react";
-import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
+import { useCourses, useCourse, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useWatchHistory } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
-import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface SectionCardData {
+  id: string;
+  title: string;
+  sortOrder: number;
+  totalEpisodes: number;
+  completedEpisodes: number;
+  firstLessonId: string | null;
+  isLocked: boolean;
+  thumbnail: string | null;
+}
 
 interface ModuleConfig {
   moduleName: string;
@@ -63,165 +73,175 @@ function ModuleCard({
         style={{
           height: 248,
           borderRadius: 12,
-          background: "#242428",
-          border: "1px solid #414146",
+          background: "#16161a",
+          border: "1px solid #2e2e34",
           cursor: "pointer",
-          transition: "border-color 0.2s, box-shadow 0.2s",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
         }}
-        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#606066"; (e.currentTarget as HTMLElement).style.boxShadow = "0 4px 20px rgba(0,0,0,0.4)"; }}
-        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "#414146"; (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#505058";
+          (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
+          (e.currentTarget as HTMLElement).style.boxShadow = "none";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+        }}
       >
-        {/* ── Cover (151px) ─── */}
+        {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
         <div
-          className="relative flex flex-col items-center justify-center text-center"
           style={{
-            height: 151,
-            padding: "12px 16px",
+            position: "relative",
+            height: 140,
+            overflow: "hidden",
             background: hasThumbnail
               ? `url(${JSON.stringify(course.thumbnailUrl)}) center / cover no-repeat`
               : "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
           }}
         >
-          {/* Dark overlay for thumbnail readability */}
+          {/* Minimal vignette — just enough contrast for the badges, not a blackout */}
           <div
             style={{
               position: "absolute",
               inset: 0,
               background: hasThumbnail
-                ? "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.72) 100%)"
-                : undefined,
-              opacity: hasThumbnail ? 1 : undefined,
+                ? "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.38) 100%)"
+                : "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.5) 100%)",
             }}
           />
-          {/* Grid pattern (only when no thumbnail) */}
+          {/* Subtle grid texture when no thumbnail */}
           {!hasThumbnail && (
             <div
               style={{
                 position: "absolute",
                 inset: 0,
-                opacity: 0.22,
+                opacity: 0.16,
                 background:
                   "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
               }}
             />
           )}
+          {/* Course N pill — bottom-left */}
           <div
             style={{
               position: "absolute",
-              top: 8,
-              right: 9,
-              zIndex: 1,
-              color: "rgba(255,255,255,0.7)",
-              fontSize: 7,
-              fontWeight: 800,
-              letterSpacing: "0.5px",
-            }}
-          >
-            ✦ TBT BUSINESS
-          </div>
-          <div
-            style={{
-              position: "relative",
-              zIndex: 1,
-              width: 79,
-              padding: 3,
-              marginBottom: 8,
-              background: "rgba(50,27,29,0.85)",
-              border: "1px solid rgba(73,41,44,0.9)",
+              bottom: 9,
+              left: 10,
+              zIndex: 2,
+              padding: "3px 9px",
               borderRadius: 5,
-              color: "#ddd",
-              fontSize: 6,
-              textAlign: "center",
+              background: "rgba(0,0,0,0.62)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "rgba(255,255,255,0.82)",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.7px",
+              textTransform: "uppercase",
             }}
           >
-            Chapter {index + 1}
+            Course {index + 1}
           </div>
+          {/* Module tag — top-left (only when set) */}
           {course.module && (
             <div
               style={{
-                position: "relative",
-                zIndex: 1,
+                position: "absolute",
+                top: 9,
+                left: 10,
+                zIndex: 2,
+                padding: "2px 7px",
+                borderRadius: 4,
+                background: "rgba(0,0,0,0.6)",
+                border: "1px solid rgba(217,233,0,0.3)",
                 color: "#d9e900",
                 fontSize: 8,
                 fontWeight: 700,
-                letterSpacing: "1px",
-                marginBottom: 5,
+                letterSpacing: "0.7px",
                 textTransform: "uppercase",
               }}
             >
               {course.module}
             </div>
           )}
+          {/* Subtle TBT brand — top-right */}
+          <div
+            style={{
+              position: "absolute",
+              top: 9,
+              right: 9,
+              zIndex: 2,
+              color: "rgba(255,255,255,0.35)",
+              fontSize: 7,
+              fontWeight: 700,
+              letterSpacing: "0.4px",
+            }}
+          >
+            ✦ TBT
+          </div>
+        </div>
+
+        {/* ── Details (108px) ─── */}
+        <div
+          className="relative flex flex-col justify-between"
+          style={{ height: 108, padding: "10px 13px 11px", background: "#16161a" }}
+        >
+          {/* Course title — moved here so thumbnail stays image-only */}
           <div
             className="line-clamp-2"
             style={{
-              position: "relative",
-              zIndex: 1,
-              color: "white",
-              fontSize: 14,
+              color: "#eeeef2",
+              fontSize: 13,
               fontWeight: 600,
-              lineHeight: 1.25,
-              letterSpacing: "-0.3px",
+              lineHeight: 1.35,
+              letterSpacing: "-0.1px",
+              paddingRight: 38,
             }}
           >
             {course.title}
           </div>
-          <div
-            style={{
-              position: "relative",
-              zIndex: 1,
-              marginTop: 8,
-              color: "rgba(197,203,208,0.7)",
-              fontSize: 5,
-              letterSpacing: "1.5px",
-            }}
-          >
-            WWW.TAMILBUSINESSTRIBE.COM
-          </div>
-        </div>
 
-        {/* ── Details (96px) ─── */}
-        <div
-          className="relative flex flex-col justify-between"
-          style={{ height: 96, padding: "10px 14px" }}
-        >
-          <div style={{ color: "#8b8b93", fontSize: 12, lineHeight: 1.6 }}>
-            <span>Video </span>
-            <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
-              {course.durationDisplay ?? "—"}
-            </strong>
-            <span style={{ margin: "0 6px", color: "#414146" }}>·</span>
-            <span>Tasks </span>
-            <strong style={{ color: "#f4f4f6", fontWeight: 500 }}>
-              {course.taskDurationDisplay ?? "—"}
-            </strong>
-          </div>
-
-          {!course.hasAccess && !enrollment && course.price > 0 && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, background: "rgba(255,224,0,0.1)", border: "1px solid rgba(255,224,0,0.25)" }}>
-              <span style={{ color: "#ffe000", fontSize: 11, fontWeight: 700 }}>
+          {/* Duration / price row */}
+          <div style={{ color: "#72727c", fontSize: 11, lineHeight: 1 }}>
+            {course.durationDisplay && (
+              <>
+                <span>Video </span>
+                <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{course.durationDisplay}</strong>
+              </>
+            )}
+            {course.durationDisplay && course.taskDurationDisplay && (
+              <span style={{ margin: "0 5px", color: "#2e2e38" }}>·</span>
+            )}
+            {course.taskDurationDisplay && (
+              <>
+                <span>Tasks </span>
+                <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{course.taskDurationDisplay}</strong>
+              </>
+            )}
+            {!course.hasAccess && !enrollment && course.price > 0 && (
+              <span style={{ marginLeft: 6, color: "#ffe000", fontWeight: 700 }}>
                 ₹{(course.price as number).toLocaleString("en-IN")}
               </span>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Status badge — top right */}
+          {/* Status circle — top-right */}
           <div
             className="absolute flex items-center justify-center"
             style={{
               top: 10,
-              right: 12,
-              width: 33,
-              height: 33,
+              right: 11,
+              width: 30,
+              height: 30,
               borderRadius: "50%",
               background: isCompleted
-                ? "rgba(34,197,94,0.15)"
+                ? "rgba(34,197,94,0.14)"
                 : isInProgress
-                ? "rgba(220,38,38,0.15)"
-                : "rgba(164,164,170,0.1)",
-              border: `1px solid ${isCompleted ? "rgba(34,197,94,0.5)" : isInProgress ? "rgba(220,38,38,0.5)" : "#a4a4aa"}`,
-              color: isCompleted ? "#22c55e" : isInProgress ? "#dc2626" : "#a4a4aa",
-              fontSize: isCompleted ? 16 : 18,
+                ? "rgba(220,38,38,0.14)"
+                : "rgba(255,255,255,0.05)",
+              border: `1px solid ${isCompleted ? "rgba(34,197,94,0.45)" : isInProgress ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.1)"}`,
+              color: isCompleted ? "#22c55e" : isInProgress ? "var(--color-accent)" : "#606068",
+              fontSize: isCompleted ? 14 : 15,
             }}
             title={isCompleted ? "Completed" : isInProgress ? "In progress" : "Not started"}
           >
@@ -230,25 +250,17 @@ function ModuleCard({
 
           {/* Progress bar */}
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <span style={{ fontSize: 10, color: "#606066" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+              <span style={{ fontSize: 10, color: "#52525a" }}>
                 {isCompleted ? "Completed" : isInProgress ? `${Math.round(progressPct)}%` : "Not started"}
               </span>
             </div>
-            <div
-              style={{
-                width: "100%",
-                height: 6,
-                background: "#3b3b40",
-                borderRadius: 6,
-                overflow: "hidden",
-              }}
-            >
+            <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
               <div
                 style={{
                   width: `${Math.min(100, isCompleted ? 100 : progressPct)}%`,
                   height: "100%",
-                  borderRadius: 6,
+                  borderRadius: 4,
                   background: isCompleted ? "#22c55e" : "var(--color-accent)",
                   transition: "width 1s ease",
                 }}
@@ -261,18 +273,10 @@ function ModuleCard({
         {isLocked && (
           <div
             className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-            style={{ background: "rgba(19,19,19,0.87)", zIndex: 10 }}
+            style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
           >
-            <Lock size={24} style={{ color: "#a0a0a0" }} />
-            <div
-              style={{
-                color: "#a0a0a0",
-                fontSize: 11,
-                textAlign: "center",
-                padding: "0 20px",
-                lineHeight: 1.4,
-              }}
-            >
+            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
               {lockReason ? lockMessages[lockReason] : (course.price > 0 ? "Purchase this module to unlock" : "Request access to unlock")}
             </div>
             {lockReason !== "module_not_allowed" && course.price > 0 && (
@@ -284,6 +288,255 @@ function ModuleCard({
         )}
       </div>
     </Link>
+  );
+}
+
+// ── SectionCard ───────────────────────────────────────────────────────────────
+
+function SectionCard({
+  section,
+  courseId,
+  courseThumbnail,
+  index,
+}: {
+  section: SectionCardData;
+  courseId: string;
+  courseThumbnail?: string | null;
+  index: number;
+}) {
+  const total = section.totalEpisodes;
+  const completed = section.completedEpisodes;
+  const progressPct = total > 0 ? (completed / total) * 100 : 0;
+  const isCompleted = total > 0 && completed === total;
+  const isInProgress = completed > 0 && !isCompleted;
+  const thumbnail = section.thumbnail ?? courseThumbnail ?? null;
+  const href = section.firstLessonId
+    ? `/learning/${courseId}?lesson=${section.firstLessonId}&section=${section.id}`
+    : `/learning/${courseId}?section=${section.id}`;
+
+  return (
+    <Link href={href} className="block">
+      <div
+        className="relative overflow-hidden"
+        style={{
+          height: 248,
+          borderRadius: 12,
+          background: "#16161a",
+          border: "1px solid #2e2e34",
+          cursor: "pointer",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#505058";
+          (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
+          (e.currentTarget as HTMLElement).style.boxShadow = "none";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+        }}
+      >
+        {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
+        <div
+          style={{
+            position: "relative",
+            height: 140,
+            overflow: "hidden",
+            background: thumbnail
+              ? `url(${JSON.stringify(thumbnail)}) center / cover no-repeat`
+              : "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
+          }}
+        >
+          {/* Minimal vignette — just enough contrast for the badge, not a blackout */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: thumbnail
+                ? "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.38) 100%)"
+                : "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.5) 100%)",
+            }}
+          />
+          {/* Subtle grid texture when no thumbnail */}
+          {!thumbnail && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: 0.16,
+                background:
+                  "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
+              }}
+            />
+          )}
+          {/* Module N pill — bottom-left */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 9,
+              left: 10,
+              zIndex: 2,
+              padding: "3px 9px",
+              borderRadius: 5,
+              background: "rgba(0,0,0,0.62)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "rgba(255,255,255,0.82)",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.7px",
+              textTransform: "uppercase",
+            }}
+          >
+            Module {index + 1}
+          </div>
+          {/* Subtle TBT brand — top-right */}
+          <div
+            style={{
+              position: "absolute",
+              top: 9,
+              right: 9,
+              zIndex: 2,
+              color: "rgba(255,255,255,0.35)",
+              fontSize: 7,
+              fontWeight: 700,
+              letterSpacing: "0.4px",
+            }}
+          >
+            ✦ TBT
+          </div>
+        </div>
+
+        {/* ── Details (108px) ─── */}
+        <div
+          className="relative flex flex-col justify-between"
+          style={{ height: 108, padding: "10px 13px 11px", background: "#16161a" }}
+        >
+          {/* Section title — moved here so thumbnail stays image-only */}
+          <div
+            className="line-clamp-2"
+            style={{
+              color: "#eeeef2",
+              fontSize: 13,
+              fontWeight: 600,
+              lineHeight: 1.35,
+              letterSpacing: "-0.1px",
+              paddingRight: 38,
+            }}
+          >
+            {section.title}
+          </div>
+
+          {/* Video count + progress status */}
+          <div style={{ color: "#72727c", fontSize: 11, lineHeight: 1 }}>
+            <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{total}</strong>
+            <span> video{total !== 1 ? "s" : ""}</span>
+            {(isCompleted || isInProgress) && (
+              <>
+                <span style={{ margin: "0 5px", color: "#28282f" }}>·</span>
+                <span style={{ color: isCompleted ? "#22c55e" : "var(--color-accent)", fontWeight: 500 }}>
+                  {isCompleted ? "Completed" : `${completed}/${total} done`}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Status circle — top-right */}
+          <div
+            className="absolute flex items-center justify-center"
+            style={{
+              top: 10,
+              right: 11,
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: isCompleted
+                ? "rgba(34,197,94,0.14)"
+                : isInProgress
+                ? "rgba(220,38,38,0.14)"
+                : "rgba(255,255,255,0.05)",
+              border: `1px solid ${isCompleted ? "rgba(34,197,94,0.45)" : isInProgress ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.1)"}`,
+              color: isCompleted ? "#22c55e" : isInProgress ? "var(--color-accent)" : "#606068",
+              fontSize: isCompleted ? 14 : 15,
+            }}
+          >
+            {isCompleted ? "✓" : isInProgress ? "▶" : "○"}
+          </div>
+
+          {/* Progress bar */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+              <span style={{ fontSize: 10, color: "#52525a" }}>{Math.round(progressPct)}% complete</span>
+            </div>
+            <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                style={{
+                  width: `${Math.min(100, progressPct)}%`,
+                  height: "100%",
+                  borderRadius: 4,
+                  background: isCompleted ? "#22c55e" : "var(--color-accent)",
+                  transition: "width 1s ease",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Lock overlay */}
+        {section.isLocked && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+            style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
+          >
+            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
+              Complete the previous module to unlock
+            </div>
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+// ── SectionGrid ───────────────────────────────────────────────────────────────
+
+function SectionGrid({
+  sections,
+  courseId,
+  courseThumbnail,
+  isLoading,
+  uiStrings,
+}: {
+  sections: SectionCardData[];
+  courseId: string;
+  courseThumbnail?: string | null;
+  isLoading: boolean;
+  uiStrings: any;
+}) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="animate-pulse" style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }} />
+        ))}
+      </div>
+    );
+  }
+  if (sections.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "60px 20px", background: "#242428", borderRadius: 12, border: "1px solid #414146" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
+        <p style={{ color: "#92929b", fontSize: 14 }}>{uiStrings?.coursesEmptyState ?? "No modules found"}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {sections.map((section, i) => (
+        <SectionCard key={section.id} section={section} courseId={courseId} courseThumbnail={courseThumbnail} index={i} />
+      ))}
+    </div>
   );
 }
 
@@ -802,10 +1055,44 @@ export default function CoursesPage() {
   const primaryCourseTitle = useMemo(() => {
     if (allowedModules.length !== 1) return null;
     const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
-    if (accessible.length === 1) return accessible[0].title as string;
-    if (accessible.length === 0 && filteredCourses.length === 1) return filteredCourses[0].title as string;
+    if (accessible.length >= 1) return accessible[0].title as string;
+    if (filteredCourses.length >= 1) return filteredCourses[0].title as string;
     return null;
   }, [allowedModules, filteredCourses, enrolledMap]);
+
+  // Primary course ID for section-card breakdown (single-module program view only)
+  const primaryCourseId = useMemo(() => {
+    if (allowedModules.length !== 1 || filteredCourses.length === 0) return null;
+    const accessible = filteredCourses.filter((c: any) => c.hasAccess || enrolledMap.has(c.id));
+    return (accessible.length >= 1 ? accessible[0].id : filteredCourses[0].id) as string;
+  }, [allowedModules, filteredCourses, enrolledMap]);
+
+  const shouldFetchSections = personalizationState === "program" && allowedModules.length === 1 && !!primaryCourseId;
+  const { data: primaryCourseDetail, isLoading: courseDetailLoading } = useCourse(
+    shouldFetchSections ? (primaryCourseId ?? "") : ""
+  );
+
+  const sectionCards = useMemo((): SectionCardData[] | null => {
+    if (!primaryCourseDetail) return null;
+    const lessons: any[] = (primaryCourseDetail as any).lessons ?? [];
+    const sections: Array<{ id: string; title: string; sortOrder: number }> = (primaryCourseDetail as any).sections ?? [];
+    if (sections.length === 0) return null;
+    const sorted = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
+    return sorted.map(sec => {
+      const secLessons = lessons.filter((l: any) => l.sectionId === sec.id);
+      const completed = secLessons.filter((l: any) => l.isCompleted).length;
+      return {
+        id: sec.id,
+        title: sec.title,
+        sortOrder: sec.sortOrder,
+        totalEpisodes: secLessons.length,
+        completedEpisodes: completed,
+        firstLessonId: secLessons[0]?.id ?? null,
+        isLocked: secLessons[0]?.locked ?? false,
+        thumbnail: secLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
+      };
+    });
+  }, [primaryCourseDetail]);
 
   // Learning Roadmap course: the most recently watched enrolled course that isn't
   // finished, else the latest unfinished enrollment. None → no roadmap.
@@ -843,12 +1130,7 @@ export default function CoursesPage() {
       {roadmapCourseId && <CoursesPageRoadmap courseId={roadmapCourseId} />}
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
-      <MentorshipDashboard />
-
-      {/* ── Weekly Activity Graph — X/Y axis dynamically configured from
-           Admin → Weekly Graph settings. Returns null when not in a batch
-           or when admin hides it via Settings → Navigation → "weekly_graph". */}
-      <WeeklyActivityGraph />
+      <MentorshipDashboard titleOverride={primaryCourseTitle} />
 
       {/* ── Catalog failed to load — never fall back to the "new member" view ── */}
       {catalogError && !catalogLoading && (
@@ -876,18 +1158,42 @@ export default function CoursesPage() {
           <ModuleHero
             cfg={singleModuleCfg ?? { moduleName: allowedModules[0], displayName: allowedModules[0], tagline: null, description: null, bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: 0 }}
             programName={programName}
-            courseCount={filteredCourses.length}
+            courseCount={sectionCards ? sectionCards.length : filteredCourses.length}
             memberBusinessType={memberBusinessType}
             primaryCourseTitle={primaryCourseTitle}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
-          <CourseGrid
-            courses={filteredCourses}
-            enrolledMap={enrolledMap}
-            allowedModules={[]}
-            isLoading={catalogLoading}
-            uiStrings={uiStrings}
-          />
+          {sectionCards && sectionCards.length > 0 ? (
+            <>
+              <SectionGrid
+                sections={sectionCards}
+                courseId={primaryCourseId!}
+                courseThumbnail={(primaryCourseDetail as any)?.thumbnailUrl ?? null}
+                isLoading={courseDetailLoading && !primaryCourseDetail}
+                uiStrings={uiStrings}
+              />
+              {filteredCourses.length > 1 && (
+                <div className="mt-8">
+                  <div className="mb-4" style={{ color: "#92929b", fontSize: 13, fontWeight: 600 }}>Additional Courses</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredCourses.slice(1).map((course: any) => {
+                      const enrollment = enrolledMap.get(course.id);
+                      const lockReason: LockReason = (!course.hasAccess && !enrollment) ? (course.price > 0 ? "purchase_required" : "not_enrolled") : null;
+                      return <ModuleCard key={course.id} course={course} enrollment={enrollment} index={filteredCourses.indexOf(course)} lockReason={lockReason} />;
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <CourseGrid
+              courses={filteredCourses}
+              enrolledMap={enrolledMap}
+              allowedModules={[]}
+              isLoading={catalogLoading || (courseDetailLoading && !primaryCourseDetail)}
+              uiStrings={uiStrings}
+            />
+          )}
         </section>
       )}
 
@@ -963,8 +1269,8 @@ export default function CoursesPage() {
           {/* Dynamic course title for the active module tab */}
           {(() => {
             const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
-            const tabCourseTitle = accessible.length === 1 ? accessible[0].title
-              : accessible.length === 0 && filteredCourses.length === 1 ? filteredCourses[0].title
+            const tabCourseTitle = accessible.length >= 1 ? accessible[0].title
+              : filteredCourses.length >= 1 ? filteredCourses[0].title
               : null;
             if (!tabCourseTitle) return null;
             return (
@@ -1048,15 +1354,16 @@ export default function CoursesPage() {
       {/* ── Footer ────────────────────────────────────────────────────── */}
       <div style={{ paddingTop: 32, paddingBottom: 16, borderTop: "1px solid #2a2a2e" }}>
         <div className="flex flex-col sm:flex-row sm:items-start gap-6 justify-between">
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
-              ✦ Tamil Business Tribe
+          <div className="min-w-0">
+            <div className="flex items-center gap-2" style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/tbt_logo.webp" alt="" width={120} height={28} className="h-6 sm:h-7 w-auto shrink-0 object-contain" />
             </div>
             <div style={{ fontSize: 12, color: "#92929b", maxWidth: 280, lineHeight: 1.6 }}>
               {uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance."}
             </div>
           </div>
-          <div style={{ fontSize: 12, color: "#92929b" }}>
+          <div className="min-w-0 [overflow-wrap:anywhere]" style={{ fontSize: 12, color: "#92929b" }}>
             <div style={{ marginBottom: 6 }}>📞 +91 80151 39542</div>
             <div style={{ marginBottom: 12 }}>✉ helpdesk@tamilbusinesstribe.com</div>
             <div style={{ fontSize: 10, color: "#55555b" }}>

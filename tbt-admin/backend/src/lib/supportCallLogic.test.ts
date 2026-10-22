@@ -73,6 +73,10 @@ describe('canBook', () => {
   it('rejects a duplicate booking', () => expect(canBook({ ...base, alreadyBooked: true })).toMatchObject({ ok: false, status: 409, code: 'already_booked' }));
   it('rejects inactive members', () => expect(canBook({ ...base, memberStatus: 'pending' })).toMatchObject({ ok: false, code: 'member_inactive' }));
   it('rejects a category not in the plan (0/0)', () => expect(canBook({ ...base, quota: quota(0) })).toMatchObject({ ok: false, code: 'not_included' }));
+  it('treats a category with only coin-unlocked calls (plan no longer includes it) as not included', () => {
+    const q = categoryQuota({ allocated: 1, used: 0, remaining: 1, unlocked: 1 }, 0);
+    expect(canBook({ ...base, quota: q })).toMatchObject({ ok: false, code: 'not_included' });
+  });
   it('rejects when quota is used up', () => expect(canBook({ ...base, quota: quota(2, 2) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
   it('counts reservations against quota', () => expect(canBook({ ...base, quota: quota(2, 1, 1) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
   it('rejects a full session', () => expect(canBook({ ...base, activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' }));
