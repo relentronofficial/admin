@@ -2917,10 +2917,13 @@ export type ModuleFaq = {
   videoUrl?: string | null; bunnyVideoId?: string | null;
   /** Section in the member FAQ popup; null for older FAQs created before categories. */
   category?: ModuleFaqCategory | null;
+  /** Optional thumbnail image (public URL of the uploaded image). */
+  thumbnailUrl?: string | null;
 };
 export type ModuleFaqCategory = 'ecommerce' | 'service' | 'coachx';
 export type ModuleFaqInput = {
   question: string; answer: string; isPublished?: boolean; videoUrl?: string | null; bunnyVideoId?: string | null; category?: ModuleFaqCategory;
+  thumbnailUrl?: string | null;
 };
 const moduleFaqsKey = ['module-faqs-admin'];
 
