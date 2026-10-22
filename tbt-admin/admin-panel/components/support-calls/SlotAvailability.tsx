@@ -199,9 +199,9 @@ export function PublishAvailabilityModal({
         <div className="flex items-start justify-between gap-3 px-5 sm:px-6 py-4 border-b border-[#1f1f1f]">
           <div>
             <h2 id="publish-availability-title" className="font-rajdhani text-lg font-bold uppercase tracking-wide text-[#f0f0f0]">
-              Publish Availability
+              Assign Slots
             </h2>
-            <p className="text-[12px] text-[#888]">Pick a date, add the times you are available, repeat for other dates, then publish. All times IST.</p>
+            <p className="text-[12px] text-[#888]">Pick a date, add the times you are available, repeat for other dates, then save. All times IST.</p>
           </div>
           <button onClick={onClose} className="text-[#606060] hover:text-white" aria-label="Close"><X size={18} /></button>
         </div>
@@ -270,7 +270,7 @@ export function PublishAvailabilityModal({
                     onClick={addTime}
                     className="shrink-0 bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 rounded-lg text-[12px] font-bold uppercase tracking-wider flex items-center gap-1.5"
                   >
-                    <Plus size={14} /> Add time
+                    <Plus size={14} /> Add Time Slot
                   </button>
                 </div>
                 <p className="text-[11px] text-[#606060] mt-1.5">Each time becomes one {details.durationMinutes}-minute slot.</p>
@@ -409,7 +409,7 @@ export function PublishAvailabilityModal({
               className="bg-[#dc2626] hover:bg-red-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
             >
               {publish.isPending && <Loader2 size={14} className="animate-spin" />}
-              Publish {stagedCount || ""} slot{stagedCount === 1 ? "" : "s"}
+              Save {stagedCount || ""} slot{stagedCount === 1 ? "" : "s"}
             </button>
           </div>
         </div>

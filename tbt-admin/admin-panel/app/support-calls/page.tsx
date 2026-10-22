@@ -4,7 +4,7 @@
 // manage every session; mentor accounts see and manage only the sessions they
 // host (enforced by the backend — the UI just hides the host picker).
 // Availability: the admin publishes the exact dates/times they are free
-// (Publish Availability); each time is one bookable slot on the member calendar.
+// (Assign Slots); each time is one bookable slot on the member calendar.
 import { useMemo, useState } from "react";
 import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX, Trash2, CalendarDays, List } from "lucide-react";
 import { toast } from "react-hot-toast";
@@ -382,13 +382,13 @@ export default function SupportCallsPage() {
                 onClick={() => setEditing("new")}
                 className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
               >
-                <Plus size={15} /> Single Session
+                <Plus size={15} /> New Session
               </button>
               <button
                 onClick={() => setPublishDate("")}
                 className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
               >
-                <CalendarDays size={15} /> Publish Availability
+                <CalendarDays size={15} /> Assign Slots
               </button>
             </div>
           )}
