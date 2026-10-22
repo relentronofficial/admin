@@ -1586,7 +1586,7 @@ function NowLearningSection() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MentorshipDashboard({ showBackLink = false }: { showBackLink?: boolean }) {
+export default function MentorshipDashboard({ showBackLink = false, titleOverride = null }: { showBackLink?: boolean; titleOverride?: string | null }) {
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
@@ -1684,7 +1684,7 @@ export default function MentorshipDashboard({ showBackLink = false }: { showBack
       animate="show"
     >
       <MentorshipHeader
-        programName={programName}
+        programName={titleOverride ?? programName}
         weeklyReportSubmitted={weeklyReportSubmitted}
         streakDays={streakDays}
         lifelinesTotal={lifelinesTotal}
