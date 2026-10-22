@@ -7,6 +7,7 @@ import {
   nextDmReaction,
   summarizeDmReactions,
   validateForwardTargets,
+  validateForwardRequest,
 } from './dmMessageActionRules.js';
 
 const ME = '50000000-0000-4000-8000-0000000000a1';
@@ -75,5 +76,18 @@ describe('validateForwardTargets', () => {
     expect(validateForwardTargets(['nope']).ok).toBe(false);
     const many = Array.from({ length: 11 }, (_, i) => `70000000-0000-4000-8000-0000000000${String(i).padStart(2, '0')}`);
     expect(validateForwardTargets(many).ok).toBe(false);
+  });
+});
+
+describe('validateForwardRequest', () => {
+  const C = '70000000-0000-4000-8000-000000000001';
+  const G = '90000000-0000-4000-8000-000000000001';
+  it('accepts conversations, groups or both; needs at least one target', () => {
+    expect(validateForwardRequest({ toConversationIds: [C] })).toEqual({ ok: true, value: { conversationIds: [C], groupIds: [] } });
+    expect(validateForwardRequest({ toGroupIds: [G, G] })).toEqual({ ok: true, value: { conversationIds: [], groupIds: [G] } });
+    expect(validateForwardRequest({ toConversationIds: [C], toGroupIds: [G] })).toEqual({ ok: true, value: { conversationIds: [C], groupIds: [G] } });
+    expect(validateForwardRequest({}).ok).toBe(false);
+    expect(validateForwardRequest({ toConversationIds: [], toGroupIds: [] }).ok).toBe(false);
+    expect(validateForwardRequest({ toGroupIds: ['x'] }).ok).toBe(false);
   });
 });

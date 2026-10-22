@@ -30,6 +30,12 @@ let msgs: Msg[];
 let reactions: Array<{ message_id: string; sender_type: string; sender_id: string; emoji: string; created_at: number }>;
 let emitted: Array<[string, string, any]>;
 let failReactionsRead: boolean;
+const G1 = '90000000-0000-4000-8000-000000000001';
+const G_ANNOUNCE = '90000000-0000-4000-8000-000000000002';
+const G_NOT_MEMBER = '90000000-0000-4000-8000-000000000003';
+let groups: Array<{ id: string; name: string; announcement_only: boolean; is_deleted: boolean; last_message_at: Date | null }>;
+let groupMembers: Array<{ group_id: string; member_id: string; role: string; left_at: Date | null; unread_count: number }>;
+let groupMsgs: Array<{ id: string; group_id: string; sender_member_id: string; body: string | null; media_url: string | null; media_type: string | null; forwarded_from_message_id: string }>;
 let seq = 0;
 const uuid = () => `80000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
 
@@ -70,6 +76,29 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('SELECT message_id::text AS message_id, sender_type, sender_id::text AS sender_id, emoji FROM direct_message_reactions')) {
     if (failReactionsRead) throw new Error('relation "direct_message_reactions" does not exist');
     return [...reactions].sort((x, y) => x.created_at - y.created_at).filter((r) => a[0].includes(r.message_id));
+  }
+  if (q.startsWith('SELECT cgm.group_id::text AS group_id, g.name, g.announcement_only, cgm.role FROM chat_group_members cgm')) {
+    return groupMembers
+      .filter((gm) => gm.member_id === a[0] && gm.left_at === null && a[1].includes(gm.group_id))
+      .map((gm) => ({ gm, g: groups.find((g) => g.id === gm.group_id && !g.is_deleted) }))
+      .filter((x) => x.g)
+      .map(({ gm, g }) => ({ group_id: gm.group_id, name: g!.name, announcement_only: g!.announcement_only, role: gm.role }));
+  }
+  if (q.startsWith('INSERT INTO chat_group_messages')) {
+    const row = { id: uuid(), group_id: a[0], sender_member_id: a[1], body: a[2], media_url: a[3], media_type: a[4], forwarded_from_message_id: a[5] };
+    groupMsgs.push(row);
+    return [{ id: row.id }];
+  }
+  if (q.startsWith('UPDATE chat_groups SET last_message_at = NOW()')) {
+    groups.find((g) => g.id === a[0])!.last_message_at = new Date();
+    return 1;
+  }
+  if (q.startsWith('UPDATE chat_group_members SET unread_count = unread_count + 1')) {
+    for (const gm of groupMembers) if (gm.group_id === a[0] && gm.member_id !== a[1] && gm.left_at === null) gm.unread_count += 1;
+    return 1;
+  }
+  if (q.startsWith('SELECT member_id::text AS member_id FROM chat_group_members')) {
+    return groupMembers.filter((gm) => gm.group_id === a[0] && gm.member_id !== a[1] && gm.left_at === null).map((gm) => ({ member_id: gm.member_id }));
   }
   throw new Error(`unhandled SQL: ${q.slice(0, 90)}`);
 }
@@ -136,6 +165,18 @@ beforeEach(() => {
   ];
   msgs = [];
   reactions = [];
+  groups = [
+    { id: G1, name: 'Batch 7', announcement_only: false, is_deleted: false, last_message_at: null },
+    { id: G_ANNOUNCE, name: 'Announcements', announcement_only: true, is_deleted: false, last_message_at: null },
+    { id: G_NOT_MEMBER, name: 'Other batch', announcement_only: false, is_deleted: false, last_message_at: null },
+  ];
+  groupMembers = [
+    { group_id: G1, member_id: ME, role: 'member', left_at: null, unread_count: 0 },
+    { group_id: G1, member_id: OTHER, role: 'member', left_at: null, unread_count: 0 },
+    { group_id: G_ANNOUNCE, member_id: ME, role: 'member', left_at: null, unread_count: 0 },
+    { group_id: G_NOT_MEMBER, member_id: OTHER, role: 'member', left_at: null, unread_count: 0 },
+  ];
+  groupMsgs = [];
 });
 
 describe('edit', () => {
@@ -240,5 +281,50 @@ describe('forward', () => {
     m.deletedAt = new Date(); m.deletedForEveryone = true;
     expect((await forward(m.id, [C2])).status).toBe(400);
     expect(msgs).toHaveLength(1);
+  });
+});
+
+describe('forward to a chat group', () => {
+  const fwd = (messageId: string, body: any) => call(actions.forwardConversationMessageHandler, { params: { id: C1, messageId }, body });
+
+  it('posts text + attachment into a group the member belongs to, bumps it and notifies its members', async () => {
+    const m = msg({ senderType: 'admin', senderId: ADMIN, body: 'Batch schedule', mediaUrl: 'https://cdn.example.com/s.pdf', mediaType: 'file' }); msgs.push(m);
+    const r = await fwd(m.id, { toGroupIds: [G1] });
+    expect(r.status).toBe(201);
+    expect(r.body.data.forwardedToGroups).toEqual([{ groupId: G1, messageId: groupMsgs[0].id }]);
+    expect(groupMsgs).toEqual([expect.objectContaining({
+      group_id: G1, sender_member_id: ME, body: 'Batch schedule', media_url: 'https://cdn.example.com/s.pdf', media_type: 'file', forwarded_from_message_id: m.id,
+    })]);
+    expect(groups.find((g) => g.id === G1)!.last_message_at).toBeInstanceOf(Date);
+    expect(groupMembers.find((gm) => gm.group_id === G1 && gm.member_id === OTHER)!.unread_count).toBe(1);
+    expect(groupMembers.find((gm) => gm.group_id === G1 && gm.member_id === ME)!.unread_count).toBe(0);
+    expect(emitted).toEqual(expect.arrayContaining([
+      [`group:${G1}`, 'group:message:new', { forwardedMessageId: groupMsgs[0].id }],
+      [`user:${OTHER}`, 'group:bumped', { groupId: G1 }],
+    ]));
+  });
+
+  it('can forward to a conversation and a group in one go', async () => {
+    const m = msg({}); msgs.push(m);
+    const r = await fwd(m.id, { toConversationIds: [C2], toGroupIds: [G1] });
+    expect(r.status).toBe(201);
+    expect(r.body.data.forwardedTo).toHaveLength(1);
+    expect(r.body.data.forwardedToGroups).toHaveLength(1);
+  });
+
+  it('refuses groups the member is not in, and announcement-only groups for non-admins — nothing is written', async () => {
+    const m = msg({}); msgs.push(m);
+    expect(await fwd(m.id, { toGroupIds: [G_NOT_MEMBER] })).toMatchObject({ status: 404, body: { error: { message: 'Group not found' } } });
+    expect(await fwd(m.id, { toGroupIds: [G_ANNOUNCE] })).toMatchObject({ status: 403, body: { error: { message: 'Only group admins can post in "Announcements"' } } });
+    groupMembers.find((gm) => gm.group_id === G1 && gm.member_id === ME)!.left_at = new Date();
+    expect((await fwd(m.id, { toConversationIds: [C2], toGroupIds: [G1] })).status).toBe(404);
+    expect(groupMsgs).toEqual([]);
+    expect(msgs).toHaveLength(1);
+  });
+
+  it('needs at least one target', async () => {
+    const m = msg({}); msgs.push(m);
+    expect((await fwd(m.id, { toConversationIds: [], toGroupIds: [] })).status).toBe(400);
+    expect((await fwd(m.id, { toGroupIds: ['bad'] })).status).toBe(400);
   });
 });
