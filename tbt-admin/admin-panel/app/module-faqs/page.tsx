@@ -186,15 +186,6 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
   const anyUploading = entries.some((e) => e.uploadPct !== null);
 
   const patch = (key: string, p: Partial<Entry>) => setEntries((list) => list.map((e) => (e.key === key ? { ...e, ...p } : e)));
-  const addEntry = () => setEntries((list) => [...list, newEntry()]);
-  const removeEntry = (key: string) => {
-    setEntries((list) => list.filter((e) => e.key !== key));
-    setErrors((errs) => {
-      const next = { ...errs };
-      delete next[key];
-      return next;
-    });
-  };
 
   const submit = async () => {
     if (anyUploading) {
@@ -261,17 +252,6 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <label htmlFor={qId} className={labelCls}>Question {i + 1}</label>
-                {i > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => removeEntry(entry.key)}
-                    disabled={saving || entry.uploadPct !== null}
-                    aria-label={`Remove question ${i + 1}`}
-                    className="inline-flex items-center gap-1 text-xs text-[#a0a0a0] hover:text-red-400 disabled:opacity-50"
-                  >
-                    <Trash2 size={12} /> Remove
-                  </button>
-                )}
               </div>
               <input
                 id={qId}
@@ -306,16 +286,6 @@ function FaqForm({ initial, onDone }: { initial: Draft; onDone: () => void }) {
           </div>
         );
       })}
-      {!isEdit && (
-        <button
-          type="button"
-          onClick={addEntry}
-          disabled={saving}
-          className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold text-[#f0f0f0] bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#dc2626] disabled:opacity-50"
-        >
-          <Plus size={13} /> Add Question
-        </button>
-      )}
       <label className="flex items-center gap-2 text-sm text-[#a0a0a0]">
         <input type="checkbox" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} />
         Published (visible to members)
