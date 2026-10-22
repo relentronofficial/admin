@@ -225,10 +225,13 @@ export const useGetPresignedUrl = () => {
 
 export const useUploadImage = () => {
   return useMutation({
-    mutationFn: async ({ file, pathPrefix }: { file: File; pathPrefix: string }) => {
+    mutationFn: async ({ file, pathPrefix, onProgress }: { file: File; pathPrefix: string; onProgress?: (pct: number) => void }) => {
       const params = new URLSearchParams({ pathPrefix, filename: file.name }).toString();
       const res: any = await apiClient.post(`/api/upload/image?${params}`, file, {
         headers: { 'Content-Type': file.type },
+        onUploadProgress: onProgress
+          ? (e) => { if (e.total) onProgress(Math.round((e.loaded / e.total) * 100)); }
+          : undefined,
       });
       return (res.data || res) as { publicUrl: string };
     },
