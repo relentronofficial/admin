@@ -35,15 +35,15 @@ describe('validateFaqInput', () => {
   it('enforces length limits after sanitising', () => {
     expect(validateFaqInput({ question: 'q'.repeat(FAQ_QUESTION_MAX + 1), answer: 'a' }).ok).toBe(false);
     expect(validateFaqInput({ question: 'q', answer: 'a'.repeat(FAQ_ANSWER_MAX + 1) }).ok).toBe(false);
-    expect(validateFaqInput({ question: 'q'.repeat(FAQ_QUESTION_MAX), answer: 'a'.repeat(FAQ_ANSWER_MAX) }).ok).toBe(true);
+    expect(validateFaqInput({ question: 'q'.repeat(FAQ_QUESTION_MAX), answer: 'a'.repeat(FAQ_ANSWER_MAX), category: 'service' }).ok).toBe(true);
   });
   it('defaults new FAQs to unpublished and rejects a non-boolean publish flag', () => {
-    expect(validateFaqInput({ question: 'Q?', answer: 'A' })).toEqual({ ok: true, value: { question: 'Q?', answer: 'A', isPublished: false, videoUrl: null, bunnyVideoId: null } });
+    expect(validateFaqInput({ question: 'Q?', answer: 'A', category: 'ecommerce' })).toEqual({ ok: true, value: { question: 'Q?', answer: 'A', isPublished: false, videoUrl: null, bunnyVideoId: null, category: 'ecommerce' } });
     expect(validateFaqInput({ question: 'Q?', answer: 'A', isPublished: 'yes' }).ok).toBe(false);
   });
   it('merges a partial update over the current values', () => {
     const current = { question: 'Old?', answer: 'Old', isPublished: true };
-    expect(validateFaqInput({ answer: 'New' }, current)).toEqual({ ok: true, value: { question: 'Old?', answer: 'New', isPublished: true, videoUrl: null, bunnyVideoId: null } });
+    expect(validateFaqInput({ answer: 'New' }, current)).toEqual({ ok: true, value: { question: 'Old?', answer: 'New', isPublished: true, videoUrl: null, bunnyVideoId: null, category: null } });
   });
   it('rejects non-object bodies', () => {
     expect(validateFaqInput([] as any).ok).toBe(false);
@@ -68,8 +68,21 @@ describe('publicFaqList', () => {
       { id: '1', question: 'First', answer: 'A', is_published: true, sort_order: 0 },
     ]);
     expect(out).toEqual([
-      { id: '1', question: 'First', answer: 'A', videoUrl: null, bunnyVideoId: null },
-      { id: '2', question: 'Second', answer: 'B', videoUrl: 'https://iframe.mediadelivery.net/embed/1/abc', bunnyVideoId: 'abc' },
+      { id: '1', question: 'First', answer: 'A', videoUrl: null, bunnyVideoId: null, category: null },
+      { id: '2', question: 'Second', answer: 'B', videoUrl: 'https://iframe.mediadelivery.net/embed/1/abc', bunnyVideoId: 'abc', category: null },
     ]);
+  });
+});
+
+describe('FAQ category validation', () => {
+  it('is required for a new FAQ and must be Ecommerce, Service or CoachX', () => {
+    expect(validateFaqInput({ question: 'Q?', answer: 'A' })).toEqual({ ok: false, error: 'Category is required' });
+    for (const bad of ['Ecommerce', 'coaching', '', null, 5]) expect(validateFaqInput({ question: 'Q?', answer: 'A', category: bad }).ok).toBe(false);
+    for (const good of ['ecommerce', 'service', 'coachx']) expect(validateFaqInput({ question: 'Q?', answer: 'A', category: good })).toMatchObject({ ok: true, value: { category: good } });
+  });
+  it('on update: omitted keeps the current one (even none, for older FAQs); given replaces it', () => {
+    expect(validateFaqInput({ answer: 'B' }, { question: 'Q', answer: 'A', isPublished: false, category: 'coachx' })).toMatchObject({ ok: true, value: { category: 'coachx' } });
+    expect(validateFaqInput({ answer: 'B' }, { question: 'Q', answer: 'A', isPublished: false, category: null })).toMatchObject({ ok: true, value: { category: null } });
+    expect(validateFaqInput({ category: 'service' }, { question: 'Q', answer: 'A', isPublished: false, category: null })).toMatchObject({ ok: true, value: { category: 'service' } });
   });
 });

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import ModulesFaqButton from "./ModulesFaq";
 
 const state: {
-  faqs: { data?: Array<{ id: string; question: string; answer: string }>; isLoading: boolean; isError: boolean; isFetching: boolean; refetch: ReturnType<typeof vi.fn> };
+  faqs: { data?: Array<{ id: string; question: string; answer: string; category?: string | null }>; isLoading: boolean; isError: boolean; isFetching: boolean; refetch: ReturnType<typeof vi.fn> };
   enabledCalls: boolean[];
 } = {} as any;
 
@@ -101,5 +101,48 @@ describe("ModulesFaqButton", () => {
     dialog = screen.getByRole("dialog");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("ModulesFaqButton — FAQ categories", () => {
+  const sectionsOf = (dialog: HTMLElement) =>
+    [...dialog.querySelectorAll("section[data-faq-section]")].map((sec) => ({
+      key: sec.getAttribute("data-faq-section"),
+      heading: sec.querySelector("h3")?.textContent,
+      questions: [...sec.querySelectorAll("li button")].map((b) => b.textContent),
+    }));
+
+  it("groups FAQs under Ecommerce, Service and CoachX (in that order), with older ones under General", () => {
+    state.faqs.data = [
+      { id: "a", question: "Coaching calls?", answer: "x", category: "coachx" },
+      { id: "b", question: "Store setup?", answer: "x", category: "ecommerce" },
+      { id: "c", question: "Old question?", answer: "x", category: null },
+      { id: "d", question: "Pricing a service?", answer: "x", category: "service" },
+      { id: "e", question: "Payment gateway?", answer: "x", category: "ecommerce" },
+    ];
+    expect(sectionsOf(open())).toEqual([
+      { key: "ecommerce", heading: "Ecommerce", questions: ["Store setup?", "Payment gateway?"] },
+      { key: "service", heading: "Service", questions: ["Pricing a service?"] },
+      { key: "coachx", heading: "CoachX", questions: ["Coaching calls?"] },
+      { key: "general", heading: "General", questions: ["Old question?"] },
+    ]);
+  });
+
+  it("hides empty sections", () => {
+    state.faqs.data = [{ id: "a", question: "Only service?", answer: "x", category: "service" }];
+    expect(sectionsOf(open()).map((s) => s.heading)).toEqual(["Service"]);
+  });
+
+  it("older FAQs without any category keep the original single list (no headings)", () => {
+    const dialog = open(); // default FAQS have no category
+    expect(dialog.querySelectorAll("section[data-faq-section]")).toHaveLength(0);
+    expect(within(dialog).getAllByRole("button", { expanded: false }).map((b) => b.textContent)).toEqual(["How do modules unlock?", "Can I rewatch a lesson?"]);
+  });
+
+  it("an FAQ in a section still expands to its answer", () => {
+    state.faqs.data = [{ id: "a", question: "Store setup?", answer: "Use the store builder.", category: "ecommerce" }];
+    const dialog = open();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Store setup?" }));
+    expect(within(dialog).getByText("Use the store builder.")).toBeTruthy();
   });
 });
