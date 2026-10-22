@@ -2502,6 +2502,51 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     }, 15_000);
   }
 
+  // ── Column safety net ──────────────────────────────────────────────────────
+  // Runs unconditionally after the main try-catch so rolling-deploy lock
+  // contention (which causes the Promise.all to fail atomically and swallows
+  // individual columns) cannot leave the DB missing critical columns.
+  // Each statement is independent — one failure does not block the rest.
+  {
+    const safeAlter = async (sql: string) =>
+      prisma.$executeRawUnsafe(sql).catch((e: any) =>
+        fastify.log.warn(`⚠️ Safety-net ALTER skipped (${e.message.slice(0, 80)}): ${sql.slice(0, 80)}`)
+      );
+    // members — skill/growth profile (writeSkillFields in members/controller.ts)
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS has_website BOOLEAN`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS weekly_website_orders INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_business_foundation INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_content INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_funnels INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_ads INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_sales INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS skill_overall_marketing INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS weekly_learning_hours INTEGER`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS team_size TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_started_from TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_stats TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS facebook_stats TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS website_url TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS revenue_goal_after_tbt TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_type TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS role TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS registered_office TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS target_network_description TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS watched_video_steps JSONB DEFAULT '[]'`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT false`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS onboarding_review_note TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ`);
+    // courses — CV visibility + module fields
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS applicable_business_types TEXT[]`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS module VARCHAR(100)`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`);
+    fastify.log.info('✅ Column safety net complete');
+  }
+
   fastify.decorate('prisma', prisma);
 
   fastify.addHook('onClose', async (instance) => {
