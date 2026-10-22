@@ -2473,14 +2473,18 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // ── Course visibility: business category gates (CV-01/CV-02 2026-10-21) ───
     // CV-01: admin-assigned multi-value member audience.
     // Empty = uncategorised = backward compat (member sees all courses).
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`
-    ).catch((e: any) => fastify.log.warn('⚠️ CV business_categories ALTER failed — will surface on next restart:', e));
-    // CV-02: batch-level visibility override on courses.
-    // Empty = no override. Grants catalog visibility only; not CourseAccess.
-    await prisma.$executeRawUnsafe(
-      `ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`
-    ).catch((e: any) => fastify.log.warn('⚠️ CV batch_visibility_ids ALTER failed — will surface on next restart:', e));
+    // Uses DIRECT_URL to guarantee the ALTER reaches Postgres directly.
+    await (async () => {
+      const cv = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL ?? env.DATABASE_URL } } });
+      try {
+        await cv.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
+        await cv.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
+      } catch (e: any) {
+        fastify.log.warn('⚠️ CV-01/CV-02 ALTER failed:', e);
+      } finally {
+        await cv.$disconnect().catch(() => {});
+      }
+    })();
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
@@ -2490,27 +2494,32 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Retry only the most recently-added columns that may have been skipped.
     // Wrapped in a long timeout so the old instance has time to release its pool slots.
     setTimeout(async () => {
+      const retryPrisma = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL ?? env.DATABASE_URL } } });
       try {
-        await prisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
-        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
-        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
-        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS applicable_business_types TEXT[]`).catch(() => {});
+        await retryPrisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
+        await retryPrisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`).catch(() => {});
+        await retryPrisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`).catch(() => {});
+        await retryPrisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS applicable_business_types TEXT[]`).catch(() => {});
         fastify.log.info('✅ Startup DDL retry completed');
       } catch (retryErr) {
         fastify.log.warn('⚠️ Startup DDL retry failed:', retryErr as any);
+      } finally {
+        await retryPrisma.$disconnect().catch(() => {});
       }
     }, 15_000);
   }
 
   // ── Column safety net ──────────────────────────────────────────────────────
-  // Runs unconditionally after the main try-catch so rolling-deploy lock
-  // contention (which causes the Promise.all to fail atomically and swallows
-  // individual columns) cannot leave the DB missing critical columns.
+  // Uses DIRECT_URL (bypasses PgBouncer) — the pooled DATABASE_URL can silently
+  // fail ALTER TABLE in transaction-mode pooling, leaving critical columns absent.
   // Each statement is independent — one failure does not block the rest.
   {
+    const ddlPrisma = new PrismaClient({
+      datasources: { db: { url: process.env.DIRECT_URL ?? env.DATABASE_URL } },
+    });
     const safeAlter = async (sql: string) =>
-      prisma.$executeRawUnsafe(sql).catch((e: any) =>
-        fastify.log.warn(`⚠️ Safety-net ALTER skipped (${e.message.slice(0, 80)}): ${sql.slice(0, 80)}`)
+      ddlPrisma.$executeRawUnsafe(sql).catch((e: any) =>
+        fastify.log.warn(`⚠️ Safety-net ALTER skipped (${(e as Error).message?.slice(0, 80)}): ${sql.slice(0, 80)}`)
       );
     // members — skill/growth profile (writeSkillFields in members/controller.ts)
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS has_website BOOLEAN`);
@@ -2545,6 +2554,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS module VARCHAR(100)`);
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`);
     fastify.log.info('✅ Column safety net complete');
+    await ddlPrisma.$disconnect().catch(() => {});
   }
 
   fastify.decorate('prisma', prisma);
