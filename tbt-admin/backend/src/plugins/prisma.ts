@@ -2475,12 +2475,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Empty = uncategorised = backward compat (member sees all courses).
     await prisma.$executeRawUnsafe(
       `ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`
-    ).catch(() => {});
+    ).catch((e: any) => fastify.log.warn('⚠️ CV business_categories ALTER failed — will surface on next restart:', e));
     // CV-02: batch-level visibility override on courses.
     // Empty = no override. Grants catalog visibility only; not CourseAccess.
     await prisma.$executeRawUnsafe(
       `ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`
-    ).catch(() => {});
+    ).catch((e: any) => fastify.log.warn('⚠️ CV batch_visibility_ids ALTER failed — will surface on next restart:', e));
 
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
@@ -2492,8 +2492,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     setTimeout(async () => {
       try {
         await prisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
-        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`).catch(() => {});
-        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`).catch(() => {});
+        await prisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
+        await prisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS applicable_business_types TEXT[]`).catch(() => {});
         fastify.log.info('✅ Startup DDL retry completed');
       } catch (retryErr) {
         fastify.log.warn('⚠️ Startup DDL retry failed:', retryErr as any);
