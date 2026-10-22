@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2,
@@ -912,7 +912,23 @@ function WeeklyLineChart({
   const displayRev = mode === "cumulative" ? cum(revData) : revData;
   const displayOrd = mode === "cumulative" ? cum(ordData) : ordData;
 
-  const W = 700, H = 200;
+  // Draw at the container's real width (1 unit = 1px) so the plot fills the card
+  // instead of letterboxing a fixed 700-wide canvas. Below 360 it scales down so
+  // the seven day labels never overlap.
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [W, setW] = useState(700);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w > 0) setW(Math.max(w, 360));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const H = 200;
   const PL = 58, PR = 16, PT = 20, PB = 32;
   const PW = W - PL - PR;
   const PH = H - PT - PB;
@@ -957,7 +973,7 @@ function WeeklyLineChart({
   }));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly revenue and order trajectory">
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 200 }} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Weekly revenue and order trajectory">
       <defs>
         <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--color-accent)" stopOpacity="0.35" />
@@ -1032,14 +1048,14 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
 
   return (
     <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
-      <div className="flex items-start justify-between mb-1 gap-3">
+      <div className="flex flex-wrap items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
           <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
             Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day}
           </p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex flex-wrap items-center gap-1">
           <div className="flex items-center gap-2 mr-3">
             <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
               <span className="inline-block w-5 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Daily Revenue (₹)
