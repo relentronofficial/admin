@@ -45,7 +45,10 @@ type BookingSpec = {
   cancelledAgo?: number; // ms before now
 };
 
-type SessionSpec = Omit<SupportSession, "id" | "startsAt" | "hasMeetingUrl" | "activeBookings" | "pendingAttendance" | "seatsLeft"> & {
+type SessionSpec = Omit<
+  SupportSession,
+  "id" | "startsAt" | "hasMeetingUrl" | "activeBookings" | "pendingAttendance" | "seatsLeft" | "totalBookings" | "slotStatus" | "canDelete"
+> & {
   id: string;
   startsIn: number; // ms from now (negative = in the past)
   bookings: BookingSpec[];
@@ -207,20 +210,41 @@ function bookingsFor(spec: SessionSpec, now: number): SupportSessionBooking[] {
 function toSession(spec: SessionSpec, now: number): SupportSession {
   const { bookings, startsIn, ...rest } = spec;
   const active = bookings.filter((b) => b.status !== "cancelled").length;
+  const start = now + startsIn;
+  // Same rules as slotStatus() in backend/src/lib/supportCallLogic.ts.
+  const slotStatus: SupportSession["slotStatus"] =
+    spec.status !== "scheduled"
+      ? "cancelled"
+      : now >= start + spec.durationMinutes * MIN
+        ? "completed"
+        : now >= start
+          ? "in_progress"
+          : active >= spec.capacity
+            ? "booked"
+            : "available";
   return {
     ...rest,
-    startsAt: new Date(now + startsIn).toISOString(),
+    startsAt: new Date(start).toISOString(),
     hasMeetingUrl: !!spec.meetingUrl?.trim(),
     activeBookings: active,
     pendingAttendance: bookings.filter((b) => b.status === "booked").length,
     seatsLeft: Math.max(0, spec.capacity - active),
+    totalBookings: bookings.length,
+    slotStatus,
+    canDelete: bookings.length === 0,
   };
 }
 
 /** Same category/scope filtering and ordering as listSupportSessionsHandler. */
-export function demoSupportSessions(params: { category?: string; scope?: "upcoming" | "past" | "all" }): SupportSession[] {
+export function demoSupportSessions(params: {
+  category?: string;
+  scope?: "upcoming" | "past" | "all";
+  from?: string;
+  to?: string;
+}): SupportSession[] {
   const now = Date.now();
-  const scope = params.scope ?? "upcoming";
+  // A date range (the availability calendar) shows every slot, like the backend.
+  const scope = params.from ? "all" : params.scope ?? "upcoming";
   const ended = (s: SessionSpec) => now + s.startsIn + s.durationMinutes * MIN <= now;
   return SPECS.filter((s) => !params.category || s.category === params.category)
     .filter((s) => (scope === "upcoming" ? !ended(s) : scope === "past" ? ended(s) : true))

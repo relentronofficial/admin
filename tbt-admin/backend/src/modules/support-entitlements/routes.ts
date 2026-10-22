@@ -10,6 +10,8 @@ import {
   createSupportSessionHandler,
   updateSupportSessionHandler,
   cancelSupportSessionHandler,
+  deleteSupportSessionHandler,
+  publishSupportSlotsHandler,
   listSupportSessionBookingsHandler,
   markSupportBookingHandler,
   listCallCoinPricingHandler,
@@ -33,8 +35,10 @@ export async function supportEntitlementsRoutes(fastify: FastifyInstance) {
   // Expert Support Call sessions — role-gated in the handlers (admin/super_admin all, mentor own).
   fastify.get('/sessions', listSupportSessionsHandler);
   fastify.post('/sessions', createSupportSessionHandler);
+  fastify.post('/sessions/bulk', publishSupportSlotsHandler);
   fastify.put('/sessions/:id', updateSupportSessionHandler);
   fastify.post('/sessions/:id/cancel', cancelSupportSessionHandler);
+  fastify.delete('/sessions/:id', deleteSupportSessionHandler);
   fastify.get('/sessions/:id/bookings', listSupportSessionBookingsHandler);
   fastify.put('/bookings/:id/status', markSupportBookingHandler);
 }

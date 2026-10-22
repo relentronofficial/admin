@@ -367,7 +367,9 @@ function ConfirmCard({
     setError(null);
     try {
       const booking = await book.mutateAsync(
-        payWithCoins ? { sessionId: session.id, payWithCoins: true, expectedCoinCost: cost! } : { sessionId: session.id },
+        payWithCoins
+          ? { sessionId: session.id, expectedStartsAt: session.startsAt, payWithCoins: true, expectedCoinCost: cost! }
+          : { sessionId: session.id, expectedStartsAt: session.startsAt },
       );
       onConfirmed(booking);
     } catch (err: any) {
@@ -450,8 +452,14 @@ function BookingConfirmation({
   categoryLabel: string;
   onDismiss: () => void;
 }) {
+  // It renders at the top of the panel; on a phone the member is scrolled down at
+  // the Confirm button, so bring it into view or they'd never see it.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [booking.id]);
   return (
-    <div role="status" className="rounded-[10px] px-3.5 py-3 space-y-2" style={{ background: "rgba(34,197,94,0.12)", border: `1px solid ${GREEN}` }}>
+    <div ref={ref} role="status" className="rounded-[10px] px-3.5 py-3 space-y-2" style={{ background: "rgba(34,197,94,0.12)", border: `1px solid ${GREEN}` }}>
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm font-bold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
           <Check size={15} style={{ color: GREEN }} /> Booking confirmed
@@ -647,11 +655,17 @@ export default function SupportCallPanel({
     [openDates, todayKey, byDate, nowMs, member],
   );
 
-  // Default to the first date with a bookable slot; drop a selection that is no longer bookable.
+  // Default to the first date with a bookable slot. A date the member picked stays
+  // selected when its last slot is taken (it then says so) unless it is now in the past.
+  const pickedRef = useRef(false);
   useEffect(() => {
     if (!data) return;
-    if (!selectedDate || !bookableDates.includes(selectedDate)) setSelectedDate(bookableDates[0] ?? null);
-  }, [data, bookableDates, selectedDate]);
+    const keep = !!selectedDate && selectedDate >= todayKey && (pickedRef.current || bookableDates.includes(selectedDate));
+    if (!keep) {
+      pickedRef.current = false;
+      setSelectedDate(bookableDates[0] ?? null);
+    }
+  }, [data, bookableDates, selectedDate, todayKey]);
 
   const daySlots = selectedDate ? byDate.get(selectedDate) ?? [] : [];
   const selectedSlot = daySlots.find((s) => s.id === selectedSlotId) ?? null;
@@ -779,6 +793,7 @@ export default function SupportCallPanel({
                       member={member}
                       selectedKey={selectedDate}
                       onSelect={(key) => {
+                        pickedRef.current = true;
                         setSelectedDate(key);
                         setSelectedSlotId(null);
                       }}
@@ -810,6 +825,10 @@ export default function SupportCallPanel({
                     ) : !selectedDate ? (
                       <div className="rounded-[10px] p-4" style={{ background: CARD }}>
                         <p className="text-xs" style={{ color: SOFT }}>All published slots are booked. Please check again later.</p>
+                      </div>
+                    ) : !daySlots.some((s) => slotState(s, nowMs, member) === "available") ? (
+                      <div className="rounded-[10px] p-4" style={{ background: CARD }} role="status">
+                        <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots for this date. Please choose another date.</p>
                       </div>
                     ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-1 gap-2" role="group" aria-label="Available time slots">
