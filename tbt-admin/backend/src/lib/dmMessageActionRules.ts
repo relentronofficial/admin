@@ -93,3 +93,23 @@ export function validateForwardTargets(raw: unknown): { ok: true; value: string[
 }
 
 export const DM_BODY_MAX = 5000;
+
+/**
+ * Forward targets: the member's other direct conversations and/or their chat
+ * groups. Each list holds up to DM_FORWARD_MAX_TARGETS distinct ids; at least one target overall.
+ */
+export function validateForwardRequest(body: { toConversationIds?: unknown; toGroupIds?: unknown }):
+  { ok: true; value: { conversationIds: string[]; groupIds: string[] } } | { ok: false; error: string } {
+  const lists: string[][] = [];
+  for (const raw of [body.toConversationIds, body.toGroupIds]) {
+    if (raw === undefined || raw === null || (Array.isArray(raw) && raw.length === 0)) {
+      lists.push([]);
+      continue;
+    }
+    const v = validateForwardTargets(raw);
+    if (!v.ok) return v;
+    lists.push(v.value);
+  }
+  if (lists[0].length + lists[1].length === 0) return { ok: false, error: 'Choose a conversation to forward to.' };
+  return { ok: true, value: { conversationIds: lists[0], groupIds: lists[1] } };
+}

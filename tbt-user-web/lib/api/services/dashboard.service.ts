@@ -75,8 +75,8 @@ export const dashboardService = {
   reactChatMessage: (id: string, messageId: string, emoji: string) =>
     apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/react`, { emoji }),
 
-  forwardChatMessage: (id: string, messageId: string, toConversationIds: string[]) =>
-    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/forward`, { toConversationIds }),
+  forwardChatMessage: (id: string, messageId: string, toConversationIds: string[], toGroupIds: string[] = []) =>
+    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/forward`, { toConversationIds, toGroupIds }),
 
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),

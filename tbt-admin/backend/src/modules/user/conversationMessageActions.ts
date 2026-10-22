@@ -6,14 +6,14 @@ import {
   dmSenderMemberId,
   isValidDmReaction,
   nextDmReaction,
-  validateForwardTargets,
+  validateForwardRequest,
 } from '../../lib/dmMessageActionRules.js';
 
 // Member actions on their direct (member ↔ TBT team) conversation messages:
 //   PUT    /api/user/conversations/:id/messages/:messageId          edit own message
 //   DELETE /api/user/conversations/:id/messages/:messageId          delete (?forEveryone=true)
 //   POST   /api/user/conversations/:id/messages/:messageId/react    set / change / remove reaction
-//   POST   /api/user/conversations/:id/messages/:messageId/forward  copy to other own conversations
+//   POST   /api/user/conversations/:id/messages/:messageId/forward  copy to other own conversations and/or chat groups
 // Every action is scoped to a conversation the member owns. Edits, deletes and
 // reactions emit `chat:message_updated` to the conversation room; a forward is
 // a new message and emits the same `chat:message` as a normal send.
@@ -169,10 +169,11 @@ export async function reactConversationMessageHandler(req: FastifyRequest, reply
 
 export async function forwardConversationMessageHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id, messageId } = req.params as Params;
-  const { toConversationIds } = (req.body ?? {}) as { toConversationIds?: unknown };
+  const { toConversationIds, toGroupIds } = (req.body ?? {}) as { toConversationIds?: unknown; toGroupIds?: unknown };
   if (!isUuid(id) || !isUuid(messageId)) return fail(reply, 404, 'Message not found');
-  const targets = validateForwardTargets(toConversationIds);
+  const targets = validateForwardRequest({ toConversationIds, toGroupIds });
   if (!targets.ok) return fail(reply, 400, targets.error);
+  const { conversationIds, groupIds } = targets.value;
   const memberId = req.memberId!;
   const prisma = req.server.prisma;
 
@@ -182,13 +183,31 @@ export async function forwardConversationMessageHandler(req: FastifyRequest, rep
     if (m.deleted_at) return fail(reply, 400, 'Cannot forward a deleted message');
     if (!m.body && !m.media_url) return fail(reply, 400, 'Nothing to forward');
 
-    const owned = await prisma.conversation.findMany({
-      where: { id: { in: targets.value }, memberId },
-      select: { id: true, status: true, subject: true },
-    });
-    if (owned.length !== targets.value.length) return fail(reply, 404, 'Conversation not found');
+    const owned = conversationIds.length
+      ? await prisma.conversation.findMany({
+          where: { id: { in: conversationIds }, memberId },
+          select: { id: true, status: true, subject: true },
+        })
+      : [];
+    if (owned.length !== conversationIds.length) return fail(reply, 404, 'Conversation not found');
 
-    const created = await prisma.$transaction(async (tx) => {
+    // Groups: same rule as group-to-group forwarding — an active member of a
+    // live group, and only group admins may post into announcement-only groups.
+    if (groupIds.length) {
+      const groups = await prisma.$queryRawUnsafe<Array<{ group_id: string; name: string; announcement_only: boolean; role: string }>>(
+        `SELECT cgm.group_id::text AS group_id, g.name, g.announcement_only, cgm.role
+           FROM chat_group_members cgm
+           JOIN chat_groups g ON g.id = cgm.group_id AND g.is_deleted = false
+          WHERE cgm.member_id = $1::uuid AND cgm.left_at IS NULL AND cgm.group_id = ANY($2::uuid[])`,
+        memberId,
+        groupIds,
+      );
+      if (groups.length !== groupIds.length) return fail(reply, 404, 'Group not found');
+      const blocked = groups.find((g) => g.announcement_only && g.role !== 'admin');
+      if (blocked) return fail(reply, 403, `Only group admins can post in "${blocked.name}"`);
+    }
+
+    const { out: created, groupOut } = await prisma.$transaction(async (tx) => {
       const out: Array<{ conversationId: string; reopened: boolean; subject: string; message: any }> = [];
       for (const c of owned) {
         const reopened = c.status === 'closed';
@@ -210,7 +229,24 @@ export async function forwardConversationMessageHandler(req: FastifyRequest, rep
         });
         out.push({ conversationId: c.id, reopened, subject: c.subject, message });
       }
-      return out;
+      const groupOut: Array<{ groupId: string; messageId: string }> = [];
+      for (const groupId of groupIds) {
+        const rows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+          `INSERT INTO chat_group_messages (group_id, sender_member_id, body, media_url, media_type, forwarded_from_message_id)
+           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
+           RETURNING id::text AS id`,
+          groupId, memberId, m.body, m.media_url, m.media_type, messageId,
+        );
+        await tx.$executeRawUnsafe(`UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`, groupId);
+        await tx.$executeRawUnsafe(
+          `UPDATE chat_group_members SET unread_count = unread_count + 1
+            WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
+          groupId,
+          memberId,
+        );
+        groupOut.push({ groupId, messageId: rows[0].id });
+      }
+      return { out, groupOut };
     });
 
     const member = await prisma.member.findUnique({ where: { id: memberId }, select: { firstName: true, lastName: true } });
@@ -237,9 +273,22 @@ export async function forwardConversationMessageHandler(req: FastifyRequest, rep
       }
       io?.to('admin').emit('chat:unread_ping', { conversationId });
     }
+    // Same group notifications as group-to-group forwarding.
+    for (const g of groupOut) {
+      io?.to(`group:${g.groupId}`).emit('group:message:new', { forwardedMessageId: g.messageId });
+      const others = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+        `SELECT member_id::text AS member_id FROM chat_group_members WHERE group_id = $1::uuid AND member_id <> $2::uuid AND left_at IS NULL`,
+        g.groupId,
+        memberId,
+      );
+      for (const om of others) io?.to(`user:${om.member_id}`).emit('group:bumped', { groupId: g.groupId });
+    }
     return reply.status(201).send({
       success: true,
-      data: { forwardedTo: created.map((c) => ({ conversationId: c.conversationId, messageId: c.message.id })) },
+      data: {
+        forwardedTo: created.map((c) => ({ conversationId: c.conversationId, messageId: c.message.id })),
+        forwardedToGroups: groupOut,
+      },
       error: null,
     });
   } catch (err) {
