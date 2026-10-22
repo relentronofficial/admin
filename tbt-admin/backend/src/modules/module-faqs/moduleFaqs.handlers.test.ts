@@ -17,14 +17,14 @@ const ADMINS: Record<string, { id: string; fullName: string; role: string }> = {
 
 type Row = {
   id: string; question: string; answer: string; is_published: boolean; sort_order: number; created_at: number; updated_at: Date;
-  updated_by: string | null; video_url: string | null; bunny_video_id: string | null; category: string | null;
+  updated_by: string | null; video_url: string | null; bunny_video_id: string | null; category: string | null; thumbnail_url?: string | null;
 };
 let table: Row[];
 let seq = 0;
 const uuid = () => `9${String(++seq).padStart(7, '0')}-0000-4000-8000-000000000000`;
 const out = (r: Row) => ({
   id: r.id, question: r.question, answer: r.answer, is_published: r.is_published, sort_order: r.sort_order, updated_at: r.updated_at,
-  video_url: r.video_url, bunny_video_id: r.bunny_video_id, category: r.category,
+  video_url: r.video_url, bunny_video_id: r.bunny_video_id, category: r.category, thumbnail_url: r.thumbnail_url ?? null,
 });
 const ordered = () => [...table].sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at);
 const unhandled: string[] = [];
@@ -45,7 +45,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     const r: Row = {
       id: uuid(), question: a[0], answer: a[1], is_published: a[2], video_url: a[3], bunny_video_id: a[4],
       sort_order: Math.max(-1, ...table.map((x) => x.sort_order)) + 1, created_at: seq, updated_at: new Date(), updated_by: a[5],
-      category: a[6] ?? null,
+      category: a[6] ?? null, thumbnail_url: a[7] ?? null,
     };
     table.push(r);
     return [out(r)];
@@ -53,7 +53,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('UPDATE module_faqs SET question')) {
     const r = table.find((x) => x.id === a[0]);
     if (!r) return [];
-    Object.assign(r, { question: a[1], answer: a[2], is_published: a[3], updated_by: a[4], video_url: a[5], bunny_video_id: a[6], category: a[7] });
+    Object.assign(r, { question: a[1], answer: a[2], is_published: a[3], updated_by: a[4], video_url: a[5], bunny_video_id: a[6], category: a[7], thumbnail_url: a[8] });
     return [out(r)];
   }
   if (q.startsWith('UPDATE module_faqs SET is_published')) {
@@ -362,5 +362,36 @@ describe('FAQ category (Ecommerce / Service / CoachX)', () => {
     ] } });
     expect(bad).toMatchObject({ status: 400, body: { error: 'Question 2: Category is required' } });
     expect(table).toHaveLength(2);
+  });
+});
+
+describe('FAQ thumbnail', () => {
+  const THUMB = 'https://cdn.example.com/module-faqs/thumbnails/1-cover.webp';
+  const update = (id: string, body: any) => call(admin.updateFaqHandler, { clerk: 'clerk_admin', params: { id }, body });
+
+  it('saves the uploaded thumbnail URL with the FAQ and returns it to the admin list', async () => {
+    const c = await create({ question: 'Q?', answer: 'A.', thumbnailUrl: THUMB });
+    expect(c.status).toBe(201);
+    expect(c.body.data.thumbnailUrl).toBe(THUMB);
+    expect(table[0].thumbnail_url).toBe(THUMB);
+    expect((await adminList())[0].thumbnailUrl).toBe(THUMB);
+  });
+
+  it('saves with several questions (bulk) and defaults to none', async () => {
+    const r = await bulk({ items: [{ question: 'A?', answer: 'a', thumbnailUrl: THUMB }, { question: 'B?', answer: 'b' }] });
+    expect(r.body.data.map((f: any) => f.thumbnailUrl)).toEqual([THUMB, null]);
+  });
+
+  it('editing keeps the thumbnail; it can be replaced or removed; a bad URL is rejected', async () => {
+    const id = (await create({ question: 'Q?', answer: 'A.', thumbnailUrl: THUMB })).body.data.id;
+    expect((await update(id, { answer: 'B.' })).body.data.thumbnailUrl).toBe(THUMB);
+    expect((await update(id, { thumbnailUrl: 'http://insecure.example.com/x.png' })).status).toBe(400);
+    expect((await update(id, { thumbnailUrl: 'https://cdn.example.com/new.webp' })).body.data.thumbnailUrl).toBe('https://cdn.example.com/new.webp');
+    expect((await update(id, { thumbnailUrl: null })).body.data.thumbnailUrl).toBeNull();
+  });
+
+  it('is not added to the members (public) FAQ list', async () => {
+    await create({ question: 'Q?', answer: 'A.', isPublished: true, thumbnailUrl: THUMB });
+    expect(Object.keys((await publicList())[0])).not.toContain('thumbnailUrl');
   });
 });
