@@ -2915,8 +2915,13 @@ export type ModuleFaq = {
   id: string; question: string; answer: string; isPublished: boolean; sortOrder: number; updatedAt: string | null;
   /** Optional Bunny Stream video (embed URL + video id). */
   videoUrl?: string | null; bunnyVideoId?: string | null;
+  /** Section in the member FAQ popup; null for older FAQs created before categories. */
+  category?: ModuleFaqCategory | null;
 };
-export type ModuleFaqInput = { question: string; answer: string; isPublished?: boolean; videoUrl?: string | null; bunnyVideoId?: string | null };
+export type ModuleFaqCategory = 'ecommerce' | 'service' | 'coachx';
+export type ModuleFaqInput = {
+  question: string; answer: string; isPublished?: boolean; videoUrl?: string | null; bunnyVideoId?: string | null; category?: ModuleFaqCategory;
+};
 const moduleFaqsKey = ['module-faqs-admin'];
 
 export const useListModuleFaqs = () =>

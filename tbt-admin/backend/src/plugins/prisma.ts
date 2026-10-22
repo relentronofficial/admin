@@ -2260,6 +2260,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Optional video per FAQ (Bunny Stream, uploaded from the admin Modules FAQ page).
     await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS video_url TEXT`).catch(() => {});
     await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS bunny_video_id TEXT`).catch(() => {});
+    // FAQ category shown as a section in the member FAQ popup (ecommerce | service | coachx); NULL = older FAQ ("General").
+    await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS category VARCHAR(20)`).catch(() => {});
 
     // ── Support calls unlocked with TBT coins (2026-10-20) ──────────────────
     // coin_cost on a booking = the coins it was paid with (NULL = free quota).

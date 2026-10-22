@@ -10,14 +10,15 @@ import {
   validateFaqBatch,
   validateFaqInput,
   validateFaqReorder,
+  type FaqInput,
   type FaqRow,
 } from '../../lib/moduleFaqLogic.js';
 
 type PI = { id: string };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const COLUMNS = `id::text AS id, question, answer, is_published, sort_order, updated_at, video_url, bunny_video_id`;
-const INSERT_FAQ = `INSERT INTO module_faqs (question, answer, is_published, video_url, bunny_video_id, sort_order, created_by, updated_by)
-     VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM module_faqs), $6, $6)
+const COLUMNS = `id::text AS id, question, answer, is_published, sort_order, updated_at, video_url, bunny_video_id, category`;
+const INSERT_FAQ = `INSERT INTO module_faqs (question, answer, is_published, video_url, bunny_video_id, sort_order, created_by, updated_by, category)
+     VALUES ($1, $2, $3, $4, $5, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM module_faqs), $6, $6, $7)
      RETURNING ${COLUMNS}`;
 
 const ok = (reply: FastifyReply, data: unknown, status = 200) => reply.status(status).send({ success: true, data, error: null });
@@ -58,7 +59,7 @@ export async function createFaqHandler(req: FastifyRequest, reply: FastifyReply)
   if (!v.ok) return fail(reply, 400, v.error);
   const rows = await req.server.prisma.$queryRawUnsafe<FaqRow[]>(
     INSERT_FAQ,
-    v.value.question, v.value.answer, v.value.isPublished, v.value.videoUrl ?? null, v.value.bunnyVideoId ?? null, acting.id,
+    v.value.question, v.value.answer, v.value.isPublished, v.value.videoUrl ?? null, v.value.bunnyVideoId ?? null, acting.id, v.value.category ?? null,
   );
   return ok(reply, adminFaqDto(rows[0]!), 201);
 }
@@ -75,7 +76,7 @@ export async function createFaqsBulkHandler(req: FastifyRequest, reply: FastifyR
     for (const item of v.value) {
       const [row] = await tx.$queryRawUnsafe(
         INSERT_FAQ,
-        item.question, item.answer, item.isPublished, item.videoUrl ?? null, item.bunnyVideoId ?? null, acting.id,
+        item.question, item.answer, item.isPublished, item.videoUrl ?? null, item.bunnyVideoId ?? null, acting.id, item.category ?? null,
       );
       rows.push(row);
     }
@@ -93,12 +94,13 @@ export async function updateFaqHandler(req: FastifyRequest<{ Params: PI }>, repl
   const v = validateFaqInput(req.body, {
     question: current.question, answer: current.answer, isPublished: !!current.is_published,
     videoUrl: current.video_url ?? null, bunnyVideoId: current.bunny_video_id ?? null,
+    category: (current.category as FaqInput['category']) ?? null,
   });
   if (!v.ok) return fail(reply, 400, v.error);
   const rows = await req.server.prisma.$queryRawUnsafe<FaqRow[]>(
-    `UPDATE module_faqs SET question = $2, answer = $3, is_published = $4, updated_by = $5, video_url = $6, bunny_video_id = $7, updated_at = NOW()
+    `UPDATE module_faqs SET question = $2, answer = $3, is_published = $4, updated_by = $5, video_url = $6, bunny_video_id = $7, category = $8, updated_at = NOW()
      WHERE id = $1::uuid RETURNING ${COLUMNS}`,
-    current.id, v.value.question, v.value.answer, v.value.isPublished, acting.id, v.value.videoUrl ?? null, v.value.bunnyVideoId ?? null,
+    current.id, v.value.question, v.value.answer, v.value.isPublished, acting.id, v.value.videoUrl ?? null, v.value.bunnyVideoId ?? null, v.value.category ?? null,
   );
   if (!rows[0]) return fail(reply, 404, 'FAQ not found');
   return ok(reply, adminFaqDto(rows[0]));
