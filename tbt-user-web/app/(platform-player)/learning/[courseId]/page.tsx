@@ -2829,7 +2829,7 @@ export default function CourseDetailPage({
   );
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-12 max-w-[1440px] mx-auto px-4 md:px-6 py-6">
 
       <LearningRoadmap levels={roadmapLevels} onOpenLesson={(lesson: any) => handleSelectLessonWithFocus(lesson)} />
 
@@ -3446,7 +3446,7 @@ export default function CourseDetailPage({
         </div>{/* end left panel */}
 
         {/* ── Right sidebar: Activities ── */}
-        <div className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-[68px] space-y-4">
+        <div className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-4 space-y-4">
           {/* Activities header + progress ring (section-scoped when ?section= active) */}
           {(() => {
             const ringTotal = sectionFilteredLessons.length;
