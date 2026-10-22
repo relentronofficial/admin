@@ -108,7 +108,7 @@ function MentorshipHeader({
 
   return (
     <motion.div variants={fadeUp} className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
-      <h2 className="flex-1 min-w-0 truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
+      <h2 className="flex-1 min-w-0 line-clamp-2 sm:truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
         {programName ?? "Mentorship Program"}
       </h2>
       <div className="flex items-center gap-2 flex-wrap shrink-0">
@@ -802,10 +802,10 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
       style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[9px] font-bold uppercase tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
+        <span className="text-[9px] font-bold uppercase tracking-wide sm:tracking-widest leading-tight" style={{ color: "var(--color-text-subtle)" }}>{label}</span>
         {topRight}
       </div>
-      <div className="text-3xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
+      <div className="text-2xl sm:text-3xl font-black tracking-tight leading-none" style={{ color: mainColor }}>{main}</div>
       {badge && (
         <span className="self-start text-[9px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${badge.color}26`, color: badge.color }}>
           {badge.text}
@@ -1051,7 +1051,7 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
       <div className="flex flex-wrap items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
-          <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
             Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day}
           </p>
         </div>
@@ -1395,10 +1395,10 @@ function SocialGrowthSection() {
         </div>
 
         {/* Toggle to show/hide the update form */}
-        <div className="flex justify-end">
+        <div className="flex justify-end mt-1">
           <button
             onClick={() => setShowForm(v => !v)}
-            className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+            className="w-full sm:w-auto text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
             style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
           >
             {showForm ? "Close" : "Update social stats"}

@@ -412,7 +412,7 @@ function MentorshipBenefitsSection() {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+          <div key={i} className="h-24 rounded-xl animate-pulse" style={{ background: "var(--color-surface-overlay-md, rgba(255,255,255,0.07))" }} />
         ))}
       </div>
     );
@@ -812,7 +812,7 @@ function ActiveDevicesSection() {
       {isLoading ? (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+            <div key={i} className="h-16 rounded-xl animate-pulse" style={{ background: "var(--color-surface-overlay-md, rgba(255,255,255,0.07))" }} />
           ))}
         </div>
       ) : !devices || devices.length === 0 ? (
@@ -1009,7 +1009,7 @@ function PsychometricSection() {
     return (
       <div className="space-y-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-8 rounded-lg animate-pulse" style={{ background: "var(--color-bg-surface)" }} />
+          <div key={i} className="h-8 rounded-lg animate-pulse" style={{ background: "var(--color-surface-overlay-md, rgba(255,255,255,0.07))" }} />
         ))}
       </div>
     );

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { SubscriptionGate } from "@/app/(platform)/SubscriptionGate";
 import { AudioController } from "@/components/features/podcasts/AudioController";
 import { MiniPlayer } from "@/components/features/podcasts/MiniPlayer";
@@ -14,7 +15,9 @@ export default function PlatformPlayerLayout({ children }: { children: React.Rea
       <main className="flex-1">
         <SubscriptionGate>
           <NavAccessGuard>
-            {children}
+            <Suspense fallback={null}>
+              {children}
+            </Suspense>
           </NavAccessGuard>
         </SubscriptionGate>
       </main>
