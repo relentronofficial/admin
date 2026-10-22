@@ -21,6 +21,7 @@ import {
   canChangeSlotTime,
   canDeleteSlot,
   MAX_SLOTS_PER_PUBLISH,
+  MAX_SLOTS_PER_DAY,
   slotTimeMatches,
 } from './supportCallLogic.js';
 import { computeSupportQuota } from './supportQuota.js';
@@ -317,6 +318,34 @@ describe('validateSlotBatch', () => {
     const existing = [{ startsAt: at(100), durationMinutes: 45 }];
     expect(validateSlotBatch({ ...ok, existing, startsAt: [at(120)] })).toMatchObject({ ok: false, status: 409, code: 'slot_conflict' });
     expect(validateSlotBatch({ ...ok, existing, startsAt: [at(145)] }).ok).toBe(true);
+  });
+
+  // NOW is 15:30 IST on 2026-10-20, so at(60)…at(450) are the same IST date and at(510) is the next day.
+  const sameDay = (n: number, from = 60) => Array.from({ length: n }, (_, i) => at(from + i * 60));
+  const asExisting = (starts: Date[]) => starts.map((startsAt) => ({ startsAt, durationMinutes: 30 }));
+
+  it(`allows up to ${MAX_SLOTS_PER_DAY} slots on one IST date`, () => {
+    expect(validateSlotBatch({ ...ok, startsAt: sameDay(MAX_SLOTS_PER_DAY) }).ok).toBe(true);
+  });
+
+  it(`rejects a batch that puts more than ${MAX_SLOTS_PER_DAY} slots on one date`, () => {
+    expect(validateSlotBatch({ ...ok, startsAt: sameDay(MAX_SLOTS_PER_DAY + 1) }))
+      .toMatchObject({ ok: false, status: 400, code: 'day_limit' });
+  });
+
+  it('counts the slots the host already has on that date', () => {
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(4)), startsAt: [at(330)] }).ok).toBe(true);
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(5)), startsAt: [at(390)] }))
+      .toMatchObject({ ok: false, status: 409, code: 'day_limit' });
+  });
+
+  it('applies the limit per IST date, not per batch', () => {
+    // 00:00 IST the next day is a fresh date.
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(5)), startsAt: sameDay(5, 510) }).ok).toBe(true);
+  });
+
+  it('lets an edit move a slot within a full day (the caller excludes the slot being edited)', () => {
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(4)), startsAt: [at(420)] }).ok).toBe(true);
   });
 });
 

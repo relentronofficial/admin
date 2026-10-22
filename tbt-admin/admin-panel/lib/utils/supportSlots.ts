@@ -5,6 +5,8 @@ import type { SupportSession, SupportSlotStatus } from "@/lib/hooks/useTbt";
 
 export const IST = "Asia/Kolkata";
 const IST_OFFSET_MS = 330 * 60_000;
+/** Same limit the server enforces (MAX_SLOTS_PER_DAY): most slots one host can have on an IST date. */
+export const MAX_SLOTS_PER_DAY = 5;
 
 /** YYYY-MM-DD of an instant in IST. */
 export function istDateKey(input: string | number | Date): string {

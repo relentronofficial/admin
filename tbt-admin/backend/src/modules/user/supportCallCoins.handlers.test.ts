@@ -746,6 +746,32 @@ describe('admin-published availability and the member calendar', () => {
     expect(db.sessions).toHaveLength(1);
   });
 
+  it('allows at most five slots per host per IST date, counting slots already published', async () => {
+    // 09:00 IST two days from now, so every slot below falls on the same IST date.
+    const IST = 330 * 60_000;
+    const day = Math.floor((BASE + IST) / (24 * HOUR)) * 24 * HOUR - IST + 2 * 24 * HOUR;
+    const istAt = (h: number) => new Date(day + h * HOUR).toISOString();
+
+    const six = await publish(slots([9, 10, 11, 12, 13, 14].map(istAt)));
+    expect(six.status).toBe(400);
+    expect(six.body.error).toMatch(/At most 5 slots per day/);
+    expect(db.sessions).toHaveLength(0);
+
+    expect((await publish(slots([9, 10, 11].map(istAt)))).status).toBe(201);
+    expect((await publish(slots([12, 13].map(istAt)))).status).toBe(201);
+    const sixth = await publish(slots([istAt(15)]));
+    expect(sixth.status).toBe(409);
+    expect(sixth.body.error).toMatch(/already has 5 slots\. At most 5 slots per day/);
+    // A single New Session goes through the same rule.
+    const single = await call(admin.createSupportSessionHandler, { clerk: 'clerk_admin', body: { ...slots([]), startsAt: istAt(16) } });
+    expect(single.status).toBe(409);
+    expect(db.sessions).toHaveLength(5);
+
+    // Another host, or the next IST date, is unaffected.
+    expect((await publish(slots([istAt(15)], { hostAdminId: MENTOR_ID }))).status).toBe(201);
+    expect((await publish(slots([istAt(24 + 9)]))).status).toBe(201);
+  });
+
   it('a mentor always publishes as host, and only sees their own slots', async () => {
     const r = await publish(slots([inHours(30)], { hostAdminId: ADMIN_ID }), 'clerk_mentor');
     expect(r.status).toBe(201);
