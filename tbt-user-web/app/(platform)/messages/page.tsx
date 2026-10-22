@@ -39,6 +39,7 @@ import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
 import { useMe } from '@/lib/hooks/useUser';
 import { getSocket } from '@/lib/socket/client';
 import { getServerNow } from '@/lib/api/client';
+import { copyMessageText, noTextToCopyMessage } from '@/lib/utils/copyMessageText';
 import { useQueryClient } from '@tanstack/react-query';
 import { timeAgo } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
@@ -588,6 +589,7 @@ export default function MessagesPage() {
                         me={me}
                         conversationId={activeId!}
                         conversations={conversations}
+                        chatGroups={groups}
                         onReply={() => setReplyingTo(m)}
                       />
                     );
@@ -820,6 +822,7 @@ function DmBubble({
   me,
   conversationId,
   conversations,
+  chatGroups,
   onReply,
 }: {
   message: any;
@@ -827,6 +830,8 @@ function DmBubble({
   me: any;
   conversationId: string;
   conversations: any[];
+  /** Chat groups the member belongs to (forward targets). */
+  chatGroups: Array<{ id: string; name: string }>;
   onReply: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -836,6 +841,7 @@ function DmBubble({
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardTo, setForwardTo] = useState<Set<string>>(new Set());
+  const [forwardToGroups, setForwardToGroups] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
 
   const editMsg = useEditChatMessage();
@@ -884,14 +890,15 @@ function DmBubble({
   }
 
   function submitForward() {
-    if (forwardTo.size === 0) {
+    if (forwardTo.size === 0 && forwardToGroups.size === 0) {
       toast.error('Choose a conversation');
       return;
     }
-    forwardMsg.mutate({ ...ids, toConversationIds: [...forwardTo] }, {
+    forwardMsg.mutate({ ...ids, toConversationIds: [...forwardTo], toGroupIds: [...forwardToGroups] }, {
       onSuccess: () => {
         setForwardOpen(false);
         setForwardTo(new Set());
+        setForwardToGroups(new Set());
         toast.success('Message forwarded');
       },
       onError: failed('Could not forward the message'),
@@ -909,20 +916,12 @@ function DmBubble({
     });
   }
 
-  function handleCopy() {
-    const text = message.body ?? '';
-    if (!text) {
-      toast.error('Nothing to copy');
-      setMenuOpen(false);
-      return;
-    }
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(
-        () => toast.success('Copied'),
-        () => toast.error('Copy failed'),
-      );
-    }
+  async function handleCopy() {
     setMenuOpen(false);
+    const result = await copyMessageText(message.body);
+    if (result === 'copied') toast.success('Copied');
+    else if (result === 'empty') toast(noTextToCopyMessage(message.mediaType), { icon: 'ℹ️' });
+    else toast.error("Couldn't copy — your browser blocked clipboard access");
   }
 
   return (
@@ -1241,12 +1240,15 @@ function DmBubble({
             <p className="text-xs text-muted-foreground truncate">
               {message.body || (message.mediaType ? `📎 ${message.mediaType}` : '')}
             </p>
-            {forwardTargets.length === 0 ? (
+            {forwardTargets.length === 0 && chatGroups.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 You have no other conversations to forward to. Start a new conversation first.
               </p>
             ) : (
               <div className="max-h-64 overflow-y-auto space-y-1">
+                {forwardTargets.length > 0 && chatGroups.length > 0 && (
+                  <p className="px-3 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Conversations</p>
+                )}
                 {forwardTargets.map((c: any) => {
                   const picked = forwardTo.has(c.id);
                   return (
@@ -1276,6 +1278,39 @@ function DmBubble({
                     </button>
                   );
                 })}
+                {chatGroups.length > 0 && (
+                  <p className="px-3 pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Groups</p>
+                )}
+                {chatGroups.map((g) => {
+                  const picked = forwardToGroups.has(g.id);
+                  return (
+                    <button
+                      key={g.id}
+                      onClick={() =>
+                        setForwardToGroups((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(g.id)) next.delete(g.id);
+                          else next.add(g.id);
+                          return next;
+                        })
+                      }
+                      aria-pressed={picked}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-sm text-foreground hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <span
+                        className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0"
+                        style={{
+                          borderColor: picked ? 'var(--color-accent)' : 'var(--color-border-medium)',
+                          background: picked ? 'var(--color-accent)' : 'transparent',
+                        }}
+                      >
+                        {picked && <Check size={11} className="text-white" />}
+                      </span>
+                      <Users size={13} className="text-muted-foreground flex-shrink-0" />
+                      <span className="truncate">{g.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
             <div className="flex justify-end gap-2">
@@ -1288,7 +1323,7 @@ function DmBubble({
               </button>
               <button
                 onClick={submitForward}
-                disabled={forwardMsg.isPending || forwardTo.size === 0}
+                disabled={forwardMsg.isPending || (forwardTo.size === 0 && forwardToGroups.size === 0)}
                 className="px-4 h-9 rounded-lg text-sm font-semibold text-white flex items-center gap-1.5 disabled:opacity-50"
                 style={{ background: 'var(--color-accent)' }}
               >

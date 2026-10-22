@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { copyMessageText, noTextToCopyMessage } from "@/lib/utils/copyMessageText";
 
 import { getSocket } from "@/lib/socket/client";
 import { useMe } from "@/lib/hooks/useUser";
@@ -563,18 +564,11 @@ export default function GroupChatPage() {
     }
   }
 
-  function handleCopy(msg: ChatGroupMessage) {
-    const text = msg.body ?? "";
-    if (!text) {
-      toast.error("Nothing to copy");
-      return;
-    }
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(
-        () => toast.success("Copied"),
-        () => toast.error("Copy failed"),
-      );
-    }
+  async function handleCopy(msg: ChatGroupMessage) {
+    const result = await copyMessageText(msg.body);
+    if (result === "copied") toast.success("Copied");
+    else if (result === "empty") toast(noTextToCopyMessage(msg.mediaType), { icon: "ℹ️" });
+    else toast.error("Couldn't copy — your browser blocked clipboard access");
   }
 
   function handleToggleStar(msg: ChatGroupMessage) {

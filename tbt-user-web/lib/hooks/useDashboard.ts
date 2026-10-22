@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dashboardService } from "@/lib/api/services/dashboard.service";
+import { chatGroupKeys } from "./useChatGroups";
 
 export const useDashboardStats = () =>
   useQuery({
@@ -233,12 +234,27 @@ export const useReactChatMessage = () =>
   useConversationMessageAction((v: { conversationId: string; messageId: string; emoji: string }) =>
     dashboardService.reactChatMessage(v.conversationId, v.messageId, v.emoji));
 
-export const useForwardChatMessage = () =>
-  useConversationMessageAction(
-    (v: { conversationId: string; messageId: string; toConversationIds: string[] }) =>
-      dashboardService.forwardChatMessage(v.conversationId, v.messageId, v.toConversationIds),
+export const useForwardChatMessage = () => {
+  const queryClient = useQueryClient();
+  const forward = useConversationMessageAction(
+    (v: { conversationId: string; messageId: string; toConversationIds: string[]; toGroupIds?: string[] }) =>
+      dashboardService.forwardChatMessage(v.conversationId, v.messageId, v.toConversationIds, v.toGroupIds ?? []),
     (v) => v.toConversationIds,
   );
+  // Group targets: refresh those threads and the group list (last message / order).
+  return {
+    ...forward,
+    mutate: (v: Parameters<typeof forward.mutate>[0], opts?: Parameters<typeof forward.mutate>[1]) =>
+      forward.mutate(v, {
+        ...opts,
+        onSuccess: (...args) => {
+          for (const gid of v.toGroupIds ?? []) queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(gid) });
+          if (v.toGroupIds?.length) queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
+          opts?.onSuccess?.(...args);
+        },
+      }),
+  };
+};
 
 export const useArchiveConversation = () => {
   const queryClient = useQueryClient();
