@@ -802,8 +802,8 @@ export default function CoursesPage() {
   const primaryCourseTitle = useMemo(() => {
     if (allowedModules.length !== 1) return null;
     const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
-    if (accessible.length === 1) return accessible[0].title as string;
-    if (accessible.length === 0 && filteredCourses.length === 1) return filteredCourses[0].title as string;
+    if (accessible.length >= 1) return accessible[0].title as string;
+    if (filteredCourses.length >= 1) return filteredCourses[0].title as string;
     return null;
   }, [allowedModules, filteredCourses, enrolledMap]);
 
@@ -963,8 +963,8 @@ export default function CoursesPage() {
           {/* Dynamic course title for the active module tab */}
           {(() => {
             const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
-            const tabCourseTitle = accessible.length === 1 ? accessible[0].title
-              : accessible.length === 0 && filteredCourses.length === 1 ? filteredCourses[0].title
+            const tabCourseTitle = accessible.length >= 1 ? accessible[0].title
+              : filteredCourses.length >= 1 ? filteredCourses[0].title
               : null;
             if (!tabCourseTitle) return null;
             return (
