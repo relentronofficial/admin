@@ -137,6 +137,12 @@ import {
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 import { createLifelineOrderHandler, verifyLifelinePaymentHandler } from './lifelinePurchase.js';
+import {
+  editConversationMessageHandler,
+  deleteConversationMessageHandler,
+  reactConversationMessageHandler,
+  forwardConversationMessageHandler,
+} from './conversationMessageActions.js';
 
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
@@ -301,6 +307,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/conversations/:id/messages',          getMemberConversationMessagesHandler);
   fastify.post('/conversations/:id/messages',         sendMemberChatMessageHandler);
   fastify.patch('/conversations/:id/archive',         archiveConversationHandler);
+  fastify.put('/conversations/:id/messages/:messageId',               editConversationMessageHandler);
+  fastify.delete('/conversations/:id/messages/:messageId',            deleteConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/react',        reactConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/forward',      forwardConversationMessageHandler);
 
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);

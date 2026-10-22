@@ -202,6 +202,44 @@ export const useSendChatMessage = () =>
       }),
   });
 
+// Message actions on the member's own conversations. The thread is refetched
+// only after the server confirms the change.
+const useConversationMessageAction = <V extends { conversationId: string }>(
+  fn: (v: V) => Promise<unknown>,
+  alsoRefresh?: (v: V) => string[],
+) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    // Returning the refetch keeps the mutation pending until the thread shows the change.
+    onSuccess: (_d, v) =>
+      Promise.all([
+        ...[v.conversationId, ...(alsoRefresh?.(v) ?? [])].map((id) =>
+          queryClient.invalidateQueries({ queryKey: ["user", "conversations", id, "messages"] })),
+        queryClient.invalidateQueries({ queryKey: ["user", "conversations"], exact: true }),
+      ]),
+  });
+};
+
+export const useEditChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; body: string }) =>
+    dashboardService.editChatMessage(v.conversationId, v.messageId, v.body));
+
+export const useDeleteChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; forEveryone: boolean }) =>
+    dashboardService.deleteChatMessage(v.conversationId, v.messageId, v.forEveryone));
+
+export const useReactChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; emoji: string }) =>
+    dashboardService.reactChatMessage(v.conversationId, v.messageId, v.emoji));
+
+export const useForwardChatMessage = () =>
+  useConversationMessageAction(
+    (v: { conversationId: string; messageId: string; toConversationIds: string[] }) =>
+      dashboardService.forwardChatMessage(v.conversationId, v.messageId, v.toConversationIds),
+    (v) => v.toConversationIds,
+  );
+
 export const useArchiveConversation = () => {
   const queryClient = useQueryClient();
   return useMutation({
