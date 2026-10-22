@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { HelpCircle, Loader2, Plus, Save, Trash2, GripVertical, Pencil, Eye, EyeOff, X, Upload, Video } from "lucide-react";
 import toast from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { useMe, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+import { useMe, useCreateBunnyVideo, useUploadImage } from "@/lib/hooks/useAdmin";
 import {
   useCreateModuleFaqsBulk,
   useDeleteModuleFaq,
@@ -179,25 +179,16 @@ function FaqVideoField({ entry, number, inputId, disabled, onChange }: {
 
 /** Thumbnail image formats the FAQ uploader accepts. */
 const THUMB_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp";
-const THUMB_MAX_BYTES = 10 * 1024 * 1024;
+/** Same limit as the backend image upload route (POST /api/upload/image). */
+const THUMB_MAX_BYTES = 50 * 1024 * 1024;
 const isSupportedThumb = (file: File) =>
   ["image/jpeg", "image/png", "image/webp"].includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
 
-/** PUT the file to a presigned storage URL, reporting progress (fetch has no upload progress). */
-const putWithProgress = (url: string, file: File, onProgress: (pct: number) => void) =>
-  new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", file.type);
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload failed (${xhr.status})`)));
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection"));
-    xhr.send(file);
-  });
-
 /**
- * Optional FAQ thumbnail — same presigned-URL storage upload used across the admin
- * (useGetPresignedUrl → PUT the file → keep the public URL). Storage credentials stay server-side.
+ * Optional FAQ thumbnail — uploaded through the backend image route (useUploadImage →
+ * POST /api/upload/image), the same server-side upload the other admin image fields use.
+ * The backend writes to the configured storage and returns the public URL; the browser
+ * never talks to the storage bucket directly (its CORS policy blocks browser PUTs).
  */
 function FaqThumbnailField({ entry, inputId, disabled, onChange }: {
   entry: Entry;
@@ -205,7 +196,7 @@ function FaqThumbnailField({ entry, inputId, disabled, onChange }: {
   disabled: boolean;
   onChange: (patch: Partial<Entry>) => void;
 }) {
-  const getPresignedUrl = useGetPresignedUrl();
+  const uploadImage = useUploadImage();
   const fileRef = useRef<HTMLInputElement>(null);
   const uploading = entry.thumbPct !== null;
 
@@ -215,22 +206,24 @@ function FaqThumbnailField({ entry, inputId, disabled, onChange }: {
       return;
     }
     if (file.size > THUMB_MAX_BYTES) {
-      onChange({ thumbFileName: file.name, thumbError: "Image is too large — the limit is 10 MB" });
+      onChange({ thumbFileName: file.name, thumbError: "Image is too large — the limit is 50 MB" });
       return;
     }
     onChange({ thumbFileName: file.name, thumbPct: 0, thumbError: null });
     try {
+      // Some systems report no MIME type; send the type the extension implies.
       const contentType = file.type || (/\.png$/i.test(file.name) ? "image/png" : /\.webp$/i.test(file.name) ? "image/webp" : "image/jpeg");
-      const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, "-");
-      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
-        filename: safeName, contentType, bucket: "site-assets", pathPrefix: "module-faqs/thumbnails",
+      const body = file.type ? file : new File([file], file.name, { type: contentType });
+      const { publicUrl } = await uploadImage.mutateAsync({
+        file: body, pathPrefix: "module-faqs/thumbnails", onProgress: (pct) => onChange({ thumbPct: pct }),
       });
-      if (!uploadUrl || !publicUrl) throw new Error("Could not start the upload");
-      await putWithProgress(uploadUrl, file, (pct) => onChange({ thumbPct: pct }));
+      if (!publicUrl) throw new Error("Upload failed — the server returned no image URL");
       onChange({ thumbnailUrl: publicUrl, thumbPct: null, thumbError: null });
       toast.success("Thumbnail uploaded");
     } catch (err: any) {
-      onChange({ thumbPct: null, thumbError: err?.message || "Thumbnail upload failed" });
+      // A server reply carries its own message; no reply at all means the request never got through.
+      const message = err?.response ? err?.message : "Upload failed — check your connection";
+      onChange({ thumbPct: null, thumbError: message || "Thumbnail upload failed" });
     } finally {
       if (fileRef.current) fileRef.current.value = "";
     }
