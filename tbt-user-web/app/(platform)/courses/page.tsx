@@ -843,7 +843,7 @@ export default function CoursesPage() {
       {roadmapCourseId && <CoursesPageRoadmap courseId={roadmapCourseId} />}
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
-      <MentorshipDashboard />
+      <MentorshipDashboard titleOverride={primaryCourseTitle} />
 
       {/* ── Weekly Activity Graph — X/Y axis dynamically configured from
            Admin → Weekly Graph settings. Returns null when not in a batch
