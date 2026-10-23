@@ -1602,12 +1602,9 @@ export default function CourseDetailPage({
       lifelinesLeftRef.current = config.freeLifelinesPerSession;
     }
   }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Per-episode lifeline override for non-batch members: persists across page refreshes
-  useEffect(() => {
-    if (isProgramLifeline || !episodeLifelineData || !selectedLesson) return;
-    setLifelinesLeft(episodeLifelineData.freeRemaining);
-    lifelinesLeftRef.current = episodeLifelineData.freeRemaining;
-  }, [episodeLifelineData, isProgramLifeline, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Lifelines are user-global — count persists across all episodes for the entire session.
+  // The per-episode server endpoint is still called to record usage, but its returned
+  // freeRemaining is intentionally NOT used to reset the counter here.
   // Restore active timer session from server on lesson load (survives page refresh)
   useEffect(() => {
     if (!selectedLesson || !existingTimerSession) return;
