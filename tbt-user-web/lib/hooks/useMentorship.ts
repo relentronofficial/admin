@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mentorshipService } from "@/lib/api/services/mentorship.service";
 import { useUserSupportQuota } from "./useUser";
+import { weeklyGraphQueryKey } from "./useBatchProgram";
 
 export { useUserSupportQuota };
 
@@ -34,6 +35,8 @@ export const useUpsertMentorshipRevenue = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["user", "mentorship-revenue"] });
       qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] });
+      // Revenue milestones on the Weekly Activity Graph are computed from these figures.
+      qc.invalidateQueries({ queryKey: weeklyGraphQueryKey });
     },
   });
 };

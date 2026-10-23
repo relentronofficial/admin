@@ -74,6 +74,7 @@ import {
 } from '../../lib/coinOrders.js';
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
+import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 import { handleLifelineWebhookEvent } from './lifelinePurchase.js';
 import { loadProgramVideoProgress } from '../../lib/programVideoProgress.js';
 
@@ -8088,6 +8089,10 @@ export async function upsertMentorshipRevenueHandler(request: FastifyRequest, re
     dailyRevenue,
     dailyOrders,
   );
+
+  // Revenue milestones on the Weekly Activity Graph are computed from these
+  // figures: refresh this member's graph on their other open tabs/devices.
+  void notifyWeeklyGraphChanged(request.server, { memberIds: [memberId] }, 'revenue_updated');
 
   const r = rows[0];
   return ok(reply, {

@@ -2820,7 +2820,11 @@ export const useSupportCallHosts = (enabled: boolean) =>
 
 export type GraphMilestoneKind = 'activity' | 'revenue';
 export interface GraphWeekItem { id: string | null; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }
-export interface GraphMilestoneItem { id: string | null; label: string; kind: GraphMilestoneKind; sortOrder: number; isActive: boolean }
+export interface GraphMilestoneItem {
+  id: string | null; label: string; kind: GraphMilestoneKind; sortOrder: number; isActive: boolean;
+  /** Revenue milestones: cumulative member-reported revenue (₹) that reaches it; null = none (reached only by an admin record). */
+  threshold?: number | null;
+}
 export interface GraphActivityItem {
   id: string; title: string; dayNumber: number; sortOrder: number; isRequired: boolean; isActive: boolean;
   memberId: string | null; weekId: string | null; milestoneId: string | null; isMilestone: boolean; milestoneLabel: string | null;
@@ -2872,7 +2876,7 @@ export const useReorderGraphWeeks = (programId: string) =>
   useWeeklyGraphMutation(programId, async (ids: string[]) => (await apiClient.put(`${wgBase(programId)}/weeks/reorder`, { ids }) as any).data);
 
 export const useSaveGraphMilestone = (programId: string) =>
-  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; kind?: GraphMilestoneKind; isActive?: boolean }) =>
+  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; kind?: GraphMilestoneKind; isActive?: boolean; threshold?: number | null }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/milestones/${id}`, body) : await apiClient.post(`${wgBase(programId)}/milestones`, body)) as any).data);
 
 export const useDeleteGraphMilestone = (programId: string) =>
