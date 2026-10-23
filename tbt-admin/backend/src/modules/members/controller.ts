@@ -615,7 +615,7 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
         },
       }),
       request.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt", business_categories AS "businessCategories" FROM members WHERE id = $1::uuid`,
+        `SELECT m.has_website AS "hasWebsite", m.weekly_website_orders AS "weeklyWebsiteOrders", m.skill_business_foundation AS "skillBusinessFoundation", m.skill_content AS "skillContent", m.skill_funnels AS "skillFunnels", m.skill_ads AS "skillAds", m.skill_sales AS "skillSales", m.skill_overall_marketing AS "skillOverallMarketing", m.weekly_learning_hours AS "weeklyLearningHours", m.team_size AS "teamSize", m.business_started_from AS "businessStartedFrom", m.instagram_stats AS "instagramStats", m.facebook_stats AS "facebookStats", m.website_url AS "websiteUrl", m.revenue_goal_after_tbt AS "revenueGoalAfterTbt", COALESCE(mbp.business_categories, '[]'::jsonb) AS "businessCategories" FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`,
         id,
       ),
       request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
@@ -790,9 +790,11 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
     // CV-06: persist admin-assigned business category visibility gate
     if (businessCategories !== undefined) {
       await request.server.prisma.$executeRawUnsafe(
-        `UPDATE members SET business_categories = $1::jsonb WHERE id = $2::uuid`,
-        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
+        `INSERT INTO member_business_profiles (member_id, business_categories)
+         VALUES ($1::uuid, $2::jsonb)
+         ON CONFLICT (member_id) DO UPDATE SET business_categories = EXCLUDED.business_categories`,
         id,
+        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
       );
       void invalidateCache(request.server.redis ?? null, `courses:personalization:v3:${id}`);
     }

@@ -816,8 +816,10 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   const personCtx = await cacheGetOrCompute<PersonCtx>(redis, personKey, 60, async () => {
     // Fetch batch_id + allowed_modules + current_tier + business_type + business_categories in one call
     const memberRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT m.batch_id, s.allowed_modules, m.current_tier, m.business_type, m.business_categories
-       FROM members m LEFT JOIN member_module_settings s ON s.member_id = m.id
+      `SELECT m.batch_id, s.allowed_modules, m.current_tier, m.business_type, COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories
+       FROM members m
+       LEFT JOIN member_module_settings s ON s.member_id = m.id
+       LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id
        WHERE m.id = $1::uuid`,
       request.memberId
     ).catch(() => []);
@@ -1017,7 +1019,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
         `SELECT applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
       ).catch(() => []),
       request.server.prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null }[]>(
-        `SELECT business_categories, batch_id FROM members WHERE id = $1::uuid`, request.memberId!,
+        `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`, request.memberId!,
       ).catch(() => []),
     ]);
     if (!isCourseVisible(
@@ -6647,7 +6649,7 @@ export async function getWatchHistoryHandler(request: FastifyRequest, reply: Fas
   const memberVisRow = await request.server.prisma.$queryRawUnsafe<
     { business_categories: unknown; batch_id: string | null }[]
   >(
-    `SELECT business_categories, batch_id FROM members WHERE id = $1::uuid`,
+    `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`,
     request.memberId,
   );
   const memberVis = {
