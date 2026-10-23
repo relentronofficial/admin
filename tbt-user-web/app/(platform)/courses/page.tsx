@@ -899,50 +899,111 @@ function ModuleHero({
 
 // ── ModuleProgressBar ─────────────────────────────────────────────────────────
 
-function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledMap: Map<string, any> }) {
-  const total = courses.length;
-  const completed = courses.filter(c => enrolledMap.get(c.id)?.completedAt).length;
+function ModuleProgressBar({
+  courses,
+  enrolledMap,
+  courseModuleCards,
+  sectionCards,
+}: {
+  courses: any[];
+  enrolledMap: Map<string, any>;
+  courseModuleCards?: CourseModuleCardData[] | null;
+  sectionCards?: SectionCardData[] | null;
+}) {
+  // ── Episode-level progress ───────────────────────────────────────────────────
+  // Priority 1: courseModuleCards — built from actual lesson.isCompleted flags (most accurate)
+  // Priority 2: sectionCards — same source, section-scoped
+  // Fallback:   estimate from enrollment.progressPercent × course._count.lessons
+  let totalEpisodes = 0;
+  let completedEpisodes = 0;
+  let completedUnits = 0;
+  let totalUnits = 0;
+  let unitLabel = "lessons";
+
+  if (courseModuleCards && courseModuleCards.length > 0) {
+    totalEpisodes = courseModuleCards.reduce((s, m) => s + m.totalEpisodes, 0);
+    completedEpisodes = courseModuleCards.reduce((s, m) => s + m.completedEpisodes, 0);
+    completedUnits = courseModuleCards.filter(m => m.totalEpisodes > 0 && m.completedEpisodes >= m.totalEpisodes).length;
+    totalUnits = courseModuleCards.length;
+    unitLabel = totalUnits === 1 ? "module" : "modules";
+  } else if (sectionCards && sectionCards.length > 0) {
+    totalEpisodes = sectionCards.reduce((s, m) => s + m.totalEpisodes, 0);
+    completedEpisodes = sectionCards.reduce((s, m) => s + m.completedEpisodes, 0);
+    completedUnits = sectionCards.filter(m => m.totalEpisodes > 0 && m.completedEpisodes >= m.totalEpisodes).length;
+    totalUnits = sectionCards.length;
+    unitLabel = totalUnits === 1 ? "section" : "sections";
+  } else {
+    // Fallback: use episode counts from catalog (_count.lessons) × enrollment progress
+    for (const c of courses) {
+      const lessonCount = (c._count?.lessons as number) ?? 0;
+      const enrollment = enrolledMap.get(c.id);
+      totalEpisodes += lessonCount;
+      if (enrollment) {
+        if (enrollment.completedAt) {
+          completedEpisodes += lessonCount;
+          completedUnits++;
+        } else if ((enrollment.progressPercent ?? 0) > 0) {
+          completedEpisodes += Math.round((enrollment.progressPercent / 100) * lessonCount);
+        }
+      }
+    }
+    totalUnits = courses.length;
+    completedUnits = courses.filter(c => enrolledMap.get(c.id)?.completedAt).length;
+    unitLabel = totalUnits === 1 ? "course" : "courses";
+  }
+
   const inProgress = courses.filter(c => {
     const e = enrolledMap.get(c.id);
     return e && !e.completedAt && (e.progressPercent ?? 0) > 0;
   }).length;
-  if (total === 0) return null;
-  const pct = Math.round((completed / total) * 100);
+
+  if (totalEpisodes === 0 && totalUnits === 0) return null;
+
+  const pct = totalEpisodes > 0
+    ? Math.round((completedEpisodes / totalEpisodes) * 100)
+    : Math.round((completedUnits / totalUnits) * 100);
 
   return (
     <div
-      className="flex items-center gap-4 p-4 rounded-xl mb-6"
+      className="p-4 rounded-xl mb-6"
       style={{ background: "#1a1a1e", border: "1px solid #2a2a2e" }}
     >
-      <div style={{ flex: 1 }}>
-        <div className="flex justify-between items-center mb-2">
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#a0a0a8" }}>Your Progress</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f7" }}>{pct}%</span>
+      <div className="flex items-center gap-4">
+        <div style={{ flex: 1 }}>
+          <div className="flex justify-between items-center mb-2">
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#a0a0a8" }}>Your Progress</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f7" }}>{pct}%</span>
+          </div>
+          <div style={{ height: 6, background: "#2a2a2e", borderRadius: 6, overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${pct}%`,
+                height: "100%",
+                borderRadius: 6,
+                background: pct === 100 ? "#22c55e" : "var(--color-accent)",
+                transition: "width 1s ease",
+              }}
+            />
+          </div>
+          {totalEpisodes > 0 && (
+            <div style={{ fontSize: 11, color: "#606068", marginTop: 6 }}>
+              {completedEpisodes} of {totalEpisodes} lessons done
+            </div>
+          )}
         </div>
-        <div style={{ height: 6, background: "#2a2a2e", borderRadius: 6, overflow: "hidden" }}>
-          <div
-            style={{
-              width: `${pct}%`,
-              height: "100%",
-              borderRadius: 6,
-              background: "var(--color-accent)",
-              transition: "width 1s ease",
-            }}
-          />
-        </div>
-      </div>
-      <div className="flex items-center gap-4 text-center" style={{ fontSize: 11, color: "#a0a0a8" }}>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#22c55e", lineHeight: 1 }}>{completed}</div>
-          <div>Done</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-accent)", lineHeight: 1 }}>{inProgress}</div>
-          <div>Active</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", lineHeight: 1 }}>{total}</div>
-          <div>Total</div>
+        <div className="flex items-center gap-4 text-center shrink-0" style={{ fontSize: 11, color: "#a0a0a8" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#22c55e", lineHeight: 1 }}>{completedEpisodes}</div>
+            <div>Done</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "var(--color-accent)", lineHeight: 1 }}>{inProgress}</div>
+            <div>Active</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", lineHeight: 1 }}>{totalEpisodes || totalUnits}</div>
+            <div>{totalEpisodes > 0 ? "Lessons" : unitLabel}</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1472,7 +1533,12 @@ export default function CoursesPage() {
             memberBusinessType={memberBusinessType}
             primaryCourseTitle={primaryCourseTitle}
           />
-          <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
+          <ModuleProgressBar
+            courses={filteredCourses}
+            enrolledMap={enrolledMap}
+            courseModuleCards={courseModuleCards}
+            sectionCards={sectionCards}
+          />
           {courseModuleCards && courseModuleCards.length > 0 ? (
             <>
               <CourseModuleGrid
