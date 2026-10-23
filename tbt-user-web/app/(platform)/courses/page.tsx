@@ -3,9 +3,9 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Lock, Play, BookOpen } from "lucide-react";
+import { Lock, Play, BookOpen, Bookmark, BookmarkCheck } from "lucide-react";
 import { useCourses, useCourse, useMyEnrollments } from "@/lib/hooks/useCourses";
-import { useWatchHistory } from "@/lib/hooks/useDashboard";
+import { useSavedVideos, useSaveVideo, useUnsaveVideo } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
@@ -951,7 +951,7 @@ function ModuleProgressBar({ courses, enrolledMap }: { courses: any[]; enrolledM
 
 // ── SavedVideoCard ─────────────────────────────────────────────────────────────
 
-function SavedVideoCard({ item }: { item: any }) {
+function SavedVideoCard({ item, onUnsave }: { item: any; onUnsave?: (episodeId: string) => void }) {
   // Course: deep-link to the specific lesson.
   // Workshop: pass ?ep= so the workshop detail page can auto-play the right episode.
   const href =
@@ -1034,7 +1034,7 @@ function SavedVideoCard({ item }: { item: any }) {
           style={{
             position: "absolute",
             top: 8,
-            right: 9,
+            right: onUnsave ? 38 : 9,
             zIndex: 1,
             padding: "2px 6px",
             borderRadius: 4,
@@ -1048,6 +1048,33 @@ function SavedVideoCard({ item }: { item: any }) {
         >
           {item.type === "course" ? "Course" : "Workshop"}
         </div>
+
+        {/* Bookmark / unsave button */}
+        {onUnsave && (
+          <button
+            type="button"
+            onClick={e => { e.preventDefault(); e.stopPropagation(); onUnsave(item.episodeId); }}
+            title="Remove from Saved Videos"
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 7,
+              zIndex: 2,
+              width: 26,
+              height: 26,
+              borderRadius: 6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: "rgba(0,0,0,0.55)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              color: "var(--color-accent)",
+              cursor: "pointer",
+            }}
+          >
+            <BookmarkCheck size={13} fill="currentColor" />
+          </button>
+        )}
 
         {/* Text + progress at bottom */}
         <div className="relative" style={{ zIndex: 1, padding: "0 10px 10px" }}>
@@ -1246,7 +1273,8 @@ export default function CoursesPage() {
   const coursesBannerUrl = (config as any)?.coursesBannerUrl?.trim() || null;
 
   const { data: enrollments } = useMyEnrollments();
-  const { data: watchHistoryData } = useWatchHistory({ limit: 3 });
+  const { data: savedVideosData } = useSavedVideos({ limit: 3 });
+  const unsaveVideo = useUnsaveVideo();
 
   const { data: catalogData, isLoading: catalogLoading, isError: catalogError, refetch: refetchCatalog } = useCourses({
     limit: 100,
@@ -1260,7 +1288,7 @@ export default function CoursesPage() {
   const memberBusinessType: string | null = meta.memberBusinessType ?? null;
 
   const myEnrollments: any[]  = enrollments ?? [];
-  const savedVideos: any[]    = (watchHistoryData as any)?.data ?? [];
+  const savedVideos: any[]    = (savedVideosData as any)?.data ?? [];
 
   const enrolledMap = useMemo(() => {
     const m = new Map<string, any>();
@@ -1649,7 +1677,11 @@ export default function CoursesPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {savedVideos.slice(0, 3).map((item: any, i) => (
-              <SavedVideoCard key={item.episodeId ?? item.id ?? i} item={item} />
+              <SavedVideoCard
+                key={item.episodeId ?? item.id ?? i}
+                item={item}
+                onUnsave={id => unsaveVideo.mutate(id)}
+              />
             ))}
           </div>
         </section>

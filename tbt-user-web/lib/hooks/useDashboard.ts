@@ -56,6 +56,37 @@ export const useRemoveFromHistory = () => {
   });
 };
 
+export const useSavedVideos = (params: { limit?: number } = {}) =>
+  useQuery({
+    queryKey: ["user", "saved-videos", params],
+    queryFn: async () => {
+      const res = await dashboardService.getSavedVideos(params);
+      return res;
+    },
+    staleTime: 30 * 1000,
+  });
+
+export const useSaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ episodeId, episodeType }: { episodeId: string; episodeType: 'course' | 'workshop' }) =>
+      dashboardService.saveVideo(episodeId, episodeType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
+    },
+  });
+};
+
+export const useUnsaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (episodeId: string) => dashboardService.unsaveVideo(episodeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
+    },
+  });
+};
+
 export const useNotificationUnreadCount = () =>
   useQuery({
     queryKey: ["user", "notifications", "unread-count"],

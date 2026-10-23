@@ -6727,6 +6727,135 @@ export async function removeFromHistoryHandler(request: FastifyRequest, reply: F
   return ok(reply, { removed: true });
 }
 
+// ─── Saved Videos (Bookmarks) ─────────────────────────────────────────────────
+
+export async function getSavedVideosHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { limit = 100 } = request.query as { limit?: number };
+  const memberId = request.memberId!;
+  const prisma = request.server.prisma;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT episode_id, episode_type, saved_at FROM saved_videos WHERE member_id = $1::uuid ORDER BY saved_at DESC LIMIT $2`,
+    memberId, Number(limit),
+  ).catch(() => []);
+
+  if (rows.length === 0) return ok(reply, []);
+
+  const courseIds = rows.filter(r => r.episode_type === 'course').map(r => r.episode_id);
+  const workshopIds = rows.filter(r => r.episode_type === 'workshop').map(r => r.episode_id);
+
+  const pct = (actual: number, dur: number) =>
+    dur > 0 ? Math.min(100, Math.round((actual / dur) * 100)) : 0;
+
+  const [courseRows, workshopRows] = await Promise.all([
+    courseIds.length === 0 ? [] : prisma.$queryRawUnsafe<any[]>(
+      `SELECT ce.id::text AS episode_id, ce.title AS episode_title, ce.order AS episode_order,
+              COALESCE(ce.duration_seconds,0) AS duration_seconds, ce.thumbnail_url,
+              c.id::text AS course_id, c.title AS course_title,
+              (SELECT COUNT(*) FROM course_episodes WHERE course_id = c.id) AS episode_count,
+              COALESCE(cep.last_watched_secs,0) AS last_watched_secs,
+              COALESCE(cep.actual_watched_secs,0) AS actual_watched_secs,
+              COALESCE(cep.completed,false) AS is_completed,
+              cep.completed_at
+       FROM course_episodes ce
+       JOIN courses c ON c.id = ce.course_id
+       LEFT JOIN course_episode_progress cep ON cep.episode_id = ce.id AND cep.member_id = $2::uuid
+       WHERE ce.id::text = ANY($1::text[])`,
+      courseIds, memberId,
+    ).catch(() => []),
+
+    workshopIds.length === 0 ? [] : prisma.$queryRawUnsafe<any[]>(
+      `SELECT we.id::text AS episode_id, we.title AS episode_title, we.order AS episode_order,
+              COALESCE(we.duration_seconds,0) AS duration_seconds, w.thumbnail_url,
+              w.title AS workshop_title, w.slug AS workshop_slug, ch.title AS challenge_title,
+              (SELECT COUNT(*) FROM workshop_episodes WHERE challenge_id = ch.id) AS episode_count,
+              COALESCE(mep.last_watched_secs,0) AS last_watched_secs,
+              COALESCE(mep.actual_watched_secs,0) AS actual_watched_secs,
+              COALESCE(mep.is_completed,false) AS is_completed,
+              mep.completed_at
+       FROM workshop_episodes we
+       JOIN challenges ch ON ch.id = we.challenge_id
+       JOIN workshops w ON w.id = ch.workshop_id
+       LEFT JOIN member_episode_progress mep ON mep.episode_id = we.id::text AND mep.member_id = $2
+       WHERE we.id::text = ANY($1::text[])`,
+      workshopIds, memberId,
+    ).catch(() => []),
+  ]);
+
+  const courseMap = new Map(courseRows.map((r: any) => [r.episode_id, r]));
+  const workshopMap = new Map(workshopRows.map((r: any) => [r.episode_id, r]));
+
+  const items = rows.map(r => {
+    if (r.episode_type === 'course') {
+      const e = courseMap.get(r.episode_id);
+      if (!e) return null;
+      return {
+        type: 'course' as const,
+        episodeId: e.episode_id,
+        courseId: e.course_id,
+        courseTitle: e.course_title,
+        challengeTitle: null as string | null,
+        episodeTitle: e.episode_title,
+        thumbnailUrl: e.thumbnail_url ?? null,
+        lastWatchedSecs: Number(e.last_watched_secs),
+        actualWatchedSecs: Number(e.actual_watched_secs),
+        durationSeconds: Number(e.duration_seconds),
+        isCompleted: Boolean(e.is_completed),
+        completedAt: e.completed_at ? new Date(e.completed_at).toISOString() : null,
+        updatedAt: new Date(r.saved_at).toISOString(),
+        progressPercent: pct(Number(e.actual_watched_secs), Number(e.duration_seconds)),
+        episodeOrder: Number(e.episode_order),
+        episodeCount: Number(e.episode_count),
+        savedAt: new Date(r.saved_at).toISOString(),
+      };
+    } else {
+      const e = workshopMap.get(r.episode_id);
+      if (!e) return null;
+      return {
+        type: 'workshop' as const,
+        episodeId: e.episode_id,
+        workshopSlug: e.workshop_slug,
+        workshopTitle: e.workshop_title,
+        challengeTitle: e.challenge_title as string | null,
+        episodeTitle: e.episode_title,
+        thumbnailUrl: e.thumbnail_url ?? null,
+        lastWatchedSecs: Number(e.last_watched_secs),
+        actualWatchedSecs: Number(e.actual_watched_secs),
+        durationSeconds: Number(e.duration_seconds),
+        isCompleted: Boolean(e.is_completed),
+        completedAt: e.completed_at ? new Date(e.completed_at).toISOString() : null,
+        updatedAt: new Date(r.saved_at).toISOString(),
+        progressPercent: pct(Number(e.actual_watched_secs), Number(e.duration_seconds)),
+        episodeOrder: Number(e.episode_order),
+        episodeCount: Number(e.episode_count),
+        savedAt: new Date(r.saved_at).toISOString(),
+      };
+    }
+  }).filter(Boolean);
+
+  return ok(reply, items);
+}
+
+export async function saveVideoHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId, episodeType = 'course' } = request.body as { episodeId: string; episodeType?: string };
+  if (!episodeId?.trim()) return reply.status(400).send({ success: false, error: 'episodeId required' });
+  const type = episodeType === 'workshop' ? 'workshop' : 'course';
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO saved_videos (member_id, episode_id, episode_type) VALUES ($1::uuid, $2, $3) ON CONFLICT (member_id, episode_id) DO NOTHING`,
+    request.memberId, episodeId.trim(), type,
+  ).catch(() => {});
+  return ok(reply, { saved: true });
+}
+
+export async function unsaveVideoHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId } = request.params as { episodeId: string };
+  await request.server.prisma.$executeRawUnsafe(
+    `DELETE FROM saved_videos WHERE member_id = $1::uuid AND episode_id = $2`,
+    request.memberId, episodeId,
+  ).catch(() => {});
+  return ok(reply, { removed: true });
+}
+
 // ─── Device Tracking ──────────────────────────────────────────────────────────
 
 export async function getMyDevicesHandler(request: FastifyRequest, reply: FastifyReply) {

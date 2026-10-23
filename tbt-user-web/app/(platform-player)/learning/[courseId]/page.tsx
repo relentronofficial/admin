@@ -8,7 +8,7 @@ import {
   Lock, Trophy, ChevronDown, ChevronUp, Share2, Check,
   AlertTriangle, ExternalLink, Clock, TrendingUp, RotateCcw, SkipForward,
   Brain, RefreshCw, PenLine, Timer, Coins, Download, ClipboardList, FileText,
-  Heart,
+  Heart, Bookmark, BookmarkCheck,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
 import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
@@ -34,6 +34,7 @@ import {
 import { invalidateCoinBalance, useCoinBalance } from "@/lib/hooks/useCoins";
 import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
+import { useSavedVideos, useSaveVideo, useUnsaveVideo } from "@/lib/hooks/useDashboard";
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
@@ -1561,6 +1562,13 @@ export default function CourseDetailPage({
   // show and gate on the same two values (the navbar reads the same balance query).
   const LIFELINE_COIN_COST = Number(episodeLifelineData?.lifelineCoinCost ?? 50);
   const { data: coinBalance } = useCoinBalance();
+  const { data: savedVideosData } = useSavedVideos({ limit: 500 });
+  const savedEpisodeIds = useMemo(() => {
+    const list: any[] = (savedVideosData as any)?.data ?? [];
+    return new Set<string>(list.map((v: any) => v.episodeId));
+  }, [savedVideosData]);
+  const saveVideo = useSaveVideo();
+  const unsaveVideo = useUnsaveVideo();
   const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
   // Stable refs for mutation functions (safe inside setInterval callbacks)
   const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
@@ -3741,6 +3749,26 @@ export default function CourseDetailPage({
                             )}
                           </div>
                         </div>
+                        {/* Bookmark button */}
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (savedEpisodeIds.has(lesson.id)) {
+                              unsaveVideo.mutate(lesson.id);
+                            } else {
+                              saveVideo.mutate({ episodeId: lesson.id, episodeType: "course" });
+                            }
+                          }}
+                          title={savedEpisodeIds.has(lesson.id) ? "Remove bookmark" : "Bookmark this lesson"}
+                          className="shrink-0 p-1 rounded transition-colors hover:opacity-80"
+                          style={{ color: savedEpisodeIds.has(lesson.id) ? "var(--color-accent)" : "var(--color-text-disabled)" }}
+                        >
+                          {savedEpisodeIds.has(lesson.id)
+                            ? <BookmarkCheck size={13} fill="currentColor" />
+                            : <Bookmark size={13} />}
+                        </button>
                         {isActive && <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ background: "var(--color-accent)" }} />}
                       </button>
                       {/* Focus-locked lifeline row */}
