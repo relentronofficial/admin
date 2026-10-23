@@ -243,11 +243,12 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
   const cachedMe = await cacheGet<Record<string, unknown>>(redis, meKey);
   if (cachedMe) return ok(reply, cachedMe);
 
-  // Refresh member stats (throttled to once per 60 s) before reading DB so the
-  // profile page always reflects current points/streak/health. Awaited so the
-  // read below sees the update; markActive=false so a page view/refresh never
-  // counts as activity (it would inflate the Health recency score).
-  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined, { markActive: false });
+  // Fire-and-forget: refresh stats in the background so the response is not
+  // blocked by 7 sequential INSERT statements on every 5-minute cache miss.
+  // Stats (totalPoints, currentStreak, healthScore) are at most 60 s stale
+  // (the per-member throttle window). If they change, recalc invalidates the
+  // me: cache key and the next request picks up the updated values.
+  void recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined, { markActive: false });
 
   const [member, allTiers, uiStrings] = await Promise.all([
     request.server.prisma.member.findUnique({

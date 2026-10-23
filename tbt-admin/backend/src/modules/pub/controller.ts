@@ -20,21 +20,17 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     });
   }
 
-  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
-    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null; theme_mode: string | null }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url, theme_mode FROM site_configs WHERE id = $1::uuid', config.id
   ).catch((err) => {
     req.log.error({ err }, '[pub/site-config] extra site_configs columns query failed');
     return null;
   });
   const extrasFailed = extraRows === null;
 
-  const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
-    'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
-  ).catch(() => []);
-
   const data = {
     siteName: config.siteName,
-    themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
+    themeMode: extraRows?.[0]?.theme_mode === 'dark' ? 'dark' : 'light',
     logoUrl: config.logoUrl ?? null,
     faviconUrl: config.faviconUrl ?? null,
     footerText: config.footerText,
@@ -76,14 +72,8 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
     const items = allItems.filter((i) => i.isVisible);
     const hiddenHrefs = allItems.filter((i) => !i.isVisible).map((i) => i.href);
     const rawCols = config
-      ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
-          'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
-        ).catch(() => [])
-      : [];
-    // Separate query so a missing nav_order column can't take hidden_menu_keys down with it.
-    const orderRows = config
-      ? await req.server.prisma.$queryRawUnsafe<Array<{ nav_order: unknown }>>(
-          'SELECT nav_order FROM site_configs WHERE id = $1::uuid', config.id
+      ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown; nav_order: unknown }>>(
+          'SELECT hidden_menu_keys, nav_order FROM site_configs WHERE id = $1::uuid', config.id
         ).catch(() => [])
       : [];
     return {
@@ -95,8 +85,7 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
       },
       hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
       hiddenHrefs,
-      // Combined web nav order (nav item ids + "section:<key>" tokens); null = default.
-      navOrder: Array.isArray(orderRows[0]?.nav_order) ? (orderRows[0].nav_order as string[]) : null,
+      navOrder: Array.isArray(rawCols[0]?.nav_order) ? (rawCols[0].nav_order as string[]) : null,
     };
   });
   return reply.send({ success: true, data, error: null });
