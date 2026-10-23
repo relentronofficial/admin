@@ -23,7 +23,7 @@ export const useCourse = (id: string) =>
       return res.data;
     },
     enabled: !!id,
-    staleTime: 60 * 1000,
+    staleTime: 0,
   });
 
 export const useMyEnrollments = () =>
