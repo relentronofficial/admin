@@ -106,16 +106,6 @@ const EMPTY_EP = {
   // completion_mode. "none" = no active task linked to this episode — only
   // reachable by editing an episode that predates this feature; new episodes
   // must pick "self" or "admin" ("" = not yet chosen, blocks save).
-  assessmentType: "none" as "" | "none" | "self" | "admin",
-  assessmentTaskId: null as string | null,
-  assessmentTaskTitle: "",
-  assessmentTaskDescription: "",
-};
-
-const ASSESSMENT_TYPE_LABEL: Record<"none" | "self" | "admin", string> = {
-  none: "No Assessment",
-  self: "Self Assessment",
-  admin: "Admin Assessment",
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -825,6 +815,31 @@ function CourseDetailPanel({ course, onClose }: { course: any; onClose: () => vo
 }
 
 // ── Episodes tab (original EpisodesPanel content) ─────────────────────
+// ── Episode task constants (shared by inline form + EpisodeTasksModal) ─
+const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
+const PROOF_BADGE: Record<string, string> = {
+  text: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  image: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  video: "bg-red-500/20 text-red-400 border-red-500/30",
+  link: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  watch: "bg-green-500/20 text-green-400 border-green-500/30",
+};
+const COMPLETION_MODE_BADGE: Record<string, string> = {
+  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+};
+const COMPLETION_MODE_LABEL: Record<string, string> = {
+  SELF_ASSESSMENT: "Self Assessment",
+  ADMIN_CHECK: "Admin Check",
+};
+const EMPTY_TASK_FORM = {
+  title: "", description: "", deliverables: "", contentUrl: "",
+  basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
+  timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
+  completionMode: "ADMIN_CHECK",
+};
+
 function EpisodesTab({ course }: { course: any }) {
   const { data, isLoading } = useListCourseEpisodes(course.id);
   const createEp = useCreateCourseEpisode(course.id);
@@ -861,12 +876,26 @@ function EpisodesTab({ course }: { course: any }) {
   const [epForm, setEpForm] = useState<any>(EMPTY_EP);
   const [deletingEp, setDeletingEp] = useState<string | null>(null);
   const [epUploading, setEpUploading] = useState<string | null>(null);
-  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string }>({});
+  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [resourcesEp, setResourcesEp] = useState<any | null>(null);
   const [tasksEp, setTasksEp] = useState<any | null>(null);
   const [feedbackEp, setFeedbackEp] = useState<any | null>(null);
+
+  // Inline task management (full task panel inside episode create/edit form)
+  const createInlineTask = useCreateEpisodeTask(editingEpId);
+  const updateInlineTask = useUpdateEpisodeTask(editingEpId);
+  const deleteInlineTask = useDeleteEpisodeTask(editingEpId);
+  const reorderInlineTasks = useReorderEpisodeTasks(editingEpId);
+  const [inlineTasks, setInlineTasks] = useState<any[]>([]);
+  const [inlineTaskDirty, setInlineTaskDirty] = useState(false);
+  const [inlineShowTaskForm, setInlineShowTaskForm] = useState(false);
+  const [inlineEditingTask, setInlineEditingTask] = useState<any>(null);
+  const [inlineTaskForm, setInlineTaskForm] = useState<any>({ ...EMPTY_TASK_FORM });
+  const inlineTaskDragIdx = useRef<number | null>(null);
+  const [inlineTaskDragOver, setInlineTaskDragOver] = useState<number | null>(null);
+  const [inlineDeletingTask, setInlineDeletingTask] = useState<string | null>(null);
 
   // Section management state
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -929,11 +958,10 @@ function EpisodesTab({ course }: { course: any }) {
     });
 
   const openCreate = (sectionId?: string | null) => {
-    // "" (not "none") — a brand-new episode must have Self or Admin Assessment
-    // explicitly chosen; "none" is only ever reached via openEdit on an
-    // episode that predates this requirement.
-    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null, assessmentType: "" });
+    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null });
     setEditingEp(null); setEditingEpId(""); setEpErrors({}); setShowForm(true);
+    setInlineTasks([]); setInlineShowTaskForm(false); setInlineEditingTask(null);
+    setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineTaskDirty(false); setInlineDeletingTask(null);
   };
   const openEdit = (ep: any) => {
     // Normalise stored cues: add atTime display field
@@ -959,34 +987,18 @@ function EpisodesTab({ course }: { course: any }) {
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
-      // Reset to "none" until the episode-tasks fetch below resolves and
-      // fills in the actual saved assessment type — avoids showing a stale
-      // value left over from whichever episode was edited previously.
-      assessmentType: "none", assessmentTaskId: null,
-      assessmentTaskTitle: "", assessmentTaskDescription: "",
     });
     setEditingEp(ep); setEditingEpId(ep.id); setEpErrors({}); setShowForm(true);
+    setInlineTasks([]); setInlineShowTaskForm(false); setInlineEditingTask(null);
+    setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineTaskDirty(false); setInlineDeletingTask(null);
   };
 
-  // Populate the Assessment Type control from whichever task is currently
-  // linked to the episode being edited. Mirrors the same tasks list the
-  // "Tasks" modal uses — an active task's completionMode maps 1:1 to
-  // Self/Admin Assessment; no active task means "No Assessment". If an
-  // inactive (previously "No Assessment") task exists, its id is kept so
-  // re-enabling reuses the same row instead of creating a duplicate.
+  // Sync server tasks into the inline task list when editing an existing episode.
   useEffect(() => {
     if (!editingEp || editingEp.id !== editingEpId) return;
     const tasks: any[] = (epTasksData as any)?.data ?? [];
-    if (!tasks.length) return;
-    const active = tasks.find((t: any) => t.isActive !== false);
-    const target = active ?? tasks[0];
-    setEpForm((f: any) => ({
-      ...f,
-      assessmentType: !active ? "none" : target.completionMode === "SELF_ASSESSMENT" ? "self" : "admin",
-      assessmentTaskId: target.id,
-      assessmentTaskTitle: target.title ?? "",
-      assessmentTaskDescription: target.description ?? "",
-    }));
+    setInlineTasks(tasks);
+    setInlineTaskDirty(false);
   }, [epTasksData, editingEp, editingEpId]);
 
   const uploadImage = useUploadImage();
@@ -1027,26 +1039,92 @@ function EpisodesTab({ course }: { course: any }) {
     finally { setEpUploading(null); }
   };
 
+  // ── Inline task handlers ─────────────────────────────────────────────
+  const handleInlineTaskSave = async () => {
+    if (!inlineTaskForm.title.trim()) { toast.error("Task title is required"); return; }
+    const payload = {
+      ...inlineTaskForm,
+      basePoints: Number(inlineTaskForm.basePoints),
+      bonusPoints: Number(inlineTaskForm.bonusPoints || 0),
+      estimatedMinutes: Number(inlineTaskForm.estimatedMinutes),
+      timerSeconds: inlineTaskForm.timerSeconds !== "" && inlineTaskForm.timerSeconds != null ? Number(inlineTaskForm.timerSeconds) : null,
+    };
+    if (editingEpId) {
+      try {
+        if (inlineEditingTask?.id) {
+          await updateInlineTask.mutateAsync({ id: inlineEditingTask.id, data: payload });
+          toast.success("Task updated");
+        } else {
+          await createInlineTask.mutateAsync(payload);
+          toast.success("Task created");
+        }
+        setInlineShowTaskForm(false); setInlineEditingTask(null);
+      } catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      // Draft mode — no episode ID yet; task will be created after episode save
+      if (inlineEditingTask?._localId) {
+        setInlineTasks(prev => prev.map((t: any) => t._localId === inlineEditingTask._localId ? { ...payload, _localId: inlineEditingTask._localId } : t));
+      } else {
+        setInlineTasks(prev => [...prev, { ...payload, _localId: uid() }]);
+      }
+      setInlineShowTaskForm(false); setInlineEditingTask(null);
+      toast.success(inlineEditingTask ? "Task updated" : "Task queued — will be saved with episode");
+    }
+  };
+
+  const handleInlineTaskDelete = async (task: any) => {
+    if (editingEpId && task.id) {
+      try { await deleteInlineTask.mutateAsync(task.id); toast.success("Task deleted"); }
+      catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      setInlineTasks(prev => prev.filter((t: any) => t._localId !== task._localId));
+    }
+    setInlineDeletingTask(null);
+  };
+
+  const handleInlineTaskReorder = async () => {
+    if (editingEpId) {
+      try { await reorderInlineTasks.mutateAsync(inlineTasks.map((t: any) => t.id)); setInlineTaskDirty(false); toast.success("Order saved"); }
+      catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      setInlineTaskDirty(false);
+    }
+  };
+
+  const onInlineTaskDragStart = (i: number) => { inlineTaskDragIdx.current = i; };
+  const onInlineTaskDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setInlineTaskDragOver(i); };
+  const onInlineTaskDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = inlineTaskDragIdx.current;
+    if (from === null || from === dropIdx) { setInlineTaskDragOver(null); return; }
+    const next = [...inlineTasks];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setInlineTasks(next); setInlineTaskDirty(true); inlineTaskDragIdx.current = null; setInlineTaskDragOver(null);
+  };
+  const onInlineTaskDragEnd = () => { inlineTaskDragIdx.current = null; setInlineTaskDragOver(null); };
+
+  const openInlineEditTask = (t: any) => {
+    setInlineTaskForm({
+      title: t.title, description: t.description || "", deliverables: t.deliverables || "",
+      contentUrl: t.contentUrl || "", basePoints: t.basePoints ?? 100, bonusPoints: t.bonusPoints ?? 0,
+      proofType: t.proofType || "text", estimatedMinutes: t.estimatedMinutes ?? 15,
+      timerSeconds: t.timerSeconds != null ? String(t.timerSeconds) : "",
+      isActive: t.isActive ?? true, isRequired: t.isRequired ?? true,
+      isMilestone: t.isMilestone ?? false, milestoneLabel: t.milestoneLabel || "",
+      completionMode: t.completionMode === "SELF_ASSESSMENT" ? "SELF_ASSESSMENT" : "ADMIN_CHECK",
+    });
+    setInlineEditingTask(t);
+    setInlineShowTaskForm(true);
+  };
+
   const handleSaveEp = async () => {
-    const errs: { title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string } = {};
+    const errs: { title?: string; video?: string } = {};
     if (!epForm.title.trim()) errs.title = "Title is required";
     if (!epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
-    const assessmentChosen = epForm.assessmentType === "self" || epForm.assessmentType === "admin";
-    // Mandatory only for brand-new episodes — an existing episode with no
-    // linked task (assessmentType "none") is grandfathered and stays savable.
-    if (!editingEp && !assessmentChosen) {
-      errs.assessmentRequired = "Select Self Assessment or Admin Assessment";
-    }
-    if (assessmentChosen && !epForm.assessmentTaskTitle.trim()) {
-      errs.assessmentTitle = "Assessment title is required";
-    }
-    if (errs.title || errs.video || errs.assessmentTitle || errs.assessmentRequired) {
+    if (errs.title || errs.video) {
       setEpErrors(errs);
-      toast.error(
-        errs.assessmentRequired ? errs.assessmentRequired
-        : errs.assessmentTitle && !errs.title && !errs.video ? "Assessment title is required"
-        : "Title and video are required"
-      );
+      toast.error("Title and video are required");
       return;
     }
     setEpErrors({});
@@ -1084,40 +1162,30 @@ function EpisodesTab({ course }: { course: any }) {
       formConfig: epForm.formConfig,
     };
     try {
-      let episodeId: string;
-      if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); episodeId = editingEp.id; toast.success("Episode updated"); }
-      else { const created: any = await createEp.mutateAsync(payload); episodeId = created.id; toast.success("Episode created"); }
-      await syncEpisodeAssessment(episodeId);
+      if (editingEp) {
+        await updateEp.mutateAsync({ id: editingEp.id, data: payload });
+        toast.success("Episode updated");
+      } else {
+        const created: any = await createEp.mutateAsync(payload);
+        const newEpisodeId: string = created.id;
+        // Create any tasks that were queued while the episode didn't exist yet
+        if (inlineTasks.length > 0) {
+          for (const t of inlineTasks) {
+            const { _localId: _lid, id: _id, ...taskData } = t;
+            await apiClient.post(`/api/courses/episodes/${newEpisodeId}/tasks`, {
+              ...taskData,
+              basePoints: Number(taskData.basePoints),
+              bonusPoints: Number(taskData.bonusPoints || 0),
+              estimatedMinutes: Number(taskData.estimatedMinutes),
+              timerSeconds: taskData.timerSeconds !== "" && taskData.timerSeconds != null ? Number(taskData.timerSeconds) : null,
+            });
+          }
+          qc.invalidateQueries({ queryKey: ["episode-tasks", newEpisodeId] });
+        }
+        toast.success(`Episode created${inlineTasks.length > 0 ? ` with ${inlineTasks.length} task${inlineTasks.length > 1 ? "s" : ""}` : ""}`);
+      }
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
-  };
-
-  // Persists the Assessment Type selection against the episode's linked task
-  // row, reusing the existing episode-task endpoints (same ones the "Tasks"
-  // modal uses) rather than introducing a parallel assessment system.
-  // "No Assessment" deactivates (isActive: false) instead of deleting, so
-  // switching types never drops prior member submissions.
-  const syncEpisodeAssessment = async (episodeId: string) => {
-    const { assessmentType, assessmentTaskId, assessmentTaskTitle, assessmentTaskDescription } = epForm;
-    try {
-      if (assessmentType === "none") {
-        if (assessmentTaskId) {
-          await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, { isActive: false });
-        }
-        return;
-      }
-      const completionMode = assessmentType === "self" ? "SELF_ASSESSMENT" : "ADMIN_CHECK";
-      const body = { title: assessmentTaskTitle.trim(), description: assessmentTaskDescription.trim() || null, completionMode, isActive: true };
-      if (assessmentTaskId) {
-        await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, body);
-      } else {
-        await apiClient.post(`/api/courses/episodes/${episodeId}/tasks`, body);
-      }
-    } catch (e: any) {
-      toast.error(e.message || "Episode saved, but the assessment setting failed to save");
-    } finally {
-      qc.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
-    }
   };
 
   const handleDeleteEp = async (id: string) => {
@@ -1428,54 +1496,189 @@ function EpisodesTab({ course }: { course: any }) {
             <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
-          {/* Assessment Check By — reuses the same episode-task infrastructure as the
-              per-episode "Tasks" panel; this is a simplified single-task view of it.
-              Mandatory (Self/Admin only, no "None") when creating a brand-new
-              episode — enforced here and re-validated server-side in
-              createCourseEpisodeHandler. "No Assessment" stays available only
-              when editing an existing episode (backward compatibility for
-              episodes that predate this rule), never on create. */}
-          <div className="border-t border-[#2a2a2a] pt-3">
-            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-              Assessment Check By {!editingEp && <span className="text-red-500">*</span>}
-              {editingEp && epTasksLoading && <span className="text-[#555] normal-case font-normal">(loading…)</span>}
-            </label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              {(editingEp ? (["none", "self", "admin"] as const) : (["self", "admin"] as const)).map(type => (
-                <label key={type} className={`flex items-center gap-2 cursor-pointer flex-1 bg-[#1a1a1a] border rounded px-3 py-2 has-[:checked]:border-[#dc2626] ${epErrors.assessmentRequired ? "border-red-500" : "border-[#2a2a2a]"}`}>
-                  <input type="radio" name="assessmentType" checked={epForm.assessmentType === type}
-                    onChange={() => { setEpField("assessmentType", type); if (epErrors.assessmentRequired) setEpErrors(prev => ({ ...prev, assessmentRequired: undefined })); }}
-                    className="accent-red-600" />
-                  <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{ASSESSMENT_TYPE_LABEL[type]}</span>
-                </label>
-              ))}
+          {/* ── Inline Tasks ─────────────────────────────────────── */}
+          <div className="border-t border-[#2a2a2a] pt-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">
+                <ListTodo size={11} className="text-amber-400" />
+                Tasks
+                {inlineTasks.length > 0 && (
+                  <span className="text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">{inlineTasks.length}</span>
+                )}
+                {epTasksLoading && editingEp && <span className="text-[#555] normal-case font-normal tracking-normal ml-1">(loading…)</span>}
+                {!editingEp && inlineTasks.length === 0 && <span className="text-[#555] normal-case font-normal tracking-normal ml-1">— optional, added with episode</span>}
+              </label>
+              <div className="flex items-center gap-2">
+                {inlineTaskDirty && editingEp && (
+                  <button onClick={handleInlineTaskReorder} disabled={reorderInlineTasks.isPending}
+                    className="flex items-center gap-1 text-[9px] bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 font-rajdhani font-bold uppercase tracking-widest px-2 py-1 rounded border border-amber-500/30 disabled:opacity-60">
+                    {reorderInlineTasks.isPending ? <Loader2 size={9} className="animate-spin" /> : <Save size={9} />} Save Order
+                  </button>
+                )}
+                {!inlineShowTaskForm && (
+                  <button onClick={() => { setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineEditingTask(null); setInlineShowTaskForm(true); }}
+                    className="flex items-center gap-1 text-[9px] bg-amber-600 hover:bg-amber-700 text-white font-rajdhani font-bold uppercase tracking-widest px-2.5 py-1 rounded transition-all">
+                    <Plus size={9} /> Add Task
+                  </button>
+                )}
+              </div>
             </div>
-            {epErrors.assessmentRequired && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentRequired}</p>}
-            <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
-              {epForm.assessmentType === "none" && "This video has no associated task — normal completion/unlock rules apply. (Legacy state — new videos must choose Self or Admin Assessment.)"}
-              {epForm.assessmentType === "self" && "Member submits the task and it's marked complete instantly — no admin review needed."}
-              {epForm.assessmentType === "admin" && "Member's submission is held as Pending until an admin approves it (Tasks → Submissions)."}
-              {epForm.assessmentType === "" && "Choose who checks this video's task before it can be saved."}
-            </p>
-            {(epForm.assessmentType === "self" || epForm.assessmentType === "admin") && (
-              <div className="mt-2 space-y-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Title *</label>
-                  <input value={epForm.assessmentTaskTitle}
-                    onChange={e => { setEpField("assessmentTaskTitle", e.target.value); if (epErrors.assessmentTitle) setEpErrors(prev => ({ ...prev, assessmentTitle: undefined })); }}
-                    placeholder="e.g. Submit your reflection notes"
-                    className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.assessmentTitle ? "border-red-500" : "border-[#2a2a2a]"}`} />
-                  {epErrors.assessmentTitle && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentTitle}</p>}
+
+            {/* Task list */}
+            {inlineTasks.length > 0 && (
+              <div className="space-y-1.5">
+                {inlineTasks.map((t: any, i: number) => (
+                  <div key={t.id ?? t._localId}
+                    draggable={!!editingEp && !!t.id}
+                    onDragStart={() => onInlineTaskDragStart(i)}
+                    onDragOver={e => onInlineTaskDragOver(e, i)}
+                    onDrop={e => onInlineTaskDrop(e, i)}
+                    onDragEnd={onInlineTaskDragEnd}
+                    className={`rounded-lg border transition-all ${inlineTaskDragOver === i ? "border-amber-500/50 bg-amber-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"} ${!(t.isActive ?? true) ? "opacity-50" : ""}`}>
+                    <div className="flex items-start gap-2 px-3 py-2">
+                      {editingEp && t.id && <GripVertical size={12} className="text-[#444] shrink-0 mt-0.5 cursor-move" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <p className="text-[11px] font-medium text-[#f0f0f0] truncate">{t.title}</p>
+                          {t.isMilestone && <Star size={9} className="text-amber-400 shrink-0" />}
+                          {!(t.isActive ?? true) && <EyeOff size={9} className="text-[#555] shrink-0" />}
+                          {!t.id && <span className="text-[8px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">Draft</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[9px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded border ${PROOF_BADGE[t.proofType] ?? "bg-[#333] text-[#888] border-[#444]"}`}>{t.proofType ?? "text"}</span>
+                          <span className="text-[9px] text-[#666] font-rajdhani">{t.basePoints ?? 100} pts</span>
+                          {(t.bonusPoints ?? 0) > 0 && <span className="text-[9px] text-amber-400 font-rajdhani">+{t.bonusPoints} bonus</span>}
+                          <span className={`text-[9px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded border ${COMPLETION_MODE_BADGE[t.completionMode] ?? COMPLETION_MODE_BADGE.ADMIN_CHECK}`}>
+                            {COMPLETION_MODE_LABEL[t.completionMode] ?? "Admin Check"}
+                          </span>
+                          {t.timerSeconds != null && t.timerSeconds !== "" && <span className="flex items-center gap-0.5 text-[9px] text-orange-400 font-rajdhani"><Clock size={8} />{t.timerSeconds}s</span>}
+                          {!(t.isRequired ?? true) && <span className="text-[9px] text-blue-400 font-rajdhani">Optional</span>}
+                        </div>
+                        {t.description && <p className="text-[9px] text-[#555] mt-0.5 truncate">{t.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {inlineDeletingTask === (t.id ?? t._localId) ? (
+                          <>
+                            <button onClick={() => handleInlineTaskDelete(t)} className="text-[9px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300 px-1.5 py-1">✓ Delete</button>
+                            <button onClick={() => setInlineDeletingTask(null)} className="text-[9px] text-[#666] font-rajdhani font-bold uppercase hover:text-white px-1">✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => openInlineEditTask(t)} title="Edit" className="p-1 text-[#666] hover:text-green-400 rounded transition-colors"><Pencil size={10} /></button>
+                            <button onClick={() => setInlineDeletingTask(t.id ?? t._localId)} title="Delete" className="p-1 text-[#666] hover:text-red-400 rounded transition-colors"><Trash2 size={10} /></button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Inline task form */}
+            {inlineShowTaskForm && (
+              <div className="bg-[#181818] border border-[#333] rounded-lg p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[9px] font-bold text-amber-400 uppercase tracking-widest font-rajdhani">{inlineEditingTask ? "Edit Task" : "New Task"}</p>
+                  <button onClick={() => { setInlineShowTaskForm(false); setInlineEditingTask(null); }} className="text-[#555] hover:text-white transition-colors"><X size={12} /></button>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Description <span className="text-[#777] normal-case tracking-normal">(optional)</span></label>
-                  <textarea value={epForm.assessmentTaskDescription} onChange={e => setEpField("assessmentTaskDescription", e.target.value)} rows={2}
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+                  <input value={inlineTaskForm.title} onChange={e => setInlineTaskForm((f: any) => ({ ...f, title: e.target.value }))}
+                    placeholder="Task title"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
+                  <textarea value={inlineTaskForm.description} onChange={e => setInlineTaskForm((f: any) => ({ ...f, description: e.target.value }))} rows={2}
                     placeholder="What should the member do?"
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-white outline-none focus:border-[#dc2626] text-xs resize-none" />
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626] resize-none" />
                 </div>
-                <p className="text-[9px] text-[#555] font-rajdhani">
-                  For deliverables, proof type, points, or milestones, use the <span className="text-[#888]">Tasks</span> panel on this episode after saving.
-                </p>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Deliverables</label>
+                  <textarea value={inlineTaskForm.deliverables} onChange={e => setInlineTaskForm((f: any) => ({ ...f, deliverables: e.target.value }))} rows={2}
+                    placeholder="Expected output / what to submit"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626] resize-none" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Content URL</label>
+                  <input value={inlineTaskForm.contentUrl} onChange={e => setInlineTaskForm((f: any) => ({ ...f, contentUrl: e.target.value }))}
+                    placeholder="https://... (optional reference)"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Proof Type</label>
+                    <select value={inlineTaskForm.proofType} onChange={e => setInlineTaskForm((f: any) => ({ ...f, proofType: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]">
+                      {PROOF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Est. Minutes</label>
+                    <input type="number" min={1} value={inlineTaskForm.estimatedMinutes} onChange={e => setInlineTaskForm((f: any) => ({ ...f, estimatedMinutes: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Base Points</label>
+                    <input type="number" min={0} value={inlineTaskForm.basePoints} onChange={e => setInlineTaskForm((f: any) => ({ ...f, basePoints: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Bonus Points</label>
+                    <input type="number" min={0} value={inlineTaskForm.bonusPoints} onChange={e => setInlineTaskForm((f: any) => ({ ...f, bonusPoints: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Focus Timer (seconds — blank = global default)</label>
+                    <input type="number" min={0} value={inlineTaskForm.timerSeconds} onChange={e => setInlineTaskForm((f: any) => ({ ...f, timerSeconds: e.target.value }))} placeholder="e.g. 300"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Completion Mode</label>
+                  <div className="flex gap-2">
+                    {(["SELF_ASSESSMENT", "ADMIN_CHECK"] as const).map(mode => (
+                      <label key={mode} className="flex items-center gap-2 cursor-pointer flex-1 bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 has-[:checked]:border-[#dc2626]">
+                        <input type="radio" name="inlineCompletionMode" checked={inlineTaskForm.completionMode === mode}
+                          onChange={() => setInlineTaskForm((f: any) => ({ ...f, completionMode: mode }))} className="accent-red-600" />
+                        <span className="text-[10px] text-[#a0a0a0] font-rajdhani">{COMPLETION_MODE_LABEL[mode]}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
+                    {inlineTaskForm.completionMode === "SELF_ASSESSMENT" ? "Member's submission is instantly marked complete." : "Member's submission is held Pending until an admin approves it."}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={inlineTaskForm.isActive} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isActive: e.target.checked }))} className="accent-red-600" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Active (visible)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={inlineTaskForm.isRequired} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isRequired: e.target.checked }))} className="accent-red-600" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Required</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer col-span-2">
+                    <input type="checkbox" checked={inlineTaskForm.isMilestone} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isMilestone: e.target.checked }))} className="accent-amber-500" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Mark as Milestone</span>
+                  </label>
+                </div>
+                {inlineTaskForm.isMilestone && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-amber-500/80 uppercase tracking-widest mb-1 font-rajdhani">Milestone Label</label>
+                    <input value={inlineTaskForm.milestoneLabel} onChange={e => setInlineTaskForm((f: any) => ({ ...f, milestoneLabel: e.target.value }))} placeholder="e.g. First Submission!"
+                      className="w-full bg-[#141414] border border-amber-500/30 rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500" />
+                  </div>
+                )}
+                <div className="flex gap-2 pt-0.5">
+                  <button onClick={handleInlineTaskSave} disabled={createInlineTask.isPending || updateInlineTask.isPending}
+                    className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[9px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                    {(createInlineTask.isPending || updateInlineTask.isPending) ? <Loader2 size={9} className="animate-spin" /> : <Save size={9} />}
+                    {inlineEditingTask ? "Update Task" : "Add Task"}
+                  </button>
+                  <button onClick={() => { setInlineShowTaskForm(false); setInlineEditingTask(null); }} className="text-[9px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
+                </div>
               </div>
             )}
           </div>
@@ -3114,29 +3317,6 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
 }
 
 // ── Episode Tasks Modal ────────────────────────────────────────────────
-const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
-const PROOF_BADGE: Record<string, string> = {
-  text: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  image: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  video: "bg-red-500/20 text-red-400 border-red-500/30",
-  link: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  watch: "bg-green-500/20 text-green-400 border-green-500/30",
-};
-const COMPLETION_MODE_BADGE: Record<string, string> = {
-  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-};
-const COMPLETION_MODE_LABEL: Record<string, string> = {
-  SELF_ASSESSMENT: "Self Assessment",
-  ADMIN_CHECK: "Admin Check",
-};
-const EMPTY_TASK_FORM = {
-  title: "", description: "", deliverables: "", contentUrl: "",
-  basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
-  timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
-  completionMode: "ADMIN_CHECK",
-};
 
 function TaskSubmissionsPanel({ episodeId, taskId }: { episodeId: string; taskId: string }) {
   const { data, isLoading, refetch } = useListEpisodeTaskSubmissions(episodeId, taskId);
