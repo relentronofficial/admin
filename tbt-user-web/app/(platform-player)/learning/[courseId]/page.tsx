@@ -1510,6 +1510,10 @@ export default function CourseDetailPage({
   const { data: episodeResources = [] } = useEpisodeResources(selectedLesson?.id);
   const { data: allEpisodeResourcesMap = {} } = useAllCourseEpisodeResources(courseId);
   const { data: episodeTasks = [] } = useEpisodeTasks(selectedLesson?.id);
+  const [rightTab, setRightTab] = useState<"lessons" | "tasks">("lessons");
+
+  // Reset sidebar tab to "lessons" whenever the selected lesson changes
+  useEffect(() => { setRightTab("lessons"); }, [selectedLesson?.id]);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
   const MAX_FREE_LIFELINES = 3; // fallback until config/batch loads
@@ -3527,64 +3531,117 @@ export default function CourseDetailPage({
             );
           })()}
 
-      {/* Lesson list */}
+      {/* Lesson / Task panel */}
       <div className="rounded-xl overflow-hidden border" style={{ borderColor: "var(--color-border-subtle)" }}>
+
+        {/* Tab bar — always shown; Tasks tab only when current lesson has tasks */}
         <div
-          className="px-5 py-4 border-b flex items-center justify-between"
+          className="px-4 pt-3 pb-0 border-b"
           style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
         >
-          <div className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-            {activeSectionMeta
-              ? activeSectionMeta.title
-              : `${lessons.length} ${lessons.length === 1 ? "Lesson" : "Lessons"}`}
-            {sidebarCompletedCount > 0 && (
-              <span className="ml-2 text-xs font-normal" style={{ color: "var(--color-text-subtle)" }}>
-                · {sidebarCompletedCount}/{sectionFilteredLessons.length} done
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {reviewDueIds.length > 0 && (
-              <span
-                className="text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1"
-                style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}
+          <div className="flex items-center justify-between gap-2 pb-3">
+            {/* Tab buttons */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setRightTab("lessons")}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                style={rightTab === "lessons"
+                  ? { background: "var(--color-accent)", color: "#fff" }
+                  : { background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}
               >
-                <RefreshCw size={9} /> {reviewDueIds.length} to review
-              </span>
-            )}
-            <span
-              className="flex items-center gap-0.5 px-2 py-1 rounded-full"
-              style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
-              title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
-            >
-              {Array.from({ length: maxLifelines }).map((_, i) => (
-                <Heart key={i} size={10}
-                  fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
-                  stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
-                  style={{ transition: "fill 0.3s, stroke 0.3s" }}
-                />
-              ))}
-            </span>
-            {coinBalance != null && (
+                {activeSectionMeta
+                  ? activeSectionMeta.title
+                  : `${lessons.length} ${lessons.length === 1 ? "Lesson" : "Lessons"}`}
+                {sidebarCompletedCount > 0 && rightTab !== "lessons" && (
+                  <span className="text-[10px] font-normal opacity-70">
+                    · {sidebarCompletedCount}/{sectionFilteredLessons.length}
+                  </span>
+                )}
+              </button>
+              {episodeTasks.length > 0 && (
+                <button
+                  onClick={() => setRightTab("tasks")}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  style={rightTab === "tasks"
+                    ? { background: "var(--color-accent)", color: "#fff" }
+                    : { background: "var(--color-surface-xs)", color: "var(--color-text-subtle)" }}
+                >
+                  <ClipboardList size={11} />
+                  Tasks
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                    style={rightTab === "tasks"
+                      ? { background: "rgba(255,255,255,0.25)", color: "#fff" }
+                      : { background: "color-mix(in srgb, var(--color-accent) 20%, transparent)", color: "var(--color-accent)" }}
+                  >
+                    {episodeTasks.length}
+                  </span>
+                </button>
+              )}
+            </div>
+
+            {/* Utility icons row */}
+            <div className="flex items-center gap-2">
+              {reviewDueIds.length > 0 && (
+                <span
+                  className="text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1"
+                  style={{ background: "color-mix(in srgb, #f59e0b 15%, transparent)", color: "#f59e0b" }}
+                >
+                  <RefreshCw size={9} /> {reviewDueIds.length}
+                </span>
+              )}
               <span
-                className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-                style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}
-                title="Your TBT coin balance"
+                className="flex items-center gap-0.5 px-2 py-1 rounded-full"
+                style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
+                title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
               >
-                <Coins size={9} />
-                {coinBalance} coins
+                {Array.from({ length: maxLifelines }).map((_, i) => (
+                  <Heart key={i} size={10}
+                    fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
+                    stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
+                    style={{ transition: "fill 0.3s, stroke 0.3s" }}
+                  />
+                ))}
               </span>
-            )}
-            <button
-              onClick={() => setPracticeOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
-              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
-            >
-              <Brain size={11} /> Practice
-            </button>
+              {coinBalance != null && (
+                <span
+                  className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(251,191,36,0.12)", color: "#fbbf24" }}
+                  title="Your TBT coin balance"
+                >
+                  <Coins size={9} />
+                  {coinBalance}
+                </span>
+              )}
+              <button
+                onClick={() => setPracticeOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+              >
+                <Brain size={11} /> Practice
+              </button>
+            </div>
           </div>
         </div>
 
+        {/* Tasks panel — visible when Tasks tab is active */}
+        {rightTab === "tasks" && episodeTasks.length > 0 && (
+          <div className="divide-y" style={{ borderColor: "var(--color-border-card)", maxHeight: "55vh", overflowY: "auto" }}>
+            {(episodeTasks as EpisodeTask[]).map((t, i) => (
+              <EpisodeTaskItem
+                key={t.id}
+                episodeId={selectedLesson!.id}
+                task={t}
+                index={i}
+                onPauseVideo={() => pausePlayerRef.current()}
+                onResumeVideo={() => resumePlayerRef.current()}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Lesson list — visible when Lessons tab is active */}
+        {rightTab === "lessons" && (
         <div className="divide-y" style={{ borderColor: "var(--color-border-subtle)", maxHeight: "55vh", overflowY: "auto" }}>
           {sidebarRows.length === 0 ? (
             <p className="text-center py-10 text-sm" style={{ color: "var(--color-text-disabled)" }}>
@@ -3807,6 +3864,7 @@ export default function CourseDetailPage({
             })
           )}
         </div>
+        )}{/* end rightTab === "lessons" */}
       </div>
 
         </div>{/* end right sidebar */}
