@@ -6,7 +6,7 @@
 // Availability: the admin publishes the exact dates/times they are free
 // (Assign Slots); each time is one bookable slot on the member calendar.
 import { useMemo, useState } from "react";
-import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX, Trash2, CalendarDays, List } from "lucide-react";
+import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX, Trash2, CalendarDays } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -27,7 +27,6 @@ import {
 import { cn } from "@/lib/utils";
 import { SLOT_STATUS_BADGE, slotStatusLabel } from "@/lib/utils/supportSlots";
 import {
-  AvailabilityCalendar,
   CATEGORY_LABEL,
   PublishAvailabilityModal,
   SUPPORT_CALL_CATEGORIES as CATEGORIES,
@@ -325,7 +324,6 @@ export default function SupportCallsPage() {
   const [category, setCategory] = useState<string>("");
   const [scope, setScope] = useState<"upcoming" | "past" | "all">("upcoming");
   const [callType, setCallType] = useState<CallTypeFilter>("all");
-  const [view, setView] = useState<"calendar" | "list">("calendar");
   const [editing, setEditing] = useState<SupportSession | null | "new">(null);
   const [viewing, setViewing] = useState<SupportSession | null>(null);
   // null = closed; "" = open with today; a date = open on that IST date.
@@ -401,23 +399,6 @@ export default function SupportCallsPage() {
         )}
 
         <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1" role="tablist" aria-label="View">
-            {([["calendar", CalendarDays, "Calendar"], ["list", List, "List"]] as const).map(([id, Icon, label]) => (
-              <button
-                key={id}
-                role="tab"
-                aria-selected={view === id}
-                onClick={() => setView(id)}
-                className={cn(
-                  "px-3.5 py-2 rounded-lg text-[13px] font-semibold transition-all flex items-center gap-1.5",
-                  view === id ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#1f1f1f]",
-                )}
-              >
-                <Icon size={14} /> {label}
-              </button>
-            ))}
-          </div>
-          {view === "list" && (
           <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1">
             {(["upcoming", "past", "all"] as const).map((s) => (
               <button
@@ -432,7 +413,6 @@ export default function SupportCallsPage() {
               </button>
             ))}
           </div>
-          )}
           <select className={cn(INPUT, "w-auto h-10")} value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>
             {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
@@ -448,17 +428,6 @@ export default function SupportCallsPage() {
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#888]">
             Support call sessions are available to Admin, Super Admin and Mentor accounts.
           </div>
-        ) : view === "calendar" ? (
-          <AvailabilityCalendar
-            category={category}
-            callType={callType}
-            onPublishForDate={(d) => setPublishDate(d)}
-            onEdit={(s) => setEditing(s)}
-            onViewBookings={(s) => setViewing(s)}
-            onCancel={doCancel}
-            onDelete={doDelete}
-            busy={cancel.isPending || remove.isPending}
-          />
         ) : isLoading ? (
           <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16"><Loader2 size={18} className="animate-spin" /> Loading sessions…</div>
         ) : isError ? (
