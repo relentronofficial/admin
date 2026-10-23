@@ -9,7 +9,9 @@ import { isCourseModuleAllowed } from './mentorshipModules.js';
 
 // In-memory stand-in for the two raw-SQL reads the loader makes — no DB.
 // Each member row mirrors the members/batches/programs join the loader issues.
-type MemberRow = { allowed_modules: unknown; mentorship_modules: unknown; program_modules: unknown };
+// NOTE: the member query now embeds a `FROM module_config mc` subquery for
+// resolved_module_key, so we must check `FROM members m` BEFORE `FROM module_config`.
+type MemberRow = { allowed_modules: unknown; mentorship_modules: unknown; program_modules: unknown; business_type?: string | null };
 
 function fakePrisma(members: Record<string, MemberRow>, activeModules: string[]) {
   const calls = { member: 0, options: 0 };
@@ -18,17 +20,20 @@ function fakePrisma(members: Record<string, MemberRow>, activeModules: string[])
     members,
     activeModules,
     async $queryRawUnsafe(sql: string, ...params: unknown[]) {
+      // Check FROM members m FIRST — the member query now contains a
+      // `FROM module_config mc` subquery, so the module_config check must come second.
+      if (sql.includes('FROM members m')) {
+        calls.member++;
+        const row = this.members[params[0] as string];
+        // Spread the row and add resolved_module_key: null (no business_type mapping in tests)
+        return row ? [{ business_type: null, resolved_module_key: null, ...row }] : [];
+      }
       if (sql.includes('FROM module_config')) {
         calls.options++;
         return this.activeModules.map((name, i) => ({
           module_name: name, display_name: `${name} Mentorship`, tagline: null,
           description: null, icon_url: null, accent_color: null, sort_order: i,
         }));
-      }
-      if (sql.includes('FROM members m')) {
-        calls.member++;
-        const row = this.members[params[0] as string];
-        return row ? [row] : [];
       }
       throw new Error(`unexpected SQL: ${sql}`);
     },
