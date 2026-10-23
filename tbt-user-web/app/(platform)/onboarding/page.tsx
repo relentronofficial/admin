@@ -179,6 +179,9 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
 
 // ─── Content blocks (education steps) ────────────────────────────────────────
 
+/** Origin of Bunny Stream's embed player (iframe.mediadelivery.net). */
+const BUNNY_PLAYER_ORIGIN = "https://iframe.mediadelivery.net";
+
 function ContentBlock({
   content,
   onCtaClick,
@@ -193,29 +196,53 @@ function ContentBlock({
   const isHls = content.videoUrl?.endsWith(".m3u8");
   const hasVideo = !!content.videoUrl;
   const watchedRef = useRef(alreadyWatched ?? false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Always call the latest onWatched (the message listener outlives renders).
+  const onWatchedRef = useRef(onWatched);
+  onWatchedRef.current = onWatched;
 
   // Keep watchedRef in sync if parent marks it done from another source
   useEffect(() => {
     if (alreadyWatched) watchedRef.current = true;
   }, [alreadyWatched]);
 
-  // Bunny iframe: listen for postMessage timeupdate / ended events
+  // Bunny Stream iframe (player.js protocol, same as the course player): the
+  // player sends nothing until the page subscribes with "addEventListener",
+  // and its events arrive as JSON strings from iframe.mediadelivery.net.
+  const subscribeToPlayer = () => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    for (const event of ["timeupdate", "ended"]) {
+      win.postMessage(JSON.stringify({ context: "player.js", method: "addEventListener", value: event }), BUNNY_PLAYER_ORIGIN);
+    }
+  };
+
   useEffect(() => {
     if (!hasVideo || isHls || watchedRef.current) return;
+    const markWatched = () => {
+      watchedRef.current = true;
+      onWatchedRef.current?.();
+    };
     const handler = (e: MessageEvent) => {
       if (watchedRef.current) return;
-      const msg = e.data;
-      const type: string = msg?.type ?? msg?.event ?? "";
+      if (e.origin && !e.origin.includes("mediadelivery.net")) return;
+      let msg: any = e.data;
+      if (typeof msg === "string") {
+        try { msg = JSON.parse(msg); } catch { return; }
+      }
+      const type: string = msg?.event ?? msg?.type ?? "";
+      if (type === "ready") {
+        subscribeToPlayer();
+        return;
+      }
       if (type === "ended") {
-        watchedRef.current = true;
-        onWatched?.();
+        markWatched();
         return;
       }
       if (type === "timeupdate") {
         const { seconds, duration } = msg?.value ?? {};
         if (typeof seconds === "number" && typeof duration === "number" && duration > 0 && seconds / duration >= 0.8) {
-          watchedRef.current = true;
-          onWatched?.();
+          markWatched();
         }
       }
     };
@@ -261,7 +288,13 @@ function ContentBlock({
                 onEnded={handleHlsEnded}
               />
             ) : (
-              <iframe src={content.videoUrl} className="w-full h-full" allow="autoplay; fullscreen" />
+              <iframe
+                ref={iframeRef}
+                src={content.videoUrl}
+                className="w-full h-full"
+                allow="autoplay; fullscreen"
+                onLoad={subscribeToPlayer}
+              />
             )}
           </div>
           {!videoUnlocked && (
@@ -833,6 +866,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             >
               {contentLoading ? <ContentStepSkeleton /> : content ? (
                 <ContentBlock
+                  // One instance per step: the watched state of one video must
+                  // never carry over to the next step's video.
+                  key={key}
                   content={content}
                   onCtaClick={videoWatched ? () => setStep(nextStep ?? "review") : undefined}
                   onWatched={() => markVideoWatched(key)}
