@@ -24,6 +24,18 @@ interface SectionCardData {
   thumbnail: string | null;
 }
 
+interface CourseModuleCardData {
+  id: string;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  totalEpisodes: number;
+  completedEpisodes: number;
+  firstLessonId: string | null;
+  isLocked: boolean;
+  thumbnail: string | null;
+}
+
 interface ModuleConfig {
   moduleName: string;
   displayName: string | null;
@@ -535,6 +547,250 @@ function SectionGrid({
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {sections.map((section, i) => (
         <SectionCard key={section.id} section={section} courseId={courseId} courseThumbnail={courseThumbnail} index={i} />
+      ))}
+    </div>
+  );
+}
+
+// ── CourseModuleCard ──────────────────────────────────────────────────────────
+
+function CourseModuleCard({
+  module,
+  courseId,
+  courseThumbnail,
+  index,
+}: {
+  module: CourseModuleCardData;
+  courseId: string;
+  courseThumbnail?: string | null;
+  index: number;
+}) {
+  const total = module.totalEpisodes;
+  const completed = module.completedEpisodes;
+  const progressPct = total > 0 ? (completed / total) * 100 : 0;
+  const isCompleted = total > 0 && completed === total;
+  const isInProgress = completed > 0 && !isCompleted;
+  const thumbnail = module.thumbnail ?? courseThumbnail ?? null;
+  const href = module.firstLessonId
+    ? `/learning/${courseId}?lesson=${module.firstLessonId}&module=${module.id}`
+    : `/learning/${courseId}?module=${module.id}`;
+
+  return (
+    <Link href={href} className="block">
+      <div
+        className="relative overflow-hidden"
+        style={{
+          height: 248,
+          borderRadius: 12,
+          background: "#16161a",
+          border: "1px solid #2e2e34",
+          cursor: "pointer",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#505058";
+          (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
+          (e.currentTarget as HTMLElement).style.boxShadow = "none";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+        }}
+      >
+        {/* ── Thumbnail (140px) ─── */}
+        <div
+          style={{
+            position: "relative",
+            height: 140,
+            overflow: "hidden",
+            background: thumbnail
+              ? `url(${JSON.stringify(thumbnail)}) center / cover no-repeat`
+              : "radial-gradient(ellipse at center, #10283b 0%, #071521 58%, #020508 100%)",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: thumbnail
+                ? "linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.08) 40%, rgba(0,0,0,0.38) 100%)"
+                : "linear-gradient(to bottom, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.5) 100%)",
+            }}
+          />
+          {!thumbnail && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                opacity: 0.16,
+                background:
+                  "repeating-linear-gradient(25deg, transparent 0, transparent 18px, #42617b 19px, transparent 20px), repeating-linear-gradient(110deg, transparent 0, transparent 28px, #42617b 29px, transparent 30px)",
+              }}
+            />
+          )}
+          {/* Topic N pill */}
+          <div
+            style={{
+              position: "absolute",
+              bottom: 9,
+              left: 10,
+              zIndex: 2,
+              padding: "3px 9px",
+              borderRadius: 5,
+              background: "rgba(0,0,0,0.62)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: "rgba(255,255,255,0.82)",
+              fontSize: 9,
+              fontWeight: 700,
+              letterSpacing: "0.7px",
+              textTransform: "uppercase",
+            }}
+          >
+            Topic {index + 1}
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              top: 9,
+              right: 9,
+              zIndex: 2,
+              color: "rgba(255,255,255,0.35)",
+              fontSize: 7,
+              fontWeight: 700,
+              letterSpacing: "0.4px",
+            }}
+          >
+            ✦ TBT
+          </div>
+        </div>
+
+        {/* ── Details (108px) ─── */}
+        <div
+          className="relative flex flex-col justify-between"
+          style={{ height: 108, padding: "10px 13px 11px", background: "#16161a" }}
+        >
+          <div
+            className="line-clamp-2"
+            style={{
+              color: "#eeeef2",
+              fontSize: 13,
+              fontWeight: 600,
+              lineHeight: 1.35,
+              letterSpacing: "-0.1px",
+              paddingRight: 38,
+            }}
+          >
+            {module.title}
+          </div>
+
+          <div style={{ color: "#72727c", fontSize: 11, lineHeight: 1 }}>
+            <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{total}</strong>
+            <span> video{total !== 1 ? "s" : ""}</span>
+            {(isCompleted || isInProgress) && (
+              <>
+                <span style={{ margin: "0 5px", color: "#28282f" }}>·</span>
+                <span style={{ color: isCompleted ? "#22c55e" : "var(--color-accent)", fontWeight: 500 }}>
+                  {isCompleted ? "Completed" : `${completed}/${total} done`}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Status circle */}
+          <div
+            className="absolute flex items-center justify-center"
+            style={{
+              top: 10,
+              right: 11,
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              background: isCompleted
+                ? "rgba(34,197,94,0.14)"
+                : isInProgress
+                ? "rgba(220,38,38,0.14)"
+                : "rgba(255,255,255,0.05)",
+              border: `1px solid ${isCompleted ? "rgba(34,197,94,0.45)" : isInProgress ? "rgba(220,38,38,0.4)" : "rgba(255,255,255,0.1)"}`,
+              color: isCompleted ? "#22c55e" : isInProgress ? "var(--color-accent)" : "#606068",
+              fontSize: isCompleted ? 14 : 15,
+            }}
+          >
+            {isCompleted ? "✓" : isInProgress ? "▶" : "○"}
+          </div>
+
+          {/* Progress bar */}
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+              <span style={{ fontSize: 10, color: "#52525a" }}>{Math.round(progressPct)}% complete</span>
+            </div>
+            <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
+              <div
+                style={{
+                  width: `${Math.min(100, progressPct)}%`,
+                  height: "100%",
+                  borderRadius: 4,
+                  background: isCompleted ? "#22c55e" : "var(--color-accent)",
+                  transition: "width 1s ease",
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Lock overlay */}
+        {module.isLocked && (
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+            style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
+          >
+            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
+              Complete the previous topic to unlock
+            </div>
+          </div>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+// ── CourseModuleGrid ──────────────────────────────────────────────────────────
+
+function CourseModuleGrid({
+  modules,
+  courseId,
+  courseThumbnail,
+  isLoading,
+  uiStrings,
+}: {
+  modules: CourseModuleCardData[];
+  courseId: string;
+  courseThumbnail?: string | null;
+  isLoading: boolean;
+  uiStrings: any;
+}) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="animate-pulse" style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }} />
+        ))}
+      </div>
+    );
+  }
+  if (modules.length === 0) {
+    return (
+      <div style={{ textAlign: "center", padding: "60px 20px", background: "#242428", borderRadius: 12, border: "1px solid #414146" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
+        <p style={{ color: "#92929b", fontSize: 14 }}>{uiStrings?.coursesEmptyState ?? "No topics found"}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      {modules.map((mod, i) => (
+        <CourseModuleCard key={mod.id} module={mod} courseId={courseId} courseThumbnail={courseThumbnail} index={i} />
       ))}
     </div>
   );
@@ -1094,6 +1350,31 @@ export default function CoursesPage() {
     });
   }, [primaryCourseDetail]);
 
+  // Course-module cards — actual topic modules from course_modules table.
+  // Preferred over section cards when present; sections are the fallback.
+  const courseModuleCards = useMemo((): CourseModuleCardData[] | null => {
+    if (!primaryCourseDetail) return null;
+    const lessons: any[] = (primaryCourseDetail as any).lessons ?? [];
+    const modules: Array<{ id: string; title: string; description?: string; sortOrder: number }> = (primaryCourseDetail as any).modules ?? [];
+    if (modules.length === 0) return null;
+    const sorted = [...modules].sort((a, b) => a.sortOrder - b.sortOrder);
+    return sorted.map(mod => {
+      const modLessons = lessons.filter((l: any) => Array.isArray(l.moduleIds) && l.moduleIds.includes(mod.id));
+      const completed = modLessons.filter((l: any) => l.isCompleted).length;
+      return {
+        id: mod.id,
+        title: mod.title,
+        description: mod.description ?? null,
+        sortOrder: mod.sortOrder,
+        totalEpisodes: modLessons.length,
+        completedEpisodes: completed,
+        firstLessonId: modLessons[0]?.id ?? null,
+        isLocked: modLessons[0]?.locked ?? false,
+        thumbnail: modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
+      };
+    });
+  }, [primaryCourseDetail]);
+
   // Learning Roadmap course: the most recently watched enrolled course that isn't
   // finished, else the latest unfinished enrollment. None → no roadmap.
   const roadmapCourseId: string | null = useMemo(() => {
@@ -1163,7 +1444,29 @@ export default function CoursesPage() {
             primaryCourseTitle={primaryCourseTitle}
           />
           <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
-          {sectionCards && sectionCards.length > 0 ? (
+          {courseModuleCards && courseModuleCards.length > 0 ? (
+            <>
+              <CourseModuleGrid
+                modules={courseModuleCards}
+                courseId={primaryCourseId!}
+                courseThumbnail={(primaryCourseDetail as any)?.thumbnailUrl ?? null}
+                isLoading={courseDetailLoading && !primaryCourseDetail}
+                uiStrings={uiStrings}
+              />
+              {filteredCourses.length > 1 && (
+                <div className="mt-8">
+                  <div className="mb-4" style={{ color: "#92929b", fontSize: 13, fontWeight: 600 }}>Additional Courses</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {filteredCourses.slice(1).map((course: any) => {
+                      const enrollment = enrolledMap.get(course.id);
+                      const lockReason: LockReason = (!course.hasAccess && !enrollment) ? (course.price > 0 ? "purchase_required" : "not_enrolled") : null;
+                      return <ModuleCard key={course.id} course={course} enrollment={enrollment} index={filteredCourses.indexOf(course)} lockReason={lockReason} />;
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : sectionCards && sectionCards.length > 0 ? (
             <>
               <SectionGrid
                 sections={sectionCards}
