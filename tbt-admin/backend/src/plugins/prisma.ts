@@ -2471,16 +2471,22 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     ).catch(() => {});
 
     // ── Course visibility: business category gates (CV-01/CV-02 2026-10-21) ───
-    // CV-01: admin-assigned multi-value member audience.
-    // Empty = uncategorised = backward compat (member sees all courses).
-    // Uses DIRECT_URL to guarantee the ALTER reaches Postgres directly.
+    // CV-01: business_categories stored in a separate table (members hit the 1600-column limit).
+    // Uses DIRECT_URL to guarantee DDL reaches Postgres directly.
     await (async () => {
       const cv = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL ?? env.DATABASE_URL } } });
       try {
-        await cv.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
+        await cv.$executeRawUnsafe(`
+          CREATE TABLE IF NOT EXISTS member_business_profiles (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+            business_categories JSONB NOT NULL DEFAULT '[]',
+            CONSTRAINT uq_mbp_member UNIQUE (member_id)
+          )
+        `);
         await cv.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
       } catch (e: any) {
-        fastify.log.warn('⚠️ CV-01/CV-02 ALTER failed:', e);
+        fastify.log.warn('⚠️ CV-01/CV-02 DDL failed:', e);
       } finally {
         await cv.$disconnect().catch(() => {});
       }
@@ -2497,7 +2503,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       const retryPrisma = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL ?? env.DATABASE_URL } } });
       try {
         await retryPrisma.$executeRawUnsafe(`ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`).catch(() => {});
-        await retryPrisma.$executeRawUnsafe(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`).catch(() => {});
+        await retryPrisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS member_business_profiles (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE, business_categories JSONB NOT NULL DEFAULT '[]', CONSTRAINT uq_mbp_member UNIQUE (member_id))`).catch(() => {});
         await retryPrisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`).catch(() => {});
         await retryPrisma.$executeRawUnsafe(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS applicable_business_types TEXT[]`).catch(() => {});
         fastify.log.info('✅ Startup DDL retry completed');
@@ -2541,7 +2547,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS role TEXT`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS registered_office TEXT`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS target_network_description TEXT`);
-    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS business_categories JSONB DEFAULT '[]'`);
+    await safeAlter(`CREATE TABLE IF NOT EXISTS member_business_profiles (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE, business_categories JSONB NOT NULL DEFAULT '[]', CONSTRAINT uq_mbp_member UNIQUE (member_id))`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS watched_video_steps JSONB DEFAULT '[]'`);
