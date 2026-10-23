@@ -34,7 +34,7 @@ type Draft = {
 const FAQ_CATEGORY_OPTIONS: Array<{ value: ModuleFaqCategory; label: string }> = [
   { value: "ecommerce", label: "Ecommerce" },
   { value: "service", label: "Service" },
-  { value: "coachx", label: "CoachX" },
+  { value: "coachx", label: "Coaching" }, // saved value stays "coachx" (existing FAQs)
 ];
 
 /** One Question/Answer (+ optional video) entry in the form. */

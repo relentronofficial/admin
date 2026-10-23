@@ -112,7 +112,7 @@ describe("ModulesFaqButton — FAQ categories", () => {
       questions: [...sec.querySelectorAll("li button")].map((b) => b.textContent),
     }));
 
-  it("groups FAQs under Ecommerce, Service and CoachX (in that order), with older ones under General", () => {
+  it("groups FAQs under Ecommerce, Service and Coaching (in that order; Coaching is saved as 'coachx'), with older ones under General", () => {
     state.faqs.data = [
       { id: "a", question: "Coaching calls?", answer: "x", category: "coachx" },
       { id: "b", question: "Store setup?", answer: "x", category: "ecommerce" },
@@ -123,7 +123,7 @@ describe("ModulesFaqButton — FAQ categories", () => {
     expect(sectionsOf(open())).toEqual([
       { key: "ecommerce", heading: "Ecommerce", questions: ["Store setup?", "Payment gateway?"] },
       { key: "service", heading: "Service", questions: ["Pricing a service?"] },
-      { key: "coachx", heading: "CoachX", questions: ["Coaching calls?"] },
+      { key: "coachx", heading: "Coaching", questions: ["Coaching calls?"] },
       { key: "general", heading: "General", questions: ["Old question?"] },
     ]);
   });

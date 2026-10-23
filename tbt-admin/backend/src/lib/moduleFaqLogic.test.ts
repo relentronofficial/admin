@@ -75,6 +75,10 @@ describe('publicFaqList', () => {
 });
 
 describe('FAQ category validation', () => {
+  it('Coaching is shown to admins but saved as "coachx", so existing CoachX FAQs keep working', () => {
+    expect(validateFaqInput({ question: 'Q?', answer: 'A', category: 'coachx' })).toMatchObject({ ok: true, value: { category: 'coachx' } });
+    expect(validateFaqInput({ question: 'Q?', answer: 'A', category: 'nope' })).toEqual({ ok: false, error: 'Choose a category: Ecommerce, Service or Coaching' });
+  });
   it('is required for a new FAQ and must be Ecommerce, Service or CoachX', () => {
     expect(validateFaqInput({ question: 'Q?', answer: 'A' })).toEqual({ ok: false, error: 'Category is required' });
     for (const bad of ['Ecommerce', 'coaching', '', null, 5]) expect(validateFaqInput({ question: 'Q?', answer: 'A', category: bad }).ok).toBe(false);

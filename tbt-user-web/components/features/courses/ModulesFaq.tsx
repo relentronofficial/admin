@@ -13,7 +13,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 const FAQ_SECTIONS = [
   { key: "ecommerce", label: "Ecommerce" },
   { key: "service", label: "Service" },
-  { key: "coachx", label: "CoachX" },
+  { key: "coachx", label: "Coaching" }, // saved value stays "coachx"
   { key: "general", label: "General" },
 ] as const;
 const CATEGORY_KEYS: string[] = ["ecommerce", "service", "coachx"];
@@ -54,7 +54,7 @@ function FaqModal({ onClose }: { onClose: () => void }) {
 
   const faqs = data ?? [];
 
-  // FAQs are grouped by the category the admin chose: Ecommerce, Service, CoachX,
+  // FAQs are grouped by the category the admin chose: Ecommerce, Service, Coaching,
   // then older FAQs without one under "General". Until any FAQ has a category the
   // popup stays the single list it always was.
   const sections = FAQ_SECTIONS.map(({ key, label }) => ({

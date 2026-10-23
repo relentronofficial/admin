@@ -124,7 +124,7 @@ export function validateFaqInput(body: unknown, current?: FaqInput): Validation<
   // (older FAQs may have none until an admin picks one).
   let category: FaqCategory | null;
   if ('category' in b) {
-    if (!isFaqCategory(b.category)) return { ok: false, error: 'Choose a category: Ecommerce, Service or CoachX' };
+    if (!isFaqCategory(b.category)) return { ok: false, error: 'Choose a category: Ecommerce, Service or Coaching' };
     category = b.category;
   } else if (current) {
     category = current.category ?? null;
