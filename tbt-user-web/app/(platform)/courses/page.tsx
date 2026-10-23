@@ -1355,7 +1355,7 @@ export default function CoursesPage() {
   const courseModuleCards = useMemo((): CourseModuleCardData[] | null => {
     if (!primaryCourseDetail) return null;
     const lessons: any[] = (primaryCourseDetail as any).lessons ?? [];
-    const modules: Array<{ id: string; title: string; description?: string; sortOrder: number }> = (primaryCourseDetail as any).modules ?? [];
+    const modules: Array<{ id: string; title: string; description?: string; sortOrder: number; thumbnailUrl?: string | null }> = (primaryCourseDetail as any).modules ?? [];
     if (modules.length === 0) return null;
     const sorted = [...modules].sort((a, b) => a.sortOrder - b.sortOrder);
     return sorted.map(mod => {
@@ -1370,7 +1370,8 @@ export default function CoursesPage() {
         completedEpisodes: completed,
         firstLessonId: modLessons[0]?.id ?? null,
         isLocked: modLessons[0]?.locked ?? false,
-        thumbnail: modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
+        // Prefer the module's own thumbnail; fall back to the first episode thumbnail
+        thumbnail: mod.thumbnailUrl ?? modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
       };
     });
   }, [primaryCourseDetail]);

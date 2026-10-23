@@ -2007,30 +2007,46 @@ function ModulesTab({ course }: { course: any }) {
   const updateModule = useUpdateCourseModule(course.id);
   const deleteModule = useDeleteCourseModule(course.id);
   const reorderModules = useReorderCourseModules(course.id);
+  const getPresignedUrl = useGetPresignedUrl();
 
   const serverModules: any[] = (data as any) ?? [];
   const [localModules, setLocalModules] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ title: "", description: "" });
+  const [form, setForm] = useState({ title: "", description: "", thumbnailUrl: "" });
+  const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const thumbInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { setLocalModules(serverModules); setIsDirty(false); }, [data]);
 
-  const openCreate = () => { setForm({ title: "", description: "" }); setEditing(null); setShowForm(true); };
-  const openEdit = (m: any) => { setForm({ title: m.title, description: m.description ?? "" }); setEditing(m); setShowForm(true); };
+  const openCreate = () => { setForm({ title: "", description: "", thumbnailUrl: "" }); setEditing(null); setShowForm(true); };
+  const openEdit = (m: any) => { setForm({ title: m.title, description: m.description ?? "", thumbnailUrl: m.thumbnailUrl ?? "" }); setEditing(m); setShowForm(true); };
+
+  const handleThumbUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
+        filename: file.name, contentType: file.type,
+        bucket: "course-thumbnails", pathPrefix: "module-thumbs",
+      });
+      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      setForm(f => ({ ...f, thumbnailUrl: publicUrl }));
+    } catch { toast.error("Thumbnail upload failed"); }
+    finally { setUploading(false); }
+  };
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     try {
       if (editing) {
-        await updateModule.mutateAsync({ moduleId: editing.id, title: form.title, description: form.description || undefined });
+        await updateModule.mutateAsync({ moduleId: editing.id, title: form.title, description: form.description || undefined, thumbnailUrl: form.thumbnailUrl || null });
         toast.success("Module updated");
       } else {
-        await createModule.mutateAsync({ title: form.title, description: form.description || undefined });
+        await createModule.mutateAsync({ title: form.title, description: form.description || undefined, thumbnailUrl: form.thumbnailUrl || null });
         toast.success("Module created");
       }
       setShowForm(false);
@@ -2092,9 +2108,38 @@ function ModulesTab({ course }: { course: any }) {
               placeholder="Short description of this module"
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white text-xs outline-none focus:border-[#dc2626]" />
           </div>
+          {/* Thumbnail upload */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Thumbnail (optional)</label>
+            <input ref={thumbInputRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbUpload(f); e.target.value = ""; }} />
+            {form.thumbnailUrl ? (
+              <div className="flex items-center gap-3">
+                <img src={form.thumbnailUrl} alt="thumbnail" className="w-16 h-10 object-cover rounded border border-[#333]" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => thumbInputRef.current?.click()}
+                    disabled={uploading}
+                    className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#333] text-[#a0a0a0] hover:text-white text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani flex items-center gap-1 disabled:opacity-60">
+                    {uploading ? <Loader2 size={10} className="animate-spin" /> : <ImageIcon size={10} />} Change
+                  </button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, thumbnailUrl: "" }))}
+                    className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-red-900/30 border border-[#333] text-[#a0a0a0] hover:text-red-400 text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => thumbInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 px-3 py-2 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-dashed border-[#333] hover:border-[#555] text-[#888] hover:text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani transition-colors disabled:opacity-60">
+                {uploading ? <Loader2 size={11} className="animate-spin" /> : <ImageIcon size={11} />}
+                {uploading ? "Uploading…" : "Upload Thumbnail"}
+              </button>
+            )}
+          </div>
           <div className="flex gap-2 pt-1">
             <button onClick={() => setShowForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>
-            <button onClick={handleSave} disabled={createModule.isPending || updateModule.isPending}
+            <button onClick={handleSave} disabled={createModule.isPending || updateModule.isPending || uploading}
               className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
               {(createModule.isPending || updateModule.isPending) && <Loader2 size={11} className="animate-spin" />} Save
             </button>
@@ -2132,6 +2177,9 @@ function ModulesTab({ course }: { course: any }) {
               onDrop={e => onDrop(e, idx)}
               className={`flex items-center gap-3 px-3 py-3 rounded-lg border transition-all ${dragOver === idx ? "border-[#dc2626] bg-[#dc2626]/5" : "border-[#2a2a2a] bg-[#141414]"}`}>
               <GripVertical size={14} className="text-[#444] cursor-grab shrink-0" />
+              {m.thumbnailUrl && (
+                <img src={m.thumbnailUrl} alt={m.title} className="w-12 h-8 object-cover rounded border border-[#333] shrink-0" />
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#f0f0f0] truncate">{m.title}</p>
                 {m.description && <p className="text-[11px] text-[#888] truncate mt-0.5">{m.description}</p>}
