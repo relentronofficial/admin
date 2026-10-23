@@ -18,7 +18,7 @@ start_mock() {
   rm -f "$work/port"
   env PORT_FILE="$work/port" "$@" node "$here/testdata/mock-backend.mjs" &
   mock_pid=$!
-  for _ in $(seq 1 50); do [ -s "$work/port" ] && break; sleep 0.1; done
+  for _ in $(seq 1 150); do [ -s "$work/port" ] && break; sleep 0.1; done
   [ -s "$work/port" ] || { echo "mock backend did not start"; exit 1; }
   BASE="http://127.0.0.1:$(cat "$work/port")"
 }
