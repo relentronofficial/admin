@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipDashboard from "./MentorshipDashboard";
 
@@ -214,6 +214,35 @@ describe("MentorshipDashboard", () => {
     const peak = screen.getByTestId("peak-callout").textContent!;
     expect(peak).toContain("PEAK DAY (SAT)");
     expect(peak).toContain("₹1,00,000");
+  });
+
+  it("shows a hover tooltip for the day under the pointer, from the saved data (daily and cumulative)", () => {
+    render(<MentorshipDashboard />);
+    const svg = document.querySelector('svg[aria-label="Weekly revenue and order trajectory"]') as SVGSVGElement;
+    // jsdom has no layout: give the chart its default 700px box (1 SVG unit = 1px).
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 700, height: 200, right: 700, bottom: 200, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    const capture = svg.querySelector('rect[fill="transparent"]') as SVGRectElement;
+    const dayX = (i: number) => 58 + (i / 6) * (700 - 74);
+    const hover = (i: number) => capture.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: dayX(i) }));
+    const tip = () => screen.getByTestId("chart-tooltip").textContent ?? "";
+
+    expect(screen.queryByTestId("chart-tooltip")).toBeNull();
+    act(() => { hover(1); }); // Tue 13 Oct: ₹60,000 / 70 orders
+    expect(tip()).toContain("Tue (13)");
+    expect(tip()).toContain("₹60,000");
+    expect(tip()).toContain("70 orders");
+    act(() => { hover(2); }); // Wed — nothing saved, never shown as 0
+    expect(tip()).toContain("No revenue saved");
+    expect(tip()).toContain("No orders saved");
+
+    fireEvent.click(screen.getByText("Cumulative"));
+    act(() => { hover(1); }); // running totals Mon+Tue
+    expect(tip()).toContain("Total ₹1,10,000");
+    expect(tip()).toContain("Total 130 orders");
+
+    act(() => { capture.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, clientX: 900 })); });
+    act(() => { fireEvent.pointerLeave(capture); });
+    expect(screen.queryByTestId("chart-tooltip")).toBeNull();
   });
 
   it("updates the displayed metrics when the underlying data changes", () => {
