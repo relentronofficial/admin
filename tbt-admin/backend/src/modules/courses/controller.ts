@@ -1402,6 +1402,7 @@ function mapModule(m: any, episodeIds: string[]): any {
   return {
     id: m.id, courseId: m.course_id, title: m.title,
     description: m.description ?? null, sortOrder: Number(m.sort_order),
+    thumbnailUrl: m.thumbnail_url ?? null,
     createdAt: m.created_at, episodeIds,
   };
 }
@@ -1410,7 +1411,7 @@ export async function listCourseModulesHandler(req: FastifyRequest, reply: Fasti
   const { id } = req.params as any;
   const [modules, junction] = await Promise.all([
     req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, course_id, title, description, sort_order, created_at
+      `SELECT id, course_id, title, description, sort_order, thumbnail_url, created_at
        FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
       id,
     ),
@@ -1430,16 +1431,16 @@ export async function listCourseModulesHandler(req: FastifyRequest, reply: Fasti
 
 export async function createCourseModuleHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const { title, description } = req.body as any;
+  const { title, description, thumbnailUrl } = req.body as any;
   if (!title?.trim()) return reply.status(400).send({ success: false, error: 'title is required' });
   const [countRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT COUNT(*) AS cnt FROM course_modules WHERE course_id = $1::uuid`, id,
   );
   const sortOrder = Number(countRow?.cnt ?? 0);
   const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO course_modules (course_id, title, description, sort_order)
-     VALUES ($1::uuid, $2, $3, $4) RETURNING *`,
-    id, title.trim(), description?.trim() ?? null, sortOrder,
+    `INSERT INTO course_modules (course_id, title, description, sort_order, thumbnail_url)
+     VALUES ($1::uuid, $2, $3, $4, $5) RETURNING *`,
+    id, title.trim(), description?.trim() ?? null, sortOrder, thumbnailUrl ?? null,
   );
   bustHome(req);
   return reply.status(201).send({ success: true, data: mapModule(row, []) });
@@ -1447,10 +1448,11 @@ export async function createCourseModuleHandler(req: FastifyRequest, reply: Fast
 
 export async function updateCourseModuleHandler(req: FastifyRequest, reply: FastifyReply) {
   const { moduleId } = req.params as any;
-  const { title, description, episodeIds } = req.body as any;
+  const { title, description, thumbnailUrl, episodeIds } = req.body as any;
   const sets: string[] = []; const vals: any[] = []; let idx = 1;
   if (title !== undefined) { sets.push(`title = $${idx++}`); vals.push(title.trim()); }
   if (description !== undefined) { sets.push(`description = $${idx++}`); vals.push(description?.trim() ?? null); }
+  if (thumbnailUrl !== undefined) { sets.push(`thumbnail_url = $${idx++}`); vals.push(thumbnailUrl ?? null); }
   if (sets.length) {
     vals.push(moduleId);
     await req.server.prisma.$executeRawUnsafe(

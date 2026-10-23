@@ -2321,7 +2321,7 @@ export const useListCourseModules = (courseId: string) =>
     queryKey: ['course-modules', courseId],
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/courses/${courseId}/modules`);
-      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; episodeIds: string[]; createdAt: string }>;
+      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; thumbnailUrl: string | null; episodeIds: string[]; createdAt: string }>;
     },
     enabled: !!courseId,
     staleTime: 60_000,
@@ -2330,7 +2330,7 @@ export const useListCourseModules = (courseId: string) =>
 export const useCreateCourseModule = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { title: string; description?: string }) => {
+    mutationFn: async (data: { title: string; description?: string; thumbnailUrl?: string | null }) => {
       const res: any = await apiClient.post(`/api/courses/${courseId}/modules`, data);
       return res?.data;
     },
@@ -2341,7 +2341,7 @@ export const useCreateCourseModule = (courseId: string) => {
 export const useUpdateCourseModule = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; episodeIds?: string[] }) => {
+    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; thumbnailUrl?: string | null; episodeIds?: string[] }) => {
       const res: any = await apiClient.put(`/api/courses/${courseId}/modules/${moduleId}`, data);
       return res?.data;
     },

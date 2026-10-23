@@ -1120,7 +1120,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       id,
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, title, description, sort_order FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
+      `SELECT id, title, description, sort_order, thumbnail_url FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
       id,
     ),
     request.server.prisma.$queryRawUnsafe<any[]>(
@@ -1138,7 +1138,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   const modules = (moduleRows as any[]).map((m) => ({
     id: m.id, title: m.title, description: m.description ?? null,
-    sortOrder: Number(m.sort_order),
+    sortOrder: Number(m.sort_order), thumbnailUrl: m.thumbnail_url ?? null,
   }));
 
   const episodeSectionMap = new Map(
