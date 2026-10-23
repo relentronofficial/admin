@@ -2001,13 +2001,22 @@ function EpisodesTab({ course }: { course: any }) {
 }
 
 // ── Modules tab ────────────────────────────────────────────────────────
+const fmtDuration = (secs: number) => {
+  if (!secs) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 function ModulesTab({ course }: { course: any }) {
   const { data, isLoading } = useListCourseModules(course.id);
   const createModule = useCreateCourseModule(course.id);
   const updateModule = useUpdateCourseModule(course.id);
   const deleteModule = useDeleteCourseModule(course.id);
   const reorderModules = useReorderCourseModules(course.id);
-  const getPresignedUrl = useGetPresignedUrl();
+  const uploadImage = useUploadImage();
+  const { data: episodesData } = useListCourseEpisodes(course.id);
+  const allEpisodes: any[] = (episodesData as any)?.data || [];
 
   const serverModules: any[] = (data as any) ?? [];
   const [localModules, setLocalModules] = useState<any[]>([]);
@@ -2029,11 +2038,7 @@ function ModulesTab({ course }: { course: any }) {
   const handleThumbUpload = async (file: File) => {
     setUploading(true);
     try {
-      const { uploadUrl, publicUrl } = await getPresignedUrl.mutateAsync({
-        filename: file.name, contentType: file.type,
-        bucket: "course-thumbnails", pathPrefix: "module-thumbs",
-      });
-      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "module-thumbs" });
       setForm(f => ({ ...f, thumbnailUrl: publicUrl }));
     } catch { toast.error("Thumbnail upload failed"); }
     finally { setUploading(false); }
@@ -2183,7 +2188,22 @@ function ModulesTab({ course }: { course: any }) {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#f0f0f0] truncate">{m.title}</p>
                 {m.description && <p className="text-[11px] text-[#888] truncate mt-0.5">{m.description}</p>}
-                <p className="text-[10px] text-[#606060] mt-0.5">{(m.episodeIds ?? []).length} episode{(m.episodeIds ?? []).length !== 1 ? "s" : ""}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-[10px] text-[#606060]">{(m.episodeIds ?? []).length} episode{(m.episodeIds ?? []).length !== 1 ? "s" : ""}</span>
+                  {(() => {
+                    const mEps = allEpisodes.filter((e: any) => (m.episodeIds ?? []).includes(e.id));
+                    const vidSecs = mEps.reduce((s: number, e: any) => s + (Number(e.durationSeconds) || 0), 0);
+                    const taskSecs = mEps.reduce((s: number, e: any) => s + (e.timerSeconds != null ? Number(e.timerSeconds) : 0), 0);
+                    const vidStr = fmtDuration(vidSecs);
+                    const taskStr = fmtDuration(taskSecs);
+                    return (
+                      <>
+                        {vidStr && <span className="text-[10px] text-[#606060]">· {vidStr} video</span>}
+                        {taskStr && <span className="text-[10px] text-[#606060]">· {taskStr} tasks</span>}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => openEdit(m)} className="p-1.5 rounded text-[#888] hover:text-white hover:bg-[#2a2a2a] transition-colors"><Pencil size={12} /></button>
