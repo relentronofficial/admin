@@ -3075,3 +3075,15 @@ export const useDeleteCoinPackage = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['coin-packages'] }),
   });
 };
+
+// ── Episode Form Submissions (admin read) ─────────────────────────────────────
+
+export const useEpisodeFormSubmissions = (episodeId: string, page = 1) =>
+  useQuery({
+    queryKey: ['episode-form-submissions', episodeId, page],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/form-submissions`, { params: { page, limit: 50 } });
+      return { data: res?.data ?? [], meta: res?.meta ?? { total: 0 } };
+    },
+    enabled: !!episodeId,
+  });

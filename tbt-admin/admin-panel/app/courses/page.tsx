@@ -70,6 +70,22 @@ const EMPTY_OPTION = () => ({ id: uid(), text: "", correct: false });
 const EMPTY_QUESTION = () => ({ id: uid(), question: "", options: [EMPTY_OPTION(), EMPTY_OPTION()] });
 const EMPTY_CUE = () => ({ id: uid(), atSeconds: 60, atTime: "1:00", questions: [EMPTY_QUESTION()] });
 
+const EMPTY_SIDE_CONTENT = { enabled: false, text: "", buttons: [] as any[] };
+const EMPTY_FORM_CONFIG = { enabled: false, title: "", description: "", submitLabel: "Submit", allowMultiple: false, fields: [] as any[] };
+const EMPTY_FORM_FIELD = () => ({ id: crypto.randomUUID(), type: "text" as string, label: "", placeholder: "", required: false, options: [] as string[], validation: {} });
+
+const FORM_FIELD_TYPES = [
+  { value: "text", label: "Short Text" },
+  { value: "email", label: "Email" },
+  { value: "number", label: "Number" },
+  { value: "textarea", label: "Long Text" },
+  { value: "dropdown", label: "Dropdown" },
+  { value: "radio", label: "Radio Buttons" },
+  { value: "checkbox", label: "Checkboxes" },
+  { value: "date", label: "Date" },
+  { value: "file", label: "File Upload" },
+];
+
 const EMPTY_EP = {
   title: "", videoUrl: "", bunnyVideoId: "", thumbnailUrl: "",
   durationSeconds: "", isVisible: true,
@@ -83,6 +99,8 @@ const EMPTY_EP = {
   lifelineCount: 3 as number,
   lifelineCoinCost: 50 as number,
   maxPurchasedLifelines: 5 as number,
+  sideContent: { ...EMPTY_SIDE_CONTENT } as any,
+  formConfig: { ...EMPTY_FORM_CONFIG } as any,
   // Assessment type (2026-09) — a simplified single-task view over the same
   // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
   // completion_mode. "none" = no active task linked to this episode — only
@@ -936,6 +954,8 @@ function EpisodesTab({ course }: { course: any }) {
       lifelineCount: ep.lifelineCount ?? 3,
       lifelineCoinCost: ep.lifelineCoinCost ?? 50,
       maxPurchasedLifelines: ep.maxPurchasedLifelines ?? 5,
+      sideContent: ep.sideContent ?? { ...EMPTY_SIDE_CONTENT },
+      formConfig: ep.formConfig ?? { ...EMPTY_FORM_CONFIG },
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -1060,6 +1080,8 @@ function EpisodesTab({ course }: { course: any }) {
       lifelineCount: Number(epForm.lifelineCount) || 3,
       lifelineCoinCost: Number(epForm.lifelineCoinCost) || 50,
       maxPurchasedLifelines: Number(epForm.maxPurchasedLifelines) || 5,
+      sideContent: epForm.sideContent,
+      formConfig: epForm.formConfig,
     };
     try {
       let episodeId: string;
@@ -1710,6 +1732,168 @@ function EpisodesTab({ course }: { course: any }) {
               </div>
             );
           })()}
+          {/* ── Side Content ────────────────────────────────── */}
+          <div className="border border-[#2a2a2a] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Side Content</span>
+              <button type="button" onClick={() => setEpField("sideContent", { ...epForm.sideContent, enabled: !epForm.sideContent?.enabled })}
+                className={`w-8 h-4 rounded-full relative transition-all ${epForm.sideContent?.enabled ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.sideContent?.enabled ? "right-0.5" : "left-0.5"}`} />
+              </button>
+            </div>
+            {epForm.sideContent?.enabled && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Text Content</label>
+                  <textarea
+                    value={epForm.sideContent?.text ?? ""}
+                    onChange={e => setEpField("sideContent", { ...epForm.sideContent, text: e.target.value })}
+                    placeholder="Add optional text content shown alongside the video..."
+                    rows={3}
+                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Buttons</label>
+                    <button type="button"
+                      onClick={() => setEpField("sideContent", { ...epForm.sideContent, buttons: [...(epForm.sideContent?.buttons ?? []), { id: crypto.randomUUID(), label: "", type: "external", destination: "", variant: "primary" }] })}
+                      className="text-[10px] font-bold uppercase tracking-widest text-[#dc2626] hover:text-red-400 font-rajdhani">+ Add Button</button>
+                  </div>
+                  {(epForm.sideContent?.buttons ?? []).map((btn: any, bi: number) => (
+                    <div key={btn.id} className="flex gap-2 items-start mb-2 p-2 bg-[#141414] rounded border border-[#2a2a2a]">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <input value={btn.label} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],label:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          placeholder="Button label" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none col-span-2" />
+                        <input value={btn.destination} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],destination:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          placeholder="URL or /path" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none" />
+                        <select value={btn.type} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],type:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                          <option value="external">External link</option>
+                          <option value="internal">Internal page</option>
+                        </select>
+                        <select value={btn.variant ?? "primary"} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],variant:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                          <option value="primary">Primary</option>
+                          <option value="secondary">Secondary</option>
+                          <option value="outline">Outline</option>
+                        </select>
+                      </div>
+                      <button type="button" onClick={() => { const b=[...epForm.sideContent.buttons]; b.splice(bi,1); setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                        className="text-[#666] hover:text-red-400 mt-1">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Form Builder ───────────────────────────────── */}
+          <div className="border border-[#2a2a2a] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Custom Form</span>
+              <button type="button" onClick={() => setEpField("formConfig", { ...epForm.formConfig, enabled: !epForm.formConfig?.enabled })}
+                className={`w-8 h-4 rounded-full relative transition-all ${epForm.formConfig?.enabled ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.formConfig?.enabled ? "right-0.5" : "left-0.5"}`} />
+              </button>
+            </div>
+            {epForm.formConfig?.enabled && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Form Title</label>
+                    <input value={epForm.formConfig?.title ?? ""} onChange={e => setEpField("formConfig",{...epForm.formConfig,title:e.target.value})}
+                      placeholder="e.g. Lesson Feedback" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Description</label>
+                    <input value={epForm.formConfig?.description ?? ""} onChange={e => setEpField("formConfig",{...epForm.formConfig,description:e.target.value})}
+                      placeholder="Optional description" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Submit Button Label</label>
+                    <input value={epForm.formConfig?.submitLabel ?? "Submit"} onChange={e => setEpField("formConfig",{...epForm.formConfig,submitLabel:e.target.value})}
+                      placeholder="Submit" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="flex items-center gap-2 pt-4">
+                    <button type="button" onClick={() => setEpField("formConfig",{...epForm.formConfig,allowMultiple:!epForm.formConfig?.allowMultiple})}
+                      className={`w-8 h-4 rounded-full relative transition-all flex-shrink-0 ${epForm.formConfig?.allowMultiple ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                      <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.formConfig?.allowMultiple ? "right-0.5" : "left-0.5"}`} />
+                    </button>
+                    <span className="text-[11px] text-[#888]">Allow multiple submissions</span>
+                  </div>
+                </div>
+                {/* Fields */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Fields ({(epForm.formConfig?.fields ?? []).length})</span>
+                    <button type="button"
+                      onClick={() => setEpField("formConfig",{...epForm.formConfig,fields:[...(epForm.formConfig?.fields ?? []),EMPTY_FORM_FIELD()]})}
+                      className="text-[10px] font-bold uppercase tracking-widest text-[#dc2626] hover:text-red-400 font-rajdhani">+ Add Field</button>
+                  </div>
+                  {(epForm.formConfig?.fields ?? []).map((field: any, fi: number) => {
+                    const hasOptions = ["dropdown","radio","checkbox"].includes(field.type);
+                    const setField = (patch: any) => { const f=[...epForm.formConfig.fields]; f[fi]={...f[fi],...patch}; setEpField("formConfig",{...epForm.formConfig,fields:f}); };
+                    const moveField = (dir: -1|1) => { const f=[...epForm.formConfig.fields]; const to=fi+dir; if(to<0||to>=f.length)return; [f[fi],f[to]]=[f[to],f[fi]]; setEpField("formConfig",{...epForm.formConfig,fields:f}); };
+                    return (
+                      <div key={field.id} className="bg-[#141414] border border-[#2a2a2a] rounded-lg p-3 mb-2 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <button type="button" onClick={() => moveField(-1)} className="text-[#555] hover:text-[#aaa] leading-none text-[10px]">▲</button>
+                            <button type="button" onClick={() => moveField(1)} className="text-[#555] hover:text-[#aaa] leading-none text-[10px]">▼</button>
+                          </div>
+                          <select value={field.type} onChange={e => setField({type:e.target.value})}
+                            className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                            {FORM_FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                          <input value={field.label} onChange={e => setField({label:e.target.value})}
+                            placeholder="Field label *" className="flex-1 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none" />
+                          <button type="button" onClick={() => { const f=[...epForm.formConfig.fields]; f.splice(fi,1); setEpField("formConfig",{...epForm.formConfig,fields:f}); }}
+                            className="text-[#666] hover:text-red-400 text-[12px]">✕</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={field.placeholder ?? ""} onChange={e => setField({placeholder:e.target.value})}
+                            placeholder="Placeholder" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={field.required ?? false} onChange={e => setField({required:e.target.checked})} className="accent-[#dc2626]" />
+                            <span className="text-[12px] text-[#888]">Required</span>
+                          </label>
+                        </div>
+                        {hasOptions && (
+                          <div>
+                            <label className="text-[11px] text-[#606060] font-rajdhani uppercase tracking-wide">Options (one per line)</label>
+                            <textarea value={(field.options ?? []).join("\n")} onChange={e => setField({options:e.target.value.split("\n").map((s:string)=>s.trim()).filter(Boolean)})}
+                              rows={3} placeholder={"Option 1\nOption 2\nOption 3"}
+                              className="w-full mt-1 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none resize-none" />
+                          </div>
+                        )}
+                        <details className="text-[11px]">
+                          <summary className="cursor-pointer text-[#555] hover:text-[#888] font-rajdhani uppercase tracking-wide">Validation</summary>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            {(field.type==="text"||field.type==="textarea") && <>
+                              <input type="number" value={field.validation?.minLength??""} onChange={e=>setField({validation:{...field.validation,minLength:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Min length" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                              <input type="number" value={field.validation?.maxLength??""} onChange={e=>setField({validation:{...field.validation,maxLength:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Max length" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                            </>}
+                            {field.type==="number" && <>
+                              <input type="number" value={field.validation?.min??""} onChange={e=>setField({validation:{...field.validation,min:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Min value" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                              <input type="number" value={field.validation?.max??""} onChange={e=>setField({validation:{...field.validation,max:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Max value" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                            </>}
+                            <input value={field.validation?.errorMessage??""} onChange={e=>setField({validation:{...field.validation,errorMessage:e.target.value||undefined}})}
+                              placeholder="Custom error message" className="col-span-2 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}

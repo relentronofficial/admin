@@ -2559,6 +2559,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS batch_visibility_ids JSONB DEFAULT '[]'`);
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS module VARCHAR(100)`);
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`);
+
+    // ── Episode dynamic content + form builder (2026-10-23) ──────────────────
+    await safeAlter(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS episode_side_content JSONB`);
+    await safeAlter(`ALTER TABLE course_episodes ADD COLUMN IF NOT EXISTS episode_form_config JSONB`);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS episode_form_submissions (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        episode_id   UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,
+        member_id    UUID REFERENCES members(id) ON DELETE SET NULL,
+        course_id    TEXT NOT NULL DEFAULT '',
+        data         JSONB NOT NULL DEFAULT '{}',
+        submitted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_efs_episode_submitted ON episode_form_submissions(episode_id, submitted_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_efs_member_episode ON episode_form_submissions(member_id, episode_id)`
+    ).catch(() => {});
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }

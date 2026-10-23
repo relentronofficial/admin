@@ -312,6 +312,7 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.*, e.section_id, e.timer_seconds, e.streak_points,
          e.lifeline_enabled, e.lifeline_count, e.lifeline_coin_cost, e.max_purchased_lifelines,
+         e.episode_side_content, e.episode_form_config,
          s.title AS section_title, s.sort_order AS section_sort_order
        FROM course_episodes e
        LEFT JOIN course_sections s ON s.id = e.section_id
@@ -346,6 +347,8 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
     sectionId: e.section_id ?? null, sectionTitle: e.section_title ?? null,
     sectionSortOrder: e.section_sort_order != null ? Number(e.section_sort_order) : null,
     moduleIds: modulesByEpisode.get(e.id) ?? [],
+    sideContent: e.episode_side_content ?? null,
+    formConfig: e.episode_form_config ?? null,
     createdAt: e.created_at, updatedAt: e.updated_at,
   }));
   return reply.send({ success: true, data: episodes, error: null });
@@ -394,6 +397,8 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   const streakPoints = body.streakPoints != null ? Number(body.streakPoints) || 0 : 0;
   const sectionId = body.sectionId || null;
   const moduleIds: string[] = Array.isArray(body.moduleIds) ? body.moduleIds : [];
+  const sideContent = body.sideContent !== undefined ? (body.sideContent === null ? null : body.sideContent) : null;
+  const formConfig = body.formConfig !== undefined ? (body.formConfig === null ? null : body.formConfig) : null;
   const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== null) rawUpdates.push(req.server.prisma.$executeRawUnsafe(
     'UPDATE course_episodes SET timer_seconds = $1 WHERE id = $2::uuid', timerSecs, episode.id
@@ -411,9 +416,15 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
       episode.id, ...moduleIds,
     ).catch(() => {}));
   }
+  rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+    'UPDATE course_episodes SET episode_side_content = $1::jsonb, episode_form_config = $2::jsonb WHERE id = $3::uuid',
+    sideContent != null ? JSON.stringify(sideContent) : null,
+    formConfig != null ? JSON.stringify(formConfig) : null,
+    episode.id,
+  ).catch(() => {}));
   if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
-  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, streakPoints, sectionId, moduleIds }, error: null });
+  return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, streakPoints, sectionId, moduleIds, sideContent, formConfig }, error: null });
 }
 
 export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -435,6 +446,8 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   const lifelineCoinCost = 'lifelineCoinCost' in body ? (Number(body.lifelineCoinCost) || 50) : undefined;
   const maxPurchasedLifelines = 'maxPurchasedLifelines' in body ? (Number(body.maxPurchasedLifelines) || 5) : undefined;
   const moduleIds: string[] | undefined = 'moduleIds' in body && Array.isArray(body.moduleIds) ? body.moduleIds : undefined;
+  const sideContent = 'sideContent' in body ? (body.sideContent === null ? null : body.sideContent) : undefined;
+  const formConfig = 'formConfig' in body ? (body.formConfig === null ? null : body.formConfig) : undefined;
   const episode = await req.server.prisma.courseEpisode.update({ where: { id: eid }, data });
   const rawUpdates: Promise<any>[] = [];
   if (timerSecs !== undefined) {
@@ -470,9 +483,21 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
     `UPDATE course_episodes SET lifeline_enabled = $1, lifeline_count = $2, lifeline_coin_cost = $3, max_purchased_lifelines = $4 WHERE id = $5::uuid`,
     lifelineEnabled, lifelineCount ?? 3, lifelineCoinCost ?? 50, maxPurchasedLifelines ?? 5, eid,
   ).catch(() => {}));
+  if (sideContent !== undefined) {
+    rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+      `UPDATE course_episodes SET episode_side_content = $1::jsonb WHERE id = $2::uuid`,
+      sideContent != null ? JSON.stringify(sideContent) : null, eid,
+    ).catch(() => {}));
+  }
+  if (formConfig !== undefined) {
+    rawUpdates.push(req.server.prisma.$executeRawUnsafe(
+      `UPDATE course_episodes SET episode_form_config = $1::jsonb WHERE id = $2::uuid`,
+      formConfig != null ? JSON.stringify(formConfig) : null, eid,
+    ).catch(() => {}));
+  }
   if (rawUpdates.length) await Promise.all(rawUpdates);
   bustHome(req);
-  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, streakPoints: streakPoints ?? undefined, sectionId: sectionId ?? null, moduleIds: moduleIds ?? [], lifelineEnabled: lifelineEnabled ?? true, lifelineCount: lifelineCount ?? 3, lifelineCoinCost: lifelineCoinCost ?? 50, maxPurchasedLifelines: maxPurchasedLifelines ?? 5 }, error: null });
+  return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, streakPoints: streakPoints ?? undefined, sectionId: sectionId ?? null, moduleIds: moduleIds ?? [], lifelineEnabled: lifelineEnabled ?? true, lifelineCount: lifelineCount ?? 3, lifelineCoinCost: lifelineCoinCost ?? 50, maxPurchasedLifelines: maxPurchasedLifelines ?? 5, sideContent: sideContent ?? null, formConfig: formConfig ?? null }, error: null });
 }
 
 export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -491,6 +516,36 @@ export async function reorderCourseEpisodesHandler(req: FastifyRequest, reply: F
   );
   bustHome(req);
   return reply.send({ success: true, data: null, error: null });
+}
+
+// ── Episode Form Submissions (admin) ────────────────────────────────────────
+
+export async function listEpisodeFormSubmissionsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { eid } = req.params as any;
+  const { page = 1, limit = 50 } = req.query as any;
+  const offset = (Number(page) - 1) * Number(limit);
+  const [rows, countRows] = await Promise.all([
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT s.id, s.episode_id, s.member_id, s.course_id, s.data, s.submitted_at,
+              m.first_name, m.last_name, m.phone, m.email
+       FROM episode_form_submissions s
+       LEFT JOIN members m ON m.id = s.member_id
+       WHERE s.episode_id = $1::uuid
+       ORDER BY s.submitted_at DESC
+       LIMIT $2 OFFSET $3`,
+      eid, Number(limit), offset,
+    ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) AS total FROM episode_form_submissions WHERE episode_id = $1::uuid`, eid,
+    ),
+  ]);
+  const total = Number(countRows[0]?.total ?? 0);
+  const data = rows.map((r) => ({
+    id: r.id, episodeId: r.episode_id, memberId: r.member_id, courseId: r.course_id,
+    data: r.data, submittedAt: r.submitted_at,
+    member: r.member_id ? { firstName: r.first_name, lastName: r.last_name, phone: r.phone, email: r.email } : null,
+  }));
+  return reply.send({ success: true, data, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
 
 // ── LEGACY STUBS (kept for existing TBT LMS hooks) ───────────────────

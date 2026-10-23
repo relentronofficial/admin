@@ -23,6 +23,7 @@ import {
   updateCourseModuleHandler, deleteCourseModuleHandler, reorderCourseModulesHandler,
   listCourseFaqsAdminHandler, createCourseFaqHandler, updateCourseFaqHandler,
   deleteCourseFaqHandler, reorderCourseFaqsHandler,
+  listEpisodeFormSubmissionsHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -96,6 +97,9 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/episodes/:eid/resources/reorder', reorderEpisodeResourcesHandler);
   fastify.put('/episodes/:eid/resources/:rid', updateEpisodeResourceHandler);
   fastify.delete('/episodes/:eid/resources/:rid', deleteEpisodeResourceHandler);
+
+  // Episode form submissions (admin read-only)
+  fastify.get('/episodes/:eid/form-submissions', listEpisodeFormSubmissionsHandler);
 
   // Per-episode tasks
   fastify.get('/episodes/:eid/tasks', listEpisodeTasksHandler);

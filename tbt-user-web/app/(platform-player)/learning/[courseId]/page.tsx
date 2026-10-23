@@ -15,6 +15,8 @@ import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { EpisodeResourcesSection } from "@/components/features/course/EpisodeResourcesSection";
+import { EpisodeSideContent } from "@/components/features/course/EpisodeSideContent";
+import { EpisodeCustomForm } from "@/components/features/course/EpisodeCustomForm";
 import { useRegisterMedia, useSuppressAds } from "@/lib/ads/useRegisterMedia";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -3357,6 +3359,19 @@ export default function CourseDetailPage({
                   ))}
                 </div>
               </div>
+            )}
+
+            {/* Episode Side Content (admin-configured text + buttons) */}
+            {(selectedLesson as any)?.sideContent?.enabled && (
+              <EpisodeSideContent config={(selectedLesson as any).sideContent} />
+            )}
+
+            {/* Episode Custom Form */}
+            {(selectedLesson as any)?.formConfig?.enabled && (
+              <EpisodeCustomForm
+                episodeId={selectedLesson!.id}
+                config={(selectedLesson as any).formConfig}
+              />
             )}
           </div>
         ) : (

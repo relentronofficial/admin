@@ -407,3 +407,25 @@ export const useCourseFaqs = () =>
     },
     staleTime: 5 * 60 * 1000,
   });
+
+
+export const useSubmitEpisodeForm = (episodeId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      coursesService.submitEpisodeForm(episodeId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["episode-form-submission", episodeId] });
+    },
+  });
+};
+
+export const useMyEpisodeFormSubmission = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-form-submission", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getMyEpisodeFormSubmission(episodeId!);
+      return res.data ?? null;
+    },
+    enabled: !!episodeId,
+  });

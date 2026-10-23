@@ -1116,6 +1116,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
               e.streak_points AS streak_points,
+              e.episode_side_content, e.episode_form_config,
               s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
        FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
        WHERE e.course_id = $1::uuid`,
@@ -1151,6 +1152,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionTimerSeconds: r.section_timer_seconds != null ? Number(r.section_timer_seconds) : null,
       episodeTimerSeconds: r.episode_timer_seconds != null ? Number(r.episode_timer_seconds) : null,
       streakPoints: r.streak_points != null ? Number(r.streak_points) : 0,
+      sideContent: r.episode_side_content ?? null,
+      formConfig: r.episode_form_config ?? null,
     }]),
   );
 
@@ -1233,6 +1236,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
       moduleIds: episodeModuleMap.get(ep.id) ?? [],
       thumbnailUrl: ep.thumbnailUrl ?? null,
+      sideContent: episodeSectionMap.get(ep.id)?.sideContent ?? null,
+      formConfig: episodeSectionMap.get(ep.id)?.formConfig ?? null,
     };
   });
 
@@ -8205,4 +8210,52 @@ export async function upsertMentorshipSocialHandler(request: FastifyRequest, rep
     bioLinkClicksPrev:    r.bio_link_clicks_prev != null ? Number(r.bio_link_clicks_prev) : null,
     updatedAt:            r.updated_at ? new Date(r.updated_at).toISOString() : null,
   });
+}
+
+// ── Episode Form Submissions (member-facing) ──────────────────────────────────
+
+export async function submitEpisodeFormHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id: episodeId } = request.params as any;
+  const body = request.body as any;
+
+  // Validate episode exists and belongs to a course the member has access to
+  const epRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT e.id, e.course_id, e.episode_form_config FROM course_episodes e WHERE e.id = $1::uuid`, episodeId,
+  );
+  if (!epRows[0]) return fail(reply, 404, 'Episode not found');
+  const formCfg = epRows[0].episode_form_config;
+  if (!formCfg?.enabled) return fail(reply, 400, 'This episode does not have a form');
+
+  const courseId = epRows[0].course_id;
+  const allowMultiple = formCfg.allowMultiple ?? false;
+
+  if (!allowMultiple) {
+    const existing = await request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM episode_form_submissions WHERE episode_id = $1::uuid AND member_id = $2::uuid LIMIT 1`,
+      episodeId, memberId,
+    );
+    if (existing.length > 0) return fail(reply, 409, 'You have already submitted this form');
+  }
+
+  const submissionData = typeof body.data === 'object' && body.data !== null ? body.data : {};
+  const [row] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO episode_form_submissions (episode_id, member_id, course_id, data)
+     VALUES ($1::uuid, $2::uuid, $3, $4::jsonb)
+     RETURNING id, submitted_at`,
+    episodeId, memberId, courseId, JSON.stringify(submissionData),
+  );
+  return reply.status(201).send({ success: true, data: { id: row.id, submittedAt: row.submitted_at }, error: null });
+}
+
+export async function getMyEpisodeFormSubmissionHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id: episodeId } = request.params as any;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, data, submitted_at FROM episode_form_submissions
+     WHERE episode_id = $1::uuid AND member_id = $2::uuid
+     ORDER BY submitted_at DESC LIMIT 1`,
+    episodeId, memberId,
+  );
+  return reply.send({ success: true, data: rows[0] ? { id: rows[0].id, data: rows[0].data, submittedAt: rows[0].submitted_at } : null, error: null });
 }

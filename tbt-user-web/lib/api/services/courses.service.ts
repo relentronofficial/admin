@@ -110,6 +110,12 @@ export const coursesService = {
   useEpisodeLifeline: (episodeId: string, type: 'free' | 'coin') =>
     apiClient.post<never, ApiResponse<{ freeRemaining: number; totalUsed: number; coinsDeducted?: number; remainingCoins?: number }>>(`/api/user/episodes/${episodeId}/lifelines/use`, { type }),
 
+  submitEpisodeForm: (episodeId: string, data: Record<string, unknown>) =>
+    apiClient.post<never, ApiResponse<{ id: string; submittedAt: string }>>(`/api/user/episodes/${episodeId}/form-submissions`, { data }),
+
+  getMyEpisodeFormSubmission: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<{ id: string; data: Record<string, unknown>; submittedAt: string } | null>>(`/api/user/episodes/${episodeId}/form-submissions/mine`),
+
   createRazorpayOrder: (courseId: string) =>
     apiClient.post<never, ApiResponse<RazorpayOrderResult>>(`/api/user/courses/${courseId}/razorpay/create-order`),
 

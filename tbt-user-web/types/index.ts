@@ -430,6 +430,11 @@ export interface UiStrings {
   mentorshipModulesRetry?: string;
   mentorshipModulesSaved?: string;
   mentorshipModulesNotSelected?: string;
+  // Episode dynamic content + form builder (2026-10-23)
+  episodeSideContentHeading?: string;
+  episodeFormHeading?: string;
+  episodeFormSubmittedMessage?: string;
+  episodeFormSubmitLabel?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────

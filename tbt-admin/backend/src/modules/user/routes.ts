@@ -116,6 +116,8 @@ import {
   heartbeatEpisodeTimerHandler,
   getEpisodeLifelinesHandler,
   useEpisodeLifelineHandler,
+  submitEpisodeFormHandler,
+  getMyEpisodeFormSubmissionHandler,
   getPsychometricQuestionsHandler,
   submitPsychometricHandler,
   getMyPsychometricResultHandler,
@@ -292,6 +294,8 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/episodes/:id/timer/heartbeat', heartbeatEpisodeTimerHandler);
   fastify.get('/episodes/:id/lifelines', getEpisodeLifelinesHandler);
   fastify.post('/episodes/:id/lifelines/use', useEpisodeLifelineHandler);
+  fastify.post('/episodes/:id/form-submissions', submitEpisodeFormHandler);
+  fastify.get('/episodes/:id/form-submissions/mine', getMyEpisodeFormSubmissionHandler);
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);
