@@ -11,6 +11,7 @@ import {
   type GraphWeekRow,
 } from './weeklyGraphConfig.js';
 import type { GraphRecordInput } from './weeklyGraphLogic.js';
+import type { RevenueWeekRow } from './weeklyGraphRevenue.js';
 
 type Prisma = any;
 
@@ -22,7 +23,8 @@ export async function loadProgramGraphRows(prisma: Prisma, programId: string): P
       programId,
     ).catch(() => []),
     prisma.$queryRawUnsafe(
-      `SELECT id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"
+      `SELECT id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive",
+              threshold_amount::float8 AS "threshold"
        FROM graph_milestones WHERE program_id = $1::uuid ORDER BY sort_order, label`,
       programId,
     ).catch(() => []),
@@ -44,6 +46,24 @@ export async function loadMemberGraphRecords(prisma: Prisma, memberId: string): 
     memberId,
   ).catch(() => []);
   return rows as GraphRecordInput[];
+}
+
+/**
+ * This member's reported weekly revenue (member_revenue_reports — the figure
+ * "Your Revenue Stats" shows). Always scoped to the one member; a failed read
+ * yields no revenue data rather than an error, so the graph still renders.
+ */
+export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): Promise<RevenueWeekRow[]> {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue
+     FROM member_revenue_reports WHERE member_id = $1::uuid`,
+    memberId,
+  ).catch(() => []);
+  return (rows as any[]).map((r) => ({
+    isoYear: Number(r.isoYear),
+    isoWeek: Number(r.isoWeek),
+    revenue: r.revenue === null || r.revenue === undefined ? null : Number(r.revenue),
+  }));
 }
 
 /**

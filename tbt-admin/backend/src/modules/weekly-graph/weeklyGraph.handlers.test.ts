@@ -27,20 +27,22 @@ interface Store {
   admins: Record<string, { id: string; fullName: string; role: string }>;
   programs: Array<{ id: string; name: string; durationDays: number }>;
   weeks: Array<{ id: string; programId: string; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }>;
-  milestones: Array<{ id: string; programId: string; label: string; kind: string; sortOrder: number; isActive: boolean }>;
+  milestones: Array<{ id: string; programId: string; label: string; kind: string; sortOrder: number; isActive: boolean; threshold?: number | null }>;
   tasks: Array<{ id: string; programId: string | null; batchId: string | null; title: string; dayNumber: number; sortOrder: number;
     isRequired: boolean; isActive: boolean; memberId: string | null; weekId: string | null; milestoneId: string | null;
     isMilestone: boolean; milestoneLabel: string | null }>;
   submissions: Array<{ taskId: string; memberId: string; dayNumber: number; status: string }>;
   records: Array<{ id: string; memberId: string; milestoneId: string; weekId: string | null; note: string | null; recordedBy: string; recordedAt: Date }>;
   members: Array<{ id: string; firstName: string; lastName: string; batchId: string | null }>;
+  /** member_revenue_reports: the member's own weekly figure ("Your Revenue Stats"), per IST ISO week. */
+  revenues: Array<{ memberId: string; isoYear: number; isoWeek: number; revenue: number | null }>;
 }
 let db: Store;
 const unhandled: string[] = [];
 
 const norm = (s: string | null) => (s ?? '').trim().toLowerCase().replace(/s$/, '');
 const weekOut = (w: Store['weeks'][number]) => ({ id: w.id, label: w.label, startDay: w.startDay, endDay: w.endDay, sortOrder: w.sortOrder, isActive: w.isActive });
-const msOut = (m: Store['milestones'][number]) => ({ id: m.id, label: m.label, kind: m.kind, sortOrder: m.sortOrder, isActive: m.isActive });
+const msOut = (m: Store['milestones'][number]) => ({ id: m.id, label: m.label, kind: m.kind, sortOrder: m.sortOrder, isActive: m.isActive, threshold: m.threshold ?? null });
 const sorted = <T extends { sortOrder: number; label: string }>(xs: T[]) => [...xs].sort((a, b) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label));
 
 /** Answers exactly the statements the graph handlers issue. Unknown SQL fails loudly. */
@@ -88,15 +90,15 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     }];
   }
   if (q.startsWith('DELETE FROM graph_weeks')) { db.weeks = db.weeks.filter((w) => !(w.id === a[1] && w.programId === a[0])); return 1; }
-  if (q.startsWith('INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active) VALUES')) {
+  if (q.startsWith('INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active, threshold_amount) VALUES')) {
     const order = Math.max(-1, ...db.milestones.filter((m) => m.programId === a[0]).map((m) => m.sortOrder)) + 1;
-    const m = { id: uuid(), programId: a[0], label: a[1], kind: a[2], sortOrder: order, isActive: a[3] };
+    const m = { id: uuid(), programId: a[0], label: a[1], kind: a[2], sortOrder: order, isActive: a[3], threshold: a[4] };
     db.milestones.push(m);
     return [msOut(m)];
   }
-  if (q.startsWith('UPDATE graph_milestones SET label')) {
+  if (q.startsWith('UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, threshold_amount = $6')) {
     const m = db.milestones.find((x) => x.id === a[1] && x.programId === a[0])!;
-    Object.assign(m, { label: a[2], kind: a[3], isActive: a[4] });
+    Object.assign(m, { label: a[2], kind: a[3], isActive: a[4], threshold: a[5] });
     return [msOut(m)];
   }
   if (q.startsWith('UPDATE tasks SET milestone_label = $2 WHERE graph_milestone_id')) {
@@ -150,6 +152,9 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return db.records.filter((r) => r.memberId === a[0]).map((r) => ({ milestoneId: r.milestoneId, weekId: r.weekId }));
   }
   if (q.startsWith('SELECT extended_days FROM member_batch_settings')) return [];
+  if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue FROM member_revenue_reports')) {
+    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue }));
+  }
   if (q.startsWith('SELECT id::text, title, day_number, sort_order, is_required')) {
     const [batchId, programId, memberId] = a;
     return db.tasks.filter((t) => t.isActive && (t.batchId === batchId || (programId && t.programId === programId && !t.batchId)) && (!t.memberId || t.memberId === memberId))
@@ -226,6 +231,7 @@ beforeEach(() => {
       { id: MEMBER, firstName: 'Priya', lastName: 'K', batchId: BATCH },
       { id: OTHER_MEMBER, firstName: 'Ravi', lastName: 'S', batchId: BATCH },
     ],
+    revenues: [],
   };
 });
 
@@ -447,6 +453,141 @@ describe('authorization', () => {
     await call(graph.initializeHandler, { params: P });
     expect((await call(graph.updateWeekHandler, { params: { ...P, id: '99999999-0000-4000-8000-000000000000' }, body: { label: 'Y' } })).status).toBe(404);
     expect((await call(graph.listRecordsHandler, { params: { memberId: 'nope' } })).status).toBe(400);
+  });
+});
+
+describe('revenue milestones and activity markers (admin → API → member graph)', () => {
+  // The batch started 19 days ago (see server()), so today is program day 20 (W3).
+  const BATCH_START = () => Date.now() - 19 * DAY;
+  /** IST ISO week of a program day, the way member_revenue_reports stores "Your Revenue Stats". */
+  const isoOfDay = (day: number) => {
+    const ist = new Date(BATCH_START() + (day - 1) * DAY + 5.5 * 3_600_000);
+    const d = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()));
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 3);
+    const jan4 = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    jan4.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + 3);
+    return { isoYear: d.getUTCFullYear(), isoWeek: 1 + Math.round((d.getTime() - jan4.getTime()) / (7 * DAY)) };
+  };
+  /**
+   * The program day in [startDay, endDay] that is a Monday (IST). A calendar
+   * week's revenue counts from its Monday, so reporting for the week starting on
+   * this day lands in that program week whatever weekday the suite runs on.
+   */
+  const mondayIn = (startDay: number, endDay: number) => {
+    for (let d = startDay; d <= endDay; d++) {
+      if (new Date(BATCH_START() + (d - 1) * DAY + 5.5 * 3_600_000).getUTCDay() === 1) return d;
+    }
+    throw new Error('no Monday in range');
+  };
+  const report = (memberId: string, day: number, revenue: number | null) => db.revenues.push({ memberId, ...isoOfDay(day), revenue });
+  const setRevenue = (memberId: string, day: number, revenue: number | null) => {
+    const k = isoOfDay(day);
+    db.revenues.find((r) => r.memberId === memberId && r.isoYear === k.isoYear && r.isoWeek === k.isoWeek)!.revenue = revenue;
+  };
+  const milestoneByLabel = async (label: string) => (await config()).milestones.find((m: any) => m.label === label);
+  const msOf = (g: any, label: string) => g.config.milestones.find((m: any) => m.label === label);
+
+  /** Admin turns the default "1 lakh" / "1 crore" into ₹1 Lakh / ₹5 Lakhs with real thresholds. */
+  const configureThresholds = async () => {
+    await call(graph.initializeHandler, { params: P });
+    const lakh = await milestoneByLabel('1 lakh');
+    const crore = await milestoneByLabel('1 crore');
+    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { label: '₹1 Lakh', threshold: 100000 } })).status).toBe(200);
+    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: crore.id }, body: { label: '₹5 Lakhs', threshold: '500000' } })).status).toBe(200);
+  };
+
+  it('saved thresholds persist and the member graph uses them; nothing is reached without revenue', async () => {
+    await configureThresholds();
+    expect((await config()).milestones.filter((m: any) => m.kind === 'revenue').map((m: any) => [m.label, m.threshold]))
+      .toEqual([['₹1 Lakh', 100000], ['₹5 Lakhs', 500000]]);
+    const g = await memberGraph();
+    expect(g.config.milestones.filter((m: any) => m.kind === 'revenue').map((m: any) => [m.label, m.threshold, m.reached]))
+      .toEqual([['₹1 Lakh', 100000, false], ['₹5 Lakhs', 500000, false]]);
+    expect(g.revenue).toEqual({ source: 'self_reported', totalToDate: null });
+    expect(g.weeks.every((w: any) => w.cumulativeRevenue === null)).toBe(true);
+  });
+
+  it("the member's own reported revenue reaches ₹1 Lakh in the crossing week, not ₹5 Lakhs, and never another member's", async () => {
+    await configureThresholds();
+    report(MEMBER, mondayIn(1, 7), 60000);
+    report(MEMBER, mondayIn(8, 14), 50000);
+    report(OTHER_MEMBER, mondayIn(1, 7), 900000);
+    const g = await memberGraph(MEMBER);
+    expect(msOf(g, '₹1 Lakh')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2 });
+    expect(msOf(g, '₹5 Lakhs')).toMatchObject({ reached: false, reachedBy: null });
+    expect(g.revenue.totalToDate).toBe(110000);
+    expect(g.weeks.slice(0, 3).map((w: any) => w.cumulativeRevenue)).toEqual([60000, 110000, 110000]);
+    expect(g.weeks[3].cumulativeRevenue).toBeNull(); // W4 has not started
+    const other = await memberGraph(OTHER_MEMBER);
+    expect(msOf(other, '₹5 Lakhs')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 1 });
+  });
+
+  it('revenue edited down, or a threshold raised, is recalculated on the next read', async () => {
+    await configureThresholds();
+    report(MEMBER, mondayIn(1, 7), 60000);
+    report(MEMBER, mondayIn(8, 14), 50000);
+    expect(msOf(await memberGraph(), '₹1 Lakh').reached).toBe(true);
+    setRevenue(MEMBER, mondayIn(8, 14), 30000);
+    expect(msOf(await memberGraph(), '₹1 Lakh')).toMatchObject({ reached: false, reachedWeek: null });
+    setRevenue(MEMBER, mondayIn(8, 14), 50000);
+    const lakh = await milestoneByLabel('₹1 Lakh');
+    await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { threshold: 150000 } });
+    expect(msOf(await memberGraph(), '₹1 Lakh')).toMatchObject({ reached: false, threshold: 150000 });
+  });
+
+  it('a blank week of revenue is not read as ₹0 or as any amount', async () => {
+    await configureThresholds();
+    report(MEMBER, mondayIn(1, 7), null);
+    const g = await memberGraph();
+    expect(g.revenue.totalToDate).toBeNull();
+    expect(g.weeks[0].revenue).toBeNull();
+  });
+
+  it('rejects a threshold on an activity milestone and a non-positive amount', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const ads = await milestoneByLabel('Ads');
+    const lakh = await milestoneByLabel('1 lakh');
+    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: ads.id }, body: { threshold: 1000 } })).status).toBe(400);
+    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { threshold: 0 } })).status).toBe(400);
+    expect((await call(graph.createMilestoneHandler, { params: P, body: { label: '₹10 Lakhs', kind: 'revenue', threshold: -1 } })).status).toBe(400);
+    expect((await call(graph.createMilestoneHandler, { params: P, body: { label: '₹10 Lakhs', kind: 'revenue', threshold: 1000000 } })).body.data)
+      .toMatchObject({ label: '₹10 Lakhs', kind: 'revenue', threshold: 1000000 });
+  });
+
+  it('"Ads W1" and "Website W2" show as markers on their milestone rows; an edited title shows after saving', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    const ads = c.milestones.find((m: any) => m.label === 'Ads');
+    const web = c.milestones.find((m: any) => m.label === 'Website');
+    const a1 = await call(graph.createActivityHandler, { params: P, body: { title: 'Ads W1', weekId: c.weeks[0].id, milestoneId: ads.id } });
+    await call(graph.createActivityHandler, { params: P, body: { title: 'Website W2', weekId: c.weeks[1].id, milestoneId: web.id } });
+    let g = await memberGraph();
+    expect(g.weeks[0].activities.find((a: any) => a.title === 'Ads W1')).toMatchObject({ milestoneLabel: 'Ads', level: 1 });
+    expect(g.weeks[1].activities.find((a: any) => a.title === 'Website W2')).toMatchObject({ milestoneLabel: 'Website', level: 2 });
+    expect(g.weeks.map((w: any) => w.label).slice(0, 2)).toEqual(['W1', 'W2']);
+    // Adding an activity is not completing it.
+    expect(g.weeks[0].activities.find((a: any) => a.title === 'Ads W1').completed).toBe(false);
+
+    await call(graph.updateActivityHandler, { params: { ...P, id: a1.body.data.id }, body: { title: 'Run Meta Ads W1' } });
+    g = await memberGraph();
+    expect(g.weeks[0].activities.map((a: any) => a.title)).toContain('Run Meta Ads W1');
+    expect(g.weeks[0].activities.map((a: any) => a.title)).not.toContain('Ads W1');
+
+    // Disabling an activity removes its marker.
+    await call(graph.updateActivityHandler, { params: { ...P, id: a1.body.data.id }, body: { isActive: false } });
+    expect((await memberGraph()).weeks[0].activities.map((a: any) => a.title)).not.toContain('Run Meta Ads W1');
+  });
+
+  it('configured W1–W10 show exactly up to W10; adding W11 extends the member graph to W11', async () => {
+    await call(graph.initializeHandler, { params: P }); // W1–W4 for the 28-day program
+    for (let n = 5; n <= 10; n++) {
+      expect((await call(graph.createWeekHandler, { params: P, body: { label: `W${n}`, startDay: (n - 1) * 7 + 1, endDay: n * 7 } })).status).toBe(200);
+    }
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(Array.from({ length: 10 }, (_, i) => `W${i + 1}`));
+    await call(graph.createWeekHandler, { params: P, body: { label: 'W11', startDay: 71, endDay: 77 } });
+    const g = await memberGraph();
+    expect(g.weeks).toHaveLength(11);
+    expect(g.weeks.at(-1)).toMatchObject({ label: 'W11', startDay: 71, endDay: 77 });
   });
 });
 

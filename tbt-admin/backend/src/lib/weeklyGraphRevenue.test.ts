@@ -1,0 +1,167 @@
+import { describe, expect, it } from 'vitest';
+import { resolveGraphConfig, validateMilestoneInput, type GraphMilestoneRow, type GraphWeekRow } from './weeklyGraphConfig.js';
+import { buildWeeklyGraph, type GraphTaskInput } from './weeklyGraphLogic.js';
+import { isoWeekStartIst, revenueEntriesForProgram } from './weeklyGraphRevenue.js';
+
+const ME = 'member-me';
+const task = (id: string, dayNumber: number, extra: Partial<GraphTaskInput> = {}): GraphTaskInput => ({
+  id, title: `Task ${id}`, dayNumber, sortOrder: 0, isRequired: true, memberId: null, ...extra,
+});
+const week = (id: string, label: string, startDay: number, endDay: number, sortOrder: number): GraphWeekRow =>
+  ({ id, label, startDay, endDay, sortOrder, isActive: true });
+const milestone = (id: string, label: string, kind: 'activity' | 'revenue', sortOrder: number, threshold: number | null = null): GraphMilestoneRow =>
+  ({ id, label, kind, sortOrder, isActive: true, threshold });
+
+const FOUR_WEEKS = [week('w1', 'W1', 1, 7, 0), week('w2', 'W2', 8, 14, 1), week('w3', 'W3', 15, 21, 2), week('w4', 'W4', 22, 28, 3)];
+const REV_MS = [
+  milestone('m-ads', 'Ads', 'activity', 0),
+  milestone('m-web', 'Website', 'activity', 1),
+  milestone('m-fun', 'Funnels', 'activity', 2),
+  milestone('m-1l', '₹1 Lakh', 'revenue', 3, 100000),
+  milestone('m-5l', '₹5 Lakhs', 'revenue', 4, 500000),
+];
+
+describe('isoWeekStartIst', () => {
+  it('gives Monday 00:00 IST of the ISO week', () => {
+    expect(isoWeekStartIst(2026, 43).toISOString()).toBe('2026-10-18T18:30:00.000Z'); // Mon 19 Oct 2026 IST
+    expect(isoWeekStartIst(2026, 1).toISOString()).toBe('2025-12-28T18:30:00.000Z'); // Mon 29 Dec 2025 IST
+    expect(isoWeekStartIst(2020, 53).toISOString()).toBe('2020-12-27T18:30:00.000Z'); // a 53-week year
+  });
+});
+
+describe('revenueEntriesForProgram', () => {
+  // Batch starts Wednesday 21 Oct 2026, 00:00 IST.
+  const start = new Date('2026-10-20T18:30:00.000Z');
+
+  it('places each reported week on its program day; a mid-week start takes that week on day 1', () => {
+    const e = revenueEntriesForProgram(
+      [{ isoYear: 2026, isoWeek: 45, revenue: 3000 }, { isoYear: 2026, isoWeek: 43, revenue: 1000 }, { isoYear: 2026, isoWeek: 44, revenue: 2000 }],
+      start,
+    );
+    // W43 Mon 19 Oct (before the start) → day 1; W44 Mon 26 Oct → day 6; W45 Mon 2 Nov → day 13.
+    expect(e.map((x) => [x.isoWeek, x.dayNumber, x.amount])).toEqual([[43, 1, 1000], [44, 6, 2000], [45, 13, 3000]]);
+  });
+
+  it("places by IST calendar date, whatever the batch start's time of day", () => {
+    // Batch starts Monday 19 Oct 2026: once at 05:30 IST (stored as midnight UTC), once at 18:30 IST.
+    for (const startsAt of [new Date('2026-10-19T00:00:00.000Z'), new Date('2026-10-19T13:00:00.000Z')]) {
+      const e = revenueEntriesForProgram([{ isoYear: 2026, isoWeek: 43, revenue: 1 }, { isoYear: 2026, isoWeek: 44, revenue: 2 }], startsAt);
+      // Mon 19 Oct = day 1, Mon 26 Oct = day 8: the first day of program week 2, never day 7.
+      expect(e.map((x) => x.dayNumber)).toEqual([1, 8]);
+    }
+  });
+
+  it('skips blank weeks and weeks entirely before the batch start; never invents ₹0', () => {
+    const e = revenueEntriesForProgram(
+      [{ isoYear: 2026, isoWeek: 42, revenue: 5000 }, { isoYear: 2026, isoWeek: 44, revenue: null }, { isoYear: 2026, isoWeek: 99, revenue: 1 }],
+      start,
+    );
+    expect(e).toEqual([]);
+  });
+});
+
+describe('revenue milestone thresholds (admin input)', () => {
+  it('a revenue milestone takes a positive amount; blank or null means no threshold', () => {
+    expect(validateMilestoneInput({ label: '₹1 Lakh', kind: 'revenue', threshold: 100000 })).toMatchObject({ ok: true, value: { threshold: 100000 } });
+    expect(validateMilestoneInput({ label: '₹1 Lakh', kind: 'revenue', threshold: '250000.456' })).toMatchObject({ ok: true, value: { threshold: 250000.46 } });
+    expect(validateMilestoneInput({ label: '₹1 Lakh', kind: 'revenue', threshold: '' })).toMatchObject({ ok: true, value: { threshold: null } });
+    for (const bad of [0, -5, 'abc', Infinity, 2e12]) {
+      expect(validateMilestoneInput({ label: 'X', kind: 'revenue', threshold: bad }).ok).toBe(false);
+    }
+  });
+
+  it('an activity milestone never has a threshold', () => {
+    expect(validateMilestoneInput({ label: 'Ads', kind: 'activity', threshold: 5000 }).ok).toBe(false);
+    // Switching a revenue milestone to activity drops its saved threshold.
+    const current = { label: '₹1 Lakh', kind: 'revenue' as const, isActive: true, threshold: 100000 };
+    expect(validateMilestoneInput({ kind: 'activity' }, current)).toMatchObject({ ok: true, value: { kind: 'activity', threshold: null } });
+  });
+
+  it('an update without a threshold keeps the saved one; null clears it', () => {
+    const current = { label: '₹1 Lakh', kind: 'revenue' as const, isActive: true, threshold: 100000 };
+    expect(validateMilestoneInput({ label: '₹1L' }, current)).toMatchObject({ ok: true, value: { label: '₹1L', threshold: 100000 } });
+    expect(validateMilestoneInput({ threshold: null }, current)).toMatchObject({ ok: true, value: { threshold: null } });
+  });
+
+  it('only saved revenue milestones carry a threshold into the graph; built-in defaults never do', () => {
+    const c = resolveGraphConfig({ weeks: [], milestones: [{ ...milestone('m-a', 'Ads', 'activity', 0), threshold: 999 }, milestone('m-r', '₹1 Lakh', 'revenue', 1, 100000)] });
+    expect(c.milestones.map((m) => m.threshold)).toEqual([null, 100000]);
+    expect(resolveGraphConfig({ weeks: [], milestones: [] }).milestones.every((m) => m.threshold === null)).toBe(true);
+  });
+});
+
+describe('revenue milestones from reported revenue', () => {
+  const rev = (dayNumber: number, amount: number) => ({ isoYear: 2026, isoWeek: 1, dayNumber, amount });
+  const build = (extra: Partial<Parameters<typeof buildWeeklyGraph>[0]> = {}) => buildWeeklyGraph({
+    memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 28, currentDay: 20,
+    config: resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: REV_MS }), ...extra,
+  });
+  const ms = (g: ReturnType<typeof build>, id: string) => g.config.milestones.find((m) => m.id === id)!;
+
+  it('reaches a revenue milestone in the week the running total crosses its threshold', () => {
+    const g = build({ revenue: [rev(3, 60000), rev(10, 50000)] });
+    expect(g.weeks.map((w) => [w.revenue, w.cumulativeRevenue])).toEqual([[60000, 60000], [50000, 110000], [null, 110000], [null, null]]);
+    expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2, threshold: 100000 });
+    expect(ms(g, 'm-5l')).toMatchObject({ reached: false, reachedBy: null, reachedWeek: null, threshold: 500000 });
+    // W1 (₹60k) stays below ₹1 Lakh; W2 onwards sits on it; W4 has not started.
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4, 4, null]);
+    expect(g.revenue).toEqual({ source: 'self_reported', totalToDate: 110000 });
+  });
+
+  it('recalculates from the data: revenue edited below the threshold un-reaches it', () => {
+    const g = build({ revenue: [rev(3, 60000), rev(10, 20000)] });
+    expect(ms(g, 'm-1l')).toMatchObject({ reached: false, reachedBy: null });
+    expect(g.weeks[1].progressLevel).toBe(0);
+  });
+
+  it('no reported revenue: nothing reached, no revenue figures, nothing assumed', () => {
+    const g = build({ revenue: [] });
+    expect(g.config.milestones.filter((m) => m.kind === 'revenue').every((m) => !m.reached)).toBe(true);
+    expect(g.weeks.every((w) => w.revenue === null && w.cumulativeRevenue === null)).toBe(true);
+    expect(g.revenue.totalToDate).toBeNull();
+  });
+
+  it('a revenue milestone without a threshold is never reached from revenue', () => {
+    const noThreshold = REV_MS.map((m) => (m.id === 'm-1l' ? { ...m, threshold: null } : m));
+    const g = build({ config: resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: noThreshold }), revenue: [rev(3, 9_000_000)] });
+    expect(ms(g, 'm-1l')).toMatchObject({ reached: false, threshold: null });
+    expect(ms(g, 'm-5l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 1 });
+    // The built-in defaults have no thresholds at all.
+    const d = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 9, revenue: [rev(1, 9_000_000)] });
+    expect(d.config.milestones.some((m) => m.reached)).toBe(false);
+  });
+
+  it('adding or completing an activity linked to a revenue milestone never reaches it', () => {
+    const g = build({ tasks: [task('t', 2, { graphMilestoneId: 'm-1l' })], submissions: [{ taskId: 't', dayNumber: 2, status: 'approved' }] });
+    expect(ms(g, 'm-1l').reached).toBe(false);
+    // The marker still sits on that milestone's row: position only.
+    expect(g.weeks[0].activities[0]).toMatchObject({ milestoneId: 'm-1l', milestoneLabel: '₹1 Lakh', level: 4, completed: true });
+    expect(g.weeks[0].progressLevel).toBe(3); // capped at the last activity milestone
+  });
+
+  it('an admin/mentor record still reaches a revenue milestone (manual override)', () => {
+    const g = build({ records: [{ milestoneId: 'm-5l', weekId: 'w3' }] });
+    expect(ms(g, 'm-5l')).toMatchObject({ reached: true, reachedBy: 'record', reachedWeek: 3 });
+    expect(g.weeks[2].progressLevel).toBe(5);
+  });
+
+  it('revenue evidence is reported ahead of a record for the same milestone', () => {
+    const g = build({ revenue: [rev(3, 150000)], records: [{ milestoneId: 'm-1l', weekId: 'w3' }] });
+    expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 1 });
+  });
+
+  it('each activity carries its own milestone link, so several in one week stay separate', () => {
+    const g = build({ tasks: [task('a', 1, { graphMilestoneId: 'm-ads' }), task('b', 2, { graphMilestoneId: 'm-web' }), task('c', 3)] });
+    expect(g.weeks[0].activities.map((a) => [a.taskId, a.milestoneLabel, a.level])).toEqual([['a', 'Ads', 1], ['b', 'Website', 2], ['c', null, 0]]);
+  });
+
+  it('W1–W10 show exactly ten weeks; adding W11 shows eleven', () => {
+    const ten = Array.from({ length: 10 }, (_, i) => week(`w${i + 1}`, `W${i + 1}`, i * 7 + 1, i * 7 + 7, i));
+    const g10 = build({ config: resolveGraphConfig({ weeks: ten, milestones: REV_MS }), totalDays: 90, currentDay: 40 });
+    expect(g10.weeks.map((w) => w.label)).toEqual(ten.map((w) => w.label));
+    const eleven = [...ten, week('w11', 'W11', 71, 77, 10)];
+    const g11 = build({ config: resolveGraphConfig({ weeks: eleven, milestones: REV_MS }), totalDays: 90, currentDay: 40 });
+    expect(g11.weeks).toHaveLength(11);
+    expect(g11.weeks.at(-1)).toMatchObject({ label: 'W11', weekId: 'w11', startDay: 71, endDay: 77 });
+  });
+});

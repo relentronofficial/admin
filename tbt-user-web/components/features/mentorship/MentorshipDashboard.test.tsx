@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup, act } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipDashboard from "./MentorshipDashboard";
 
@@ -67,6 +67,13 @@ function baseData() {
             activities: [{ taskId: "t2", title: "First ad", dayNumber: 9, isRequired: true, status: "upcoming", completed: false }] },
         ],
         summary: { total: 2, completed: 1, completionPercent: 50 },
+        // The Y axis always comes from the API (program config or the backend's defaults).
+        config: {
+          source: "default",
+          milestones: ["Ads", "Website", "Funnels", "1 lakh", "1 crore"].map((label, i) => ({
+            id: null, label, kind: i < 3 ? "activity" : "revenue", reached: false, dayNumber: null, threshold: null, reachedBy: null, reachedWeek: null,
+          })),
+        },
       },
       isLoading: false, isError: false,
     },
@@ -117,13 +124,14 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     const h = headings();
     expect(h.indexOf("Weekly Activity Graph")).toBe(h.indexOf("Customer Journey") + 1);
-    // Milestone axis + week labels only; no per-activity detail.
-    const graph = screen.getByRole("img", { name: "Weekly Activity Graph" });
+    // Milestone axis and week labels from the API, one accessible marker per activity.
+    const graph = screen.getByRole("group", { name: "Weekly Activity Graph" });
     for (const label of ["Ads", "Website", "Funnels", "1 lakh", "1 crore", "W1", "W2"]) {
       expect(graph.textContent).toContain(label);
     }
-    expect(graph.querySelectorAll("circle")).toHaveLength(1); // W2 has not started
-    expect(document.body.innerHTML).not.toContain("Set up store");
+    expect(within(graph).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
+      .toEqual(["W1, No milestone, Set up store, Completed", "W2, No milestone, First ad, Upcoming"]);
+    expect(graph.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(1); // W2 has not started
   });
 
   it("shows no graph for a member without a batch", () => {

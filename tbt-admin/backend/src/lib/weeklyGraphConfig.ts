@@ -27,11 +27,17 @@ export interface GraphMilestoneRow {
   kind: MilestoneKind;
   sortOrder: number;
   isActive: boolean;
+  /**
+   * Revenue milestones only: cumulative member-reported revenue (₹) that reaches
+   * it (graph_milestones.threshold_amount). null = no threshold configured, so
+   * the milestone is reached only through an admin/mentor record.
+   */
+  threshold?: number | null;
 }
 
 /** What buildWeeklyGraph consumes. id null = a built-in default (not yet saved). */
 export interface GraphConfigWeek { id: string | null; label: string; startDay: number; endDay: number }
-export interface GraphConfigMilestone { id: string | null; label: string; kind: MilestoneKind }
+export interface GraphConfigMilestone { id: string | null; label: string; kind: MilestoneKind; threshold?: number | null }
 export interface GraphConfig {
   source: 'program' | 'default';
   /** null = derive 7-day weeks from the member's program length (default behaviour) */
@@ -69,8 +75,11 @@ export function resolveGraphConfig(rows: { weeks: GraphWeekRow[]; milestones: Gr
     ? [...rows.weeks].sort(byOrder).filter((w) => w.isActive).map((w) => ({ id: w.id, label: w.label, startDay: w.startDay, endDay: w.endDay }))
     : null;
   const milestones = rows.milestones.length
-    ? [...rows.milestones].sort(byOrder).filter((m) => m.isActive).map((m) => ({ id: m.id, label: m.label, kind: m.kind }))
-    : DEFAULT_GRAPH_MILESTONES.map((m) => ({ id: null, ...m }));
+    ? [...rows.milestones].sort(byOrder).filter((m) => m.isActive).map((m) => ({
+        id: m.id, label: m.label, kind: m.kind, threshold: m.kind === 'revenue' ? m.threshold ?? null : null,
+      }))
+    // Built-in defaults carry no threshold: no revenue amount is ever assumed.
+    : DEFAULT_GRAPH_MILESTONES.map((m) => ({ id: null, ...m, threshold: null }));
   return {
     source: rows.weeks.length || rows.milestones.length ? 'program' : 'default',
     weeks,
@@ -82,8 +91,9 @@ export function resolveGraphConfig(rows: { weeks: GraphWeekRow[]; milestones: Gr
 /**
  * Highest axis level task completion may reach: the activity milestones that
  * come before the first revenue milestone. Tasks never prove revenue, so a
- * point only reaches a revenue milestone (or anything above it) through an
- * admin-recorded achievement.
+ * point only reaches a revenue milestone (or anything above it) through the
+ * member's reported revenue crossing its threshold, or an admin-recorded
+ * achievement.
  */
 export function taskProgressCap(milestones: Array<{ kind: MilestoneKind }>): number {
   let cap = 0;
@@ -124,7 +134,10 @@ function cleanDay(raw: unknown, name: string): Validation<number> {
 }
 
 export interface WeekInput { label: string; startDay: number; endDay: number; isActive: boolean }
-export interface MilestoneInput { label: string; kind: MilestoneKind; isActive: boolean }
+export interface MilestoneInput { label: string; kind: MilestoneKind; isActive: boolean; threshold: number | null }
+
+/** Largest revenue threshold accepted (fits graph_milestones.threshold_amount NUMERIC(15,2)). */
+export const MAX_REVENUE_THRESHOLD = 1_000_000_000_000;
 
 /** Full validation for create; for update, missing fields are taken from `current`. */
 export function validateWeekInput(body: any, current?: WeekInput): Validation<WeekInput> {
@@ -141,7 +154,10 @@ export function validateWeekInput(body: any, current?: WeekInput): Validation<We
   return { ok: true, value: { label: label.value, startDay: startDay.value, endDay: endDay.value, isActive } };
 }
 
-export function validateMilestoneInput(body: any, current?: MilestoneInput): Validation<MilestoneInput> {
+export function validateMilestoneInput(
+  body: any,
+  current?: Omit<MilestoneInput, 'threshold'> & { threshold?: number | null },
+): Validation<MilestoneInput> {
   const b = body ?? {};
   const label = cleanLabel(b.label ?? current?.label);
   if (!label.ok) return label;
@@ -149,7 +165,22 @@ export function validateMilestoneInput(body: any, current?: MilestoneInput): Val
   if (kind !== 'activity' && kind !== 'revenue') return { ok: false, error: "Kind must be 'activity' or 'revenue'" };
   const isActive = b.isActive ?? current?.isActive ?? true;
   if (typeof isActive !== 'boolean') return { ok: false, error: 'isActive must be true or false' };
-  return { ok: true, value: { label: label.value, kind, isActive } };
+  // Threshold: revenue milestones only. Omitted on update keeps the saved value;
+  // null or "" clears it. An activity milestone never has one.
+  const rawThreshold = b.threshold !== undefined ? b.threshold : current?.threshold ?? null;
+  let threshold: number | null = null;
+  if (kind === 'activity') {
+    if (b.threshold !== undefined && b.threshold !== null && b.threshold !== '') {
+      return { ok: false, error: 'Only revenue milestones have a revenue threshold' };
+    }
+  } else if (rawThreshold !== null && rawThreshold !== '') {
+    const n = typeof rawThreshold === 'string' ? Number(rawThreshold.trim()) : rawThreshold;
+    if (typeof n !== 'number' || !Number.isFinite(n) || n <= 0 || n > MAX_REVENUE_THRESHOLD) {
+      return { ok: false, error: `Revenue threshold must be an amount greater than 0 and at most ${MAX_REVENUE_THRESHOLD}` };
+    }
+    threshold = Math.round(n * 100) / 100;
+  }
+  return { ok: true, value: { label: label.value, kind, isActive, threshold } };
 }
 
 /** Another item (excluding `exceptId`) already uses this label, case-insensitively. */

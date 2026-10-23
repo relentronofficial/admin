@@ -17,6 +17,11 @@ export interface WeeklyGraphActivity {
   isRequired: boolean;
   status: WeeklyGraphActivityStatus;
   completed: boolean;
+  /** Configured milestone this activity is linked to (optional for older backends). Position only, never achievement. */
+  milestoneId?: string | null;
+  milestoneLabel?: string | null;
+  /** Axis row of that milestone (1 = first); 0 = not linked (baseline). */
+  level?: number;
 }
 
 export interface WeeklyGraphWeek {
@@ -41,6 +46,10 @@ export interface WeeklyGraphWeek {
   weekId?: string | null;
   /** Display label, e.g. "W1" or an admin-configured name */
   label?: string;
+  /** Member-reported revenue counted in this week; null when none was reported (optional for older backends). */
+  revenue?: number | null;
+  /** Running total of reported revenue up to this week; null for future weeks or when nothing was reported. */
+  cumulativeRevenue?: number | null;
 }
 
 export interface WeeklyGraph {
@@ -52,6 +61,8 @@ export interface WeeklyGraph {
   summary: { total: number; completed: number; completionPercent: number | null };
   /** Y axis, bottom → top (progressLevel n = milestones[n - 1]); from the program's admin config or the defaults */
   config?: { source: "program" | "default"; milestones: WeeklyGraphMilestone[] };
+  /** What revenue milestones are measured against: the member's own "Your Revenue Stats" figures. */
+  revenue?: { source: "self_reported"; totalToDate: number | null };
 }
 
 export interface WeeklyGraphMilestone {
@@ -62,6 +73,12 @@ export interface WeeklyGraphMilestone {
   reached?: boolean;
   /** Batch-program day of the linked task; null when none is linked, always null for revenue milestones. */
   dayNumber?: number | null;
+  /** Revenue milestones: admin-set cumulative revenue threshold (₹); null = none set. */
+  threshold?: number | null;
+  /** What reached it; null when not reached. */
+  reachedBy?: "activity" | "revenue" | "record" | null;
+  /** weekNumber where it was reached; null when not reached or outside the shown weeks. */
+  reachedWeek?: number | null;
 }
 
 /** POST /api/user/lifelines/razorpay/create-order — one Extra Lifeline at the admin-configured price. */

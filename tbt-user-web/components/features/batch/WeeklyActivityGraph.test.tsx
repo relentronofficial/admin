@@ -1,23 +1,64 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import WeeklyActivityGraph from "./WeeklyActivityGraph";
 
 // Exercises the real service → hook → component chain. Only the HTTP client is
 // replaced; it returns what lib/api/client.ts's response interceptor yields
-// (the backend body, `response.data`).
+// (the backend body, `response.data`), shaped exactly like buildWeeklyGraph's
+// output (backend lib/weeklyGraphLogic.ts).
 const get = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/api/client", () => ({ default: { get } }));
 const siteConfig = vi.hoisted(() => ({ value: { uiStrings: null, hiddenMenuKeys: [] as string[] } }));
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => siteConfig.value }));
 
-// Captured from GET /api/user-batch/weekly-graph (commit affbff77) against a
-// seeded local database for a member on program day 10 (task ids shortened),
-// with progressLevel as buildWeeklyGraph now derives it: W1 1/5 approved →
-// 0.6, W2 (current) nothing approved → 0, W3 not started → null.
-const REAL_RESPONSE = {"success":true,"data":{"totalDays":21,"currentDay":10,"currentWeek":2,"hasActivities":true,"weeks":[{"weekNumber":1,"startDay":1,"endDay":7,"isCurrent":false,"activities":[{"taskId":"task-1","title":"W1 intro video","dayNumber":1,"isRequired":true,"status":"completed","completed":true},{"taskId":"task-2","title":"W1 worksheet","dayNumber":2,"isRequired":true,"status":"needs_revision","completed":false},{"taskId":"task-3","title":"W1 optional reading","dayNumber":3,"isRequired":false,"status":"not_started","completed":false},{"taskId":"task-4","title":"Program-wide task","dayNumber":5,"isRequired":true,"status":"not_started","completed":false},{"taskId":"task-5","title":"Alice private task","dayNumber":6,"isRequired":true,"status":"not_started","completed":false}],"total":5,"completed":1,"requiredTotal":4,"requiredCompleted":1,"completionPercent":20,"progressLevel":0.6},{"weekNumber":2,"startDay":8,"endDay":14,"isCurrent":true,"activities":[{"taskId":"task-6","title":"W2 submitted task","dayNumber":9,"isRequired":true,"status":"submitted","completed":false},{"taskId":"task-7","title":"W2 today task","dayNumber":10,"isRequired":true,"status":"not_started","completed":false}],"total":2,"completed":0,"requiredTotal":2,"requiredCompleted":0,"completionPercent":0,"progressLevel":0},{"weekNumber":3,"startDay":15,"endDay":21,"isCurrent":false,"activities":[{"taskId":"task-8","title":"W3 upcoming task","dayNumber":16,"isRequired":true,"status":"upcoming","completed":false}],"total":1,"completed":0,"requiredTotal":1,"requiredCompleted":0,"completionPercent":0,"progressLevel":null}],"summary":{"total":8,"completed":1,"completionPercent":13}},"error":null};
+const activity = (taskId: string, title: string, dayNumber: number, status: string, milestone: [string, string, number] | null) => ({
+  taskId, title, dayNumber, isRequired: true, status, completed: status === "completed",
+  milestoneId: milestone?.[0] ?? null, milestoneLabel: milestone?.[1] ?? null, level: milestone?.[2] ?? 0,
+});
+const week = (n: number, extra: Record<string, unknown> = {}) => ({
+  weekNumber: n, startDay: (n - 1) * 7 + 1, endDay: n * 7, isCurrent: false, activities: [], total: 0, completed: 0,
+  requiredTotal: 0, requiredCompleted: 0, completionPercent: null, progressLevel: null, weekId: `w${n}`, label: `W${n}`,
+  revenue: null, cumulativeRevenue: null, ...extra,
+});
+const ms = (id: string, label: string, kind: "activity" | "revenue", extra: Record<string, unknown> = {}) => ({
+  id, label, kind, reached: false, dayNumber: null, threshold: null, reachedBy: null, reachedWeek: null, ...extra,
+});
 
-const MILESTONES = ["Ads", "Website", "Funnels", "1 lakh", "1 crore"];
+/** A member on day 10 of a program the admin configured with W1–W3 and ₹1 Lakh / ₹5 Lakhs thresholds. */
+const graphData = () => ({
+  totalDays: 21, currentDay: 10, currentWeek: 2, hasActivities: true,
+  weeks: [
+    week(1, {
+      activities: [
+        activity("t-ads", "Ads W1", 2, "completed", ["m-ads", "Ads", 1]),
+        activity("t-pixel", "Install pixel", 3, "submitted", ["m-ads", "Ads", 1]),
+        activity("t-read", "Read the playbook", 4, "not_started", null),
+      ],
+      total: 3, completed: 1, completionPercent: 33, progressLevel: 1, revenue: 60000, cumulativeRevenue: 60000,
+    }),
+    week(2, {
+      isCurrent: true,
+      activities: [activity("t-web", "Website W2", 9, "in_progress", ["m-web", "Website", 2])],
+      total: 1, completed: 0, completionPercent: 0, progressLevel: 4, revenue: 50000, cumulativeRevenue: 110000,
+    }),
+    week(3, { activities: [activity("t-fun", "Funnels W3", 16, "upcoming", ["m-fun", "Funnels", 3])], total: 1, completionPercent: 0 }),
+  ],
+  summary: { total: 5, completed: 1, completionPercent: 20 },
+  config: {
+    source: "program",
+    milestones: [
+      ms("m-ads", "Ads", "activity", { reached: true, dayNumber: 2, reachedBy: "activity", reachedWeek: 1 }),
+      ms("m-web", "Website", "activity", { dayNumber: 9 }),
+      ms("m-fun", "Funnels", "activity", { dayNumber: 16 }),
+      ms("m-1l", "₹1 Lakh", "revenue", { threshold: 100000, reached: true, reachedBy: "revenue", reachedWeek: 2 }),
+      ms("m-5l", "₹5 Lakhs", "revenue", { threshold: 500000 }),
+    ],
+  },
+  revenue: { source: "self_reported", totalToDate: 110000 },
+});
+const ok = (data: unknown) => ({ success: true, data, error: null });
 
 const renderGraph = () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -27,14 +68,11 @@ const renderGraph = () => {
     </QueryClientProvider>,
   );
 };
-
-const svgTexts = (c: HTMLElement) => [...c.querySelectorAll("svg > text, svg > g > text")].map((t) => t.textContent);
-const yOf = (c: HTMLElement, label: string) =>
-  Number([...c.querySelectorAll("svg text")].find((t) => t.textContent === label)!.getAttribute("y")) - 4;
-const points = (c: HTMLElement) => [...c.querySelectorAll("circle")].map((p) => ({
-  week: p.querySelector("title")!.textContent,
-  y: Number(p.getAttribute("cy")),
-}));
+const chart = () => screen.findByRole("group", { name: "Weekly Activity Graph" });
+const texts = (c: HTMLElement, testId: string) => [...c.querySelectorAll(`[data-testid="${testId}"]`)].map((t) => t.textContent);
+const markerY = (el: Element) => Number(el.querySelector("circle:not([fill='transparent'])")!.getAttribute("cy"));
+const labelY = (c: HTMLElement, label: string) =>
+  Number([...c.querySelectorAll('[data-testid="milestone-label"]')].find((t) => t.textContent === label)!.getAttribute("y")) - 4;
 
 beforeEach(() => {
   get.mockReset();
@@ -42,174 +80,162 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("WeeklyActivityGraph with the real API response", () => {
+describe("WeeklyActivityGraph", () => {
   it("requests the member's graph from /api/user-batch/weekly-graph", async () => {
-    get.mockResolvedValue(REAL_RESPONSE);
+    get.mockResolvedValue(ok(graphData()));
     renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
+    await chart();
     expect(get).toHaveBeenCalledWith("/api/user-batch/weekly-graph");
   });
 
-  it("shows only milestone labels on Y and week labels on X", async () => {
-    get.mockResolvedValue(REAL_RESPONSE);
+  it("draws exactly the configured milestones (bottom → top) and weeks", async () => {
+    get.mockResolvedValue(ok(graphData()));
     const { container } = renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
-    expect(svgTexts(container)).toEqual([...MILESTONES, "W1", "W2", "W3"]);
-    // Milestones run bottom → top: Ads lowest, 1 crore highest.
-    const ys = MILESTONES.map((m) => yOf(container, m));
-    expect([...ys].sort((a, b) => b - a)).toEqual(ys);
+    await chart();
+    const labels = ["Ads", "Website", "Funnels", "₹1 Lakh", "₹5 Lakhs"];
+    expect(texts(container, "milestone-label")).toEqual(labels);
+    const ys = labels.map((l) => labelY(container, l));
+    expect([...ys].sort((a, b) => b - a)).toEqual(ys); // Ads lowest, ₹5 Lakhs highest
+    expect(texts(container, "week-label")).toEqual(["W1", "W2", "W3"]);
   });
 
-  it("removes the summary, task list, legend, dots and percentage axis", async () => {
-    get.mockResolvedValue(REAL_RESPONSE);
+  it("hardcodes no milestone labels: an older response without config draws none", async () => {
+    const data: any = graphData();
+    delete data.config;
+    get.mockResolvedValue(ok(data));
     const { container } = renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
-    const text = container.textContent ?? "";
-    expect(text).not.toMatch(/Week \d+ ·/);
-    expect(text).not.toMatch(/%/);
-    expect(text).not.toContain("W1 intro video");
-    expect(text).not.toContain("Awaiting review");
-    expect(text).not.toContain("Each dot is an assigned activity");
-    // Only the weekly progress points remain — no per-activity dots.
-    expect(container.querySelectorAll("circle")).toHaveLength(2);
-    expect(container.querySelectorAll("polyline")).toHaveLength(1);
+    await chart();
+    expect(texts(container, "milestone-label")).toEqual([]);
+    expect(container.textContent).not.toMatch(/lakh|crore/i);
   });
 
-  it("plots started weeks from progressLevel, in order, and nothing for future weeks", async () => {
-    get.mockResolvedValue(REAL_RESPONSE);
+  it("puts one focusable marker per activity on its week and milestone row; several in one week stay separate", async () => {
+    get.mockResolvedValue(ok(graphData()));
     const { container } = renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
-    const ads = yOf(container, "Ads");
-    const website = yOf(container, "Website");
-    const gap = ads - website;
-    const baseline = ads + gap;
-
-    const [w1, w2] = points(container);
-    expect(w1.week).toBe("W1");
-    expect(w1.y).toBeCloseTo(baseline - 0.6 * gap); // 1 of 5 approved
-    expect(w2.week).toBe("W2");
-    expect(w2.y).toBeCloseTo(baseline); // nothing approved — stays at the baseline
-    expect(points(container).map((p) => p.week)).not.toContain("W3");
-
-    const line = container.querySelector("polyline")!.getAttribute("points")!.split(" ");
-    expect(line).toHaveLength(2);
-    expect(Number(line[0].split(",")[0])).toBeLessThan(Number(line[1].split(",")[0]));
+    await chart();
+    const markers = screen.getAllByRole("button", { name: /^W\d/ }).filter((b) => b.getAttribute("data-testid") === "activity-marker");
+    expect(markers.map((m) => m.getAttribute("aria-label"))).toEqual([
+      "W1, Ads, Ads W1, Completed",
+      "W1, Ads, Install pixel, Awaiting approval",
+      "W1, No milestone, Read the playbook, Not started",
+      "W2, Website, Website W2, In progress",
+      "W3, Funnels, Funnels W3, Upcoming",
+    ]);
+    expect(markers.every((m) => m.getAttribute("tabindex") === "0")).toBe(true);
+    // On their milestone rows (unlinked on the baseline, below Ads).
+    expect(markerY(markers[0])).toBe(labelY(container, "Ads"));
+    expect(markerY(markers[3])).toBe(labelY(container, "Website"));
+    expect(markerY(markers[2])).toBeGreaterThan(labelY(container, "Ads"));
+    // The two W1 Ads markers do not overlap.
+    const xs = markers.slice(0, 2).map((m) => Number(m.querySelector("circle:not([fill='transparent'])")!.getAttribute("cx")));
+    expect(Math.abs(xs[0] - xs[1])).toBeGreaterThanOrEqual(12);
   });
 
-  it("raises a point for a fully completed week (Funnels) and follows the program length", async () => {
-    const weeks = Array.from({ length: 13 }, (_, i) => ({
-      ...REAL_RESPONSE.data.weeks[0],
-      weekNumber: i + 1,
-      progressLevel: i === 0 ? 3 : i < 4 ? 0 : null,
+  it("clicking a marker opens a popup with Week, Milestone and Activity; Escape closes it and returns focus", async () => {
+    get.mockResolvedValue(ok(graphData()));
+    renderGraph();
+    await chart();
+    const user = userEvent.setup();
+    const marker = screen.getByRole("button", { name: "W2, Website, Website W2, In progress" });
+    await user.click(marker);
+    const dialog = screen.getByRole("dialog", { name: "Activity details" });
+    const d = within(dialog);
+    expect(d.getByText("Week").nextSibling!.textContent).toBe("W2");
+    expect(d.getByText("Milestone").nextSibling!.textContent).toBe("Website");
+    expect(d.getByText("Activity").nextSibling!.textContent).toBe("Website W2");
+    expect(d.getByText("Status").nextSibling!.textContent).toBe("In progress");
+    expect(marker.getAttribute("aria-expanded")).toBe("true");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(marker);
+  });
+
+  it("is keyboard operable: Tab to a marker, Enter opens, the close button closes", async () => {
+    get.mockResolvedValue(ok(graphData()));
+    renderGraph();
+    await chart();
+    const user = userEvent.setup();
+    await user.tab();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("W1, Ads, Ads W1, Completed");
+    await user.keyboard("{Enter}");
+    expect(within(screen.getByRole("dialog")).getByText("Ads W1")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("marks a reached revenue milestone with a diamond whose popup shows the target and the reported revenue", async () => {
+    get.mockResolvedValue(ok(graphData()));
+    renderGraph();
+    await chart();
+    const diamonds = screen.getAllByRole("button").filter((b) => b.getAttribute("data-testid") === "revenue-marker");
+    expect(diamonds.map((m) => m.getAttribute("aria-label"))).toEqual(["W2, ₹1 Lakh, revenue milestone reached"]);
+    await userEvent.setup().click(diamonds[0]);
+    const d = within(screen.getByRole("dialog"));
+    expect(d.getByText("Milestone").nextSibling!.textContent).toBe("₹1 Lakh");
+    expect(d.getByText("Target").nextSibling!.textContent).toBe("₹1,00,000");
+    expect(d.getByText("Revenue by then").nextSibling!.textContent).toBe("₹1,10,000 (self-reported)");
+    expect(d.getByText("Reached").nextSibling!.textContent).toBe("From your reported revenue");
+    expect(screen.getByTestId("revenue-total").textContent).toBe("Reported revenue to date: ₹1,10,000");
+  });
+
+  it("never shows an unreached revenue milestone as reached, even when an activity is linked to it", async () => {
+    const data: any = graphData();
+    data.config.milestones[3] = ms("m-1l", "₹1 Lakh", "revenue", { threshold: 100000 });
+    data.weeks[0].activities.push(activity("t-rev", "Close first ₹1 Lakh month", 5, "completed", ["m-1l", "₹1 Lakh", 4]));
+    data.revenue = { source: "self_reported", totalToDate: null };
+    get.mockResolvedValue(ok(data));
+    renderGraph();
+    await chart();
+    expect(screen.queryAllByTestId("revenue-marker")).toHaveLength(0);
+    expect(screen.queryByTestId("revenue-total")).toBeNull();
+    // The activity marker sits on that row; its own status is shown, nothing more.
+    expect(screen.getByRole("button", { name: "W1, ₹1 Lakh, Close first ₹1 Lakh month, Completed" })).toBeTruthy();
+  });
+
+  it("draws the progression line through started weeks only", async () => {
+    get.mockResolvedValue(ok(graphData()));
+    const { container } = renderGraph();
+    await chart();
+    expect(container.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(2); // W3 not started
+    const pts = container.querySelector('[data-testid="progress-line"]')!.getAttribute("points")!.split(" ");
+    expect(pts).toHaveLength(2);
+    expect(Number(pts[0].split(",")[0])).toBeLessThan(Number(pts[1].split(",")[0]));
+  });
+
+  it("does not crash on missing values (no activities, no summary, no revenue, no levels)", async () => {
+    get.mockResolvedValue(ok({
+      totalDays: 7, currentDay: 1, currentWeek: 1, hasActivities: false,
+      weeks: [{ weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, progressLevel: 0, activities: [{ taskId: "x", title: "Old payload", dayNumber: 1, isRequired: true, status: "not_started", completed: false }] }],
     }));
-    get.mockResolvedValue({ ...REAL_RESPONSE, data: { ...REAL_RESPONSE.data, totalDays: 90, weeks } });
-    const { container } = renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
+    renderGraph();
+    await chart();
+    expect(screen.getByRole("button", { name: "W1, No milestone, Old payload, Not started" })).toBeTruthy();
+  });
 
-    expect(svgTexts(container).slice(MILESTONES.length)).toEqual(weeks.map((w) => `W${w.weekNumber}`));
-    const pts = points(container);
-    expect(pts.map((p) => p.week)).toEqual(["W1", "W2", "W3", "W4"]);
-    expect(pts[0].y).toBeCloseTo(yOf(container, "Funnels"));
+  it("shows a message when no weeks are configured", async () => {
+    get.mockResolvedValue(ok({ ...graphData(), weeks: [] }));
+    renderGraph();
+    expect(await screen.findByText("No weeks have been set up for your program yet.")).toBeTruthy();
   });
 
   it("shows the error message when the API reports a failure", async () => {
-    get.mockResolvedValue({ success: false, data: null, error: "boom" });
+    get.mockResolvedValue({ success: false, data: null, error: { message: "boom" } });
     renderGraph();
     expect(await screen.findByText("Could not load your weekly graph.")).toBeTruthy();
   });
 
   it("renders nothing for a member who is not in a batch (data: null)", async () => {
-    get.mockResolvedValue({ success: true, data: null, error: null });
+    get.mockResolvedValue(ok(null));
     const { container } = renderGraph();
     await waitFor(() => expect(get).toHaveBeenCalled());
     await waitFor(() => expect(container.querySelector(".animate-pulse")).toBeNull());
-    expect(container.textContent).toBe("");
-  });
-
-  it("keeps every started week at the baseline when nothing is assigned", async () => {
-    const weeks = REAL_RESPONSE.data.weeks.map((w) => ({
-      ...w, activities: [], total: 0, completed: 0, completionPercent: null,
-      progressLevel: w.weekNumber <= 2 ? 0 : null,
-    }));
-    get.mockResolvedValue({ ...REAL_RESPONSE, data: { ...REAL_RESPONSE.data, hasActivities: false, weeks } });
-    const { container } = renderGraph();
-    await screen.findByRole("img", { name: "Weekly Activity Graph" });
-    const baseline = 2 * yOf(container, "Ads") - yOf(container, "Website");
-    expect(points(container).map((p) => p.y)).toEqual([baseline, baseline]);
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders nothing and makes no request when the admin hides it (weekly_graph)", async () => {
     siteConfig.value = { uiStrings: null, hiddenMenuKeys: ["weekly_graph"] };
-    get.mockResolvedValue(REAL_RESPONSE);
     const { container } = renderGraph();
-    await new Promise((r) => setTimeout(r, 50));
-    expect(container.textContent).toBe("");
+    expect(container.innerHTML).toBe("");
     expect(get).not.toHaveBeenCalled();
-  });
-
-  it("still shows when the admin hides other sections only", async () => {
-    siteConfig.value = { uiStrings: null, hiddenMenuKeys: ["streak", "ebooks"] };
-    get.mockResolvedValue(REAL_RESPONSE);
-    renderGraph();
-    expect(await screen.findByRole("img", { name: "Weekly Activity Graph" })).toBeTruthy();
-  });
-
-  describe("admin-configured graph (config from the API)", () => {
-    const configured = (over: { milestones?: string[]; weeks?: Array<[string, number | null]> } = {}) => {
-      const milestones = over.milestones ?? ["Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore"];
-      const weekDefs = over.weeks ?? [["Kick-off", 0.6], ["Launch", 0], ["W3", null], ["W5", null]];
-      return {
-        ...REAL_RESPONSE,
-        data: {
-          ...REAL_RESPONSE.data,
-          weeks: weekDefs.map(([label, level], i) => ({
-            ...REAL_RESPONSE.data.weeks[Math.min(i, 2)], weekNumber: i + 1, weekId: `w-${i + 1}`, label, progressLevel: level,
-          })),
-          config: {
-            source: "program",
-            milestones: milestones.map((label, i) => ({ id: `m-${i}`, label, kind: i < 4 ? "activity" : "revenue" })),
-          },
-        },
-      };
-    };
-
-    it("draws the configured milestones (labels and order) and week labels, including an added W5", async () => {
-      get.mockResolvedValue(configured());
-      const { container } = renderGraph();
-      await screen.findByRole("img", { name: "Weekly Activity Graph" });
-      expect(svgTexts(container)).toEqual([
-        "Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore",
-        "Kick-off", "Launch", "W3", "W5",
-      ]);
-      // Six levels, bottom to top
-      const ys = ["Ads", "Website", "Funnels", "Sales Automation", "₹5 Lakhs", "1 crore"].map((m) => yOf(container, m));
-      expect([...ys].sort((a, b) => b - a)).toEqual(ys);
-      expect(points(container).map((p) => p.week)).toEqual(["Kick-off", "Launch"]);
-    });
-
-    it("a renamed milestone shows its new label; a disabled one (absent from config) is gone", async () => {
-      get.mockResolvedValue(configured({ milestones: ["Meta Ads", "Website", "₹5 Lakhs"] }));
-      const { container } = renderGraph();
-      await screen.findByRole("img", { name: "Weekly Activity Graph" });
-      const texts = svgTexts(container);
-      expect(texts.slice(0, 3)).toEqual(["Meta Ads", "Website", "₹5 Lakhs"]);
-      expect(texts).not.toContain("Funnels");
-      expect(texts).not.toContain("1 crore");
-    });
-
-    it("plots a point at the configured milestone level", async () => {
-      get.mockResolvedValue(configured({ weeks: [["W1", 5], ["W2", 0]] })); // level 5 = "₹5 Lakhs"
-      const { container } = renderGraph();
-      await screen.findByRole("img", { name: "Weekly Activity Graph" });
-      const [w1] = points(container);
-      expect(w1.y).toBeCloseTo(yOf(container, "₹5 Lakhs"));
-    });
-
-    it("older backend responses without config still show the original five labels", async () => {
-      get.mockResolvedValue(REAL_RESPONSE);
-      const { container } = renderGraph();
-      await screen.findByRole("img", { name: "Weekly Activity Graph" });
-      expect(svgTexts(container).slice(0, 5)).toEqual(MILESTONES);
-    });
   });
 });

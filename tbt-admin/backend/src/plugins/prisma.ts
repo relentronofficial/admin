@@ -2360,6 +2360,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_graph_milestones_program ON graph_milestones(program_id, sort_order)`
     ).catch(() => {});
+    // Revenue milestones: cumulative member-reported revenue (₹) that reaches them; NULL = no threshold.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE graph_milestones ADD COLUMN IF NOT EXISTS threshold_amount NUMERIC(15,2)`
+    ).catch(() => {});
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS member_graph_milestone_records (
         id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),

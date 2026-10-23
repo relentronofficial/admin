@@ -5,7 +5,8 @@ import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
 import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
-import { loadGraphConfig, loadMemberGraphRecords } from '../../lib/weeklyGraphConfigData.js';
+import { loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows } from '../../lib/weeklyGraphConfigData.js';
+import { revenueEntriesForProgram } from '../../lib/weeklyGraphRevenue.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
 import { debitCoins } from '../../lib/supportCallData.js';
@@ -300,9 +301,10 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     }),
   ]);
 
-  const [graphConfig, graphRecords] = await Promise.all([
+  const [graphConfig, graphRecords, revenueRows] = await Promise.all([
     loadGraphConfig(prisma, batch.programId ?? null),
     loadMemberGraphRecords(prisma, memberId),
+    loadMemberRevenueRows(prisma, memberId),
   ]);
 
   const baseDays = batch.snapshotDays ?? batch.program?.durationDays ?? 90;
@@ -324,6 +326,8 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     // not configured) and this member's own admin-recorded achievements.
     config: graphConfig,
     records: graphRecords,
+    // This member's own reported revenue (Your Revenue Stats), for revenue milestones.
+    revenue: revenueEntriesForProgram(revenueRows, new Date(batch.startsAt)),
   });
 
   return reply.send({ success: true, data: graph, error: null });

@@ -1450,6 +1450,7 @@ export default function CourseDetailPage({
   const searchParams = useSearchParams();
   const targetLessonId = searchParams.get("lesson");
   const targetSectionId = searchParams.get("section"); // null = full course view
+  const targetModuleId = searchParams.get("module"); // pre-select a course topic module in sidebar
   const { uiStrings, config } = useSiteConfig();
   const qc = useQueryClient();
   const { data: course, isLoading, error: courseError } = useCourse(courseId);
@@ -1675,6 +1676,15 @@ export default function CourseDetailPage({
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   // Modules — topic-area tabs that filter the lesson sidebar (must be before early returns — Rules of Hooks)
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  // Pre-select module from ?module= URL param once course data is loaded
+  useEffect(() => {
+    if (targetModuleId && course) {
+      const modules: any[] = (course as any).modules ?? [];
+      if (modules.some((m: any) => m.id === targetModuleId)) {
+        setSelectedModule(targetModuleId);
+      }
+    }
+  }, [targetModuleId, course]);
 
   // Mid-video cue quizzes
   const [cueQuizModal, setCueQuizModal] = useState<{ questions: any[] } | null>(null);

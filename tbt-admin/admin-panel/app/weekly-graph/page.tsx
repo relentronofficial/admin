@@ -41,6 +41,7 @@ const BTN_GHOST = cn(BTN, "bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] h
 const ICON_BTN = "p-1.5 rounded-md text-[#a0a0a0] hover:text-white hover:bg-[#222] disabled:opacity-40";
 
 const errMsg = (e: any, fallback: string) => e?.message || fallback;
+const formatInr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
 export default function WeeklyGraphPage() {
   const { data: programsRes, isLoading: programsLoading } = useListPrograms();
@@ -331,7 +332,7 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
 
   return (
     <section className={CARD}>
-      <SectionHeader title="Milestones (Y axis, bottom → top)" hint="Activity milestones are reached by approved tasks. Revenue milestones are reached only when an admin records them for a member.">
+      <SectionHeader title="Milestones (Y axis, bottom → top)" hint="Activity milestones are reached by approved tasks. A revenue milestone is reached when the member's reported revenue (Your Revenue Stats, running total since the batch started) reaches its threshold, or when an admin records it.">
         <OrderBar dirty={dirty} saving={reorder.isPending} onCancel={cancel}
           onSave={() => reorder.mutateAsync(local.map((m) => m.id!)).then(() => toast.success("Milestone order saved"), (e) => toast.error(errMsg(e, "Could not save the order")))} />
         {!dirty && <button className={BTN_PRIMARY} onClick={() => setEditing("new")}><Plus size={14} /> Add milestone</button>}
@@ -351,7 +352,13 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
               <tr key={m.id ?? `d${i}`} {...rowProps(i, config.saved)} className={cn("border-b border-[#222]", dragOver === i && "bg-[#dc2626]/10", !m.isActive && "opacity-60")}>
                 <td className="px-4 py-2 w-8 text-[#606060]">{config.saved && <GripVertical size={14} className="cursor-grab" />}</td>
                 <td className="px-4 py-2 text-[#f0f0f0] font-semibold">{m.label}</td>
-                <td className="px-4 py-2 text-[#a0a0a0]">{m.kind === "revenue" ? "Revenue (admin-recorded)" : "Activity"}</td>
+                <td className="px-4 py-2 text-[#a0a0a0]">
+                  {m.kind !== "revenue"
+                    ? "Activity"
+                    : m.threshold != null
+                      ? `Revenue ≥ ${formatInr(m.threshold)}`
+                      : "Revenue — no threshold (admin-recorded only)"}
+                </td>
                 <td className="px-4 py-2"><StatusPill active={m.isActive} /></td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Edit"} onClick={() => setEditing(m)}><Edit2 size={14} /></button>
@@ -376,17 +383,22 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
 }
 
 function MilestoneForm({ initial, isNew, onClose, onSave }: {
-  initial: GraphMilestoneItem; isNew: boolean; onClose: () => void; onSave: (v: { id: string | null; label: string; kind: GraphMilestoneKind }) => Promise<void>;
+  initial: GraphMilestoneItem; isNew: boolean; onClose: () => void;
+  onSave: (v: { id: string | null; label: string; kind: GraphMilestoneKind; threshold: number | null }) => Promise<void>;
 }) {
   const [label, setLabel] = useState(initial.label);
   const [kind, setKind] = useState<GraphMilestoneKind>(initial.kind);
+  const [threshold, setThreshold] = useState(initial.threshold != null ? String(initial.threshold) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!label.trim()) return setError("Label is required");
+    // The server validates the amount too; blank = no threshold (reached only by an admin record).
+    const amount = kind === "revenue" && threshold.trim() !== "" ? Number(threshold) : null;
+    if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) return setError("Threshold must be an amount greater than 0");
     setSaving(true); setError(null);
-    try { await onSave({ id: isNew ? null : initial.id, label: label.trim(), kind }); }
+    try { await onSave({ id: isNew ? null : initial.id, label: label.trim(), kind, threshold: amount }); }
     catch (err) { setError(errMsg(err, "Could not save the milestone")); }
     finally { setSaving(false); }
   };
@@ -398,9 +410,29 @@ function MilestoneForm({ initial, isNew, onClose, onSave }: {
           <label className={LABEL}>Type</label>
           <select className={cn(INPUT, "mt-1")} value={kind} onChange={(e) => setKind(e.target.value as GraphMilestoneKind)}>
             <option value="activity">Activity — reached by approved tasks</option>
-            <option value="revenue">Revenue — reached only by an admin record</option>
+            <option value="revenue">Revenue — reached by the member&apos;s reported revenue or an admin record</option>
           </select>
         </div>
+        {kind === "revenue" && (
+          <div>
+            <label className={LABEL} htmlFor="milestone-threshold">Revenue threshold (₹)</label>
+            <input
+              id="milestone-threshold"
+              className={cn(INPUT, "mt-1")}
+              type="number"
+              inputMode="decimal"
+              min={1}
+              step="any"
+              value={threshold}
+              placeholder="e.g. 100000"
+              onChange={(e) => setThreshold(e.target.value)}
+            />
+            <p className="text-[12px] text-[#606060] mt-1">
+              Reached when the member&apos;s total reported revenue (Your Revenue Stats) since the batch started is at or above this amount.
+              Leave blank to reach it only by an admin record.
+            </p>
+          </div>
+        )}
         {!isNew && <p className="text-[12px] text-[#606060]">Renaming keeps every linked activity and member record.</p>}
         <FormActions saving={saving} onCancel={onClose} error={error} />
       </form>
