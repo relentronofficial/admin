@@ -186,10 +186,10 @@ export async function createMilestoneHandler(req: FastifyRequest<{ Params: P }>,
     return fail(reply, 409, `A milestone named "${v.value.label}" already exists`);
   }
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active)
-     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE program_id = $1::uuid), $4)
-     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"`,
-    program.id, v.value.label, v.value.kind, v.value.isActive,
+    `INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active, threshold_amount)
+     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE program_id = $1::uuid), $4, $5)
+     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
+    program.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
   changed(req, program.id, 'graph_milestone_created');
   return ok(reply, rows[0]);
@@ -207,10 +207,10 @@ export async function updateMilestoneHandler(req: FastifyRequest<{ Params: PI }>
   if (!v.ok) return fail(reply, 400, v.error);
   if (hasDuplicateLabel(all, v.value.label, current.id)) return fail(reply, 409, `A milestone named "${v.value.label}" already exists`);
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, updated_at = NOW()
+    `UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, threshold_amount = $6, updated_at = NOW()
      WHERE id = $2::uuid AND program_id = $1::uuid
-     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"`,
-    program.id, current.id, v.value.label, v.value.kind, v.value.isActive,
+     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
+    program.id, current.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
   // Keep the legacy free-text label on linked activities in step (used by milestone bonus points).
   if (v.value.label !== current.label) {

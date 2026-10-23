@@ -26,8 +26,8 @@ const task = (id: string, dayNumber: number, extra: Partial<GraphTaskInput> = {}
 });
 const week = (id: string, label: string, startDay: number, endDay: number, sortOrder: number, isActive = true): GraphWeekRow =>
   ({ id, label, startDay, endDay, sortOrder, isActive });
-const milestone = (id: string, label: string, kind: 'activity' | 'revenue', sortOrder: number, isActive = true): GraphMilestoneRow =>
-  ({ id, label, kind, sortOrder, isActive });
+const milestone = (id: string, label: string, kind: 'activity' | 'revenue', sortOrder: number, isActive = true, threshold: number | null = null): GraphMilestoneRow =>
+  ({ id, label, kind, sortOrder, isActive, threshold });
 
 const DEFAULT_MS = [
   milestone('m-ads', 'Ads', 'activity', 0),
@@ -106,8 +106,8 @@ describe('server-side validation', () => {
   });
 
   it('milestones: label and kind', () => {
-    expect(validateMilestoneInput({ label: '₹5 Lakhs', kind: 'revenue' })).toEqual({ ok: true, value: { label: '₹5 Lakhs', kind: 'revenue', isActive: true } });
-    expect(validateMilestoneInput({ label: 'Sales Automation' })).toEqual({ ok: true, value: { label: 'Sales Automation', kind: 'activity', isActive: true } });
+    expect(validateMilestoneInput({ label: '₹5 Lakhs', kind: 'revenue' })).toEqual({ ok: true, value: { label: '₹5 Lakhs', kind: 'revenue', isActive: true, threshold: null } });
+    expect(validateMilestoneInput({ label: 'Sales Automation' })).toEqual({ ok: true, value: { label: 'Sales Automation', kind: 'activity', isActive: true, threshold: null } });
     expect(validateMilestoneInput({ label: 'X', kind: 'profit' }).ok).toBe(false);
     expect(validateMilestoneInput({ label: '   ' }).ok).toBe(false);
   });
@@ -245,11 +245,13 @@ describe('member graph from the program configuration', () => {
     expect(g.weeks[3].progressLevel).toBeNull();
   });
 
-  it('days past the configured weeks (extended members) get default weeks, never dropped', () => {
-    const g = build({ tasks: [task('late', 31)], totalDays: 35 });
-    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect(g.weeks[4]).toMatchObject({ weekId: null, startDay: 29, endDay: 35 });
-    expect(g.weeks[4].activities.map((a) => a.taskId)).toEqual(['late']);
+  it('shows exactly the configured weeks: none is generated past the configured range', () => {
+    // Program length (35 days) runs past the configured W1–W4 (days 1–28).
+    const g = build({ tasks: [task('in-range', 20), task('late', 31)], totalDays: 35 });
+    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
+    expect(g.weeks.every((w) => w.weekId !== null)).toBe(true);
+    // An activity on a day no configured week covers is not shown until a week is added for it.
+    expect(g.weeks.flatMap((w) => w.activities.map((a) => a.taskId))).toEqual(['in-range']);
   });
 
   it('another member\'s assigned activity never appears, whatever the configuration', () => {
