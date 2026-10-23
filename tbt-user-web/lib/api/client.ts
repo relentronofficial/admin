@@ -38,6 +38,18 @@ const ACCESS_LIFETIME_MS = 14.5 * 60 * 1000; // 30 s buffer before the 15-min se
 let _refreshPromise: Promise<void> | null = null;
 let _sessionRevoked = false;
 
+/**
+ * Called by SessionRevocationGuard when the `session:revoked` socket event fires.
+ * Marks the session as dead so the request interceptor stops proactive refresh
+ * attempts in the micro-window before the hard-navigation page unload.
+ */
+export function markSessionRevoked(): void {
+  _sessionRevoked = true;
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(ACCESS_EXP_KEY);
+  }
+}
+
 function scheduleRefresh(): Promise<void> {
   if (!_refreshPromise) {
     _refreshPromise = axios

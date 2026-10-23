@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket/client";
+import { markSessionRevoked } from "@/lib/api/client";
 
 /**
  * Listens for `session:revoked` socket events emitted by the backend when a
@@ -13,10 +13,13 @@ import { getSocket } from "@/lib/socket/client";
  *
  * Rendered once in (platform)/layout.tsx — outside SubscriptionGate so it
  * fires even on the Products/profile exempt routes.
+ *
+ * Uses window.location.href (hard navigation) instead of router.replace so the
+ * React tree tears down immediately. A soft navigation keeps the tree alive long
+ * enough for SubscriptionGate to fire its own competing router.replace when
+ * useMe() errors, causing repeated flicker before the transition completes.
  */
 export function SessionRevocationGuard() {
-  const router = useRouter();
-
   useEffect(() => {
     let cleanup: (() => void) | undefined;
 
@@ -24,8 +27,8 @@ export function SessionRevocationGuard() {
       const handler = () => {
         if (typeof window !== "undefined") {
           sessionStorage.setItem("tbt_session_kicked", "1");
-          localStorage.removeItem("tbt_access_exp");
-          router.replace("/login");
+          markSessionRevoked(); // stops proactive refresh in the request interceptor
+          window.location.href = "/login";
         }
       };
       socket.on("session:revoked", handler);
@@ -35,7 +38,7 @@ export function SessionRevocationGuard() {
     return () => {
       if (cleanup) cleanup();
     };
-  }, [router]);
+  }, []);
 
   return null;
 }
