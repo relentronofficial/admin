@@ -884,9 +884,15 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     return fail(reply, 503, 'Could not load your mentorship modules');
   }
   if (moduleAccess.selection !== null || moduleAccess.businessTypeDerived) {
-    const beforeModuleFilter = data.length;
-    data = data.filter((c) => isCourseModuleAllowed(c.module, moduleAccess));
-    total = Math.max(0, total - (beforeModuleFilter - data.length));
+    // Only hard-filter the catalog when the member has made an explicit module
+    // selection. businessTypeDerived (derived from members.business_type) defaults
+    // the active tab in the UI but must not hide courses — members who set
+    // business_type should still see all courses, just land on their tab.
+    if (moduleAccess.selection !== null) {
+      const beforeModuleFilter = data.length;
+      data = data.filter((c) => isCourseModuleAllowed(c.module, moduleAccess));
+      total = Math.max(0, total - (beforeModuleFilter - data.length));
+    }
     personalizationState = 'program';
     allowedModules = moduleAccess.effective;
   }
