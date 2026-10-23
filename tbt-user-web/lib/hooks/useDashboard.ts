@@ -33,7 +33,7 @@ export const useContinueLearning = () =>
       const res = await dashboardService.getContinueLearning();
       return res.data;
     },
-    staleTime: 0,
+    staleTime: 60 * 1000,
   });
 
 export const useWatchHistory = (params: { page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed' } = {}) =>
