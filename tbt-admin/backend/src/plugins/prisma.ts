@@ -1898,6 +1898,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_course_modules_course ON course_modules(course_id)`
     ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE course_modules ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`
+    ).catch(() => {});
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS course_episode_modules (
         episode_id UUID NOT NULL REFERENCES course_episodes(id) ON DELETE CASCADE,

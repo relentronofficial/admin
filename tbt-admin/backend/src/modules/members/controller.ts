@@ -18,6 +18,7 @@ import {
   getMemberLastActiveAt,
 } from '../../lib/memberActivity.js';
 import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
+import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
 
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
 // GET /api/members/:id/daily-activity?days=30  (Clerk admin auth via route hook)
@@ -179,16 +180,6 @@ function toBool(v: unknown): boolean | undefined {
   return undefined;
 }
 
-/**
- * Parse an ISO date string. Returns undefined on invalid input rather
- * than throwing — the caller wants "no filter" behaviour, not a 500.
- */
-function toDate(v: unknown): Date | undefined {
-  if (typeof v !== 'string' || !v) return undefined;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? undefined : d;
-}
-
 export function buildMembersWhereClause(query: any): any {
   const {
     search,
@@ -298,15 +289,10 @@ export function buildMembersWhereClause(query: any): any {
     .filter((n) => Number.isFinite(n));
   if (tiers.length) where.currentTier = { in: tiers };
 
-  // Join date range. Prisma treats `gte`/`lte` independently so we can
-  // set either bound alone.
-  const fromDate = toDate(joinedFrom);
-  const toDateVal = toDate(joinedTo);
-  if (fromDate || toDateVal) {
-    where.createdAt = {};
-    if (fromDate) where.createdAt.gte = fromDate;
-    if (toDateVal) where.createdAt.lte = toDateVal;
-  }
+  // Join date range: a plain date is a whole IST calendar day (see
+  // memberJoinedRange). Either bound may be set alone.
+  const joined = memberJoinedRange(joinedFrom, joinedTo);
+  if (Object.keys(joined).length) where.createdAt = joined;
 
   const marketingTeam = toBool(hasMarketingTeam);
   if (marketingTeam !== undefined) where.hasMarketingTeam = marketingTeam;
