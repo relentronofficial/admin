@@ -2573,6 +2573,8 @@ export interface ModuleConfig {
   sortOrder: number;
   /** Offered to members in the onboarding mentorship-module selection. */
   isActive?: boolean;
+  /** members.business_type values that automatically map to this module. */
+  businessTypeKeys?: string[];
 }
 
 export const useModuleConfigs = () =>

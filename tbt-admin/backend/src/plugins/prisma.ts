@@ -2431,6 +2431,26 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE module_config ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`
     ).catch(() => {});
+    // Business-type keys mapping (2026-10-23): admin-editable list of members.business_type
+    // values that should resolve to each module. Enables businessTypeDerived for members
+    // whose business_type string doesn't exactly match the module_name.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE module_config ADD COLUMN IF NOT EXISTS business_type_keys JSONB NOT NULL DEFAULT '[]'`
+    ).catch(() => {});
+    // Seed default aliases for the three mentorship modules. Only updates rows
+    // whose business_type_keys are still empty so admin edits are preserved.
+    await prisma.$executeRawUnsafe(`
+      UPDATE module_config SET business_type_keys = $2::jsonb
+      WHERE module_name = $1 AND (business_type_keys = '[]'::jsonb OR business_type_keys IS NULL)
+    `, 'Product', JSON.stringify(['Product', 'E-commerce', 'E Commerce', 'Ecommerce', 'Product Based', 'D2C', 'Physical Product'])).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      UPDATE module_config SET business_type_keys = $2::jsonb
+      WHERE module_name = $1 AND (business_type_keys = '[]'::jsonb OR business_type_keys IS NULL)
+    `, 'Service', JSON.stringify(['Service', 'Service Based', 'Service Business', 'Services', 'Agency', 'Freelancing', 'Consulting'])).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      UPDATE module_config SET business_type_keys = $2::jsonb
+      WHERE module_name = $1 AND (business_type_keys = '[]'::jsonb OR business_type_keys IS NULL)
+    `, 'Coaching', JSON.stringify(['Coaching', 'Coach', 'Coaching Business', 'Training', 'Trainer', 'Mentoring', 'Education'])).catch(() => {});
 
     // ── Course page FAQs (2026-10-20) ────────────────────────────────────────
     // Global FAQ items shown on /courses. Admin CRUD at /api/courses/faqs;

@@ -60,7 +60,13 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
     // grant every module.
     const [memberRows, options] = await Promise.all([
       prisma.$queryRawUnsafe(
-        `SELECT s.allowed_modules, s.mentorship_modules, m.business_type, p.allowed_modules AS program_modules
+        `SELECT s.allowed_modules, s.mentorship_modules, m.business_type, p.allowed_modules AS program_modules,
+                (SELECT mc.module_name FROM module_config mc
+                 WHERE mc.is_active = true
+                   AND lower(m.business_type) = ANY(
+                     SELECT lower(k) FROM jsonb_array_elements_text(COALESCE(mc.business_type_keys, '[]'::jsonb)) AS k
+                   )
+                 LIMIT 1) AS resolved_module_key
          FROM members m
          LEFT JOIN member_module_settings s ON s.member_id = m.id
          LEFT JOIN batches b ON b.id = m.batch_id
@@ -71,12 +77,15 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
       loadActiveModuleOptions(prisma, redis),
     ]);
     const row = memberRows[0] ?? {};
+    // resolved_module_key is the canonical module_name matched via business_type_keys;
+    // falls back to raw business_type for backward compatibility (exact-match case).
+    const resolvedBusinessType: string | null = row.resolved_module_key ?? row.business_type ?? null;
     return resolveModuleAccess({
       activeModules: options.map((o) => o.moduleName),
       adminOverride: parseModuleList(row.allowed_modules),
       programModules: parseModuleList(row.program_modules) ?? [],
       selection: parseModuleList(row.mentorship_modules),
-      businessType: row.business_type ?? null,
+      businessType: resolvedBusinessType,
     });
   });
 }
