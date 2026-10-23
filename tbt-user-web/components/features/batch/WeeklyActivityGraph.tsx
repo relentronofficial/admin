@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
+import { progressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -17,7 +18,8 @@ import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from 
 //    never means "achieved" — its fill shows the activity's own status;
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
-//  • a progression line through each started week's point (progressLevel).
+//  • a red progression line through the approved activities, in time order
+//    (weeklyGraphProgression.ts).
 // Every marker is a keyboard-focusable button that opens a popup with the
 // Week, Milestone and Activity.
 
@@ -142,23 +144,29 @@ function WeeklyActivityGraphContent() {
 
   // Activity markers: grouped by (week, level) and spread across the column so
   // several activities in one week stay individually reachable.
-  type Marker = { key: string; x: number; y: number; week: WeeklyGraphWeek; activity: WeeklyGraphActivity };
+  type Marker = {
+    key: string; x: number; y: number; week: WeeklyGraphWeek; activity: WeeklyGraphActivity;
+    weekIndex: number; order: number; level: number;
+  };
   const markers: Marker[] = [];
   weeks.forEach((w, i) => {
-    const byLevel = new Map<number, WeeklyGraphActivity[]>();
-    for (const a of w.activities ?? []) {
+    const byLevel = new Map<number, Array<{ a: WeeklyGraphActivity; order: number }>>();
+    (w.activities ?? []).forEach((a, order) => {
       const level = typeof a.level === "number" ? a.level : 0;
-      byLevel.set(level, [...(byLevel.get(level) ?? []), a]);
-    }
+      byLevel.set(level, [...(byLevel.get(level) ?? []), { a, order }]);
+    });
     byLevel.forEach((acts, level) => {
       const step = Math.min(2 * R + 4, (col - 2 * R - 8) / Math.max(acts.length - 1, 1));
-      acts.forEach((a, k) => {
+      acts.forEach(({ a, order }, k) => {
         markers.push({
           key: `a:${w.weekNumber}:${a.taskId}`,
           x: colX(i) + (k - (acts.length - 1) / 2) * step,
           y: yFor(level),
           week: w,
           activity: a,
+          weekIndex: i,
+          order,
+          level,
         });
       });
     });
@@ -174,11 +182,17 @@ function WeeklyActivityGraphContent() {
     revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
   });
 
-  // Progression line through every started week's point — never into the future.
-  const plotted = weeks
-    .map((w, i) => ({ w, x: colX(i) }))
-    .filter(({ w }) => w.progressLevel !== null && w.progressLevel !== undefined);
-  const linePoints = plotted.map(({ w, x }) => `${x},${yFor(w.progressLevel!)}`).join(" ");
+  // Progression line: through the approved activities' own markers, in
+  // chronological order, rising and falling with their milestones
+  // (rules in weeklyGraphProgression.ts). Recomputed on every render, so it
+  // follows refreshed data, milestone order and week configuration.
+  const progression = progressionPoints(
+    markers.map((m) => ({
+      key: m.key, weekIndex: m.weekIndex, dayNumber: m.activity.dayNumber, order: m.order,
+      level: m.level, status: m.activity.status, x: m.x, y: m.y,
+    })),
+  );
+  const linePoints = progression.map((p) => `${p.x},${p.y}`).join(" ");
 
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
   const revenueTotal = graph!.revenue?.totalToDate ?? null;
@@ -286,15 +300,12 @@ function WeeklyActivityGraphContent() {
             </text>
           ))}
 
-          {/* Progression line through each started week's point */}
-          {plotted.length > 1 && (
-            <polyline data-testid="progress-line" points={linePoints} fill="none" stroke="var(--color-accent)" strokeWidth={2}
-              strokeLinejoin="round" strokeLinecap="round" opacity={0.55} aria-hidden="true" />
+          {/* Progression line through the approved activities' markers (drawn
+              before the markers so they stay on top of it) */}
+          {progression.length > 1 && (
+            <polyline data-testid="progress-line" points={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
+              strokeWidth={2.5} strokeLinejoin="miter" strokeLinecap="round" aria-hidden="true" />
           )}
-          {plotted.map(({ w, x }) => (
-            <circle key={`p-${w.weekNumber}`} data-testid="progress-point" cx={x} cy={yFor(w.progressLevel!)} r={2.5}
-              fill="var(--color-accent)" opacity={0.7} aria-hidden="true" />
-          ))}
 
           {/* Activity markers */}
           {markers.map((m) => {
