@@ -2367,6 +2367,24 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE graph_milestones ADD COLUMN IF NOT EXISTS threshold_amount NUMERIC(15,2)`
     ).catch(() => {});
+
+    // Self-registration waits here until its phone OTP is verified; only then is
+    // a member created (lib/registrationLogic.ts). Keyed by the E.164 phone; a
+    // retry replaces the row. claim_member_id = an old never-verified member
+    // row the verified retry updates instead of creating a new one.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS pending_registrations (
+        phone_e164      VARCHAR(20) PRIMARY KEY,
+        email           TEXT NOT NULL,
+        payload         JSONB NOT NULL,
+        claim_member_id UUID,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at      TIMESTAMPTZ NOT NULL
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_pending_registrations_email ON pending_registrations (lower(email))`
+    ).catch(() => {});
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS member_graph_milestone_records (
         id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),

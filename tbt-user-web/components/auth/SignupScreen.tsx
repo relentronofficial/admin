@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, User, Mail, Building2, MapPin, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
+import { DEFAULT_PHONE, PhoneInput, formatPhoneInternational, phoneStatus, phoneStatusMessage, phoneToE164, type PhoneValue } from "./PhoneInput";
 
 type Step = "form" | "otp";
 type FocusedField = "firstName" | "lastName" | "phone" | "email" | "password" | "businessName" | "city" | "state" | "otp" | null;
@@ -18,7 +19,9 @@ export function SignupScreen() {
   // Form fields
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState<PhoneValue>(DEFAULT_PHONE);
+  // E.164 number the OTP was sent to (from the signup response)
+  const [otpPhone, setOtpPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [businessName, setBusinessName] = useState("");
@@ -47,7 +50,9 @@ export function SignupScreen() {
     if (submitting) return;
 
     if (!firstName.trim()) { setError("First name is required"); return; }
-    if (!phone.trim() || phone.length < 10) { setError("Enter a valid 10-digit phone number"); return; }
+    // Incomplete or invalid numbers never reach the OTP step.
+    const e164 = phoneToE164(phone);
+    if (!e164) { setError(phoneStatusMessage(phoneStatus(phone)) ?? "Enter a valid phone number"); return; }
     if (!email.trim()) { setError("Email is required"); return; }
     if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
 
@@ -55,11 +60,12 @@ export function SignupScreen() {
     setError("");
 
     try {
-      // Step 1: create account
-      await apiClient.post("/api/user-auth/signup", {
+      // Saves a pending registration and sends the OTP; the account itself is
+      // created only once the OTP is verified.
+      const res: any = await apiClient.post("/api/user-auth/signup", {
         firstName: firstName.trim(),
         lastName: lastName.trim() || undefined,
-        phone: phone.trim(),
+        phone: e164,
         email: email.trim().toLowerCase(),
         password,
         businessName: businessName.trim() || undefined,
@@ -67,15 +73,9 @@ export function SignupScreen() {
         state: state.trim() || undefined,
         productServiceType: productServiceType || undefined,
       });
-
-      // Step 2: trigger OTP so user can log in without leaving this page
-      const loginRes: any = await apiClient.post("/api/user-auth/login", {
-        phone: phone.trim(),
-        password,
-      });
       // In dev the OTP is returned directly
-      if (loginRes.data?.otp) setDevOtp(loginRes.data.otp);
-
+      if (res?.data?.otp) setDevOtp(res.data.otp);
+      setOtpPhone(res?.data?.phone ?? e164);
       setStep("otp");
     } catch (err: any) {
       setError(err.message || "Registration failed. Please try again.");
@@ -93,7 +93,7 @@ export function SignupScreen() {
     setError("");
     try {
       await apiClient.post("/api/user-auth/verify-otp", {
-        phone: phone.trim(),
+        phone: otpPhone,
         otp: otp.trim(),
       });
       router.replace("/onboarding");
@@ -102,17 +102,17 @@ export function SignupScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [otp, phone, submitting, router]);
+  }, [otp, otpPhone, submitting, router]);
 
   const handleResendOtp = useCallback(async () => {
     setError("");
     try {
-      const res: any = await apiClient.post("/api/user-auth/resend-otp", { phone: phone.trim() });
+      const res: any = await apiClient.post("/api/user-auth/resend-otp", { phone: otpPhone });
       if (res.data?.otp) setDevOtp(res.data.otp);
     } catch (err: any) {
       setError(err.message || "Failed to resend OTP");
     }
-  }, [phone]);
+  }, [otpPhone]);
 
   useEffect(() => {
     apiClient.get("/api/location/states?countryCode=IN")
@@ -161,7 +161,7 @@ export function SignupScreen() {
               <p className="text-white/65 text-[13px] mt-1">
                 {step === "form"
                   ? "Join Tamil Business Tribe"
-                  : `Enter the OTP sent to +91 ${phone}`}
+                  : `Enter the OTP sent to ${formatPhoneInternational(phone)}`}
               </p>
             </div>
 
@@ -208,13 +208,8 @@ export function SignupScreen() {
 
                 {/* Phone */}
                 <Field label="Phone *" focused={focused === "phone"}>
-                  <span className="absolute left-4 text-[12px] font-medium" style={{ color: "rgba(255,255,255,0.35)" }}>+91</span>
-                  <input type="tel" inputMode="numeric" value={phone}
-                    onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                    onFocus={() => setFocused("phone")} onBlur={() => setFocused(null)}
-                    placeholder="10-digit mobile number" autoComplete="tel" required
-                    className="w-full bg-transparent pl-12 pr-4 py-[12px] text-white text-[13px] placeholder-white/20 outline-none"
-                    style={{ caretColor: "#dc2626" }} />
+                  <PhoneInput value={phone} onChange={setPhone}
+                    onFocus={() => setFocused("phone")} onBlur={() => setFocused(null)} />
                 </Field>
 
                 {/* Email */}
