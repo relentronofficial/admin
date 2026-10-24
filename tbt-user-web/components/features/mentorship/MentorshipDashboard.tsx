@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
-  TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2,
+  TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
@@ -230,11 +230,14 @@ function callCardHint(card: CallCard | undefined): { text: string; color: string
     case "book":
       return { text: `${card.quota.remaining} free · Book Call`, color: "#22c55e", locked: false };
     case "unlock_with_coins":
-      return { text: `Unlock with TBT Coins · ${card.coinCost}`, color: "#eab308", locked: true };
+      // Quota exhausted but member has enough coins — coin icon, not lock icon.
+      return { text: `${card.coinCost} coins · Unlock Extra Call`, color: "#eab308", locked: false };
     case "purchase_coins":
-      return { text: "Purchase TBT Coins", color: "#eab308", locked: true };
+      // Quota exhausted and member needs more coins first — still clickable (opens purchase flow).
+      return { text: `Buy Coins to Unlock`, color: "#eab308", locked: false };
     default:
-      return { text: card.lockedReason === "not_included" ? "Not in your plan" : "All calls used", color: "#93939b", locked: true };
+      // "locked": not included in plan with no coin-purchase option — truly non-interactive.
+      return { text: card.lockedReason === "not_included" ? "Not in your plan" : "Limit reached", color: "#93939b", locked: true };
   }
 }
 
@@ -244,14 +247,19 @@ function SupportCallTile({ label, used: quotaUsed, total: quotaTotal, card, onCl
   const total = card?.quota.allocated ?? quotaTotal;
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const hint = callCardHint(card);
+  // "locked" = not in plan with no coin-purchase option — tile is completely non-interactive.
+  // "unlock_with_coins" / "purchase_coins" = limit reached but a coin path exists — keep clickable,
+  // the panel handles the coin flow automatically via its own coinPath logic.
+  const fullyLocked = card?.action === "locked";
   return (
     <button
       type="button"
-      onClick={onClick}
-      aria-haspopup="dialog"
-      aria-label={`${label}: ${used} of ${total} calls completed.${hint ? ` ${hint.text}.` : ""} View sessions`}
+      onClick={fullyLocked ? undefined : onClick}
+      disabled={fullyLocked}
+      aria-haspopup={fullyLocked ? undefined : "dialog"}
+      aria-label={`${label}: ${used} of ${total} calls completed.${hint ? ` ${hint.text}.` : ""}`}
       data-call-action={card?.action}
-      className="relative block w-full text-left rounded-[10px] cursor-pointer transition-[filter] hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#809ed5]"
+      className={`relative block w-full text-left rounded-[10px] transition-[filter] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#809ed5] ${fullyLocked ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:brightness-110"}`}
       style={{ background: "#242428", padding: "10px 12px", minHeight: 53 }}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
@@ -266,7 +274,11 @@ function SupportCallTile({ label, used: quotaUsed, total: quotaTotal, card, onCl
       </div>
       {hint && (
         <div className="flex items-center gap-1 truncate" style={{ color: hint.color, fontSize: 9, fontWeight: 600, marginTop: 2 }}>
-          {hint.locked && <Lock size={9} className="shrink-0" aria-hidden="true" />}
+          {hint.locked
+            ? <Lock size={9} className="shrink-0" aria-hidden="true" />
+            : (card?.action === "unlock_with_coins" || card?.action === "purchase_coins")
+              ? <Coins size={9} className="shrink-0" aria-hidden="true" />
+              : null}
           <span className="truncate">{hint.text}</span>
         </div>
       )}
