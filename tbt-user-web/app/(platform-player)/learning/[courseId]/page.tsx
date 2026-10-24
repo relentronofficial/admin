@@ -31,6 +31,7 @@ import {
   useCreateCoinOrder, useVerifyCoinPayment,
   type EpisodeResource, type EpisodeTask,
 } from "@/lib/hooks/useCourses";
+import { AUTO_COMPLETE_FRACTION, AUTO_COMPLETE_RETRY_MS, genuineWatchedSeconds, shouldAutoComplete } from "@/lib/utils/lessonAutoComplete";
 import { invalidateCoinBalance, useCoinBalance } from "@/lib/hooks/useCoins";
 import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -59,7 +60,7 @@ function isBunnyEmbed(url: string) {
 // Three signals, any one is sufficient:
 //   1. completedIds (from progress query) — authoritative DB state
 //   2. lesson.isCompleted (from course query) — may be stale but usually correct
-//   3. durationSeconds threshold — 85% of stored duration
+//   3. durationSeconds threshold — 90% of stored duration (same as automatic completion)
 // NOTE: there is intentionally NO position proximity heuristic — it was removed because
 // |resumeAtSeconds - actualWatchedSecs| < 5 caused false positives for partially-watched lessons.
 function lessonAlreadyDone(
@@ -74,7 +75,7 @@ function lessonAlreadyDone(
   const dur = durationSeconds ?? 0;
   const watched = actualWatchedSecs ?? 0;
   const resume = resumeAtSeconds ?? 0;
-  if (dur > 0 && watched >= dur * 0.85) return true;
+  if (dur > 0 && watched >= dur * AUTO_COMPLETE_FRACTION) return true;
   return false;
 }
 
@@ -1483,8 +1484,8 @@ export default function CourseDetailPage({
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextVisible, setUpNextVisible] = useState(false);
-  // Video-ended auto-completion: the lesson whose completion is being saved (replaces
-  // the Mark Complete button meanwhile), and the lesson to advance from once this
+  // Automatic completion (90% watched or video ended): the lesson whose completion is being saved (shows
+  // "Saving progress…" meanwhile), and the lesson to advance from once this
   // lesson's quiz / reflection / feedback prompts are closed.
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<{ from: string; notBefore: number } | null>(null);
@@ -1963,7 +1964,7 @@ export default function CourseDetailPage({
     const active = timerLessonRef.current;
     if (active && completedIdsRef.current.has(active)) {
       // Only clear the running timer when completion was user-triggered.
-      // markCalledRef is set synchronously before the mutation in handleMarkComplete /
+      // markCalledRef is set synchronously before the mutation in completeAtThreshold /
       // handleVideoEnded / doMarkComplete. The 30s progress heartbeat never sets it,
       // so a server-auto-completion via heartbeat won't kill a running timer 2 — tick()
       // will fire at expiry and show the lifeline/coin dialog as intended.
@@ -2067,19 +2068,80 @@ export default function CourseDetailPage({
     return () => clearTimeout(t);
   }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Once the player reports the real video duration, re-evaluate completion using
-  // accurate duration (overrides wrong durationSeconds stored in DB).
+  // Automatic completion at 90% genuine watch progress (lib/utils/lessonAutoComplete.ts):
+  // the server's watched seconds when the lesson was opened + this session's live watch
+  // time (counted only while playing, visible and not seeking). Re-checked every second
+  // as live watch time grows, and once the player reports the real duration. Saves once;
+  // the green tick appears only after the server confirms. The video keeps playing — the
+  // existing end-of-video flow then moves to the next lesson.
+  const autoCompleteRetryRef = useRef(0);
+  const completeAtThresholdRef = useRef<(genuineSecs: number) => void>(() => {});
+  useEffect(() => { autoCompleteRetryRef.current = 0; }, [selectedLesson?.id]);
   useEffect(() => {
-    if (!selectedLesson || liveRealDuration <= 0) return;
-    if (selectedLesson.isCompleted || completedIds.has(selectedLesson.id)) return;
-    if (markCalledRef.current) return;
-    const watched = selectedLesson.actualWatchedSecs ?? 0;
-    if (watched < liveRealDuration * 0.85) return;
-    justCompletedInSessionRef.current = true;
-    setWatchState("completed");
+    if (!selectedLesson) return;
+    const genuine = genuineWatchedSeconds(selectedLesson.actualWatchedSecs, liveWatchedRef.current);
+    if (!shouldAutoComplete({
+      genuineSecs: genuine,
+      durationSecs: liveRealDuration,
+      alreadyCompleted: !!selectedLesson.isCompleted || completedIds.has(selectedLesson.id),
+      requestInFlight: markCalledRef.current,
+      retryNotBefore: autoCompleteRetryRef.current,
+      now: Date.now(),
+    })) return;
+    completeAtThresholdRef.current(genuine);
+  }, [liveWatched, liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  completeAtThresholdRef.current = (genuineSecs: number) => {
+    const lesson = selectedLessonRef.current;
+    if (!lesson || markCalledRef.current) return;
     markCalledRef.current = true;
-    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true, videoDuration: liveRealDuration });
-  }, [liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
+    setAutoCompletingId(lesson.id);
+    // Focus timer: capture it for the early-completion bonus, then close the session.
+    const wasTimerLesson = timerLessonRef.current === lesson.id;
+    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
+    if (wasTimerLesson) {
+      heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+    }
+    markComplete.mutate({
+      lessonId: lesson.id,
+      watchedSeconds: Math.floor(Math.max(lastPlayheadRef.current, genuineSecs)),
+      isCompleted: true,
+      videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
+      timerStartedAt: wasTimerLesson ? timerStartedAtRef.current : undefined,
+      timerSeconds: capturedTimerDuration,
+      optimistic: false,
+    }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const data = res?.data ?? res;
+        if (data?.completed !== true) {
+          // Not counted by the server — stay incomplete and retry after more watching.
+          markCalledRef.current = false;
+          autoCompleteRetryRef.current = Date.now() + AUTO_COMPLETE_RETRY_MS;
+          return;
+        }
+        if (selectedLessonRef.current?.id !== lesson.id) return; // member already moved on
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
+          setBonusXpFlash(data.bonusXpAwarded);
+          setTimeout(() => setBonusXpFlash(null), 3500);
+        }
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        markCalledRef.current = false;
+        autoCompleteRetryRef.current = Date.now() + AUTO_COMPLETE_RETRY_MS;
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. We'll try again shortly.", { id: "lesson-complete-failed" });
+      },
+    });
+  };
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
   const handleVideoReady = (duration: number) => {
@@ -2145,7 +2207,7 @@ export default function CourseDetailPage({
   // The video actually ended (player "ended" event — never a seek, an open or a refresh).
   // Saves completion through the existing progress API once; the lesson shows as
   // completed and auto-advances only after the server confirms it. On failure: error
-  // toast, no completion, no navigation (the Mark Complete button is back as a retry).
+  // toast, no completion, no navigation (automatic completion retries after a back-off).
   const completeFromVideoEndRef = useRef<() => void>(() => {});
   completeFromVideoEndRef.current = () => {
     isPlayingRef.current = false;
@@ -2202,49 +2264,6 @@ export default function CourseDetailPage({
 
   const handleVideoEnded = () => {
     completeFromVideoEndRef.current();
-  };
-
-  const handleMarkComplete = () => {
-    if (!selectedLesson || markCalledRef.current) return;
-    markCalledRef.current = true;
-    justCompletedInSessionRef.current = true;
-    setWatchState("completed");
-    // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
-    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
-    if (!lessonData?.hasQuiz) triggerUpNextRef.current();
-    const allLessons = courseRef.current?.lessons ?? [];
-    const willBeAllDone = allLessons.length > 0 &&
-      allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
-    if (willBeAllDone) {
-      setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
-    }
-    const playhead = lastPlayheadRef.current > 0
-      ? Math.floor(lastPlayheadRef.current)
-      : (selectedLesson.resumeAtSeconds ?? 0);
-    // Capture timer data before clearing (for MG-04 early completion bonus)
-    const wasTimerLesson = timerLessonRef.current === selectedLesson.id;
-    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
-    // Mark server timer session as completed (if timer was running for this lesson)
-    if (wasTimerLesson) {
-      heartbeatMutateRef.current({ episodeId: selectedLesson.id, completed: true });
-      clearInterval(timerIntervalRef.current);
-      timerLessonRef.current = null;
-    }
-    markComplete.mutate({
-      lessonId: selectedLesson.id,
-      watchedSeconds: playhead,
-      isCompleted: true,
-      videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
-      timerStartedAt: timerStartedAtRef.current,
-      timerSeconds: capturedTimerDuration,
-    }, {
-      onSuccess: (data: any) => {
-        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
-          setBonusXpFlash(data.bonusXpAwarded);
-          setTimeout(() => setBonusXpFlash(null), 3500);
-        }
-      },
-    });
   };
 
   // ── Bunny iframe message handler — only runs when HLS is unavailable or failed ──
@@ -2431,7 +2450,7 @@ export default function CourseDetailPage({
   // ── 30-second heartbeat ──────────────────────────────────────────────────────
   // watchedSeconds uses the actual video playhead (lastPlayheadRef) — not
   // wall-clock elapsed — so pausing for several minutes doesn't inflate the
-  // stored position and falsely trigger the 85% completion threshold.
+  // stored position and falsely trigger the 90% completion threshold.
   // deltaSeconds still uses elapsed time (capped at 30s) to measure activity
   // since the last heartbeat, which is correct regardless of player type.
   useEffect(() => {
@@ -3276,17 +3295,7 @@ export default function CourseDetailPage({
                 >
                   <Loader2 size={13} className="animate-spin" /> Saving progress…
                 </span>
-              ) : (
-                <button
-                  onClick={handleMarkComplete}
-                  disabled={markComplete.isPending}
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-90 disabled:opacity-60"
-                  style={{ background: "var(--color-success)", color: "#fff" }}
-                >
-                  {markComplete.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                  Mark Complete
-                </button>
-              )}
+              ) : null}
             </div>
 
             {/* Lesson navigation — Previous / counter / Next */}
@@ -3331,10 +3340,10 @@ export default function CourseDetailPage({
               </div>
             )}
 
-            {/* 85% completion progress indicator */}
+            {/* 90% completion progress indicator */}
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
-              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.95 - liveWatched));
+              const toComplete = Math.max(0, Math.ceil(activeDuration * AUTO_COMPLETE_FRACTION - liveWatched));
               const currentLesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any;
               const hasQuiz = !!currentLesson?.hasQuiz;
               const quizUnlockPct: number = currentLesson?.quizUnlockPercent ?? 80;
@@ -3344,7 +3353,7 @@ export default function CourseDetailPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs" style={{ color: "var(--color-text-subtle)" }}>
                     <span>{pct}% watched</span>
-                    {pct < 95 ? (
+                    {pct < AUTO_COMPLETE_FRACTION * 100 ? (
                       <span>
                         {toComplete > 60
                           ? `${Math.ceil(toComplete / 60)}m to complete`
