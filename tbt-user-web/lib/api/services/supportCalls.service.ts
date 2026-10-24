@@ -134,4 +134,10 @@ export const supportCallsService = {
     apiClient.get<never, ApiResponse<{ meetingUrl: string }>>(
       `/api/user/support-calls/bookings/${bookingId}/join`,
     ),
+
+  buyExtra: (params: { category: SupportCallCategory; quantity: number; expectedCoinCostEach: number }) =>
+    apiClient.post<never, ApiResponse<{ purchased: number; coinsSpent: number; newBalance: number }>>(
+      `/api/user/support-calls/buy`,
+      params,
+    ),
 };

@@ -2325,6 +2325,22 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_coin_orders_member ON coin_orders(member_id)`
     ).catch(() => {});
+    // Upfront coin purchases of extra support call quota. Member spends coins to
+    // pre-purchase N extra calls for a category; the purchased quantity is added
+    // to their allocated count so they can book slots without per-slot coin deduction.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_call_coin_purchases (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id   UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        category    VARCHAR(50) NOT NULL,
+        quantity    INT NOT NULL CHECK (quantity > 0),
+        coins_each  INT NOT NULL CHECK (coins_each > 0),
+        purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_sccp_member ON support_call_coin_purchases(member_id)`
+    ).catch(() => {});
 
     // ── Admin-configurable Weekly Activity Graph (2026-10-17) ───────────────
     // Per-program weeks (X axis) and milestones (Y axis), plus admin-recorded

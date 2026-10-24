@@ -37,6 +37,7 @@ import {
   SUPPORT_USAGE_COUNTS_SQL,
   APPROVED_CREDIT_PURCHASES_SQL,
   COIN_UNLOCKED_BOOKINGS_SQL,
+  COIN_PURCHASED_CALLS_SQL,
 } from '../../lib/supportQuota.js';
 import {
   SUPPORT_CALL_CATEGORIES,
@@ -47,6 +48,7 @@ import {
   categoryQuota,
   coinRefundFor,
   isSupportCallCategory,
+  isValidCoinCost,
   slotTimeMatches,
   joinState,
   quotaBucketFor,
@@ -7003,7 +7005,7 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   const plan = (member?.membershipPlan as string | null) ?? 'free';
 
-  const [entRows, usageRows, lifelineRows, purchasedRows, coinRows] = await Promise.all([
+  const [entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -7019,11 +7021,12 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
       : Promise.resolve([]),
     request.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
     request.server.prisma.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
+    request.server.prisma.$queryRawUnsafe<any[]>(COIN_PURCHASED_CALLS_SQL, memberId),
   ]);
 
   // Same pure computation as the admin member-quota view (lib/supportQuota.ts),
   // so purchased credits and legacy rows are handled identically in both.
-  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows));
+  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows));
 }
 
 function coinPurchaseAvailable() {
@@ -7037,7 +7040,7 @@ export async function getSupportCallsSummaryHandler(request: FastifyRequest, rep
   const db = request.server.prisma;
   const { plan } = await loadMemberPlanStatus(request);
 
-  const [entRows, usageRows, purchasedRows, coinRows, reservedRows, coinCosts, balance] = await Promise.all([
+  const [entRows, usageRows, purchasedRows, coinRows, coinPurchasedRows, reservedRows, coinCosts, balance] = await Promise.all([
     db.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -7047,6 +7050,7 @@ export async function getSupportCallsSummaryHandler(request: FastifyRequest, rep
     db.$queryRawUnsafe<any[]>(SUPPORT_USAGE_COUNTS_SQL, memberId),
     db.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
     db.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
+    db.$queryRawUnsafe<any[]>(COIN_PURCHASED_CALLS_SQL, memberId),
     db.$queryRawUnsafe<any[]>(
       `SELECT s.category, COUNT(*)::int AS n FROM support_call_bookings b
        JOIN support_call_sessions s ON s.id = b.session_id
@@ -7058,7 +7062,7 @@ export async function getSupportCallsSummaryHandler(request: FastifyRequest, rep
     loadCoinBalance(db, memberId),
   ]);
 
-  const quota = computeSupportQuota(plan, entRows, usageRows, [], purchasedRows, coinRows);
+  const quota = computeSupportQuota(plan, entRows, usageRows, [], purchasedRows, coinRows, coinPurchasedRows);
   const reserved: Record<string, number> = {};
   for (const r of reservedRows) reserved[r.category] = Number(r.n) || 0;
   const purchaseAvailable = coinPurchaseAvailable();
@@ -7375,6 +7379,61 @@ export async function joinSupportCallHandler(request: FastifyRequest, reply: Fas
   const state = joinState({ bookingStatus: rows[0].booking_status, session: s, hasMeetingUrl: s.hasMeetingUrl, now: new Date() });
   if (!state.ok) return ruleFail(reply, { status: 403, code: state.reason, message: state.message });
   return ok(reply, { meetingUrl: String(rows[0].meeting_url).trim() });
+}
+
+// POST /api/user/support-calls/buy — pre-purchase N extra call slots with TBT coins.
+// Coins are deducted immediately; the purchased quantity is added to the member's
+// allocated count so they can book any published slot with no per-slot coin payment.
+export async function buyExtraSupportCallsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const body = (request.body ?? {}) as { category?: unknown; quantity?: unknown; expectedCoinCostEach?: unknown };
+
+  if (!isSupportCallCategory(body.category as string)) return fail(reply, 400, 'Unknown support call category');
+  const category = body.category as string;
+
+  const qty = Number(body.quantity);
+  if (!Number.isInteger(qty) || qty < 1 || qty > 10) return fail(reply, 400, 'Quantity must be between 1 and 10');
+
+  const { plan, status } = await loadMemberPlanStatus(request);
+  if (status !== 'active') return fail(reply, 403, 'Your membership must be active to purchase extra calls');
+
+  const db = request.server.prisma;
+
+  // Check that the plan includes this category (same guard as canBook and canBookWithCoins).
+  const entRows = await db.$queryRawUnsafe<any[]>(
+    `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
+            COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
+     FROM plan_entitlements WHERE plan = $1`, plan,
+  );
+  const computedQuota = computeSupportQuota(plan, entRows, [], [], [], [], []);
+  const bucket = quotaBucketFor(computedQuota, category as any);
+  if ((bucket as any).included <= 0) return fail(reply, 403, 'This call type is not included in your plan');
+
+  // Validate the admin-set coin price for this category.
+  const coinCost = await loadCallCoinCost(db, category);
+  if (!isValidCoinCost(coinCost)) return fail(reply, 403, 'Extra calls in this category cannot be purchased with TBT coins right now');
+  if (body.expectedCoinCostEach !== coinCost) {
+    return fail(reply, 409, `The price has changed to ${coinCost} coins per call. Please review and try again.`);
+  }
+
+  const totalCoins = qty * coinCost;
+
+  const result = await db.$transaction(async (tx: any) => {
+    const debit = await debitCoins(tx, memberId, totalCoins, 'support_call_purchase', null);
+    if (!debit.ok) return { ok: false as const, balance: debit.balance };
+    await tx.$executeRawUnsafe(
+      `INSERT INTO support_call_coin_purchases (member_id, category, quantity, coins_each) VALUES ($1::uuid, $2, $3, $4)`,
+      memberId, category, qty, coinCost,
+    );
+    return { ok: true as const, balance: debit.balance };
+  });
+
+  if (!result.ok) {
+    return fail(reply, 402, `You need ${totalCoins} TBT coins but only have ${Math.max(0, result.balance)}`);
+  }
+
+  void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
+  return ok(reply, { purchased: qty, coinsSpent: totalCoins, newBalance: result.balance });
 }
 
 // ── Psychometric Assessment ───────────────────────────────────────────────────
