@@ -3118,12 +3118,13 @@ export default function CourseDetailPage({
 
       {/* Back */}
       <button
-        onClick={() => { selectedLesson ? setSelectedLesson(null) : router.back(); }}
-        className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100"
+        onClick={() => { window.history.length > 1 ? router.back() : router.push("/courses"); }}
+        aria-label={`Back to ${course.title}`}
+        className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100 cursor-pointer"
         style={{ color: "var(--color-text-subtle)" }}
       >
         <ChevronLeft size={16} />
-        {selectedLesson ? course.title : "Back"}
+        {course.title}
       </button>
 
       {/* Access expiry warning */}

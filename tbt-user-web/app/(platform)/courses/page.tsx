@@ -327,7 +327,7 @@ function SectionCard({
     : `/learning/${courseId}?section=${section.id}`;
 
   return (
-    <Link href={href} className="block">
+    <Link href={href} className="block" onClick={e => { if (section.isLocked) e.preventDefault(); }}>
       <div
         className="relative overflow-hidden"
         style={{
@@ -335,15 +335,17 @@ function SectionCard({
           borderRadius: 12,
           background: "#16161a",
           border: "1px solid #2e2e34",
-          cursor: "pointer",
+          cursor: section.isLocked ? "not-allowed" : "pointer",
           transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
         }}
         onMouseEnter={e => {
+          if (section.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#505058";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
           (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
         }}
         onMouseLeave={e => {
+          if (section.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
           (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
@@ -576,7 +578,7 @@ function CourseModuleCard({
     : `/learning/${courseId}?module=${module.id}`;
 
   return (
-    <Link href={href} className="block">
+    <Link href={href} className="block" onClick={e => { if (module.isLocked) e.preventDefault(); }}>
       <div
         className="relative overflow-hidden"
         style={{
@@ -584,15 +586,17 @@ function CourseModuleCard({
           borderRadius: 12,
           background: "#16161a",
           border: "1px solid #2e2e34",
-          cursor: "pointer",
+          cursor: module.isLocked ? "not-allowed" : "pointer",
           transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
         }}
         onMouseEnter={e => {
+          if (module.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#505058";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
           (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
         }}
         onMouseLeave={e => {
+          if (module.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
           (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
@@ -1423,9 +1427,17 @@ export default function CoursesPage() {
     const sections: Array<{ id: string; title: string; sortOrder: number }> = (primaryCourseDetail as any).sections ?? [];
     if (sections.length === 0) return null;
     const sorted = [...sections].sort((a, b) => a.sortOrder - b.sortOrder);
+    // Track whether the previous section is fully complete to enforce sequential unlocking.
+    // The backend's lesson.locked flag is the primary signal; the sequential check is an
+    // additional frontend guard for cases where episode order doesn't map cleanly to sections.
+    let prevSectionComplete = true;
     return sorted.map(sec => {
       const secLessons = lessons.filter((l: any) => l.sectionId === sec.id);
       const completed = secLessons.filter((l: any) => l.isCompleted).length;
+      const backendLocked = secLessons[0]?.locked ?? false;
+      const isLocked = !prevSectionComplete || backendLocked;
+      // Section is "done" only when every lesson in it is marked complete
+      if (secLessons.length > 0) prevSectionComplete = completed >= secLessons.length;
       return {
         id: sec.id,
         title: sec.title,
@@ -1433,7 +1445,7 @@ export default function CoursesPage() {
         totalEpisodes: secLessons.length,
         completedEpisodes: completed,
         firstLessonId: secLessons[0]?.id ?? null,
-        isLocked: secLessons[0]?.locked ?? false,
+        isLocked,
         thumbnail: secLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
       };
     });
@@ -1447,9 +1459,13 @@ export default function CoursesPage() {
     const modules: Array<{ id: string; title: string; description?: string; sortOrder: number; thumbnailUrl?: string | null }> = (primaryCourseDetail as any).modules ?? [];
     if (modules.length === 0) return null;
     const sorted = [...modules].sort((a, b) => a.sortOrder - b.sortOrder);
+    let prevModuleComplete = true;
     return sorted.map(mod => {
       const modLessons = lessons.filter((l: any) => Array.isArray(l.moduleIds) && l.moduleIds.includes(mod.id));
       const completed = modLessons.filter((l: any) => l.isCompleted).length;
+      const backendLocked = modLessons[0]?.locked ?? false;
+      const isLocked = !prevModuleComplete || backendLocked;
+      if (modLessons.length > 0) prevModuleComplete = completed >= modLessons.length;
       return {
         id: mod.id,
         title: mod.title,
@@ -1458,7 +1474,7 @@ export default function CoursesPage() {
         totalEpisodes: modLessons.length,
         completedEpisodes: completed,
         firstLessonId: modLessons[0]?.id ?? null,
-        isLocked: modLessons[0]?.locked ?? false,
+        isLocked,
         // Prefer the module's own thumbnail; fall back to the first episode thumbnail
         thumbnail: mod.thumbnailUrl ?? modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
       };

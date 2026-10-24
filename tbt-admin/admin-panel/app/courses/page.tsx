@@ -1283,7 +1283,7 @@ function EpisodesTab({ course }: { course: any }) {
         ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
         ${movingEpId === ep.id ? "opacity-40" : dragIdx.current === i ? "opacity-30" : ""}`}>
       <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
-      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{ep.order + 1}</span>
+      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{i + 1}</span>
       {ep.thumbnailUrl && (
         <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
       )}
