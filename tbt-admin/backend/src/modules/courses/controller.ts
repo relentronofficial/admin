@@ -6,11 +6,51 @@ import {
 import { invalidateCache } from '../../lib/cache.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { validateCoursePrice } from '../../lib/coursePriceValidation.js';
+import { planEpisodeOrder, sectionPositions, parseEpisodePosition, type OrderChange } from '../../lib/episodeOrdering.js';
 
 // Any course/episode edit can change what the home sections and the /courses
 // catalog render (thumbnail, title, price, publish state, episode count and
 // durations, visibility). Busting home:* and courses:catalog:* is cheap — a
 // handful of keys — and cheaper than serving stale data for up to 5 min.
+/**
+ * Renumber a course's episodes ("order" = 0..n-1) in canonical order — sections by
+ * sort_order, then unsectioned; see lib/episodeOrdering.ts — applying an optional
+ * change. One transaction with the course's episode rows locked, so concurrent
+ * edits can't interleave; only rows whose position changed are written. Episode
+ * ids and section membership are never touched.
+ */
+async function applyEpisodeOrder(prisma: any, courseId: string, change: OrderChange = {}): Promise<number> {
+  return prisma.$transaction(async (tx: any) => {
+    const eps: any[] = await tx.$queryRawUnsafe(
+      `SELECT id::text AS id, section_id::text AS section_id, "order", created_at
+         FROM course_episodes WHERE course_id = $1::uuid ORDER BY id FOR UPDATE`,
+      courseId,
+    );
+    const secs: any[] = await tx.$queryRawUnsafe(
+      `SELECT id::text AS id, sort_order, created_at FROM course_sections WHERE course_id = $1::uuid`,
+      courseId,
+    );
+    const plan = planEpisodeOrder(
+      eps.map((e) => ({ id: e.id, sectionId: e.section_id ?? null, order: e.order == null ? null : Number(e.order), createdAt: e.created_at })),
+      secs.map((x) => ({ id: x.id, sortOrder: x.sort_order == null ? null : Number(x.sort_order), createdAt: x.created_at })),
+      change,
+    );
+    const current = new Map(eps.map((e) => [e.id, e.order == null ? null : Number(e.order)]));
+    const changed = plan.filter((p) => current.get(p.id) !== p.order);
+    if (changed.length) {
+      await tx.$executeRawUnsafe(
+        `UPDATE course_episodes e SET "order" = v.ord
+           FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::int[]) AS ord) v
+          WHERE e.id = v.id AND e.course_id = $3::uuid`,
+        changed.map((c) => c.id),
+        changed.map((c) => c.order),
+        courseId,
+      );
+    }
+    return changed.length;
+  });
+}
+
 function bustHome(req: FastifyRequest): void {
   void invalidateCache(req.server.redis ?? null, 'home:*');
   void invalidateCache(req.server.redis ?? null, 'courses:catalog:*');
@@ -286,6 +326,12 @@ export async function deleteCourseSectionHandler(req: FastifyRequest, reply: Fas
   await req.server.prisma.$executeRawUnsafe(
     `DELETE FROM course_sections WHERE id = $1::uuid`, sectionId,
   );
+  const { id: courseId } = req.params as any;
+  try {
+    await applyEpisodeOrder(req.server.prisma, courseId);
+  } catch (err) {
+    req.log.error({ err }, 'episode order renumber after section delete failed');
+  }
   bustHome(req);
   return reply.send({ success: true });
 }
@@ -300,6 +346,12 @@ export async function reorderCourseSectionsHandler(req: FastifyRequest, reply: F
       ),
     ),
   );
+  const { id: courseId } = req.params as any;
+  try {
+    await applyEpisodeOrder(req.server.prisma, courseId);
+  } catch (err) {
+    req.log.error({ err }, 'episode order renumber after section reorder failed');
+  }
   bustHome(req);
   return reply.send({ success: true });
 }
@@ -308,7 +360,7 @@ export async function reorderCourseSectionsHandler(req: FastifyRequest, reply: F
 
 export async function listCourseEpisodesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
-  const [rows, moduleRows] = await Promise.all([
+  const [rows, moduleRows, sectionRows] = await Promise.all([
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT e.*, e.section_id, e.timer_seconds, e.streak_points,
          e.lifeline_enabled, e.lifeline_count, e.lifeline_coin_cost, e.max_purchased_lifelines,
@@ -325,7 +377,18 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
        JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`,
       id,
     ),
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT id::text AS id, sort_order, created_at FROM course_sections WHERE course_id = $1::uuid`,
+      id,
+    ),
   ]);
+  // Same canonical order members see (sections, then unsectioned) — also correct
+  // for legacy rows whose stored "order" values are stale or duplicated.
+  const orderInput = rows.map((e: any) => ({ id: e.id, sectionId: e.section_id ?? null, order: e.order == null ? null : Number(e.order), createdAt: e.created_at }));
+  const sectionInput = sectionRows.map((x: any) => ({ id: x.id, sortOrder: x.sort_order == null ? null : Number(x.sort_order), createdAt: x.created_at }));
+  const canonicalIdx = new Map(planEpisodeOrder(orderInput, sectionInput).map((p, i) => [p.id, i]));
+  const positions = sectionPositions(orderInput, sectionInput);
+  rows.sort((a: any, b: any) => (canonicalIdx.get(a.id) ?? 0) - (canonicalIdx.get(b.id) ?? 0));
   const modulesByEpisode = new Map<string, string[]>();
   for (const r of moduleRows) {
     if (!modulesByEpisode.has(r.episode_id)) modulesByEpisode.set(r.episode_id, []);
@@ -335,7 +398,7 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
     id: e.id, courseId: e.course_id, title: e.title,
     thumbnailUrl: e.thumbnail_url, videoUrl: e.video_url,
     bunnyVideoId: e.bunny_video_id, durationSeconds: Number(e.duration_seconds ?? 0),
-    order: Number(e.order ?? 0), isVisible: e.is_visible,
+    order: Number(e.order ?? 0), position: positions.get(e.id) ?? null, isVisible: e.is_visible,
     quizData: e.quiz_data, quizUnlockPercent: Number(e.quiz_unlock_percent ?? 80),
     drmEnabled: e.drm_enabled, bunnyDrmToken: e.bunny_drm_token,
     timerSeconds: e.timer_seconds != null ? Number(e.timer_seconds) : null,
@@ -423,6 +486,11 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
     episode.id,
   ).catch(() => {}));
   if (rawUpdates.length) await Promise.all(rawUpdates);
+  try {
+    await applyEpisodeOrder(req.server.prisma, id, { toSectionEnd: episode.id });
+  } catch (err) {
+    req.log.error({ err }, 'episode order renumber after create failed');
+  }
   bustHome(req);
   return reply.status(201).send({ success: true, data: { ...episode, timerSeconds: timerSecs, streakPoints, sectionId, moduleIds, sideContent, formConfig }, error: null });
 }
@@ -430,6 +498,18 @@ export async function createCourseEpisodeHandler(req: FastifyRequest, reply: Fas
 export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: FastifyReply) {
   const { eid } = req.params as any;
   const body = req.body as any;
+  // "Episode Order": 1-based position inside the episode's section (validated up front,
+  // so an invalid value saves nothing).
+  let position: number | undefined;
+  if (body.position !== undefined && body.position !== null && body.position !== '') {
+    const p = parseEpisodePosition(body.position);
+    if (!p.ok) return reply.status(400).send({ success: false, data: null, error: p.error });
+    position = p.value;
+  }
+  const before = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT course_id::text AS course_id, section_id::text AS section_id FROM course_episodes WHERE id = $1::uuid`, eid,
+  ).catch(() => [] as any[]);
+  if (!before.length) return reply.status(404).send({ success: false, data: null, error: 'Episode not found' });
   const data: any = {};
   ['title', 'description', 'thumbnailUrl', 'videoUrl', 'bunnyVideoId', 'isVisible', 'quizData', 'bunnyDrmToken'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];
@@ -496,6 +576,16 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
     ).catch(() => {}));
   }
   if (rawUpdates.length) await Promise.all(rawUpdates);
+  const movedSection = sectionId !== undefined && (sectionId ?? null) !== (before[0].section_id ?? null);
+  if (position !== undefined || movedSection) {
+    try {
+      await applyEpisodeOrder(req.server.prisma, before[0].course_id,
+        position !== undefined ? { move: { episodeId: eid, position } } : { toSectionEnd: eid });
+    } catch (err) {
+      req.log.error({ err }, 'episode order update failed');
+      return reply.status(500).send({ success: false, data: null, error: 'The episode was saved, but its order could not be updated. Please try again.' });
+    }
+  }
   bustHome(req);
   return reply.send({ success: true, data: { ...episode, timerSeconds: timerSecs ?? null, streakPoints: streakPoints ?? undefined, sectionId: sectionId ?? null, moduleIds: moduleIds ?? [], lifelineEnabled: lifelineEnabled ?? true, lifelineCount: lifelineCount ?? 3, lifelineCoinCost: lifelineCoinCost ?? 50, maxPurchasedLifelines: maxPurchasedLifelines ?? 5, sideContent: sideContent ?? null, formConfig: formConfig ?? null }, error: null });
 }
@@ -508,12 +598,20 @@ export async function deleteCourseEpisodeHandler(req: FastifyRequest, reply: Fas
 }
 
 export async function reorderCourseEpisodesHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { ids } = req.body as any;
-  await req.server.prisma.$transaction(
-    ids.map((id: string, i: number) =>
-      req.server.prisma.courseEpisode.update({ where: { id }, data: { order: i } })
-    )
-  );
+  const { id } = req.params as any;
+  const { ids } = (req.body ?? {}) as any;
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((x: unknown) => typeof x === 'string')) {
+    return reply.status(400).send({ success: false, data: null, error: 'ids must be a non-empty array of episode ids' });
+  }
+  const owned = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT count(*)::int AS n FROM course_episodes WHERE course_id = $1::uuid AND id = ANY($2::uuid[])`,
+    id, ids,
+  ).catch(() => [{ n: -1 }]);
+  if (Number(owned[0]?.n) !== new Set(ids).size) {
+    return reply.status(400).send({ success: false, data: null, error: 'Some episodes do not belong to this course' });
+  }
+  // The admin's sequence decides the order inside each section; sections stay intact.
+  await applyEpisodeOrder(req.server.prisma, id, { sequence: ids });
   bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
