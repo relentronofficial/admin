@@ -334,8 +334,8 @@ function RevenueStatsSection() {
       rtoReturnsPercent: revenue.rtoReturnsPercent?.toString() ?? "",
       conversionRate: revenue.conversionRate?.toString() ?? "",
       platformBadge: revenue.platformBadge ?? "",
-      dailyRevenue: revenue.dailyRevenue?.map(String) ?? ["", "", "", "", "", "", ""],
-      dailyOrders:  revenue.dailyOrders?.map(String)  ?? ["", "", "", "", "", "", ""],
+      dailyRevenue: revenue.dailyRevenue?.map((v: number | null) => (v == null ? "" : String(v))) ?? ["", "", "", "", "", "", ""],
+      dailyOrders:  revenue.dailyOrders?.map((v: number | null) => (v == null ? "" : String(v)))  ?? ["", "", "", "", "", "", ""],
     });
     setIsDirty(false);
   }, [revenue?.weekNumber]);
@@ -917,6 +917,7 @@ function WeeklyLineChart({
   // the seven day labels never overlap.
   const svgRef = useRef<SVGSVGElement>(null);
   const [W, setW] = useState(700);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   useEffect(() => {
     const el = svgRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -965,6 +966,17 @@ function WeeklyLineChart({
   const peakY = peakDisplay != null ? yRev(peakDisplay) : 0;
 
   const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
+
+  // Pointer → nearest weekday column (SVG units match CSS px; scaled if the box differs).
+  const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
+    const box = svgRef.current?.getBoundingClientRect();
+    if (!box || box.width === 0) return;
+    const x = ((e.clientX - box.left) / box.width) * W;
+    setHoverIdx(Math.min(6, Math.max(0, Math.round(((x - PL) / PW) * 6))));
+  };
+  const tipW = 112;
+  const tipX = hoverIdx != null ? Math.min(Math.max(xOf(hoverIdx) - tipW / 2, PL), W - PR - tipW) : 0;
+  const unit = mode === "cumulative" ? "Total " : "";
 
   // Y-axis ticks (4 levels)
   const yTicks = [0, 0.33, 0.67, 1].map(p => ({
@@ -1027,6 +1039,39 @@ function WeeklyLineChart({
           )}
         </g>
       )}
+
+      {/* Hover: guide line + tooltip for the nearest day */}
+      {hoverIdx != null && (
+        <g data-testid="chart-tooltip" pointerEvents="none">
+          <line x1={xOf(hoverIdx)} y1={PT} x2={xOf(hoverIdx)} y2={PT + PH} stroke="rgba(255,255,255,0.25)" strokeWidth="1" />
+          {displayRev[hoverIdx] != null && (
+            <circle cx={xOf(hoverIdx)} cy={yRev(displayRev[hoverIdx] as number)} r="5" fill="none" stroke="var(--color-accent)" strokeWidth="2" />
+          )}
+          <rect x={tipX} y={PT} width={tipW} height={46} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
+          <text x={tipX + 8} y={PT + 13} fontSize="9" fill="rgba(255,255,255,0.55)" fontWeight="700">
+            {weekDays[hoverIdx]?.label} ({weekDays[hoverIdx]?.day}){mode === "cumulative" ? " · cumulative" : ""}
+          </text>
+          <text x={tipX + 8} y={PT + 27} fontSize="10" fill="var(--color-accent)" fontWeight="800">
+            {displayRev[hoverIdx] != null ? `${unit}₹${(displayRev[hoverIdx] as number).toLocaleString("en-IN")}` : "No revenue saved"}
+          </text>
+          <text x={tipX + 8} y={PT + 40} fontSize="9" fill="#eab308">
+            {displayOrd[hoverIdx] != null ? `${unit}${displayOrd[hoverIdx]} orders` : "No orders saved"}
+          </text>
+        </g>
+      )}
+
+      {/* Pointer capture over the plot area (drawn last so it receives hover) */}
+      <rect
+        x={PL - 12}
+        y={PT}
+        width={PW + 24}
+        height={PH}
+        fill="transparent"
+        onPointerMove={onPointer}
+        onPointerDown={onPointer}
+        onPointerLeave={() => setHoverIdx(null)}
+        style={{ cursor: "crosshair" }}
+      />
 
       {/* X-axis labels */}
       {weekDays.map((d, i) => (
