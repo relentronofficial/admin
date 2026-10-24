@@ -258,3 +258,85 @@ select option {
   animation: heartbeat 1.6s ease-in-out 0.8s 1;
   display: inline-block;
 }
+
+/* ── Course Page Animations ─────────────────────────────────────────────────── */
+
+/* 1. Progress bar — fills from zero on mount */
+@keyframes progress-fill {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.progress-bar-fill {
+  transform-origin: left center;
+  animation: progress-fill 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar-fill { animation: none; }
+}
+
+/* 2 + 6. Staggered entrance + scroll-triggered reveals (one system) */
+.reveal-card {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.reveal-card.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal-card { opacity: 1; transform: none; transition: none; }
+}
+
+/* 3. Shimmer skeleton upgrade */
+@keyframes skeleton-wave {
+  0%   { background-position: -600px 0; }
+  100% { background-position:  600px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #1e1e22 0%,
+    #2e2e36 40%,
+    #3a3a44 50%,
+    #2e2e36 60%,
+    #1e1e22 100%
+  );
+  background-size: 600px 100%;
+  animation: skeleton-wave 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer { animation: none; background: #1e1e22; }
+}
+
+/* 5. Lock icon breathing */
+@keyframes lock-breathe {
+  0%, 100% { opacity: 0.5;  transform: scale(1); }
+  50%       { opacity: 0.9;  transform: scale(1.15); }
+}
+.lock-breathe {
+  animation: lock-breathe 2.4s ease-in-out infinite;
+  display: inline-flex;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lock-breathe { animation: none; opacity: 0.7; }
+}
+
+/* 7. Live update dot — shown on in-progress cards */
+@keyframes live-dot-pulse {
+  0%, 100% { opacity: 1;    transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(0.7); }
+}
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 4px;
+  animation: live-dot-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}

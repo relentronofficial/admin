@@ -11,6 +11,39 @@ import MentorshipDashboard from "@/components/features/mentorship/MentorshipDash
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
 
+// ── Scroll-reveal + stagger hook (items 2 + 6) ───────────────────────────────
+function useRevealGrid(ref: React.RefObject<HTMLDivElement | null>, ready: boolean) {
+  useEffect(() => {
+    if (!ready) return;
+    const grid = ref.current;
+    if (!grid) return;
+    const cards = Array.from(grid.children) as HTMLElement[];
+    const obs = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            (entry.target as HTMLElement).classList.add("reveal-visible");
+            obs.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.08 }
+    );
+    cards.forEach((card, i) => {
+      card.classList.add("reveal-card");
+      const rect = card.getBoundingClientRect();
+      if (rect.bottom < window.innerHeight + 40) {
+        card.style.transitionDelay = `${i * 55}ms`;
+        void card.offsetWidth; // trigger reflow so transition fires
+        card.classList.add("reveal-visible");
+      } else {
+        obs.observe(card);
+      }
+    });
+    return () => obs.disconnect();
+  }, [ready]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SectionCardData {
@@ -88,17 +121,17 @@ function ModuleCard({
           background: "#16161a",
           border: "1px solid #2e2e34",
           cursor: "pointer",
-          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
         onMouseEnter={e => {
           (e.currentTarget as HTMLElement).style.borderColor = "#505058";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px) scale(1.01)";
         }}
         onMouseLeave={e => {
           (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
         {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
@@ -263,18 +296,20 @@ function ModuleCard({
           {/* Progress bar */}
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-              <span style={{ fontSize: 10, color: "#52525a" }}>
-                {isCompleted ? "Completed" : isInProgress ? `${Math.round(progressPct)}%` : "Not started"}
+              <span style={{ fontSize: 10, color: "#52525a", display: "flex", alignItems: "center" }}>
+                {isCompleted ? "Completed" : isInProgress ? (
+                  <><span className="live-dot" />{Math.round(progressPct)}%</>
+                ) : "Not started"}
               </span>
             </div>
             <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
               <div
+                className="progress-bar-fill"
                 style={{
                   width: `${Math.min(100, isCompleted ? 100 : progressPct)}%`,
                   height: "100%",
                   borderRadius: 4,
                   background: isCompleted ? "#22c55e" : "var(--color-accent)",
-                  transition: "width 1s ease",
                 }}
               />
             </div>
@@ -287,7 +322,7 @@ function ModuleCard({
             className="absolute inset-0 flex flex-col items-center justify-center gap-2"
             style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
           >
-            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <Lock size={22} className="lock-breathe" style={{ color: "#7a7a88" }} />
             <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
               {lockReason ? lockMessages[lockReason] : (course.price > 0 ? "Purchase this module to unlock" : "Request access to unlock")}
             </div>
@@ -336,19 +371,19 @@ function SectionCard({
           background: "#16161a",
           border: "1px solid #2e2e34",
           cursor: section.isLocked ? "not-allowed" : "pointer",
-          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
         onMouseEnter={e => {
           if (section.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#505058";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px) scale(1.01)";
         }}
         onMouseLeave={e => {
           if (section.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
         {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
@@ -484,12 +519,12 @@ function SectionCard({
             </div>
             <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
               <div
+                className="progress-bar-fill"
                 style={{
                   width: `${Math.min(100, progressPct)}%`,
                   height: "100%",
                   borderRadius: 4,
                   background: isCompleted ? "#22c55e" : "var(--color-accent)",
-                  transition: "width 1s ease",
                 }}
               />
             </div>
@@ -502,7 +537,7 @@ function SectionCard({
             className="absolute inset-0 flex flex-col items-center justify-center gap-2"
             style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
           >
-            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <Lock size={22} className="lock-breathe" style={{ color: "#7a7a88" }} />
             <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
               Complete the previous module to unlock
             </div>
@@ -528,11 +563,14 @@ function SectionGrid({
   isLoading: boolean;
   uiStrings: any;
 }) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useRevealGrid(gridRef, !isLoading && sections.length > 0);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="animate-pulse" style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }} />
+          <div key={i} className="skeleton-shimmer" style={{ height: 248, borderRadius: 12, border: "1px solid #414146" }} />
         ))}
       </div>
     );
@@ -546,7 +584,7 @@ function SectionGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {sections.map((section, i) => (
         <SectionCard key={section.id} section={section} courseId={courseId} courseThumbnail={courseThumbnail} index={i} />
       ))}
@@ -587,19 +625,19 @@ function CourseModuleCard({
           background: "#16161a",
           border: "1px solid #2e2e34",
           cursor: module.isLocked ? "not-allowed" : "pointer",
-          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.15s",
+          transition: "border-color 0.2s, box-shadow 0.2s, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
         onMouseEnter={e => {
           if (module.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#505058";
           (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 24px rgba(0,0,0,0.5)";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(-2px) scale(1.01)";
         }}
         onMouseLeave={e => {
           if (module.isLocked) return;
           (e.currentTarget as HTMLElement).style.borderColor = "#2e2e34";
           (e.currentTarget as HTMLElement).style.boxShadow = "none";
-          (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
+          (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
         {/* ── Thumbnail (140px) ─── */}
@@ -730,12 +768,12 @@ function CourseModuleCard({
             </div>
             <div style={{ width: "100%", height: 4, background: "#28282f", borderRadius: 4, overflow: "hidden" }}>
               <div
+                className="progress-bar-fill"
                 style={{
                   width: `${Math.min(100, progressPct)}%`,
                   height: "100%",
                   borderRadius: 4,
                   background: isCompleted ? "#22c55e" : "var(--color-accent)",
-                  transition: "width 1s ease",
                 }}
               />
             </div>
@@ -748,7 +786,7 @@ function CourseModuleCard({
             className="absolute inset-0 flex flex-col items-center justify-center gap-2"
             style={{ background: "rgba(8,8,10,0.88)", zIndex: 10, borderRadius: 12 }}
           >
-            <Lock size={22} style={{ color: "#7a7a88" }} />
+            <Lock size={22} className="lock-breathe" style={{ color: "#7a7a88" }} />
             <div style={{ color: "#9898a8", fontSize: 11, textAlign: "center", padding: "0 22px", lineHeight: 1.5 }}>
               Complete the previous topic to unlock
             </div>
@@ -774,11 +812,14 @@ function CourseModuleGrid({
   isLoading: boolean;
   uiStrings: any;
 }) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useRevealGrid(gridRef, !isLoading && modules.length > 0);
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="animate-pulse" style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }} />
+          <div key={i} className="skeleton-shimmer" style={{ height: 248, borderRadius: 12, border: "1px solid #414146" }} />
         ))}
       </div>
     );
@@ -792,7 +833,7 @@ function CourseModuleGrid({
     );
   }
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
       {modules.map((mod, i) => (
         <CourseModuleCard key={mod.id} module={mod} courseId={courseId} courseThumbnail={courseThumbnail} index={i} />
       ))}
@@ -980,12 +1021,12 @@ function ModuleProgressBar({
           </div>
           <div style={{ height: 6, background: "#2a2a2e", borderRadius: 6, overflow: "hidden" }}>
             <div
+              className="progress-bar-fill"
               style={{
                 width: `${pct}%`,
                 height: "100%",
                 borderRadius: 6,
                 background: pct === 100 ? "#22c55e" : "var(--color-accent)",
-                transition: "width 1s ease",
               }}
             />
           </div>
@@ -1166,6 +1207,7 @@ function SavedVideoCard({ item, onUnsave }: { item: any; onUnsave?: (episodeId: 
           {/* Progress bar */}
           <div style={{ height: 3, background: "rgba(255,255,255,0.15)", borderRadius: 3, overflow: "hidden" }}>
             <div
+              className="progress-bar-fill"
               style={{
                 width: `${isCompleted ? 100 : progressPct}%`,
                 height: "100%",
@@ -1198,7 +1240,9 @@ function CourseGrid({
   isNewMember?: boolean;
 }) {
   const [showAll, setShowAll] = useState(false);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { setShowAll(false); }, [courses]);
+  useRevealGrid(gridRef, !isLoading && courses.length > 0);
 
   const visibleCourses = showAll ? courses : courses.slice(0, 6);
 
@@ -1208,8 +1252,8 @@ function CourseGrid({
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="animate-pulse"
-            style={{ height: 248, borderRadius: 12, background: "#242428", border: "1px solid #414146" }}
+            className="skeleton-shimmer"
+            style={{ height: 248, borderRadius: 12, border: "1px solid #414146" }}
           />
         ))}
       </div>
@@ -1235,7 +1279,7 @@ function CourseGrid({
 
   return (
     <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div ref={gridRef} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {visibleCourses.map((course: any, i) => {
           let lockReason: LockReason = null;
           if (isNewMember && !course.hasAccess && !enrolledMap.has(course.id)) {
