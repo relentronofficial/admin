@@ -207,6 +207,32 @@ export function weekProgressLevel(
 }
 
 /**
+ * Height a cumulative reported revenue reaches on the milestone axis, from the
+ * revenue milestones' admin-set thresholds (`thresholds[m]`, null for a
+ * milestone without one; axis level = m + 1):
+ *  - below the first threshold → 0 (revenue never lifts the line on its own
+ *    before the first revenue milestone is actually reached);
+ *  - at or above a threshold → that milestone's level, then moving
+ *    proportionally toward the next higher threshold — e.g. ₹3 lakhs between
+ *    ₹1 lakh and ₹5 lakhs sits halfway between those two rows;
+ *  - at or above the highest threshold → the highest reached level.
+ * Thresholds that do not increase along the axis are skipped for the
+ * in-between step, so a misconfigured order can never lower the point.
+ */
+export function revenueProgressLevel(running: number, thresholds: Array<number | null>): number {
+  let reached = -1;
+  thresholds.forEach((t, m) => {
+    if (t !== null && running >= t) reached = m;
+  });
+  if (reached < 0) return 0;
+  const base = thresholds[reached]!;
+  const next = thresholds.findIndex((t, m) => m > reached && t !== null && t > base);
+  if (next < 0) return reached + 1;
+  const fraction = (running - base) / (thresholds[next]! - base);
+  return Math.round((reached + 1 + fraction * (next - reached)) * 100) / 100;
+}
+
+/**
  * Status of one activity for one member, from the records the existing
  * checklist flow already writes. Only an admin approval (of the task, or of
  * the day the task was ticked/submitted in) ever yields `completed` — a
@@ -411,6 +437,7 @@ export function buildWeeklyGraph(params: {
         reachedWeekIdx[m] = i;
       }
     });
+    revenueLevelByWeek[i] = Math.max(revenueLevelByWeek[i], revenueProgressLevel(running, thresholds));
   });
   const totalToDate = hasRevenue ? round2(revenue.reduce((s, e) => s + e.amount, 0)) : null;
   // Revenue reported for days outside every shown week still counts toward the total.
