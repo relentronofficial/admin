@@ -104,6 +104,21 @@ const memberUpdateSchema = z.object({
   currentTier: z.number().int().min(1).default(1),
   password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
   subscriptionEndsAt: z.string().optional().or(z.literal("")).nullable(),
+  hasWebsite: z.boolean().default(false),
+  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  skillBusinessFoundation: z.number().int().min(1).max(10).default(1),
+  skillContent: z.number().int().min(1).max(10).default(1),
+  skillFunnels: z.number().int().min(1).max(10).default(1),
+  skillAds: z.number().int().min(1).max(10).default(1),
+  skillSales: z.number().int().min(1).max(10).default(1),
+  skillOverallMarketing: z.number().int().min(1).max(10).default(1),
+  weeklyLearningHours: z.number().int().min(5).max(80).default(5),
+  teamSize: z.string().optional().or(z.literal("")),
+  businessStartedFrom: z.string().optional().or(z.literal("")),
+  instagramStats: z.string().optional().or(z.literal("")),
+  facebookStats: z.string().optional().or(z.literal("")),
+  websiteUrl: z.string().optional().or(z.literal("")),
+  revenueGoalAfterTbt: z.string().optional().or(z.literal("")),
 });
 
 type MemberUpdateInput = z.infer<typeof memberUpdateSchema>;
@@ -279,6 +294,14 @@ export default function MembersListPage() {
   const watchHasSMM = watch("hasMarketingTeam");
   const watchHasVideo = watch("hasVideoEditing");
   const watchPlan = watch("membershipPlan");
+  const watchHasWebsite = watch("hasWebsite");
+  const watchSkillBF = watch("skillBusinessFoundation");
+  const watchSkillContent = watch("skillContent");
+  const watchSkillFunnels = watch("skillFunnels");
+  const watchSkillAds = watch("skillAds");
+  const watchSkillSales = watch("skillSales");
+  const watchSkillOM = watch("skillOverallMarketing");
+  const watchLearningHours = watch("weeklyLearningHours");
 
   const toggleChannel = (channel: string) => {
     if (watchChannels.includes(channel)) {
@@ -348,6 +371,21 @@ export default function MembersListPage() {
         batchId: editingMember.batchId || "",
         currentTier: editingMember.currentTier ?? 1,
         subscriptionEndsAt: "",
+        hasWebsite: editingMember.hasWebsite || false,
+        weeklyWebsiteOrders: editingMember.weeklyWebsiteOrders ?? null,
+        skillBusinessFoundation: editingMember.skillBusinessFoundation ?? 1,
+        skillContent: editingMember.skillContent ?? 1,
+        skillFunnels: editingMember.skillFunnels ?? 1,
+        skillAds: editingMember.skillAds ?? 1,
+        skillSales: editingMember.skillSales ?? 1,
+        skillOverallMarketing: editingMember.skillOverallMarketing ?? 1,
+        weeklyLearningHours: editingMember.weeklyLearningHours ?? 5,
+        teamSize: editingMember.teamSize || "",
+        businessStartedFrom: editingMember.businessStartedFrom || "",
+        instagramStats: editingMember.instagramStats || "",
+        facebookStats: editingMember.facebookStats || "",
+        websiteUrl: editingMember.websiteUrl || "",
+        revenueGoalAfterTbt: editingMember.revenueGoalAfterTbt || "",
       });
     }
   }, [editingMember, reset]);
@@ -1151,6 +1189,36 @@ export default function MembersListPage() {
                       <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Address</label>
                       <textarea {...register("businessAddress")} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
                     </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Total Members in Team</label>
+                        <input {...register("teamSize")} placeholder="e.g. 5" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Started From</label>
+                        <input {...register("businessStartedFrom")} placeholder="e.g. 2019 or Yet to Start" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Website URL</label>
+                        <input {...register("websiteUrl")} placeholder="https://yourbrand.com" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Revenue Goal After TBT</label>
+                        <input {...register("revenueGoalAfterTbt")} placeholder="e.g. 1Cr in 12 months" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Instagram Posts &amp; Followers</label>
+                        <input {...register("instagramStats")} placeholder="e.g. 120 posts, 4.2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Facebook Posts &amp; Followers</label>
+                        <input {...register("facebookStats")} placeholder="e.g. 80 posts, 2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -1211,9 +1279,83 @@ export default function MembersListPage() {
                   </div>
                 </section>
 
-                {/* ── 04. Account Management ─────────────────────────────── */}
+                {/* ── 04. Skills & Growth ─────────────────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Account Management</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Skills & Growth</h4>
+                  <div className="space-y-6">
+                    <div>
+                      <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest mb-3 font-rajdhani">Does the member have a website?</p>
+                      <div className="flex gap-3">
+                        {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => {
+                              setValue("hasWebsite", val, { shouldDirty: true });
+                              if (!val) setValue("weeklyWebsiteOrders", null as any, { shouldDirty: true });
+                            }}
+                            className={cn("px-6 h-[40px] rounded-lg text-[13px] font-semibold border transition-colors",
+                              watchHasWebsite === val
+                                ? "bg-[#dc2626] text-white border-[#dc2626]"
+                                : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:border-[#555]"
+                            )}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {watchHasWebsite && (
+                      <div className="w-1/2">
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Weekly orders from website</label>
+                        <input type="number" min={0}
+                          {...register("weeklyWebsiteOrders", { valueAsNumber: true })}
+                          placeholder="e.g. 50"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Rate skills (1–10)</p>
+                      <p className="text-[12px] text-[#555] mb-5">1 = Beginner · 10 = Expert</p>
+                      <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                        {([
+                          { name: "skillBusinessFoundation" as const, label: "Business Foundation", val: watchSkillBF },
+                          { name: "skillContent" as const, label: "Content", val: watchSkillContent },
+                          { name: "skillFunnels" as const, label: "Funnels", val: watchSkillFunnels },
+                          { name: "skillAds" as const, label: "Ads", val: watchSkillAds },
+                          { name: "skillSales" as const, label: "Sales", val: watchSkillSales },
+                          { name: "skillOverallMarketing" as const, label: "Overall Marketing", val: watchSkillOM },
+                        ] as const).map(({ name, label, val }) => (
+                          <div key={name}>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-[12px] text-[#aaa]">{label}</label>
+                              <span className="text-[14px] font-bold text-white tabular-nums">{val ?? 1}<span className="text-[#555] font-normal">/10</span></span>
+                            </div>
+                            <input type="range" min={1} max={10} step={1}
+                              {...register(name, { valueAsNumber: true })}
+                              className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                            />
+                            <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>Beginner</span><span>Expert</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Hours per week for learning</p>
+                        <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 5} <span className="text-[#555] text-[13px] font-normal">hrs/week</span></span>
+                      </div>
+                      <input type="range" min={5} max={80} step={5}
+                        {...register("weeklyLearningHours", { valueAsNumber: true })}
+                        className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                      />
+                      <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>5 hrs</span><span>40 hrs</span><span>80 hrs</span></div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* ── 05. Account Management ─────────────────────────────── */}
+                <section>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">05. Account Management</h4>
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-5">
                       <div>

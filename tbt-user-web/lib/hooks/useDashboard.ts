@@ -33,7 +33,7 @@ export const useContinueLearning = () =>
       const res = await dashboardService.getContinueLearning();
       return res.data;
     },
-    staleTime: 0,
+    staleTime: 60 * 1000,
   });
 
 export const useWatchHistory = (params: { page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed' } = {}) =>
@@ -52,6 +52,37 @@ export const useRemoveFromHistory = () => {
     mutationFn: (episodeId: string) => dashboardService.removeFromHistory(episodeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "dashboard", "watch-history"] });
+    },
+  });
+};
+
+export const useSavedVideos = (params: { limit?: number } = {}) =>
+  useQuery({
+    queryKey: ["user", "saved-videos", params],
+    queryFn: async () => {
+      const res = await dashboardService.getSavedVideos(params);
+      return res;
+    },
+    staleTime: 30 * 1000,
+  });
+
+export const useSaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ episodeId, episodeType }: { episodeId: string; episodeType: 'course' | 'workshop' }) =>
+      dashboardService.saveVideo(episodeId, episodeType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
+    },
+  });
+};
+
+export const useUnsaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (episodeId: string) => dashboardService.unsaveVideo(episodeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
     },
   });
 };

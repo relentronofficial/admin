@@ -131,7 +131,8 @@ describe("MentorshipDashboard", () => {
     }
     expect(within(graph).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
       .toEqual(["W1, No milestone, Set up store, Completed", "W2, No milestone, First ad, Upcoming"]);
-    expect(graph.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(1); // W2 has not started
+    // One approved activity, not linked to a milestone: no progression line is fabricated.
+    expect(graph.querySelector('[data-testid="progress-line"]')).toBeNull();
   });
 
   it("shows no graph for a member without a batch", () => {

@@ -71,6 +71,9 @@ import {
   completeWorkshopEpisodeHandler,
   getWatchHistoryHandler,
   removeFromHistoryHandler,
+  getSavedVideosHandler,
+  saveVideoHandler,
+  unsaveVideoHandler,
   getMyDevicesHandler,
   getWorkshopCertificateHandler,
   joinLiveCallHandler,
@@ -214,6 +217,9 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/dashboard/continue-learning', getContinueLearningHandler);
   fastify.get('/dashboard/watch-history', getWatchHistoryHandler);
   fastify.delete('/dashboard/watch-history/:episodeId', removeFromHistoryHandler);
+  fastify.get('/saved-videos', getSavedVideosHandler);
+  fastify.post('/saved-videos', saveVideoHandler);
+  fastify.delete('/saved-videos/:episodeId', unsaveVideoHandler);
 
   // ── Events ────────────────────────────────────────────────────────────────
   fastify.get('/events', listUserEventsHandler);

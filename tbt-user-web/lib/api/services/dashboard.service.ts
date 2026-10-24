@@ -17,6 +17,15 @@ export const dashboardService = {
   removeFromHistory: (episodeId: string) =>
     apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/dashboard/watch-history/${episodeId}`),
 
+  getSavedVideos: (params: { limit?: number } = {}) =>
+    apiClient.get<never, ApiResponse<any[]>>("/api/user/saved-videos", { params }),
+
+  saveVideo: (episodeId: string, episodeType: 'course' | 'workshop') =>
+    apiClient.post<never, ApiResponse<{ saved: boolean }>>("/api/user/saved-videos", { episodeId, episodeType }),
+
+  unsaveVideo: (episodeId: string) =>
+    apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/saved-videos/${episodeId}`),
+
   getNotificationUnreadCount: () =>
     apiClient.get<never, ApiResponse<{ count: number }>>("/api/user/notifications/unread-count"),
 

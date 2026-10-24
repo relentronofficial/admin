@@ -243,13 +243,31 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
   const cachedMe = await cacheGet<Record<string, unknown>>(redis, meKey);
   if (cachedMe) return ok(reply, cachedMe);
 
-  // Refresh member stats (throttled to once per 60 s) before reading DB so the
-  // profile page always reflects current points/streak/health. Awaited so the
-  // read below sees the update; markActive=false so a page view/refresh never
-  // counts as activity (it would inflate the Health recency score).
-  await recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined, { markActive: false });
+  // Fire-and-forget: refresh stats in the background so the response is not
+  // blocked by 7 sequential INSERT statements on every 5-minute cache miss.
+  // Stats (totalPoints, currentStreak, healthScore) are at most 60 s stale
+  // (the per-member throttle window). If they change, recalc invalidates the
+  // me: cache key and the next request picks up the updated values.
+  void recalculateMemberStats(request.server.prisma, request.memberId!, redis ?? undefined, { markActive: false });
 
-  const [member, allTiers, uiStrings] = await Promise.all([
+  // Tiers and ui-strings are global (not per-member) — cache them for 10 minutes so they
+  // don't re-query on every 5-min /me cache miss for every member simultaneously.
+  const [allTiers, uiStrings] = await Promise.all([
+    cacheGetOrCompute<{ tierNumber: number; label: string; unlockConditionText: string | null }[]>(
+      redis, 'global:tiers', 600,
+      () => request.server.prisma.tier.findMany({
+        where: { isActive: true },
+        orderBy: { tierNumber: 'asc' },
+        select: { tierNumber: true, label: true, unlockConditionText: true },
+      }),
+    ),
+    cacheGetOrCompute<Record<string, unknown> | null>(
+      redis, 'global:ui-strings', 600,
+      () => request.server.prisma.uiStrings.findFirst() as any,
+    ),
+  ]);
+
+  const [member] = await Promise.all([
     request.server.prisma.member.findUnique({
       where: { id: request.memberId },
       select: {
@@ -303,12 +321,6 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
         },
       },
     }),
-    request.server.prisma.tier.findMany({
-      where: { isActive: true },
-      orderBy: { tierNumber: 'asc' },
-      select: { tierNumber: true, label: true, unlockConditionText: true },
-    }),
-    request.server.prisma.uiStrings.findFirst(),
   ]);
 
   if (!member) return fail(reply, 404, 'Member not found');
@@ -973,37 +985,89 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   if (!UUID_RE.test(id)) return fail(reply, 400, 'Invalid course ID');
 
-  const course = await request.server.prisma.course.findUnique({
-    where: { id },
-    include: {
-      creator: {
-        select: { id: true, fullName: true, profilePhotoUrl: true, designation: true },
+  const prisma = request.server.prisma;
+  const redis = request.server.redis ?? null;
+  const memberId = request.memberId!;
+
+  // Batch all independent queries in parallel — collapses ~6 sequential round-trips into 1.
+  // Sections/modules are pre-fetched optimistically; on a rare 403/404 the fetches are wasted
+  // but the common path (member has access) saves significant latency.
+  const [
+    course,
+    accessRecord,
+    visRows,
+    memberVisRows,
+    pendingPaymentRows,
+    sectionRows,
+    episodeSectionRows,
+    moduleRows,
+    episodeModuleRows,
+    moduleAccess,
+  ] = await Promise.all([
+    prisma.course.findUnique({
+      where: { id },
+      include: {
+        creator: {
+          select: { id: true, fullName: true, profilePhotoUrl: true, designation: true },
+        },
+        courseEpisodes: {
+          where: { isVisible: true },
+          orderBy: { order: 'asc' },
+          include: {
+            progress: {
+              where: { memberId },
+              select: { lastWatchedSecs: true, actualWatchedSecs: true, completed: true },
+            },
+          },
+        },
+        _count: { select: { enrollments: true } },
       },
-      courseEpisodes: {
-        where: { isVisible: true },
-        orderBy: { order: 'asc' },
-        include: {
-          progress: {
-            where: { memberId: request.memberId },
-            select: { lastWatchedSecs: true, actualWatchedSecs: true, completed: true }
-          }
-        }
-      },
-      _count: { select: { enrollments: true } },
-    },
-  });
+    }),
+    getCourseAccessRecord(prisma as any, memberId, id),
+    prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
+      `SELECT applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
+    ).catch(() => [] as { applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]),
+    prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null; current_tier: number | null }[]>(
+      `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id, m.current_tier
+       FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`, memberId,
+    ).catch(() => [] as { business_categories: string[] | null; batch_id: string | null; current_tier: number | null }[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, method, razorpay_order_id FROM course_payments
+       WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 1`,
+      memberId, id,
+    ).catch(() => [] as any[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, description, sort_order, timer_seconds FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`, id,
+    ).catch(() => [] as any[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
+              e.streak_points AS streak_points,
+              e.episode_side_content, e.episode_form_config,
+              s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
+       FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
+       WHERE e.course_id = $1::uuid`, id,
+    ).catch(() => [] as any[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, title, description, sort_order, thumbnail_url FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`, id,
+    ).catch(() => [] as any[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT cem.episode_id, cem.module_id FROM course_episode_modules cem
+       JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`, id,
+    ).catch(() => [] as any[]),
+    loadMemberModuleAccess(prisma, redis, memberId).catch((): ModuleAccess => ({ restricted: false, selection: null, selectable: [], effective: [], selectionRequired: false, businessTypeDerived: false, entitled: null })),
+  ]);
 
   if (!course) return fail(reply, 404, 'Course not found');
 
-  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, id);
   const hasAccess = isAccessValid(accessRecord);
 
   // Unpublished (draft) courses are hidden from the catalog; also refuse them by
   // direct link. Members who already have access or an enrollment keep it, so
   // unpublishing a course never cuts off someone who paid for it.
   if (!course.isPublished && !hasAccess) {
-    const enrolled = await request.server.prisma.courseEnrollment.findUnique({
-      where: { memberId_courseId: { memberId: request.memberId!, courseId: id } },
+    const enrolled = await prisma.courseEnrollment.findUnique({
+      where: { memberId_courseId: { memberId, courseId: id } },
       select: { id: true },
     }).catch(() => null);
     if (!enrolled) return fail(reply, 404, 'Course not found');
@@ -1012,52 +1076,32 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   // Deactivated courses are hidden from the catalog; refuse direct URL access as well.
   if (!(course as any).isActive && !hasAccess) return fail(reply, 404, 'Course not found');
 
-  // CV-05: business-category visibility gate. Runs before the mentorship module
-  // check. Members with explicit CourseAccess bypass this via hasAccess above
-  // (they keep access to already-enrolled courses regardless of category changes).
-  // General Content (empty applicable_business_types) always passes.
-  {
-    const [visRows, memberVisRows] = await Promise.all([
-      request.server.prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
-        `SELECT applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
-      ).catch(() => []),
-      request.server.prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null }[]>(
-        `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`, request.memberId!,
-      ).catch(() => []),
-    ]);
-    if (!isCourseVisible(
-      {
-        applicableBusinessTypes: (visRows[0]?.applicable_business_types as string[] | null) ?? null,
-        batchVisibilityIds: (visRows[0]?.batch_visibility_ids as string[] | null) ?? [],
-      },
-      {
-        businessCategories: (memberVisRows[0]?.business_categories as string[] | null) ?? [],
-        batchId: memberVisRows[0]?.batch_id ?? null,
-      },
-    )) {
-      return fail(reply, 403, 'Course not available for your account');
-    }
+  // CV-05: business-category visibility gate (uses pre-fetched data).
+  if (!isCourseVisible(
+    {
+      applicableBusinessTypes: (visRows[0]?.applicable_business_types as string[] | null) ?? null,
+      batchVisibilityIds: (visRows[0]?.batch_visibility_ids as string[] | null) ?? [],
+    },
+    {
+      businessCategories: (memberVisRows[0]?.business_categories as string[] | null) ?? [],
+      batchId: memberVisRows[0]?.batch_id ?? null,
+    },
+  )) {
+    return fail(reply, 403, 'Course not available for your account');
   }
 
-  if (!(await isCourseInMemberModules(request, id))) return fail(reply, 403, MODULE_NOT_SELECTED);
+  // Mentorship module gate (uses pre-fetched moduleAccess).
+  if (moduleAccess.restricted && !isCourseModuleAllowed((course as any).module ?? null, moduleAccess)) {
+    return fail(reply, 403, MODULE_NOT_SELECTED);
+  }
 
-  // Tier gate: members below the required tier cannot access without explicit access grant.
+  // Tier gate: uses current_tier already fetched in memberVisRows — no extra query needed.
   const requiredTier: number = (course as any).requiredTier ?? 1;
   if (requiredTier > 1 && !hasAccess) {
-    const memberTierRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT current_tier FROM members WHERE id = $1::uuid`, request.memberId
-    ).catch(() => []);
-    const memberTier = Number(memberTierRows[0]?.current_tier ?? 1);
+    const memberTier = Number(memberVisRows[0]?.current_tier ?? 1);
     if (memberTier < requiredTier) return fail(reply, 403, 'This course requires a higher tier');
   }
 
-  // Check for a pending payment from this member (any method)
-  const pendingPaymentRows = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT id, method, razorpay_order_id FROM course_payments
-     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
-     ORDER BY created_at DESC LIMIT 1`,
-    request.memberId, id,
-  ).catch(() => [] as any[]);
   const pendingPaymentRow = pendingPaymentRows[0] ?? null;
 
   // Resolve upsell / cross-sell course IDs to lightweight course objects
@@ -1067,7 +1111,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   let crossSellCourses: any[] = [];
   const allRelatedIds = [...new Set([...upsellIds, ...crossSellIds])];
   if (allRelatedIds.length > 0) {
-    const related = await request.server.prisma.course.findMany({
+    const related = await prisma.course.findMany({
       where: { id: { in: allRelatedIds }, isPublished: true },
       select: { id: true, title: true, slug: true, thumbnailUrl: true, level: true, totalLessons: true },
     });
@@ -1103,32 +1147,6 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       completionThresholdPercent: (course as any).completionThresholdPercent ?? 95,
     }).map((s) => [s.episodeId, s]),
   );
-
-  // Fetch sections, modules, and episode→section/module mapping (raw SQL columns not in Prisma schema)
-  const [sectionRows, episodeSectionRows, moduleRows, episodeModuleRows] = await Promise.all([
-    request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, title, description, sort_order, timer_seconds FROM course_sections WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
-      id,
-    ),
-    request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT e.id AS episode_id, e.section_id, e.timer_seconds AS episode_timer_seconds,
-              e.streak_points AS streak_points,
-              e.episode_side_content, e.episode_form_config,
-              s.title AS section_title, s.sort_order AS section_sort_order, s.timer_seconds AS section_timer_seconds
-       FROM course_episodes e LEFT JOIN course_sections s ON s.id = e.section_id
-       WHERE e.course_id = $1::uuid`,
-      id,
-    ),
-    request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT id, title, description, sort_order, thumbnail_url FROM course_modules WHERE course_id = $1::uuid ORDER BY sort_order ASC`,
-      id,
-    ),
-    request.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT cem.episode_id, cem.module_id FROM course_episode_modules cem
-       JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`,
-      id,
-    ),
-  ]).catch(() => [[], [], [], []] as [any[], any[], any[], any[]]);
 
   const sections = (sectionRows as any[]).map((s) => ({
     id: s.id, title: s.title, description: s.description ?? null,
@@ -6706,6 +6724,135 @@ export async function removeFromHistoryHandler(request: FastifyRequest, reply: F
   await request.server.prisma.memberEpisodeProgress.deleteMany({
     where: { memberId: request.memberId, episodeId },
   });
+  return ok(reply, { removed: true });
+}
+
+// ─── Saved Videos (Bookmarks) ─────────────────────────────────────────────────
+
+export async function getSavedVideosHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { limit = 100 } = request.query as { limit?: number };
+  const memberId = request.memberId!;
+  const prisma = request.server.prisma;
+
+  const rows = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT episode_id, episode_type, saved_at FROM saved_videos WHERE member_id = $1::uuid ORDER BY saved_at DESC LIMIT $2`,
+    memberId, Number(limit),
+  ).catch(() => []);
+
+  if (rows.length === 0) return ok(reply, []);
+
+  const courseIds = rows.filter(r => r.episode_type === 'course').map(r => r.episode_id);
+  const workshopIds = rows.filter(r => r.episode_type === 'workshop').map(r => r.episode_id);
+
+  const pct = (actual: number, dur: number) =>
+    dur > 0 ? Math.min(100, Math.round((actual / dur) * 100)) : 0;
+
+  const [courseRows, workshopRows] = await Promise.all([
+    courseIds.length === 0 ? [] : prisma.$queryRawUnsafe<any[]>(
+      `SELECT ce.id::text AS episode_id, ce.title AS episode_title, ce.order AS episode_order,
+              COALESCE(ce.duration_seconds,0) AS duration_seconds, ce.thumbnail_url,
+              c.id::text AS course_id, c.title AS course_title,
+              (SELECT COUNT(*) FROM course_episodes WHERE course_id = c.id) AS episode_count,
+              COALESCE(cep.last_watched_secs,0) AS last_watched_secs,
+              COALESCE(cep.actual_watched_secs,0) AS actual_watched_secs,
+              COALESCE(cep.completed,false) AS is_completed,
+              cep.completed_at
+       FROM course_episodes ce
+       JOIN courses c ON c.id = ce.course_id
+       LEFT JOIN course_episode_progress cep ON cep.episode_id = ce.id AND cep.member_id = $2::uuid
+       WHERE ce.id::text = ANY($1::text[])`,
+      courseIds, memberId,
+    ).catch(() => []),
+
+    workshopIds.length === 0 ? [] : prisma.$queryRawUnsafe<any[]>(
+      `SELECT we.id::text AS episode_id, we.title AS episode_title, we.order AS episode_order,
+              COALESCE(we.duration_seconds,0) AS duration_seconds, w.thumbnail_url,
+              w.title AS workshop_title, w.slug AS workshop_slug, ch.title AS challenge_title,
+              (SELECT COUNT(*) FROM workshop_episodes WHERE challenge_id = ch.id) AS episode_count,
+              COALESCE(mep.last_watched_secs,0) AS last_watched_secs,
+              COALESCE(mep.actual_watched_secs,0) AS actual_watched_secs,
+              COALESCE(mep.is_completed,false) AS is_completed,
+              mep.completed_at
+       FROM workshop_episodes we
+       JOIN challenges ch ON ch.id = we.challenge_id
+       JOIN workshops w ON w.id = ch.workshop_id
+       LEFT JOIN member_episode_progress mep ON mep.episode_id = we.id::text AND mep.member_id = $2
+       WHERE we.id::text = ANY($1::text[])`,
+      workshopIds, memberId,
+    ).catch(() => []),
+  ]);
+
+  const courseMap = new Map(courseRows.map((r: any) => [r.episode_id, r]));
+  const workshopMap = new Map(workshopRows.map((r: any) => [r.episode_id, r]));
+
+  const items = rows.map(r => {
+    if (r.episode_type === 'course') {
+      const e = courseMap.get(r.episode_id);
+      if (!e) return null;
+      return {
+        type: 'course' as const,
+        episodeId: e.episode_id,
+        courseId: e.course_id,
+        courseTitle: e.course_title,
+        challengeTitle: null as string | null,
+        episodeTitle: e.episode_title,
+        thumbnailUrl: e.thumbnail_url ?? null,
+        lastWatchedSecs: Number(e.last_watched_secs),
+        actualWatchedSecs: Number(e.actual_watched_secs),
+        durationSeconds: Number(e.duration_seconds),
+        isCompleted: Boolean(e.is_completed),
+        completedAt: e.completed_at ? new Date(e.completed_at).toISOString() : null,
+        updatedAt: new Date(r.saved_at).toISOString(),
+        progressPercent: pct(Number(e.actual_watched_secs), Number(e.duration_seconds)),
+        episodeOrder: Number(e.episode_order),
+        episodeCount: Number(e.episode_count),
+        savedAt: new Date(r.saved_at).toISOString(),
+      };
+    } else {
+      const e = workshopMap.get(r.episode_id);
+      if (!e) return null;
+      return {
+        type: 'workshop' as const,
+        episodeId: e.episode_id,
+        workshopSlug: e.workshop_slug,
+        workshopTitle: e.workshop_title,
+        challengeTitle: e.challenge_title as string | null,
+        episodeTitle: e.episode_title,
+        thumbnailUrl: e.thumbnail_url ?? null,
+        lastWatchedSecs: Number(e.last_watched_secs),
+        actualWatchedSecs: Number(e.actual_watched_secs),
+        durationSeconds: Number(e.duration_seconds),
+        isCompleted: Boolean(e.is_completed),
+        completedAt: e.completed_at ? new Date(e.completed_at).toISOString() : null,
+        updatedAt: new Date(r.saved_at).toISOString(),
+        progressPercent: pct(Number(e.actual_watched_secs), Number(e.duration_seconds)),
+        episodeOrder: Number(e.episode_order),
+        episodeCount: Number(e.episode_count),
+        savedAt: new Date(r.saved_at).toISOString(),
+      };
+    }
+  }).filter(Boolean);
+
+  return ok(reply, items);
+}
+
+export async function saveVideoHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId, episodeType = 'course' } = request.body as { episodeId: string; episodeType?: string };
+  if (!episodeId?.trim()) return reply.status(400).send({ success: false, error: 'episodeId required' });
+  const type = episodeType === 'workshop' ? 'workshop' : 'course';
+  await request.server.prisma.$executeRawUnsafe(
+    `INSERT INTO saved_videos (member_id, episode_id, episode_type) VALUES ($1::uuid, $2, $3) ON CONFLICT (member_id, episode_id) DO NOTHING`,
+    request.memberId, episodeId.trim(), type,
+  ).catch(() => {});
+  return ok(reply, { saved: true });
+}
+
+export async function unsaveVideoHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { episodeId } = request.params as { episodeId: string };
+  await request.server.prisma.$executeRawUnsafe(
+    `DELETE FROM saved_videos WHERE member_id = $1::uuid AND episode_id = $2`,
+    request.memberId, episodeId,
+  ).catch(() => {});
   return ok(reply, { removed: true });
 }
 

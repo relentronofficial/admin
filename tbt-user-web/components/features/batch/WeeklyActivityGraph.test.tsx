@@ -60,8 +60,10 @@ const graphData = () => ({
 });
 const ok = (data: unknown) => ({ success: true, data, error: null });
 
+let lastQc: QueryClient;
 const renderGraph = () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  lastQc = qc;
   return render(
     <QueryClientProvider client={qc}>
       <WeeklyActivityGraph />
@@ -192,14 +194,98 @@ describe("WeeklyActivityGraph", () => {
     expect(screen.getByRole("button", { name: "W1, ₹1 Lakh, Close first ₹1 Lakh month, Completed" })).toBeTruthy();
   });
 
-  it("draws the progression line through started weeks only", async () => {
-    get.mockResolvedValue(ok(graphData()));
-    const { container } = renderGraph();
-    await chart();
-    expect(container.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(2); // W3 not started
-    const pts = container.querySelector('[data-testid="progress-line"]')!.getAttribute("points")!.split(" ");
-    expect(pts).toHaveLength(2);
-    expect(Number(pts[0].split(",")[0])).toBeLessThan(Number(pts[1].split(",")[0]));
+  describe("progression line", () => {
+    /** W1 Ads ✓, W2 Funnels ✓, W3 Website ✓ (+ an awaiting one), W4 ₹1 Lakh-linked not started. */
+    const zigzag = () => {
+      const data: any = graphData();
+      data.weeks = [
+        week(1, { activities: [activity("t1", "Ads W1", 2, "completed", ["m-ads", "Ads", 1])], progressLevel: 1 }),
+        week(2, { activities: [activity("t2", "Funnels W2", 9, "completed", ["m-fun", "Funnels", 3])], progressLevel: 3 }),
+        week(3, {
+          isCurrent: true,
+          activities: [
+            activity("t3", "Website W3", 16, "completed", ["m-web", "Website", 2]),
+            activity("t3b", "Pending W3", 17, "submitted", ["m-1l", "₹1 Lakh", 4]),
+          ],
+          progressLevel: 2,
+        }),
+        week(4, { activities: [activity("t4", "Later W4", 23, "not_started", ["m-fun", "Funnels", 3])] }),
+      ];
+      return data;
+    };
+    const markerCenter = (name: string) => {
+      const c = screen.getByRole("button", { name }).querySelector("circle:not([fill='transparent'])")!;
+      return `${c.getAttribute("cx")},${c.getAttribute("cy")}`;
+    };
+    const line = (container: HTMLElement) => container.querySelector('[data-testid="progress-line"]');
+
+    it("rises and falls through exactly the approved activities' marker coordinates", async () => {
+      get.mockResolvedValue(ok(zigzag()));
+      const { container } = renderGraph();
+      await chart();
+      const pts = line(container)!.getAttribute("points")!.split(" ");
+      expect(pts).toEqual([
+        markerCenter("W1, Ads, Ads W1, Completed"),
+        markerCenter("W2, Funnels, Funnels W2, Completed"),
+        markerCenter("W3, Website, Website W3, Completed"),
+      ]);
+      const ys = pts.map((p) => Number(p.split(",")[1]));
+      expect(ys[1]).toBeLessThan(ys[0]); // up to Funnels
+      expect(ys[2]).toBeGreaterThan(ys[1]); // down to Website
+      // Awaiting approval and not started stay markers only.
+      expect(pts).not.toContain(markerCenter("W3, ₹1 Lakh, Pending W3, Awaiting approval"));
+      expect(pts).not.toContain(markerCenter("W4, Funnels, Later W4, Not started"));
+    });
+
+    it("is drawn red and under the markers, so marker borders stay visible", async () => {
+      get.mockResolvedValue(ok(zigzag()));
+      const { container } = renderGraph();
+      await chart();
+      const l = line(container)!;
+      expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
+      expect(Number(l.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(2);
+      expect(l.getAttribute("opacity")).toBeNull();
+      const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
+      expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it("recalculates when the data refreshes (an activity approved, edited or removed)", async () => {
+      get.mockResolvedValue(ok(zigzag()));
+      const { container } = renderGraph();
+      await chart();
+      expect(line(container)!.getAttribute("points")!.split(" ")).toHaveLength(3);
+
+      // The pending W3 activity is approved → the line now ends on it.
+      const approved = zigzag();
+      approved.weeks[2].activities[1] = activity("t3b", "Pending W3", 17, "completed", ["m-1l", "₹1 Lakh", 4]);
+      lastQc.setQueryData(["my-batch", "weekly-graph"], approved);
+      await waitFor(() => expect(line(container)!.getAttribute("points")!.split(" ")).toHaveLength(4));
+      expect(line(container)!.getAttribute("points")!.split(" ").at(-1)).toBe(markerCenter("W3, ₹1 Lakh, Pending W3, Completed"));
+
+      // W2's activity is removed → the line goes straight from W1 to W3.
+      const removed = zigzag();
+      removed.weeks[1].activities = [];
+      lastQc.setQueryData(["my-batch", "weekly-graph"], removed);
+      await waitFor(() => expect(line(container)!.getAttribute("points")!.split(" ")).toEqual([
+        markerCenter("W1, Ads, Ads W1, Completed"),
+        markerCenter("W3, Website, Website W3, Completed"),
+      ]));
+    });
+
+    it("draws no line when fewer than two activities are approved (nothing fabricated)", async () => {
+      get.mockResolvedValue(ok(graphData())); // only "Ads W1" is approved
+      const { container } = renderGraph();
+      await chart();
+      expect(line(container)).toBeNull();
+      expect(screen.getAllByTestId("activity-marker")).toHaveLength(5); // every marker still drawn
+    });
+
+    it("keeps the status legend unchanged", async () => {
+      get.mockResolvedValue(ok(zigzag()));
+      renderGraph();
+      await chart();
+      for (const label of ["Completed", "Awaiting approval", "Not started"]) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    });
   });
 
   it("does not crash on missing values (no activities, no summary, no revenue, no levels)", async () => {

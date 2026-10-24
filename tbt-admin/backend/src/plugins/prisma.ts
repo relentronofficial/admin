@@ -2519,6 +2519,23 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       }
     })();
 
+    // ── Saved Videos / Bookmarks (2026-10-23) ───────────────────────────────
+    // Members explicitly bookmark individual episodes. One row per (member, episode).
+    // episode_type: 'course' | 'workshop'
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS saved_videos (
+        id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        episode_id   TEXT NOT NULL,
+        episode_type VARCHAR(20) NOT NULL DEFAULT 'course',
+        saved_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(member_id, episode_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_saved_videos_member ON saved_videos(member_id, saved_at DESC)`
+    ).catch(() => {});
+
   } catch (err) {
     // Non-fatal: allow instance to start and connect lazily on first query.
     // This prevents deployment deadlocks when the DB connection pool is full
