@@ -6,6 +6,7 @@ import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit } 
 import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { onboardingButtonSchema, onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
 import { env } from '../../config/env.js';
+import { readProfileExtras, writeProfileExtras } from '../../lib/memberProfileExtras.js';
 
 const PROFILE_SELECT = {
   phone: true, email: true,
@@ -19,72 +20,13 @@ const PROFILE_SELECT = {
   subIndustry: true, businessStage: true, currentChallenges: true,
 } as const;
 
-const SKILL_RAW_SELECT = `
-  has_website AS "hasWebsite",
-  weekly_website_orders AS "weeklyWebsiteOrders",
-  skill_business_foundation AS "skillBusinessFoundation",
-  skill_content AS "skillContent",
-  skill_funnels AS "skillFunnels",
-  skill_ads AS "skillAds",
-  skill_sales AS "skillSales",
-  skill_overall_marketing AS "skillOverallMarketing",
-  weekly_learning_hours AS "weeklyLearningHours",
-  team_size AS "teamSize",
-  business_started_from AS "businessStartedFrom",
-  instagram_stats AS "instagramStats",
-  facebook_stats AS "facebookStats",
-  website_url AS "websiteUrl",
-  revenue_goal_after_tbt AS "revenueGoalAfterTbt"
-`.trim();
-
-async function writeSkillFields(prisma: any, memberId: string, fields: {
-  hasWebsite?: boolean | null;
-  weeklyWebsiteOrders?: number | null;
-  skillBusinessFoundation?: number | null;
-  skillContent?: number | null;
-  skillFunnels?: number | null;
-  skillAds?: number | null;
-  skillSales?: number | null;
-  skillOverallMarketing?: number | null;
-  weeklyLearningHours?: number | null;
-  teamSize?: string | null;
-  businessStartedFrom?: string | null;
-  instagramStats?: string | null;
-  facebookStats?: string | null;
-  websiteUrl?: string | null;
-  revenueGoalAfterTbt?: string | null;
-}) {
-  const sets: string[] = [];
-  const vals: unknown[] = [];
-  let pi = 1;
-  const add = (col: string, v: unknown) => { sets.push(`${col} = $${pi++}`); vals.push(v); };
-  if (fields.hasWebsite !== undefined) add('has_website', fields.hasWebsite);
-  if (fields.weeklyWebsiteOrders !== undefined) add('weekly_website_orders', fields.weeklyWebsiteOrders);
-  if (fields.skillBusinessFoundation !== undefined) add('skill_business_foundation', fields.skillBusinessFoundation);
-  if (fields.skillContent !== undefined) add('skill_content', fields.skillContent);
-  if (fields.skillFunnels !== undefined) add('skill_funnels', fields.skillFunnels);
-  if (fields.skillAds !== undefined) add('skill_ads', fields.skillAds);
-  if (fields.skillSales !== undefined) add('skill_sales', fields.skillSales);
-  if (fields.skillOverallMarketing !== undefined) add('skill_overall_marketing', fields.skillOverallMarketing);
-  if (fields.weeklyLearningHours !== undefined) add('weekly_learning_hours', fields.weeklyLearningHours);
-  if (fields.teamSize !== undefined) add('team_size', fields.teamSize);
-  if (fields.businessStartedFrom !== undefined) add('business_started_from', fields.businessStartedFrom);
-  if (fields.instagramStats !== undefined) add('instagram_stats', fields.instagramStats);
-  if (fields.facebookStats !== undefined) add('facebook_stats', fields.facebookStats);
-  if (fields.websiteUrl !== undefined) add('website_url', fields.websiteUrl);
-  if (fields.revenueGoalAfterTbt !== undefined) add('revenue_goal_after_tbt', fields.revenueGoalAfterTbt);
-  if (sets.length === 0) return;
-  vals.push(memberId);
-  await prisma.$executeRawUnsafe(
-    `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
-    ...vals,
-  );
-}
+// Skills / growth fields and watched video steps live in member_profile_extras
+// (members is at the column limit) — lib/memberProfileExtras.ts.
 
 // GET /api/onboarding — current wizard state (member-facing)
 export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const [member, documents, skillRows, watchedRows] = await Promise.all([
+  const [member, documents, extras] = await Promise.all([
     req.server.prisma.member.findUnique({
       where: { id: memberId },
       select: {
@@ -98,12 +40,10 @@ export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyRe
       select: { id: true, documentType: true, documentUrl: true, status: true },
       orderBy: { createdAt: 'asc' },
     }),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
-    ).catch(() => [] as any[]),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
-    ).catch(() => [] as any[]),
+    readProfileExtras(req.server.prisma, memberId).catch((err) => {
+      req.log.warn({ err, memberId }, 'readProfileExtras failed');
+      return {} as Record<string, unknown>;
+    }),
   ]);
 
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
@@ -113,7 +53,7 @@ export async function getOnboardingHandler(req: FastifyRequest, reply: FastifyRe
     success: true,
     data: {
       status, verificationStatus, onboardingCompleted, onboardingSubmittedAt, onboardingReviewNote,
-      profile: { ...profile, ...(skillRows[0] ?? {}), watchedVideoSteps: watchedRows[0]?.watchedVideoSteps ?? [] },
+      profile: { ...profile, ...extras, watchedVideoSteps: extras.watchedVideoSteps ?? [] },
       documents,
     },
     error: null,
@@ -153,34 +93,22 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
       data: data as any,
       select: PROFILE_SELECT as any,
     }),
-    writeSkillFields(req.server.prisma, memberId, {
+    writeProfileExtras(req.server.prisma, memberId, {
       hasWebsite, weeklyWebsiteOrders,
       skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
       weeklyLearningHours,
       teamSize, businessStartedFrom, instagramStats, facebookStats, websiteUrl, revenueGoalAfterTbt,
+      watchedVideoSteps,
     }),
   ];
-  if (watchedVideoSteps !== undefined) {
-    promises.push(
-      req.server.prisma.$executeRawUnsafe(
-        `UPDATE members SET watched_video_steps = $1::jsonb WHERE id = $2::uuid`,
-        JSON.stringify(watchedVideoSteps), memberId,
-      ),
-    );
-  }
   const [updated] = await Promise.all(promises);
 
   if (prismaFields.businessType !== undefined) {
     void invalidateMemberModuleAccess(req.server.redis ?? null, memberId);
   }
 
-  const [skillRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT ${SKILL_RAW_SELECT} FROM members WHERE id = $1::uuid`, memberId,
-  );
-  const [watchedRow] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
-  );
-  return reply.send({ success: true, data: { ...updated as object, ...(skillRow ?? {}), watchedVideoSteps: watchedRow?.watchedVideoSteps ?? [] }, error: null });
+  const extras = await readProfileExtras(req.server.prisma, memberId);
+  return reply.send({ success: true, data: { ...updated as object, ...extras }, error: null });
 }
 
 const CONTENT_COLS = `id, step_key AS "stepKey", title, text_body AS "textBody", video_url AS "videoUrl", audio_url AS "audioUrl", image_url AS "imageUrl", lottie_url AS "lottieUrl", quiz_data AS "quizData", cta_label AS "ctaLabel", sort_order AS "sortOrder", is_active AS "isActive"`;
@@ -358,7 +286,7 @@ export async function deleteOnboardingDocumentHandler(req: FastifyRequest<{ Para
 // POST /api/onboarding/submit — member-facing, submit for admin review
 export async function submitOnboardingHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
-  const [member, documentCount, videoContentRows, watchedRows] = await Promise.all([
+  const [member, documentCount, videoContentRows, extras] = await Promise.all([
     req.server.prisma.member.findUnique({
       where: { id: memberId },
       select: { verificationStatus: true, ...PROFILE_SELECT } as any,
@@ -367,9 +295,7 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
     req.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT step_key AS "stepKey" FROM onboarding_content WHERE is_active = true AND video_url IS NOT NULL AND video_url <> '' ORDER BY sort_order ASC`,
     ),
-    req.server.prisma.$queryRawUnsafe<any[]>(
-      `SELECT watched_video_steps AS "watchedVideoSteps" FROM members WHERE id = $1::uuid`, memberId,
-    ).catch(() => [] as any[]),
+    readProfileExtras(req.server.prisma, memberId),
   ]);
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
   if (!canSubmitOnboarding((member as any).verificationStatus)) {
@@ -377,7 +303,7 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
   }
 
   const requiredVideoStepKeys = videoContentRows.map((r: any) => r.stepKey as string);
-  const profileWithWatched = { ...(member as any), watchedVideoSteps: watchedRows[0]?.watchedVideoSteps ?? [] };
+  const profileWithWatched = { ...(member as any), watchedVideoSteps: extras.watchedVideoSteps ?? [] };
   const check = checkOnboardingReadyToSubmit(profileWithWatched, documentCount, requiredVideoStepKeys);
   if (!check.valid) {
     return reply.status(400).send({

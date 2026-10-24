@@ -2610,6 +2610,27 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS registered_office TEXT`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS target_network_description TEXT`);
     await safeAlter(`CREATE TABLE IF NOT EXISTS member_business_profiles (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE, business_categories JSONB NOT NULL DEFAULT '[]', CONSTRAINT uq_mbp_member UNIQUE (member_id))`);
+    // Skills / growth profile fields — members is at the 1600-column limit, so
+    // the members ALTERs above never apply in production. lib/memberProfileExtras.ts.
+    await safeAlter(`CREATE TABLE IF NOT EXISTS member_profile_extras (
+      member_id UUID PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+      has_website BOOLEAN,
+      weekly_website_orders INTEGER,
+      skill_business_foundation INTEGER,
+      skill_content INTEGER,
+      skill_funnels INTEGER,
+      skill_ads INTEGER,
+      skill_sales INTEGER,
+      skill_overall_marketing INTEGER,
+      weekly_learning_hours INTEGER,
+      business_started_from TEXT,
+      instagram_stats TEXT,
+      facebook_stats TEXT,
+      website_url TEXT,
+      revenue_goal_after_tbt TEXT,
+      watched_video_steps JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS mentorship_modules JSONB`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS allowed_modules JSONB`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS watched_video_steps JSONB DEFAULT '[]'`);
