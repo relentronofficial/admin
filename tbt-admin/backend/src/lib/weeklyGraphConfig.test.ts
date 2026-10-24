@@ -294,3 +294,87 @@ describe('deploy safety (schema guard)', () => {
     expect(result.skipped.length).toBeGreaterThanOrEqual(5);
   });
 });
+
+// Regression: the member graph's progression line is drawn through each started
+// week's progressLevel (user-web weeklyGraphProgression.ts), so these levels must
+// follow the member's real activity statuses in an admin-configured program.
+describe('weekly progress for the progression line (admin-configured program)', () => {
+  const config = resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: DEFAULT_MS });
+  // Admin-configured activities: two per week, the first of W1 linked to Ads and of W2 to Funnels.
+  const tasks = [
+    task('a1', 2, { graphMilestoneId: 'm-ads' }), task('b1', 3),
+    task('a2', 9, { graphMilestoneId: 'm-fun' }), task('b2', 10),
+    task('a3', 16, { graphMilestoneId: 'm-web' }), task('b3', 17),
+    task('a4', 23), task('b4', 24),
+  ];
+  const build = (over: { submissions?: any[]; dayProgress?: any[]; currentDay?: number } = {}) =>
+    buildWeeklyGraph({
+      memberId: ME, tasks, totalDays: 28, currentDay: over.currentDay ?? 25, config,
+      submissions: over.submissions ?? [], dayProgress: over.dayProgress ?? [],
+    });
+  const approved = (taskId: string, dayNumber: number) => ({ taskId, dayNumber, status: 'approved' });
+  const statusOf = (g: ReturnType<typeof build>, id: string) => g.weeks.flatMap((w) => w.activities).find((a) => a.taskId === id)!.status;
+  const levels = (g: ReturnType<typeof build>) => g.weeks.map((w) => w.progressLevel);
+
+  const pattern = {
+    submissions: [
+      approved('a1', 2),                       // W1: Ads milestone approved, b1 incomplete
+      approved('a2', 9), approved('b2', 10),   // W2: everything approved, incl. the Funnels milestone
+      { taskId: 'a3', dayNumber: 16, status: 'pending' }, // W3: draft proof only
+      approved('a4', 23),                      // W4 (current): half approved
+    ],
+    dayProgress: [
+      { dayNumber: 17, status: 'pending_approval', completedTaskIds: ['b3'] }, // W3: submitted, awaiting approval
+    ],
+  };
+
+  it('completed, incomplete, pending approval and missed activities keep their own statuses', () => {
+    const g = build(pattern);
+    expect(statusOf(g, 'a1')).toBe('completed');
+    expect(statusOf(g, 'b1')).toBe('not_started'); // missed: day passed, nothing recorded
+    expect(statusOf(g, 'a3')).toBe('in_progress'); // draft saved, not submitted
+    expect(statusOf(g, 'b3')).toBe('submitted');   // awaiting approval
+    expect(statusOf(g, 'b4')).toBe('not_started');
+  });
+
+  it('weekly levels go up with approved work and down when a week is not approved', () => {
+    const g = build(pattern);
+    expect(levels(g)).toEqual([1.5, 3, 0, 1.5]);
+    // W1 → W2 rises, W2 → W3 falls to the baseline (pending/awaiting never count), W3 → W4 rises again.
+    const [w1, w2, w3, w4] = levels(g) as number[];
+    expect(w2).toBeGreaterThan(w1);
+    expect(w3).toBeLessThan(w2);
+    expect(w4).toBeGreaterThan(w3);
+  });
+
+  it('an activity approved later lifts its own week, not the week it was approved in', () => {
+    const later = build({
+      ...pattern,
+      submissions: [...pattern.submissions.filter((s) => s.taskId !== 'a3'), approved('a3', 16)],
+    });
+    expect(statusOf(later, 'a3')).toBe('completed');
+    expect(later.weeks[2].progressLevel).toBe(2); // W3 now reaches its Website link
+    expect(later.weeks[3].progressLevel).toBe(1.5); // W4 unchanged
+    // An approved day accepts the ticked, awaiting task too.
+    const dayApproved = build({ ...pattern, dayProgress: [{ dayNumber: 17, status: 'approved', completedTaskIds: ['b3'] }] });
+    expect(statusOf(dayApproved, 'b3')).toBe('completed');
+    expect(dayApproved.weeks[2].progressLevel).toBe(1.5);
+  });
+
+  it('a rejected submission pulls its week back down; future weeks get no point', () => {
+    const g = build({ ...pattern, submissions: [...pattern.submissions.filter((s) => s.taskId !== 'a2'), { taskId: 'a2', dayNumber: 9, status: 'rejected' }], currentDay: 12 });
+    expect(statusOf(g, 'a2')).toBe('needs_revision');
+    expect(g.weeks[1].progressLevel).toBe(1.5); // only b2 approved, no Funnels lift
+    expect(g.weeks[2].progressLevel).toBeNull();
+    expect(g.weeks[3].progressLevel).toBeNull();
+  });
+
+  it("another member's assignment never affects this member's line", () => {
+    const g = buildWeeklyGraph({
+      memberId: ME, tasks: [...tasks, task('x1', 3, { memberId: OTHER })], totalDays: 28, currentDay: 25, config,
+      submissions: pattern.submissions, dayProgress: pattern.dayProgress,
+    });
+    expect(g.weeks[0].activities.map((a) => a.taskId)).not.toContain('x1');
+    expect(levels(g)).toEqual([1.5, 3, 0, 1.5]);
+  });
+});
