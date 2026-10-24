@@ -18,6 +18,7 @@ import {
   getMemberLastActiveAt,
 } from '../../lib/memberActivity.js';
 import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
+import { profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
 import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
 
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
@@ -109,55 +110,10 @@ async function ensureMasterEntry(
   }
 }
 
-async function writeSkillFields(prisma: any, memberId: string, fields: {
-  hasWebsite?: boolean | null;
-  weeklyWebsiteOrders?: number | null;
-  skillBusinessFoundation?: number | null;
-  skillContent?: number | null;
-  skillFunnels?: number | null;
-  skillAds?: number | null;
-  skillSales?: number | null;
-  skillOverallMarketing?: number | null;
-  weeklyLearningHours?: number | null;
-  teamSize?: string | null;
-  businessStartedFrom?: string | null;
-  instagramStats?: string | null;
-  facebookStats?: string | null;
-  websiteUrl?: string | null;
-  revenueGoalAfterTbt?: string | null;
-}) {
-  const sets: string[] = [];
-  const vals: unknown[] = [];
-  let pi = 1;
-  const add = (col: string, v: unknown) => { sets.push(`${col} = $${pi++}`); vals.push(v); };
-  if (fields.hasWebsite !== undefined) add('has_website', fields.hasWebsite);
-  if (fields.weeklyWebsiteOrders !== undefined) add('weekly_website_orders', fields.weeklyWebsiteOrders);
-  if (fields.skillBusinessFoundation !== undefined) add('skill_business_foundation', fields.skillBusinessFoundation);
-  if (fields.skillContent !== undefined) add('skill_content', fields.skillContent);
-  if (fields.skillFunnels !== undefined) add('skill_funnels', fields.skillFunnels);
-  if (fields.skillAds !== undefined) add('skill_ads', fields.skillAds);
-  if (fields.skillSales !== undefined) add('skill_sales', fields.skillSales);
-  if (fields.skillOverallMarketing !== undefined) add('skill_overall_marketing', fields.skillOverallMarketing);
-  if (fields.weeklyLearningHours !== undefined) add('weekly_learning_hours', fields.weeklyLearningHours);
-  if (fields.teamSize !== undefined) add('team_size', fields.teamSize);
-  if (fields.businessStartedFrom !== undefined) add('business_started_from', fields.businessStartedFrom);
-  if (fields.instagramStats !== undefined) add('instagram_stats', fields.instagramStats);
-  if (fields.facebookStats !== undefined) add('facebook_stats', fields.facebookStats);
-  if (fields.websiteUrl !== undefined) add('website_url', fields.websiteUrl);
-  if (fields.revenueGoalAfterTbt !== undefined) add('revenue_goal_after_tbt', fields.revenueGoalAfterTbt);
-  if (sets.length === 0) return;
-  vals.push(memberId);
-  try {
-    await prisma.$executeRawUnsafe(
-      `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
-      ...vals,
-    );
-  } catch (err: any) {
-    // Postgres 42703 = undefined_column: the members table is at the 1600-column
-    // limit in production so these startup ALTERs are silently skipped.
-    // Swallow the error so the caller (approve/update) still succeeds.
-    if (err?.code !== '42703') throw err;
-  }
+// Skills / growth fields live in member_profile_extras (members is at the
+// column limit), so they are saved through lib/memberProfileExtras.ts.
+async function writeSkillFields(prisma: any, memberId: string, fields: ProfileExtrasInput) {
+  await writeProfileExtras(prisma, memberId, fields);
 }
 
 /**
@@ -608,7 +564,7 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
         },
       }),
       request.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT m.has_website AS "hasWebsite", m.weekly_website_orders AS "weeklyWebsiteOrders", m.skill_business_foundation AS "skillBusinessFoundation", m.skill_content AS "skillContent", m.skill_funnels AS "skillFunnels", m.skill_ads AS "skillAds", m.skill_sales AS "skillSales", m.skill_overall_marketing AS "skillOverallMarketing", m.weekly_learning_hours AS "weeklyLearningHours", m.team_size AS "teamSize", m.business_started_from AS "businessStartedFrom", m.instagram_stats AS "instagramStats", m.facebook_stats AS "facebookStats", m.website_url AS "websiteUrl", m.revenue_goal_after_tbt AS "revenueGoalAfterTbt", COALESCE(mbp.business_categories, '[]'::jsonb) AS "businessCategories" FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`,
+        `SELECT m.team_size AS "teamSize", ${profileExtrasSelect('x')}, COALESCE(mbp.business_categories, '[]'::jsonb) AS "businessCategories" FROM members m LEFT JOIN member_profile_extras x ON x.member_id = m.id LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`,
         id,
       ),
       request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
