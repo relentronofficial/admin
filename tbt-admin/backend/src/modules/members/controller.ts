@@ -1690,6 +1690,12 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       status: _ignoredStatus, verificationStatus: _ignoredVerificationStatus,
       onboardingCompleted: _ignoredOnboardingCompleted, onboardingReviewedAt: _ignoredOnboardingReviewedAt,
       onboardingReviewedBy: _ignoredOnboardingReviewedBy,
+      // Raw SQL columns — not in Prisma schema; written separately via writeSkillFields / saveMemberAdminOverride
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours, teamSize, businessStartedFrom, instagramStats, facebookStats,
+      websiteUrl, revenueGoalAfterTbt,
+      overrideModules, allowedModules, businessCategories,
       ...rest
     } = body;
 
@@ -1737,6 +1743,36 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     }
 
     const updated = await request.server.prisma.member.update({ where: { id }, data });
+
+    // Write raw SQL skill/growth fields (not in Prisma schema)
+    await writeSkillFields(request.server.prisma, id, {
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours, teamSize, businessStartedFrom, instagramStats, facebookStats,
+      websiteUrl, revenueGoalAfterTbt,
+    });
+
+    // CP-14: per-member course module override
+    if (overrideModules !== undefined || allowedModules !== undefined) {
+      await saveMemberAdminOverride(
+        request.server.prisma,
+        id,
+        overrideModules === false ? null : (Array.isArray(allowedModules) ? allowedModules : []),
+      );
+      void invalidateMemberModuleAccess(request.server.redis ?? null, id);
+    }
+
+    // CV-06: persist admin-assigned business category visibility gate
+    if (businessCategories !== undefined) {
+      await request.server.prisma.$executeRawUnsafe(
+        `INSERT INTO member_business_profiles (member_id, business_categories)
+         VALUES ($1::uuid, $2::jsonb)
+         ON CONFLICT (member_id) DO UPDATE SET business_categories = EXCLUDED.business_categories`,
+        id,
+        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
+      );
+      void invalidateCache(request.server.redis ?? null, `courses:personalization:v3:${id}`);
+    }
 
     // Create subscription if a paid plan + end date are provided
     const approvedPlan = data.membershipPlan;
