@@ -15,6 +15,30 @@ import {
 
 type FormValues = ApplicationInput;
 
+type LocationData = { states: string[]; citiesByState: Record<string, string[]> };
+
+function useLocationData() {
+  const [data, setData] = useState<LocationData>({ states: [], citiesByState: {} });
+  useEffect(() => {
+    fetch("/api/locations")
+      .then((r) => r.json())
+      .then((d: LocationData) => setData(d))
+      .catch(() => {});
+  }, []);
+  return data;
+}
+
+function useCountries() {
+  const [countries, setCountries] = useState<string[]>([]);
+  useEffect(() => {
+    fetch("/api/countries")
+      .then((r) => r.json())
+      .then((d: { countries: string[] }) => setCountries(d.countries))
+      .catch(() => {});
+  }, []);
+  return countries;
+}
+
 const genderOptions = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
@@ -47,6 +71,9 @@ type LocationState =
   | { status: "error"; message: string };
 
 export default function ApplicationForm() {
+  const { states, citiesByState } = useLocationData();
+  const countries = useCountries();
+
   const [submitState, setSubmitState] = useState<
     | { status: "idle" }
     | { status: "submitting" }
@@ -86,6 +113,11 @@ export default function ApplicationForm() {
     "currentState",
     "currentPincode",
   ]);
+
+  const watchedCurrentState = watch("currentState");
+  const watchedPermanentState = watch("permanentState");
+  const currentCities = citiesByState[watchedCurrentState] ?? [];
+  const permanentCities = citiesByState[watchedPermanentState] ?? [];
 
   // Mirror current -> permanent when checkbox is on
   useEffect(() => {
@@ -405,7 +437,12 @@ export default function ApplicationForm() {
             <label className="label">
               Nationality <span className="text-red-600">*</span>
             </label>
-            <input className="input" {...register("nationality")} />
+            <select className="select" {...register("nationality")} disabled={countries.length === 0}>
+              {countries.length === 0 && <option value="Indian">Indian</option>}
+              {countries.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
             {errors.nationality && (
               <p className="field-error">{errors.nationality.message}</p>
             )}
@@ -530,20 +567,34 @@ export default function ApplicationForm() {
           </div>
           <div>
             <label className="label">
-              City <span className="text-red-600">*</span>
+              State <span className="text-red-600">*</span>
             </label>
-            <input className="input" {...register("currentCity")} />
-            {errors.currentCity && (
-              <p className="field-error">{errors.currentCity.message}</p>
+            <select className="select" defaultValue="" {...register("currentState")} disabled={states.length === 0}>
+              <option value="" disabled>Select state</option>
+              {states.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {errors.currentState && (
+              <p className="field-error">{errors.currentState.message}</p>
             )}
           </div>
           <div>
             <label className="label">
-              State <span className="text-red-600">*</span>
+              City <span className="text-red-600">*</span>
             </label>
-            <input className="input" {...register("currentState")} />
-            {errors.currentState && (
-              <p className="field-error">{errors.currentState.message}</p>
+            <input
+              className="input"
+              list="current-cities-list"
+              autoComplete="off"
+              placeholder={watchedCurrentState ? "Type or select city" : "Select a state first"}
+              {...register("currentCity")}
+            />
+            <datalist id="current-cities-list">
+              {currentCities.map((c) => <option key={c} value={c} />)}
+            </datalist>
+            {errors.currentCity && (
+              <p className="field-error">{errors.currentCity.message}</p>
             )}
           </div>
           <div>
@@ -612,28 +663,40 @@ export default function ApplicationForm() {
           </div>
           <div>
             <label className="label">
-              City <span className="text-red-600">*</span>
+              State <span className="text-red-600">*</span>
             </label>
-            <input
-              className="input"
-              disabled={sameAsCurrent}
-              {...register("permanentCity")}
-            />
-            {errors.permanentCity && (
-              <p className="field-error">{errors.permanentCity.message}</p>
+            <select
+              className="select"
+              defaultValue=""
+              disabled={sameAsCurrent || states.length === 0}
+              {...register("permanentState")}
+            >
+              <option value="" disabled>Select state</option>
+              {states.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            {errors.permanentState && (
+              <p className="field-error">{errors.permanentState.message}</p>
             )}
           </div>
           <div>
             <label className="label">
-              State <span className="text-red-600">*</span>
+              City <span className="text-red-600">*</span>
             </label>
             <input
               className="input"
+              list="permanent-cities-list"
+              autoComplete="off"
               disabled={sameAsCurrent}
-              {...register("permanentState")}
+              placeholder={watchedPermanentState ? "Type or select city" : "Select a state first"}
+              {...register("permanentCity")}
             />
-            {errors.permanentState && (
-              <p className="field-error">{errors.permanentState.message}</p>
+            <datalist id="permanent-cities-list">
+              {permanentCities.map((c) => <option key={c} value={c} />)}
+            </datalist>
+            {errors.permanentCity && (
+              <p className="field-error">{errors.permanentCity.message}</p>
             )}
           </div>
           <div>
