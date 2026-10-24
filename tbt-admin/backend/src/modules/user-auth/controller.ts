@@ -3,6 +3,9 @@ import bcrypt from 'bcrypt';
 import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '../../lib/otp.js';
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { sendOtp as sendOtpSms } from '../../lib/msg91.js';
+import { normalizePhone, phoneLookupVariants } from '../../lib/phoneNumber.js';
+import { decideRegistration, normalizeEmail, type ExistingAccount } from '../../lib/registrationLogic.js';
+import { deletePendingRegistration, findPendingRegistration, savePendingRegistration } from '../../lib/pendingRegistrations.js';
 
 async function sendOtpWithFallback(phone: string, otp: string): Promise<boolean> {
   const waOk = await sendOtpWhatsapp(phone, otp);
@@ -158,11 +161,33 @@ function otpResponseFields(sent: boolean, otp: string): {
   };
 }
 
+/**
+ * Every stored format of a phone (legacy rows hold what was typed, e.g. a bare
+ * 10-digit Indian number; new rows hold E.164) — see lib/phoneNumber.ts.
+ */
 function normalizePhoneForLookup(raw: string): string[] {
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length === 10) return [digits, `91${digits}`, `+91${digits}`];
-  if (digits.length === 12 && digits.startsWith('91')) return [digits, `+${digits}`, digits.slice(2)];
-  return [raw.trim(), digits];
+  return phoneLookupVariants(raw);
+}
+
+/**
+ * Sends the OTP for a pending (not yet verified) registration. When the
+ * sign-up call just sent one (cooldown active), the same OTP stays valid, so
+ * the client is simply told to enter it — that keeps the existing apps'
+ * "signup, then login" sequence working.
+ */
+async function sendPendingRegistrationOtp(fastify: FastifyInstance, reply: any, phoneE164: string, status = 200) {
+  const gate = await checkOtpRateLimit(getRedis(fastify), phoneE164);
+  if (!gate.ok) {
+    if (gate.reason === 'cooldown') {
+      return reply.status(status).send({ success: true, data: { step: 'otp_required', phone: phoneE164, delivered: true } });
+    }
+    return otpRateLimitReply(reply, gate);
+  }
+  const otp = generateOtp();
+  await storeOtp(getRedis(fastify), phoneE164, otp);
+  const sent = await sendOtpWithFallback(phoneE164, otp);
+  fastify.log.info({ phone: phoneE164, sent }, 'OTP generated (pending registration)');
+  return reply.status(status).send({ success: true, data: { step: 'otp_required', phone: phoneE164, ...otpResponseFields(sent, otp) } });
 }
 
 // POST /api/user-auth/login
@@ -177,6 +202,13 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   });
 
   if (!member) {
+    // A sign-up still waiting for its OTP (older clients call /login right
+    // after /signup): continue it when the password matches the one given.
+    const check = normalizePhone(phone);
+    const pending = check.ok ? await findPendingRegistration(fastify.prisma, check.e164) : null;
+    if (pending && password && (await bcrypt.compare(password, pending.payload.passwordHash))) {
+      return sendPendingRegistrationOtp(fastify, reply, pending.phoneE164);
+    }
     return reply.status(404).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
   }
 
@@ -265,12 +297,19 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
   if (result === 'invalid') return reply.status(400).send({ success: false, data: null, error: 'Invalid OTP. Please try again.' });
   if (result === 'max_attempts') return reply.status(429).send({ success: false, data: null, error: 'Too many failed attempts. Please request a new OTP.' });
 
-  const member = await fastify.prisma.member.findFirst({
+  const memberSelect = { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any;
+  let member = await fastify.prisma.member.findFirst({
     where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
-    select: { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any,
+    select: memberSelect,
   });
 
-  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
+  if (!member) {
+    // A verified OTP for a pending sign-up: only now does the account exist.
+    const created = await completePendingRegistration(fastify, phone);
+    if ('error' in created) return reply.status(created.status).send({ success: false, data: null, error: created.error });
+    member = await fastify.prisma.member.findUnique({ where: { id: created.memberId }, select: memberSelect });
+    if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
+  }
 
   const meta: SessionMeta = {
     deviceId: request.headers['x-device-id'] as string | undefined,
@@ -487,7 +526,19 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
     select: { id: true, phone: true } as any,
   });
 
-  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
+  if (!member) {
+    // Resend for a sign-up still waiting for its OTP (same rate limits apply).
+    const check = normalizePhone(phone);
+    const pending = check.ok ? await findPendingRegistration(fastify.prisma, check.e164) : null;
+    if (!pending) return reply.status(404).send({ success: false, data: null, error: 'Account not found' });
+    const gate = await checkOtpRateLimit(getRedis(fastify), pending.phoneE164);
+    if (!gate.ok) return otpRateLimitReply(reply, gate);
+    const otp = generateOtp();
+    await storeOtp(getRedis(fastify), pending.phoneE164, otp);
+    const sent = await sendOtpWithFallback(pending.phoneE164, otp);
+    if (!sent) fastify.log.warn({ phone: pending.phoneE164 }, 'OTP resend failed for pending registration (WhatsApp + SMS both failed)');
+    return reply.send({ success: true, data: otpResponseFields(sent, otp) });
+  }
 
   const gate = await checkOtpRateLimit(getRedis(fastify), (member as any).phone);
   if (!gate.ok) return otpRateLimitReply(reply, gate);
@@ -751,7 +802,90 @@ export async function me(fastify: FastifyInstance, request: any, reply: any) {
   return reply.send({ success: true, data: member });
 }
 
+const existingAccountSelect = { id: true, status: true, verificationStatus: true, onboardingSubmittedAt: true } as any;
+
+/** The member's status fields plus whether it ever had a session (= ever completed an OTP login). */
+async function toExistingAccount(fastify: FastifyInstance, m: any | null): Promise<ExistingAccount | null> {
+  if (!m) return null;
+  const sessionCount = await fastify.prisma.memberSession.count({ where: { memberId: m.id } } as any);
+  return {
+    id: m.id,
+    status: m.status ?? null,
+    verificationStatus: m.verificationStatus ?? null,
+    onboardingSubmittedAt: m.onboardingSubmittedAt ?? null,
+    sessionCount,
+  };
+}
+
+/**
+ * Turns a verified pending sign-up into a member: creates it, or updates the
+ * old never-verified row it claimed (nothing is deleted). Re-checks that the
+ * claimed row is still unverified, and maps a unique-constraint race to 409.
+ */
+async function completePendingRegistration(
+  fastify: FastifyInstance,
+  phone: string,
+): Promise<{ memberId: string } | { status: number; error: string }> {
+  const check = normalizePhone(phone);
+  const pending = check.ok ? await findPendingRegistration(fastify.prisma, check.e164) : null;
+  if (!pending) return { status: 404, error: 'Account not found' };
+
+  const p = pending.payload;
+  const data = {
+    firstName: p.firstName,
+    lastName: p.lastName,
+    phone: pending.phoneE164,
+    email: p.email,
+    passwordHash: p.passwordHash,
+    businessName: p.businessName,
+    city: p.city,
+    state: p.state,
+    productServiceType: p.productServiceType,
+  };
+  try {
+    let memberId: string;
+    if (pending.claimMemberId) {
+      const current = await fastify.prisma.member.findFirst({
+        where: { id: pending.claimMemberId, deletedAt: null } as any,
+        select: existingAccountSelect,
+      });
+      const decision = decideRegistration({ phoneMember: null, emailMember: await toExistingAccount(fastify, current) });
+      if (!current || !decision.ok) {
+        await deletePendingRegistration(fastify.prisma, pending.phoneE164);
+        return { status: 409, error: 'This account has already been activated. Please log in.' };
+      }
+      await (fastify.prisma.member as any).update({ where: { id: pending.claimMemberId }, data });
+      memberId = pending.claimMemberId;
+    } else {
+      const created = await (fastify.prisma.member as any).create({
+        data: {
+          ...data,
+          memberId: `TBT-${Math.floor(1000 + Math.random() * 9000)}`,
+          status: 'pending',
+          membershipPlan: 'free',
+        },
+      });
+      memberId = created.id;
+    }
+    await deletePendingRegistration(fastify.prisma, pending.phoneE164);
+    // Admins are notified when the member SUBMITS the onboarding wizard
+    // (onboarding/controller.ts submitOnboardingHandler), not here.
+    fastify.log.info({ memberId, phone: pending.phoneE164, claimed: !!pending.claimMemberId }, 'Self-signup verified — account created');
+    return { memberId };
+  } catch (err: any) {
+    if (err?.code === 'P2002') {
+      return { status: 409, error: 'An account with this phone number or email already exists. Please log in.' };
+    }
+    throw err;
+  }
+}
+
 // POST /api/user-auth/signup  (public — self-registration)
+//
+// Validates the details and the phone (any country, E.164), then stores a
+// PENDING registration and sends the OTP. The member account is created only
+// when that OTP is verified (verifyOtp → completePendingRegistration), so an
+// unverified attempt can never block a retry with "email already exists".
 export async function signup(fastify: FastifyInstance, request: any, reply: any) {
   const { firstName, lastName, phone, email, password, businessName, city, state, productServiceType } =
     request.body as {
@@ -760,51 +894,52 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
       productServiceType?: string;
     };
 
-  if (!firstName || !phone || !email || !password) {
+  if (!firstName?.trim() || !phone || !email || !password) {
     return reply.status(400).send({ success: false, data: null, error: 'firstName, phone, email and password are required' });
   }
   if (password.length < 6) {
     return reply.status(400).send({ success: false, data: null, error: 'Password must be at least 6 characters' });
   }
+  const phoneCheck = normalizePhone(phone);
+  if (!phoneCheck.ok) {
+    return reply.status(400).send({ success: false, data: null, error: phoneCheck.message, field: 'phone' });
+  }
+  const cleanEmail = normalizeEmail(email);
+  if (!cleanEmail) {
+    return reply.status(400).send({ success: false, data: null, error: 'Please enter a valid email address.', field: 'email' });
+  }
 
-  const phoneVariants = normalizePhoneForLookup(phone);
-
-  const [existingPhone, existingEmail] = await Promise.all([
-    fastify.prisma.member.findFirst({ where: { phone: { in: phoneVariants }, deletedAt: null } as any, select: { id: true } as any }),
-    fastify.prisma.member.findFirst({ where: { email, deletedAt: null } as any, select: { id: true } as any }),
+  const [phoneRow, emailRow] = await Promise.all([
+    fastify.prisma.member.findFirst({
+      where: { phone: { in: normalizePhoneForLookup(phoneCheck.e164) }, deletedAt: null } as any,
+      select: existingAccountSelect,
+    }),
+    fastify.prisma.member.findFirst({
+      where: { email: { equals: cleanEmail, mode: 'insensitive' }, deletedAt: null } as any,
+      select: existingAccountSelect,
+    }),
   ]);
+  const decision = decideRegistration({
+    phoneMember: await toExistingAccount(fastify, phoneRow),
+    emailMember: await toExistingAccount(fastify, emailRow),
+  });
+  if (!decision.ok) return reply.status(decision.status).send({ success: false, data: null, error: decision.error });
 
-  if (existingPhone) {
-    return reply.status(409).send({ success: false, data: null, error: 'An account with this phone number already exists. Please log in.' });
-  }
-  if (existingEmail) {
-    return reply.status(409).send({ success: false, data: null, error: 'An account with this email already exists. Please log in.' });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 12);
-  const memberId = `TBT-${Math.floor(1000 + Math.random() * 9000)}`;
-
-  const member = await (fastify.prisma.member as any).create({
-    data: {
-      firstName,
-      lastName: lastName || null,
-      phone: phone.trim(),
-      email,
-      passwordHash,
-      memberId,
+  await savePendingRegistration(fastify.prisma, {
+    phoneE164: phoneCheck.e164,
+    email: cleanEmail,
+    claimMemberId: decision.claimMemberId,
+    payload: {
+      firstName: firstName.trim(),
+      lastName: lastName?.trim() || null,
+      email: cleanEmail,
+      passwordHash: await bcrypt.hash(password, 12),
       businessName: businessName || null,
       city: city || null,
       state: state || null,
       productServiceType: productServiceType || null,
-      status: 'pending',
-      membershipPlan: 'free',
     },
   });
 
-  // Admins are notified when the member actually SUBMITS the onboarding
-  // wizard (modules/onboarding/controller.ts submitOnboardingHandler), not
-  // here — signup only creates the account; there's nothing to review yet.
-  // See SELF_ONBOARDING_SPECKIT.md §5.4.
-  fastify.log.info({ memberId: member.id, phone: member.phone }, 'New self-signup — awaiting onboarding');
-  return reply.status(201).send({ success: true, data: null });
+  return sendPendingRegistrationOtp(fastify, reply, phoneCheck.e164, 201);
 }

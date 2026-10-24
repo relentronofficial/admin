@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { phoneDigitsForMessaging } from './phoneNumber.js';
 
 // ── Low-balance side-channel ────────────────────────────────────────────────
 //
@@ -67,11 +68,10 @@ function detectAndAlertLowBalance(status: number, body: string): boolean {
   return true;
 }
 
+// International numbers keep their own country code (phoneDigitsForMessaging);
+// a bare 10-digit number is a legacy Indian mobile.
 function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) return digits;
-  if (digits.length === 10) return `91${digits}`;
-  return digits;
+  return phoneDigitsForMessaging(phone);
 }
 
 export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boolean> {

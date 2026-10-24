@@ -1,4 +1,8 @@
 import type { RedisLike } from './cache.js';
+import { phoneKey } from './phoneNumber.js';
+
+// OTP, cooldown and hourly keys use the canonical E.164 form (phoneKey), so
+// "9876543210", "919876543210" and "+919876543210" are the same phone.
 
 const OTP_TTL = 300; // 5 minutes
 const MAX_ATTEMPTS = 3;
@@ -42,8 +46,8 @@ export async function checkOtpRateLimit(
 ): Promise<OtpRateResult> {
   if (!redis) return { ok: true };
 
-  const cooldownKey = `otp:cooldown:${phone}`;
-  const hourlyKey = `otp:hourly:${phone}`;
+  const cooldownKey = `otp:cooldown:${phoneKey(phone)}`;
+  const hourlyKey = `otp:hourly:${phoneKey(phone)}`;
 
   try {
     // Cooldown: SET NX EX — returns 'OK' if we set it (allowed),
@@ -98,7 +102,7 @@ interface OtpRecord { otp: string; attempts: number; }
  * just taps "Resend" and gets a fresh OTP.
  */
 export async function storeOtp(redis: RedisLike | null, phone: string, otp: string): Promise<void> {
-  const key = `otp:${phone}`;
+  const key = `otp:${phoneKey(phone)}`;
   const value = JSON.stringify({ otp, attempts: 0 } satisfies OtpRecord);
   const expiresAt = Date.now() + OTP_TTL * 1000;
   // Always mirror to in-memory so a verify that hits Redis timeout
@@ -118,7 +122,7 @@ export async function verifyAndConsumeOtp(
   phone: string,
   otp: string,
 ): Promise<'ok' | 'invalid' | 'expired' | 'max_attempts'> {
-  const key = `otp:${phone}`;
+  const key = `otp:${phoneKey(phone)}`;
 
   let raw: string | null = null;
   if (redis) {
@@ -180,7 +184,7 @@ const _devStore = new Map<string, { value: string; expiresAt: number }>();
 /** DEV ONLY — peek at the stored OTP for a phone (never ship to prod). */
 export function devPeekOtp(phone: string): string | null {
   if (process.env.NODE_ENV === 'production') return null;
-  const entry = _devStore.get(`otp:${phone}`);
+  const entry = _devStore.get(`otp:${phoneKey(phone)}`);
   if (!entry || Date.now() >= entry.expiresAt) return null;
   try {
     const record = JSON.parse(entry.value) as OtpRecord;

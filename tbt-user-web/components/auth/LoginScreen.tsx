@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, Monitor, Smartphone, Tablet, LogOut, AlertTriangle } from "lucide-react";
+import { Eye, EyeOff, Lock, ArrowRight, Loader2, Monitor, Smartphone, Tablet, LogOut, AlertTriangle } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
+import { DEFAULT_PHONE, PhoneInput, phoneStatus, phoneStatusMessage, phoneToE164, type PhoneValue } from "./PhoneInput";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
 type Step = "credentials" | "otp" | "reset_password" | "set_password" | "session_conflict";
@@ -59,7 +60,7 @@ export function LoginScreen() {
   }, [slides.length]);
 
   const [step, setStep] = useState<Step>("credentials");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState<PhoneValue>(DEFAULT_PHONE);
   const [password, setPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -99,8 +100,8 @@ export function LoginScreen() {
     e.preventDefault();
     if (submitting) return;
 
-    const trimmedPhone = phone.trim();
-    if (!trimmedPhone) { setError("Please enter your phone number"); return; }
+    const trimmedPhone = phoneToE164(phone);
+    if (!trimmedPhone) { setError(phoneStatusMessage(phoneStatus(phone)) ?? "Please enter your phone number"); return; }
     if (!password) { setError("Please enter your password"); return; }
 
     setSubmitting(true);
@@ -220,8 +221,8 @@ export function LoginScreen() {
   }, [resolvedPhone]);
 
   const handleForgotPassword = useCallback(async () => {
-    const trimmedPhone = phone.trim();
-    if (!trimmedPhone) { setError("Please enter your phone number first"); return; }
+    const trimmedPhone = phoneToE164(phone);
+    if (!trimmedPhone) { setError(phoneStatusMessage(phoneStatus(phone)) ?? "Please enter your phone number first"); return; }
     setSubmitting(true);
     setError("");
     try {
@@ -392,21 +393,8 @@ export function LoginScreen() {
                         boxShadow: focused === "phone" ? "0 0 0 3px rgba(220,38,38,0.12)" : undefined,
                       }}
                     >
-                      <span className="pl-4 flex-shrink-0 text-[13px] font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>+91</span>
-                      <Phone className="ml-2 flex-shrink-0 w-[15px] h-[15px]" style={{ color: focused === "phone" ? "#dc2626" : "rgba(255,255,255,0.28)" }} />
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
-                        onFocus={() => setFocused("phone")}
-                        onBlur={() => setFocused(null)}
-                        placeholder="10-digit mobile number"
-                        autoComplete="tel"
-                        required
-                        className="flex-1 bg-transparent pl-2 pr-4 py-[13px] text-white text-[14px] placeholder-white/20 outline-none"
-                        style={{ caretColor: "#dc2626" }}
-                      />
+                      <PhoneInput value={phone} onChange={setPhone}
+                        onFocus={() => setFocused("phone")} onBlur={() => setFocused(null)} />
                     </div>
                   </motion.div>
 

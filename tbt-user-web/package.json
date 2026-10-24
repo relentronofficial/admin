@@ -35,6 +35,7 @@
     "date-fns": "^3.6.0",
     "framer-motion": "^12.4.7",
     "hls.js": "^1.6.16",
+    "libphonenumber-js": "1.13.15",
     "livekit-client": "^2.19.2",
     "lucide-react": "^0.477.0",
     "next": "^15.5.23",
