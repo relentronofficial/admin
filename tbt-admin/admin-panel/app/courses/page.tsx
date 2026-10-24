@@ -969,6 +969,7 @@ function EpisodesTab({ course }: { course: any }) {
     const cues = rawCues.map((c: any) => ({ ...c, atTime: secsToTime(c.atSeconds ?? 0) }));
     setEpForm({
       title: ep.title, videoUrl: ep.videoUrl, bunnyVideoId: ep.bunnyVideoId || "",
+      position: ep.position != null ? String(ep.position) : "",
       thumbnailUrl: ep.thumbnailUrl || "", durationSeconds: String(ep.durationSeconds || ""),
       isVisible: ep.isVisible,
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
@@ -1127,6 +1128,12 @@ function EpisodesTab({ course }: { course: any }) {
       toast.error("Title and video are required");
       return;
     }
+    const rawPosition = String(epForm.position ?? "").trim();
+    if (editingEp && rawPosition !== "" && !/^[1-9]\d*$/.test(rawPosition)) {
+      setEpErrors({ position: "Enter a whole number of 1 or more" } as any);
+      toast.error("Episode Order must be a whole number of 1 or more");
+      return;
+    }
     setEpErrors({});
     const normalizedVideoUrl = epForm.videoUrl.replace(/https?:\/\/player\.mediadelivery\.net\/play\/(\d+)\/([\w-]+)/, 'https://iframe.mediadelivery.net/embed/$1/$2');
     // Serialise quizData: strip atTime display field from cues, drop empty questions/options
@@ -1142,8 +1149,10 @@ function EpisodesTab({ course }: { course: any }) {
         .filter((c: any) => c.questions.length > 0);
       if (questions.length > 0 || cues.length > 0) quizData = { questions, cues };
     }
+    const { position: _position, ...epFields } = epForm;
     const payload = {
-      ...epForm, videoUrl: normalizedVideoUrl,
+      ...epFields, videoUrl: normalizedVideoUrl,
+      ...(editingEp && rawPosition !== "" ? { position: Number(rawPosition) } : {}),
       durationSeconds: Number(epForm.durationSeconds) || 0,
       bunnyVideoId: epForm.bunnyVideoId || undefined,
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
@@ -1262,7 +1271,7 @@ function EpisodesTab({ course }: { course: any }) {
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
-  const renderEpRow = (ep: any, i: number, inSection?: string | null) => (
+  const renderEpRow = (ep: any, i: number, inSection?: string | null, displayNo?: number) => (
     <div key={ep.id} draggable
       onDragStart={e => {
         if (inSection !== undefined) { e.stopPropagation(); dragType.current = 'episode'; }
@@ -1283,7 +1292,7 @@ function EpisodesTab({ course }: { course: any }) {
         ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
         ${movingEpId === ep.id ? "opacity-40" : dragIdx.current === i ? "opacity-30" : ""}`}>
       <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
-      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{i + 1}</span>
+      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{displayNo ?? i + 1}</span>
       {ep.thumbnailUrl && (
         <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
       )}
@@ -1428,7 +1437,7 @@ function EpisodesTab({ course }: { course: any }) {
                           <p className="text-[9px] font-rajdhani uppercase tracking-wider text-[#555]">{isEpTarget ? "Release to move here" : "No episodes — drag one here"}</p>
                         </div>
                       ) : (
-                        eps.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), sec.id))
+                        eps.map((ep: any, k: number) => renderEpRow(ep, localEps.indexOf(ep), sec.id, k + 1))
                       )}
                     </div>
                   )}
@@ -1456,7 +1465,7 @@ function EpisodesTab({ course }: { course: any }) {
                   <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
                 </div>
                 <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/20">
-                  {epsBySection.get(null)!.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), null))}
+                  {epsBySection.get(null)!.map((ep: any, k: number) => renderEpRow(ep, localEps.indexOf(ep), null, k + 1))}
                 </div>
               </div>
             )}
@@ -1477,6 +1486,17 @@ function EpisodesTab({ course }: { course: any }) {
               className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.title ? "border-red-500" : "border-[#2a2a2a]"}`} />
             {epErrors.title && <p className="text-[10px] text-red-500 mt-1">{epErrors.title}</p>}
           </div>
+          {editingEp && (
+            <div>
+              <label htmlFor="ep-position" className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Episode Order</label>
+              <input id="ep-position" type="number" min={1} step={1} inputMode="numeric"
+                value={epForm.position ?? ""}
+                onChange={e => { setEpField("position", e.target.value); if ((epErrors as any).position) setEpErrors(prev => ({ ...prev, position: undefined } as any)); }}
+                className={`w-28 bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${(epErrors as any).position ? "border-red-500" : "border-[#2a2a2a]"}`} />
+              <p className="text-[10px] text-[#666] mt-1">Position inside its section — 1 is first. Other episodes in the section shift to make room.</p>
+              {(epErrors as any).position && <p className="text-[10px] text-red-500 mt-1">{(epErrors as any).position}</p>}
+            </div>
+          )}
           {/* Video */}
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
