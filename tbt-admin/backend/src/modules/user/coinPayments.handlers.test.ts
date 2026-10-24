@@ -123,6 +123,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   const q = text.replace(/\s+/g, ' ').trim();
   if (q.startsWith('SELECT pg_advisory_xact_lock')) return [];
   if (q.includes('FROM plan_entitlements WHERE plan = $1')) return db.entitlements[a[0]] ? [db.entitlements[a[0]]] : [];
+  // Upfront call-quota purchases (lib/supportQuota.ts): none are made in these tests.
+  if (q.includes('FROM support_call_coin_purchases')) return [];
   if (q.includes('FROM support_usage')) {
     const counts: Record<string, number> = {};
     for (const u of db.usage.filter((u) => u.memberId === a[0])) counts[u.type] = (counts[u.type] ?? 0) + 1;
