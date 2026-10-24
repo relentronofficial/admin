@@ -16,18 +16,27 @@ describe("weekProgressionPoints", () => {
     ]);
   });
 
-  it("rises with more approved work, falls when a later week is missed or partly done", () => {
+  it("rises with more progress, falls when a later week has less", () => {
     expect(levels([w(1, 1), w(2, 2), w(3, 3)])).toEqual([1, 2, 3]); // upward
-    expect(levels([w(1, 3), w(2, 1.5), w(3, 0)])).toEqual([3, 1.5, 0]); // downward, a missed week drops to the baseline
-    expect(levels([w(1, 0), w(2, 3), w(3, 1), w(4, 2.25), w(5, 0)])).toEqual([0, 3, 1, 2.25, 0]); // zigzag
+    expect(levels([w(1, 3), w(2, 1.5), w(3, 0.5)])).toEqual([3, 1.5, 0.5]); // downward
+    expect(levels([w(1, 1), w(2, 3), w(3, 1), w(4, 2.25)])).toEqual([1, 3, 1, 2.25]); // zigzag
+  });
+
+  it("connects only real weekly points: weeks with no progress get none, so nothing runs along the baseline", () => {
+    expect(levels([w(1, 0), w(2, 2), w(3, 0), w(4, 0), w(5, 1)])).toEqual([2, 1]);
+    expect(levels([w(1, 0), w(2, 0)])).toEqual([]);
+  });
+
+  it("follows revenue progression between ₹1 lakh, ₹5 lakhs and ₹1 crore rows", () => {
+    // Axis: Ads 1, Website 2, Funnels 3, ₹1 lakh 4, ₹5 lakhs 5, ₹1 crore 6 (backend revenueProgressLevel).
+    expect(levels([w(1, 3), w(2, 4), w(3, 4.5), w(4, 5.25), w(5, 6)])).toEqual([3, 4, 4.5, 5.25, 6]);
   });
 
   it("draws nothing for weeks that have not started", () => {
     expect(levels([w(1, 2), w(2, 1), w(3, null), w(4, null)])).toEqual([2, 1]);
   });
 
-  it("skips a week with nothing assigned (no false dip), but keeps it when revenue or a record lifts it", () => {
-    expect(levels([w(1, 2), w(2, 0, 0), w(3, 1)])).toEqual([2, 1]);
+  it("keeps a week with nothing assigned when revenue or a record lifts it", () => {
     expect(levels([w(1, 2), w(2, 4, 0), w(3, 1)])).toEqual([2, 4, 1]);
   });
 
@@ -39,8 +48,8 @@ describe("weekProgressionPoints", () => {
 
 describe("progressionLine", () => {
   it("joins two or more points; fewer than two → no line (nothing fabricated)", () => {
-    const pts = weekProgressionPoints([w(1, 1), w(2, 3), w(3, 0)], colX, yFor);
-    expect(progressionLine(pts)).toBe("0,90 100,70 200,100");
+    const pts = weekProgressionPoints([w(1, 1), w(2, 3), w(3, 0.5)], colX, yFor);
+    expect(progressionLine(pts)).toBe("0,90 100,70 200,95");
     expect(progressionLine(pts.slice(0, 1))).toBeNull();
     expect(progressionLine([])).toBeNull();
   });

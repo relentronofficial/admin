@@ -248,21 +248,22 @@ describe("WeeklyActivityGraph", () => {
       return Number(t.getAttribute("y")) - 4;
     };
 
-    it("follows each started week's measured progress: up, down for a missed week, up again", async () => {
+    it("connects only the real weekly points: up, then down, with no line along the baseline", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const p = pts(container);
-      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4"].map(weekX)); // one point per started week, none for W5
+      // W3 had nothing approved (level 0) and W5 has not started: neither gets a point.
+      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W4"].map(weekX));
       expect(p[0][1]).toBe(rowY("Ads"));
       expect(p[1][1]).toBe(rowY("Funnels"));
       const ys = p.map(([, y]) => y);
       expect(ys[1]).toBeLessThan(ys[0]); // up
-      expect(ys[2]).toBeGreaterThan(ys[1]); // down: W3 has nothing approved
-      expect(ys[2]).toBeGreaterThan(ys[0]); // to the baseline, below Ads
-      expect(ys[3]).toBeLessThan(ys[2]); // up again: half of W4 approved
-      expect(ys[3]).toBeGreaterThan(rowY("Website")); // 1.5 sits between Ads and Website
-      expect(ys[3]).toBeLessThan(rowY("Ads"));
+      expect(ys[2]).toBeGreaterThan(ys[1]); // down: W4 only half approved
+      expect(ys[2]).toBeGreaterThan(rowY("Website")); // 1.5 sits between Ads and Website
+      expect(ys[2]).toBeLessThan(rowY("Ads"));
+      // Nothing on the baseline: no segment duplicates the X axis.
+      expect(ys.every((y) => y <= rowY("Ads"))).toBe(true);
       expect(dots(container)).toEqual(p); // a dot on every point, exactly on the line
     });
 
@@ -270,10 +271,35 @@ describe("WeeklyActivityGraph", () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      // W3's "Website" activity is awaiting approval: its marker stays on the Website row, the week's point stays on the baseline.
+      // W3's "Website" activity is awaiting approval: its marker stays on the Website row, but W3 gets no progress point.
       const marker = screen.getByRole("button", { name: "W3, Website, Website W3, Awaiting approval" }).querySelector("circle")!;
       expect(Number(marker.getAttribute("cy"))).toBe(rowY("Website"));
-      expect(pts(container)[2][1]).toBeGreaterThan(rowY("Ads"));
+      expect(pts(container).map(([x]) => x)).not.toContain(weekX("W3"));
+    });
+
+    it("shows revenue progression through the ₹1 lakh, ₹5 lakhs and ₹1 crore rows from reported revenue", async () => {
+      const data = weeksData();
+      data.config.milestones = [
+        ms("m-ads", "Ads", "activity"), ms("m-web", "Website", "activity"), ms("m-fun", "Funnels", "activity"),
+        ms("m-1l", "₹1 lakh", "revenue", { threshold: 100000, reached: true, reachedBy: "revenue", reachedWeek: 2 }),
+        ms("m-5l", "₹5 lakhs", "revenue", { threshold: 500000 }),
+        ms("m-1c", "₹1 crore", "revenue", { threshold: 10000000 }),
+      ];
+      // Backend levels: W1 Funnels (3), W2 ₹1 lakh reached (4), W3 ₹3 lakhs (4.5), W4 ₹1 crore (6).
+      data.weeks[0].progressLevel = 3;
+      data.weeks[1].progressLevel = 4;
+      data.weeks[2].progressLevel = 4.5;
+      data.weeks[3].progressLevel = 6;
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      const ys = pts(container).map(([, y]) => y);
+      expect(ys).toHaveLength(4);
+      expect(ys[0]).toBe(rowY("Funnels"));
+      expect(ys[1]).toBe(rowY("₹1 lakh"));
+      expect(ys[2]).toBeLessThan(rowY("₹1 lakh"));
+      expect(ys[2]).toBeGreaterThan(rowY("₹5 lakhs"));
+      expect(ys[3]).toBe(rowY("₹1 crore"));
     });
 
     it("an activity approved later lifts its own week on refresh", async () => {
