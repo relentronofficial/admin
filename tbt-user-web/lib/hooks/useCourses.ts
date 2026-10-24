@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
 import { invalidateCoinBalance } from "./useCoins";
-export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, RazorpayOrderResult, CoinOrderResult } from "@/lib/api/services/courses.service";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, CourseLifelineState, RazorpayOrderResult, CoinOrderResult } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -429,3 +429,38 @@ export const useMyEpisodeFormSubmission = (episodeId: string | null | undefined)
     },
     enabled: !!episodeId,
   });
+
+// ── Course-scoped lifeline pool ───────────────────────────────────────────────
+export const useCourseLifelines = (courseId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["course-lifelines", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getCourseLifelines(courseId!);
+      return res.data ?? null;
+    },
+    enabled: !!courseId,
+    staleTime: 0,
+  });
+
+export const useConsumeCourseLifeline = (courseId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => coursesService.consumeCourseLifeline(courseId!),
+    onSuccess: (res) => {
+      queryClient.setQueryData(["course-lifelines", courseId], (res as any)?.data ?? null);
+    },
+  });
+};
+
+export const usePurchaseCourseLifelines = (courseId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { quantity: number; expectedCoinCostEach: number }) =>
+      coursesService.purchaseCourseLifelines(courseId!, body),
+    onSuccess: (res) => {
+      const data = (res as any)?.data;
+      if (data?.lifelines) queryClient.setQueryData(["course-lifelines", courseId], data.lifelines);
+      void invalidateCoinBalance(queryClient);
+    },
+  });
+};
