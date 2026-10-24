@@ -638,13 +638,17 @@ export default function SupportCallPanel({
 
   const quota = data?.quota;
   const coin = data?.coin ?? null;
-  // Free calls left → normal booking. All used but a coin price is set → slots stay
-  // bookable as extra, coin-paid calls (the server still decides).
-  const coinPath = !!quota && quota.remaining <= 0 && (coin?.action === "unlock_with_coins" || coin?.action === "purchase_coins");
+  // notIncluded: category has 0 plan-allocated calls (plan doesn't include this call type at all).
+  const notIncluded = !!quota && (quota.included ?? quota.allocated) <= 0;
+  // coinPath: included calls exhausted AND admin has set a coin price — extra call can be booked
+  // with TBT coins regardless of whether the member currently has enough (they can buy more).
+  // Also covers the edge case where action is still 'locked' because Razorpay isn't configured —
+  // the member may already have enough coins and the ConfirmCard will handle the short-balance case.
+  const coinPath = !!quota && quota.remaining <= 0 && !notIncluded && coin?.cost != null;
   const member = useMemo(
     // Same rule as the server: only plan-included calls make a category bookable (coin unlocks don't).
-    () => ({ notIncluded: !!quota && (quota.included ?? quota.allocated) <= 0, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
-    [quota, coinPath],
+    () => ({ notIncluded, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
+    [quota, notIncluded, coinPath],
   );
   const byDate = useMemo(() => groupByDate(data?.sessions ?? []), [data?.sessions]);
   const openDates = useMemo(() => datesWithOpenSlots(byDate, nowMs), [byDate, nowMs]);
@@ -758,15 +762,17 @@ export default function SupportCallPanel({
               {coinPath && coin?.cost != null && (
                 <div className="rounded-[10px] p-3.5 space-y-2" style={{ background: CARD, border: `1px solid ${GOLD}55` }} data-testid="coin-unlock-banner">
                   <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
-                    <Lock size={13} style={{ color: GOLD }} /> All your included calls are used or booked
+                    <Coins size={13} style={{ color: GOLD }} /> Buy an extra call with TBT Coins
                   </p>
                   <p className="text-[11px]" style={{ color: SOFT }}>
-                    You can book an extra call for <strong style={{ color: GOLD }}>{coin.cost} TBT coins</strong>. Your balance: {coin.balance} coins.
-                    {coin.action === "unlock_with_coins" ? " Pick a slot and confirm. Coins are only deducted when you confirm." : ""}
+                    You&apos;ve used all your included calls. Book one more for{" "}
+                    <strong style={{ color: GOLD }}>{coin.cost} TBT coins</strong>. Your balance: {coin.balance} coins.
+                    {coin.action === "unlock_with_coins" ? " Pick a slot below and confirm — coins are only deducted when you confirm." : ""}
                   </p>
-                  {/* Stays open once used, so the purchase result is still shown after the
-                      refreshed balance flips the action to unlock_with_coins. */}
-                  {(coin.action === "purchase_coins" || showCoinShop) && (
+                  {/* Show the coin shop whenever the member can't afford the call, or
+                      when they tap "Purchase TBT Coins". Stays open after purchase so
+                      the success message is still visible when the balance refreshes. */}
+                  {(coin.action === "purchase_coins" || (coin.action === "locked" && coin.balance < coin.cost) || showCoinShop) && (
                     showCoinShop ? (
                       <CoinPurchaseBox needed={Math.max(0, coin.cost - coin.balance)} />
                     ) : (
@@ -814,12 +820,14 @@ export default function SupportCallPanel({
                     ) : member.notIncluded || !member.canBookMore ? (
                       <div className="rounded-[10px] p-4" style={{ background: CARD }}>
                         <p className="text-xs font-semibold" style={{ color: TEXT }}>
-                          {member.notIncluded ? "This call type isn't included in your plan." : "You have no calls left to book in this category."}
+                          {member.notIncluded
+                            ? "This call type isn't included in your plan."
+                            : "You've used all your included calls."}
                         </p>
                         <p className="text-[11px] mt-1" style={{ color: MUTED }}>
                           {member.notIncluded
                             ? "Your plan doesn't include this call type, so its slots can't be booked."
-                            : "A call becomes available again if you cancel an upcoming booking."}
+                            : "Extra call purchases aren't configured for this category yet. Contact your program manager."}
                         </p>
                       </div>
                     ) : !selectedDate ? (

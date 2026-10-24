@@ -230,14 +230,20 @@ function callCardHint(card: CallCard | undefined): { text: string; color: string
     case "book":
       return { text: `${card.quota.remaining} free · Book Call`, color: "#22c55e", locked: false };
     case "unlock_with_coins":
-      // Quota exhausted but member has enough coins — coin icon, not lock icon.
       return { text: `${card.coinCost} coins · Unlock Extra Call`, color: "#eab308", locked: false };
     case "purchase_coins":
-      // Quota exhausted and member needs more coins first — still clickable (opens purchase flow).
       return { text: `Buy Coins to Unlock`, color: "#eab308", locked: false };
     default:
-      // "locked": not included in plan with no coin-purchase option — truly non-interactive.
-      return { text: card.lockedReason === "not_included" ? "Not in your plan" : "Limit reached", color: "#93939b", locked: true };
+      if (card.lockedReason === "not_included") {
+        // Not in plan at all — tile is non-interactive.
+        return { text: "Not in your plan", color: "#93939b", locked: true };
+      }
+      // quota_exhausted — still clickable so user can open the coin purchase panel.
+      return {
+        text: card.coinCost != null ? `${card.coinCost} coins · Extra Call` : "Limit reached · Tap for options",
+        color: "#eab308",
+        locked: false,
+      };
   }
 }
 
@@ -247,10 +253,10 @@ function SupportCallTile({ label, used: quotaUsed, total: quotaTotal, card, onCl
   const total = card?.quota.allocated ?? quotaTotal;
   const pct = total > 0 ? Math.round((used / total) * 100) : 0;
   const hint = callCardHint(card);
-  // "locked" = not in plan with no coin-purchase option — tile is completely non-interactive.
-  // "unlock_with_coins" / "purchase_coins" = limit reached but a coin path exists — keep clickable,
-  // the panel handles the coin flow automatically via its own coinPath logic.
-  const fullyLocked = card?.action === "locked";
+  // Only truly non-interactive when not in plan at all (not_included).
+  // quota_exhausted tiles stay clickable — the panel handles coin purchase and shows
+  // an "extra calls not configured" message if no coin price has been set by the admin.
+  const fullyLocked = card?.action === "locked" && card?.lockedReason === "not_included";
   return (
     <button
       type="button"
