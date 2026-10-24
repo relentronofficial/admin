@@ -27,11 +27,13 @@ const rzp = vi.hoisted(() => ({
   created: [] as any[],
   fetched: {} as Record<string, any>,
   nextOrderId: 1,
+  failCreate: false,
 }));
 vi.mock('razorpay', () => ({
   default: class {
     orders = {
       create: async (o: any) => {
+        if (rzp.failCreate) throw new Error('Razorpay API unavailable');
         const order = { id: `order_T${rzp.nextOrderId++}`, ...o };
         rzp.created.push(order);
         return order;
@@ -375,6 +377,7 @@ beforeEach(() => {
   failNextSpend = false;
   rzp.created = [];
   rzp.fetched = {};
+  rzp.failCreate = false;
   unhandled.length = 0;
   broadcasts.length = 0;
 });
@@ -667,6 +670,206 @@ describe('TBT coin purchase (Razorpay)', () => {
     rzp.fetched.order_COURSE = { id: 'order_COURSE', amount: 9900, notes: { type: 'course', memberId: MEMBER } };
     expect((await verify('order_COURSE', 'pay_C')).status).toBe(404);
     expect(balanceOf(MEMBER)).toBe(200);
+  });
+
+  describe('successful payments', () => {
+    it('credits the ledger, the cached total and the order exactly once', async () => {
+      const o = await order({ packageId: PKG });
+      const r = await verify(o.orderId, 'pay_S1');
+      expect(r.status).toBe(200);
+      expect(db.ledger).toEqual([{ memberId: MEMBER, points: 500, source: 'coin_purchase', ref: db.coinOrders[0].id }]);
+      expect(db.members[MEMBER].totalPoints).toBe(500);
+      expect(db.coinOrders[0]).toMatchObject({ status: 'paid', paymentId: 'pay_S1' });
+    });
+
+    it('a webhook capture after verify does not move the cached total again', async () => {
+      const o = await order({ packageId: PKG });
+      await verify(o.orderId, 'pay_S2');
+      await webhook('payment.captured', { id: 'pay_S2', order_id: o.orderId, amount: 19900 });
+      expect(db.members[MEMBER].totalPoints).toBe(500);
+    });
+
+    it('two orders from the same member each credit their own coins', async () => {
+      const a = await order({ packageId: PKG });
+      const b = await order();
+      await verify(a.orderId, 'pay_S3');
+      await verify(b.orderId, 'pay_S4');
+      expect(balanceOf(MEMBER)).toBe(700);
+      expect(db.coinOrders.map((x) => x.status)).toEqual(['paid', 'paid']);
+    });
+
+    it('bought coins can then unlock an extra call at the admin price', async () => {
+      db.usage.push({ memberId: MEMBER, type: 'tech_support' });
+      db.pricing.tech_support = 120;
+      const o = await order({ packageId: PKG });
+      await verify(o.orderId, 'pay_S5');
+      const r = await book(S1, { payWithCoins: true, expectedCoinCost: 120 });
+      expect(r.status).toBe(201);
+      expect(r.body.data).toMatchObject({ paidWithCoins: true, coinsSpent: 120, coinBalance: 380 });
+      expect(balanceOf(MEMBER)).toBe(380);
+    });
+  });
+
+  describe('failed payments', () => {
+    it('payment.failed never downgrades an order that was already paid', async () => {
+      const o = await order({ packageId: PKG });
+      await verify(o.orderId, 'pay_P1');
+      await webhook('payment.failed', { id: 'pay_P2', order_id: o.orderId, error_description: 'late failure event' });
+      expect(db.coinOrders[0].status).toBe('paid');
+      expect(balanceOf(MEMBER)).toBe(500);
+    });
+
+    it('after a failed attempt, a successful retry on the same order credits once via verify', async () => {
+      const o = await order({ packageId: PKG });
+      await webhook('payment.failed', { id: 'pay_R1', order_id: o.orderId, error_description: 'insufficient funds' });
+      const r = await verify(o.orderId, 'pay_R2');
+      expect(r.body.data).toMatchObject({ coinsAdded: 500, alreadyProcessed: false });
+      await webhook('payment.captured', { id: 'pay_R2', order_id: o.orderId, amount: 19900 });
+      expect(balanceOf(MEMBER)).toBe(500);
+      expect(db.coinOrders[0]).toMatchObject({ status: 'paid', paymentId: 'pay_R2' });
+    });
+
+    it('a failure event for an unknown order changes nothing', async () => {
+      const r = await webhook('payment.failed', { id: 'pay_U1', order_id: 'order_UNKNOWN', error_description: 'x' });
+      expect(r.body).toEqual({ ok: true });
+      expect(db.coinOrders).toHaveLength(0);
+      expect(db.ledger).toHaveLength(0);
+    });
+
+    it('verify for an order that was never created is 404 and credits nothing', async () => {
+      const r = await verify('order_NEVER', 'pay_N1');
+      expect(r.status).toBe(404);
+      expect(db.ledger).toHaveLength(0);
+    });
+
+    it('when Razorpay cannot create the order, no coin order is recorded', async () => {
+      rzp.failCreate = true;
+      const r = await call(user.createCoinOrderHandler, { memberId: MEMBER, body: { packageId: PKG } });
+      expect(r.status).toBe(500);
+      expect(r.body.error).toMatchObject({ message: 'ORDER_CREATE_FAILED' });
+      expect(db.coinOrders).toHaveLength(0);
+    });
+
+    it('with Razorpay keys missing, create-order and verify refuse with 503', async () => {
+      const saved = envMock.env.RAZORPAY_KEY_SECRET;
+      envMock.env.RAZORPAY_KEY_SECRET = undefined;
+      try {
+        expect((await call(user.createCoinOrderHandler, { memberId: MEMBER, body: {} })).status).toBe(503);
+        const r = await call(user.verifyCoinPaymentHandler, {
+          memberId: MEMBER, body: { razorpayOrderId: 'order_T1', razorpayPaymentId: 'pay_1', razorpaySignature: sign('order_T1', 'pay_1') },
+        });
+        expect(r.status).toBe(503);
+        expect(db.ledger).toHaveLength(0);
+      } finally {
+        envMock.env.RAZORPAY_KEY_SECRET = saved;
+      }
+    });
+  });
+
+  describe('invalid signatures', () => {
+    const bodyFor = (orderId: string, paymentId: string, signature: unknown) =>
+      ({ memberId: MEMBER, body: { razorpayOrderId: orderId, razorpayPaymentId: paymentId, razorpaySignature: signature } });
+
+    it('verify rejects a signature made for a different payment id', async () => {
+      const o = await order({ packageId: PKG });
+      const r = await verify(o.orderId, 'pay_REAL', MEMBER, sign(o.orderId, 'pay_OTHER'));
+      expect(r.status).toBe(400);
+      expect(r.body.error).toMatchObject({ message: 'SIGNATURE_INVALID' });
+      expect(db.coinOrders[0].status).toBe('created');
+    });
+
+    it('verify rejects a signature made for a different order id', async () => {
+      const a = await order({ packageId: PKG });
+      const b = await order({ packageId: PKG });
+      const r = await verify(b.orderId, 'pay_1', MEMBER, sign(a.orderId, 'pay_1'));
+      expect(r.status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+    });
+
+    it('verify rejects a signature made with the wrong secret', async () => {
+      const o = await order({ packageId: PKG });
+      const forged = crypto.createHmac('sha256', 'attacker_secret').update(`${o.orderId}|pay_1`).digest('hex');
+      expect((await verify(o.orderId, 'pay_1', MEMBER, forged)).status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['empty', ''],
+      ['not a string', 12345],
+      ['truncated', 'abc123'],
+      ['upper-cased', null],
+      ['multi-byte characters of the right length', 'é'.repeat(64)],
+    ])('verify rejects a %s signature with 400, never 500', async (_label, sig) => {
+      const o = await order({ packageId: PKG });
+      const signature = sig === null ? sign(o.orderId, 'pay_1').toUpperCase() : sig;
+      const r = await call(user.verifyCoinPaymentHandler, bodyFor(o.orderId, 'pay_1', signature));
+      expect(r.status).toBe(400);
+      expect(db.ledger).toHaveLength(0);
+      expect(db.coinOrders[0].status).toBe('created');
+    });
+
+    it('webhook without a signature header is rejected', async () => {
+      const o = await order({ packageId: PKG });
+      const rawBody = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_H', order_id: o.orderId, amount: 19900 } } } });
+      expect((await call(user.razorpayWebhookHandler, { rawBody, headers: {} })).status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+    });
+
+    it('webhook without the raw body is rejected', async () => {
+      const r = await call(user.razorpayWebhookHandler, { headers: { 'x-razorpay-signature': 'a'.repeat(64) } });
+      expect(r.status).toBe(400);
+    });
+
+    it('webhook body tampered after signing (amount raised) is rejected', async () => {
+      const o = await order({ packageId: PKG });
+      const signed = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_T', order_id: o.orderId, amount: 100 } } } });
+      const signature = crypto.createHmac('sha256', WEBHOOK_SECRET).update(signed).digest('hex');
+      const tampered = signed.replace('"amount":100', '"amount":19900');
+      const r = await call(user.razorpayWebhookHandler, { rawBody: tampered, headers: { 'x-razorpay-signature': signature } });
+      expect(r.status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+      expect(db.coinOrders[0].status).toBe('created');
+    });
+
+    it('webhook signed with the key secret instead of the webhook secret is rejected', async () => {
+      const o = await order({ packageId: PKG });
+      const rawBody = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_K', order_id: o.orderId, amount: 19900 } } } });
+      const signature = crypto.createHmac('sha256', KEY_SECRET).update(rawBody).digest('hex');
+      expect((await call(user.razorpayWebhookHandler, { rawBody, headers: { 'x-razorpay-signature': signature } })).status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+    });
+
+    it('a forged payment.failed webhook cannot mark an order failed', async () => {
+      const o = await order({ packageId: PKG });
+      const rawBody = JSON.stringify({ event: 'payment.failed', payload: { payment: { entity: { id: 'pay_FF', order_id: o.orderId } } } });
+      const r = await call(user.razorpayWebhookHandler, { rawBody, headers: { 'x-razorpay-signature': 'b'.repeat(64) } });
+      expect(r.status).toBe(400);
+      expect(db.coinOrders[0].status).toBe('created');
+    });
+
+    it('webhook with a multi-byte signature of the right length is rejected with 400, never 500', async () => {
+      const o = await order({ packageId: PKG });
+      const rawBody = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_MB', order_id: o.orderId, amount: 19900 } } } });
+      const r = await call(user.razorpayWebhookHandler, { rawBody, headers: { 'x-razorpay-signature': 'é'.repeat(64) } });
+      expect(r.status).toBe(400);
+      expect(balanceOf(MEMBER)).toBe(0);
+    });
+
+    it('with no webhook secret configured, webhooks are acknowledged but never credit', async () => {
+      const saved = envMock.env.RAZORPAY_WEBHOOK_SECRET;
+      const o = await order({ packageId: PKG });
+      envMock.env.RAZORPAY_WEBHOOK_SECRET = undefined;
+      try {
+        const rawBody = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_NS', order_id: o.orderId, amount: 19900 } } } });
+        const r = await call(user.razorpayWebhookHandler, { rawBody, headers: { 'x-razorpay-signature': 'c'.repeat(64) } });
+        expect(r.body).toEqual({ ok: true });
+        expect(balanceOf(MEMBER)).toBe(0);
+        expect(db.coinOrders[0].status).toBe('created');
+      } finally {
+        envMock.env.RAZORPAY_WEBHOOK_SECRET = saved;
+      }
+    });
   });
 });
 
