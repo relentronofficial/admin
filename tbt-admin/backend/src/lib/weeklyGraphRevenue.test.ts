@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveGraphConfig, validateMilestoneInput, type GraphMilestoneRow, type GraphWeekRow } from './weeklyGraphConfig.js';
-import { buildWeeklyGraph, type GraphTaskInput } from './weeklyGraphLogic.js';
+import { buildWeeklyGraph, revenueProgressLevel, type GraphTaskInput } from './weeklyGraphLogic.js';
 import { isoWeekStartIst, revenueEntriesForProgram } from './weeklyGraphRevenue.js';
 
 const ME = 'member-me';
@@ -103,8 +103,9 @@ describe('revenue milestones from reported revenue', () => {
     expect(g.weeks.map((w) => [w.revenue, w.cumulativeRevenue])).toEqual([[60000, 60000], [50000, 110000], [null, 110000], [null, null]]);
     expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2, threshold: 100000 });
     expect(ms(g, 'm-5l')).toMatchObject({ reached: false, reachedBy: null, reachedWeek: null, threshold: 500000 });
-    // W1 (₹60k) stays below ₹1 Lakh; W2 onwards sits on it; W4 has not started.
-    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4, 4, null]);
+    // W1 (₹60k) stays below ₹1 Lakh; W2 onwards is on it, ₹10k of the way to ₹5 Lakhs
+    // (4 + 10k/400k = 4.03, revenueProgressLevel); W4 has not started.
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03, null]);
     expect(g.revenue).toEqual({ source: 'self_reported', totalToDate: 110000 });
   });
 
@@ -163,5 +164,70 @@ describe('revenue milestones from reported revenue', () => {
     const g11 = build({ config: resolveGraphConfig({ weeks: eleven, milestones: REV_MS }), totalDays: 90, currentDay: 40 });
     expect(g11.weeks).toHaveLength(11);
     expect(g11.weeks.at(-1)).toMatchObject({ label: 'W11', weekId: 'w11', startDay: 71, endDay: 77 });
+  });
+});
+
+describe('revenue progression between ₹1 lakh, ₹5 lakhs and ₹1 crore', () => {
+  // Axis: Ads 1, Website 2, Funnels 3, ₹1 lakh 4, ₹5 lakhs 5, ₹1 crore 6.
+  const T = [null, null, null, 100000, 500000, 10000000];
+
+  it('revenueProgressLevel: nothing below the first threshold, then proportional between thresholds', () => {
+    expect(revenueProgressLevel(0, T)).toBe(0);
+    expect(revenueProgressLevel(99999, T)).toBe(0); // revenue alone never lifts the line before ₹1 lakh
+    expect(revenueProgressLevel(100000, T)).toBe(4);
+    expect(revenueProgressLevel(300000, T)).toBe(4.5); // halfway from ₹1 lakh to ₹5 lakhs
+    expect(revenueProgressLevel(500000, T)).toBe(5);
+    expect(revenueProgressLevel(5250000, T)).toBe(5.5);
+    expect(revenueProgressLevel(10000000, T)).toBe(6); // ₹1 crore reached
+    expect(revenueProgressLevel(25000000, T)).toBe(6); // capped at the top milestone
+  });
+
+  it('a revenue milestone without a threshold is skipped; a non-increasing order never lowers the point', () => {
+    expect(revenueProgressLevel(300000, [null, null, null, 100000, null, 10000000])).toBe(4.04); // 1L → 1Cr spans two rows: 4 + 200k/9.9M × 2
+    expect(revenueProgressLevel(300000, [null, null, null, 500000, 100000])).toBe(5);
+  });
+
+  const config = resolveGraphConfig({
+    weeks: FOUR_WEEKS,
+    milestones: [
+      milestone('m-ads', 'Ads', 'activity', 0), milestone('m-web', 'Website', 'activity', 1), milestone('m-fun', 'Funnels', 'activity', 2),
+      milestone('m-1l', '₹1 lakh', 'revenue', 3, 100000), milestone('m-5l', '₹5 lakhs', 'revenue', 4, 500000),
+      milestone('m-1c', '₹1 crore', 'revenue', 5, 10000000),
+    ],
+  });
+  const tasks = [task('a1', 2, { graphMilestoneId: 'm-fun' }), task('a2', 9), task('a3', 16), task('a4', 23)];
+  const build = (revenue: Array<{ dayNumber: number; amount: number }>, approvedIds: string[] = ['a1']) =>
+    buildWeeklyGraph({
+      memberId: ME, tasks, totalDays: 28, currentDay: 25, config,
+      submissions: approvedIds.map((id) => ({ taskId: id, dayNumber: tasks.find((t) => t.id === id)!.dayNumber, status: 'approved' })),
+      dayProgress: [],
+      revenue: revenue.map((e, i) => ({ isoYear: 2026, isoWeek: 40 + i, ...e })),
+    });
+
+  it('weekly points follow cumulative revenue up to ₹1 crore', () => {
+    const g = build([{ dayNumber: 8, amount: 100000 }, { dayNumber: 15, amount: 200000 }, { dayNumber: 22, amount: 9700000 }]);
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([3, 4, 4.5, 6]);
+    const m = Object.fromEntries(g.config.milestones.map((x) => [x.label, [x.reached, x.reachedWeek]]));
+    expect(m['₹1 lakh']).toEqual([true, 2]);
+    expect(m['₹5 lakhs']).toEqual([true, 4]);
+    expect(m['₹1 crore']).toEqual([true, 4]);
+  });
+
+  it('a revenue update is reflected on the next build', () => {
+    const before = build([{ dayNumber: 8, amount: 100000 }]);
+    const after = build([{ dayNumber: 8, amount: 100000 }, { dayNumber: 15, amount: 400000 }]);
+    expect(before.weeks[2].progressLevel).toBe(4);
+    expect(after.weeks[2].progressLevel).toBe(5);
+  });
+
+  it('activity progress and revenue never overwrite each other: each week takes the higher of the two', () => {
+    // W1: Funnels activity (3) with ₹50k revenue (below ₹1 lakh) → activity wins, revenue does not pull it down.
+    const g = build([{ dayNumber: 1, amount: 50000 }]);
+    expect(g.weeks[0].progressLevel).toBe(3);
+    expect(g.config.milestones.find((x) => x.label === '₹1 lakh')!.reached).toBe(false);
+    // W2: no approved activity, ₹3 lakhs cumulative → revenue wins; the activity milestone stays unreached by revenue.
+    const r = build([{ dayNumber: 8, amount: 300000 }], []);
+    expect(r.weeks[1].progressLevel).toBe(4.5);
+    expect(r.config.milestones.find((x) => x.label === 'Funnels')!.reached).toBe(false);
   });
 });
