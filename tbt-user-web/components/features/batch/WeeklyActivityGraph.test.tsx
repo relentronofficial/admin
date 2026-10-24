@@ -195,93 +195,134 @@ describe("WeeklyActivityGraph", () => {
   });
 
   describe("progression line", () => {
-    /** W1 Ads ✓, W2 Funnels ✓, W3 Website ✓ (+ an awaiting one), W4 ₹1 Lakh-linked not started. */
-    const zigzag = () => {
+    /**
+     * Admin-configured program, member on W4:
+     *  W1 1/1 approved (Ads)           → level 1
+     *  W2 2/2 approved incl. Funnels   → level 3   (up)
+     *  W3 0/2 — one awaiting approval, one missed → level 0 (down: nothing approved)
+     *  W4 current, 1/2 approved        → level 1.5 (up again)
+     *  W5 not started                  → no point
+     */
+    const weeksData = () => {
       const data: any = graphData();
+      data.currentDay = 24;
+      data.currentWeek = 4;
       data.weeks = [
-        week(1, { activities: [activity("t1", "Ads W1", 2, "completed", ["m-ads", "Ads", 1])], progressLevel: 1 }),
-        week(2, { activities: [activity("t2", "Funnels W2", 9, "completed", ["m-fun", "Funnels", 3])], progressLevel: 3 }),
+        week(1, { activities: [activity("t1", "Ads W1", 2, "completed", ["m-ads", "Ads", 1])], total: 1, completed: 1, progressLevel: 1 }),
+        week(2, {
+          activities: [
+            activity("t2", "Funnels W2", 9, "completed", ["m-fun", "Funnels", 3]),
+            activity("t2b", "Post daily W2", 10, "completed", null),
+          ],
+          total: 2, completed: 2, progressLevel: 3,
+        }),
         week(3, {
+          activities: [
+            activity("t3", "Website W3", 16, "submitted", ["m-web", "Website", 2]),
+            activity("t3b", "Missed W3", 17, "not_started", null),
+          ],
+          total: 2, completed: 0, progressLevel: 0,
+        }),
+        week(4, {
           isCurrent: true,
           activities: [
-            activity("t3", "Website W3", 16, "completed", ["m-web", "Website", 2]),
-            activity("t3b", "Pending W3", 17, "submitted", ["m-1l", "₹1 Lakh", 4]),
+            activity("t4", "Reel W4", 23, "completed", null),
+            activity("t4b", "Draft W4", 24, "in_progress", null),
           ],
-          progressLevel: 2,
+          total: 2, completed: 1, progressLevel: 1.5,
         }),
-        week(4, { activities: [activity("t4", "Later W4", 23, "not_started", ["m-fun", "Funnels", 3])] }),
+        week(5, { activities: [activity("t5", "Later W5", 30, "upcoming", null)], total: 1 }),
       ];
       return data;
     };
-    const markerCenter = (name: string) => {
-      const c = screen.getByRole("button", { name }).querySelector("circle:not([fill='transparent'])")!;
-      return `${c.getAttribute("cx")},${c.getAttribute("cy")}`;
-    };
     const line = (container: HTMLElement) => container.querySelector('[data-testid="progress-line"]');
+    const pts = (container: HTMLElement) => line(container)!.getAttribute("points")!.split(" ").map((p) => p.split(",").map(Number));
+    const dots = (container: HTMLElement) =>
+      [...container.querySelectorAll('[data-testid="progress-point"]')].map((c) => [Number(c.getAttribute("cx")), Number(c.getAttribute("cy"))]);
+    const weekX = (label: string) => {
+      const t = screen.getAllByTestId("week-label").find((el) => el.textContent === label)!;
+      return Number(t.getAttribute("x"));
+    };
+    const rowY = (label: string) => {
+      const t = screen.getAllByTestId("milestone-label").find((el) => el.textContent === label)!;
+      return Number(t.getAttribute("y")) - 4;
+    };
 
-    it("rises and falls through exactly the approved activities' marker coordinates", async () => {
-      get.mockResolvedValue(ok(zigzag()));
+    it("follows each started week's measured progress: up, down for a missed week, up again", async () => {
+      get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      const pts = line(container)!.getAttribute("points")!.split(" ");
-      expect(pts).toEqual([
-        markerCenter("W1, Ads, Ads W1, Completed"),
-        markerCenter("W2, Funnels, Funnels W2, Completed"),
-        markerCenter("W3, Website, Website W3, Completed"),
-      ]);
-      const ys = pts.map((p) => Number(p.split(",")[1]));
-      expect(ys[1]).toBeLessThan(ys[0]); // up to Funnels
-      expect(ys[2]).toBeGreaterThan(ys[1]); // down to Website
-      // Awaiting approval and not started stay markers only.
-      expect(pts).not.toContain(markerCenter("W3, ₹1 Lakh, Pending W3, Awaiting approval"));
-      expect(pts).not.toContain(markerCenter("W4, Funnels, Later W4, Not started"));
+      const p = pts(container);
+      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4"].map(weekX)); // one point per started week, none for W5
+      expect(p[0][1]).toBe(rowY("Ads"));
+      expect(p[1][1]).toBe(rowY("Funnels"));
+      const ys = p.map(([, y]) => y);
+      expect(ys[1]).toBeLessThan(ys[0]); // up
+      expect(ys[2]).toBeGreaterThan(ys[1]); // down: W3 has nothing approved
+      expect(ys[2]).toBeGreaterThan(ys[0]); // to the baseline, below Ads
+      expect(ys[3]).toBeLessThan(ys[2]); // up again: half of W4 approved
+      expect(ys[3]).toBeGreaterThan(rowY("Website")); // 1.5 sits between Ads and Website
+      expect(ys[3]).toBeLessThan(rowY("Ads"));
+      expect(dots(container)).toEqual(p); // a dot on every point, exactly on the line
+    });
+
+    it("awaiting approval, in progress and not started never lift a week", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const { container } = renderGraph();
+      await chart();
+      // W3's "Website" activity is awaiting approval: its marker stays on the Website row, the week's point stays on the baseline.
+      const marker = screen.getByRole("button", { name: "W3, Website, Website W3, Awaiting approval" }).querySelector("circle")!;
+      expect(Number(marker.getAttribute("cy"))).toBe(rowY("Website"));
+      expect(pts(container)[2][1]).toBeGreaterThan(rowY("Ads"));
+    });
+
+    it("an activity approved later lifts its own week on refresh", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const { container } = renderGraph();
+      await chart();
+      const before = pts(container)[2][1];
+      const later = weeksData();
+      later.weeks[2].activities[0] = activity("t3", "Website W3", 16, "completed", ["m-web", "Website", 2]);
+      later.weeks[2].completed = 1;
+      later.weeks[2].progressLevel = 2; // backend: Website link approved
+      lastQc.setQueryData(["my-batch", "weekly-graph"], later);
+      await waitFor(() => expect(pts(container)[2][1]).toBe(rowY("Website")));
+      expect(pts(container)[2][1]).toBeLessThan(before);
+    });
+
+    it("a week with nothing assigned is skipped, never a false dip to the baseline", async () => {
+      const data = weeksData();
+      data.weeks[2] = week(3, { total: 0, completed: 0, progressLevel: 0 });
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W4"].map(weekX));
     });
 
     it("is drawn red and under the markers, so marker borders stay visible", async () => {
-      get.mockResolvedValue(ok(zigzag()));
+      get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
       expect(Number(l.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(2);
-      expect(l.getAttribute("opacity")).toBeNull();
       const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it("recalculates when the data refreshes (an activity approved, edited or removed)", async () => {
-      get.mockResolvedValue(ok(zigzag()));
-      const { container } = renderGraph();
-      await chart();
-      expect(line(container)!.getAttribute("points")!.split(" ")).toHaveLength(3);
-
-      // The pending W3 activity is approved → the line now ends on it.
-      const approved = zigzag();
-      approved.weeks[2].activities[1] = activity("t3b", "Pending W3", 17, "completed", ["m-1l", "₹1 Lakh", 4]);
-      lastQc.setQueryData(["my-batch", "weekly-graph"], approved);
-      await waitFor(() => expect(line(container)!.getAttribute("points")!.split(" ")).toHaveLength(4));
-      expect(line(container)!.getAttribute("points")!.split(" ").at(-1)).toBe(markerCenter("W3, ₹1 Lakh, Pending W3, Completed"));
-
-      // W2's activity is removed → the line goes straight from W1 to W3.
-      const removed = zigzag();
-      removed.weeks[1].activities = [];
-      lastQc.setQueryData(["my-batch", "weekly-graph"], removed);
-      await waitFor(() => expect(line(container)!.getAttribute("points")!.split(" ")).toEqual([
-        markerCenter("W1, Ads, Ads W1, Completed"),
-        markerCenter("W3, Website, Website W3, Completed"),
-      ]));
-    });
-
-    it("draws no line when fewer than two activities are approved (nothing fabricated)", async () => {
-      get.mockResolvedValue(ok(graphData())); // only "Ads W1" is approved
+    it("draws no line with fewer than two started weeks (nothing fabricated), markers still drawn", async () => {
+      const data = weeksData();
+      data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({ ...w, progressLevel: null }))];
+      get.mockResolvedValue(ok(data));
       const { container } = renderGraph();
       await chart();
       expect(line(container)).toBeNull();
-      expect(screen.getAllByTestId("activity-marker")).toHaveLength(5); // every marker still drawn
+      expect(dots(container)).toHaveLength(1);
+      expect(screen.getAllByTestId("activity-marker")).toHaveLength(8);
     });
 
     it("keeps the status legend unchanged", async () => {
-      get.mockResolvedValue(ok(zigzag()));
+      get.mockResolvedValue(ok(weeksData()));
       renderGraph();
       await chart();
       for (const label of ["Completed", "Awaiting approval", "Not started"]) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
