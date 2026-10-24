@@ -147,10 +147,17 @@ async function writeSkillFields(prisma: any, memberId: string, fields: {
   if (fields.revenueGoalAfterTbt !== undefined) add('revenue_goal_after_tbt', fields.revenueGoalAfterTbt);
   if (sets.length === 0) return;
   vals.push(memberId);
-  await prisma.$executeRawUnsafe(
-    `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
-    ...vals,
-  );
+  try {
+    await prisma.$executeRawUnsafe(
+      `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
+      ...vals,
+    );
+  } catch (err: any) {
+    // Postgres 42703 = undefined_column: the members table is at the 1600-column
+    // limit in production so these startup ALTERs are silently skipped.
+    // Swallow the error so the caller (approve/update) still succeeds.
+    if (err?.code !== '42703') throw err;
+  }
 }
 
 /**
