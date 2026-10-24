@@ -456,8 +456,12 @@ export default function MembersListPage() {
         payload.profilePhotoUrl = editProfilePhotoUrl;
       }
       if (editKycDoc) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
-        payload.kycDocumentUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
+          payload.kycDocumentUrl = publicUrl;
+        } catch {
+          toast.error("KYC document upload failed — other changes will still be saved");
+        }
       }
       // CP-14: send module override only if the admin explicitly changed it
       const originalMods = (editingMember as any).allowedModules;

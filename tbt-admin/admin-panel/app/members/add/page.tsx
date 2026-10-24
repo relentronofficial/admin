@@ -64,7 +64,10 @@ const memberSchema = z.object({
   videoEditingDetails: z.string().optional(),
   notes: z.string().optional(),
   hasWebsite: z.boolean().default(false),
-  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  weeklyWebsiteOrders: z.preprocess(
+    v => (v === null || v === undefined || (typeof v === "number" && isNaN(v as number))) ? null : Number(v),
+    z.number().int().min(0).nullable().optional()
+  ),
   skillBusinessFoundation: z.number().int().min(1).max(10).default(1),
   skillContent: z.number().int().min(1).max(10).default(1),
   skillFunnels: z.number().int().min(1).max(10).default(1),
@@ -196,14 +199,23 @@ export default function AddMemberPage() {
       let profilePhotoUrl = "";
       let kycDocumentUrl = "";
 
+      // Image uploads are best-effort — failure must not block member creation
       if (profileImage) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: profileImage, pathPrefix: "members/photos" });
-        profilePhotoUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: profileImage, pathPrefix: "members/photos" });
+          profilePhotoUrl = publicUrl;
+        } catch {
+          toast.error("Profile photo upload failed — member will be saved without photo");
+        }
       }
 
       if (kycDoc) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: kycDoc, pathPrefix: "members/kyc" });
-        kycDocumentUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: kycDoc, pathPrefix: "members/kyc" });
+          kycDocumentUrl = publicUrl;
+        } catch {
+          toast.error("KYC document upload failed — member will be saved without KYC document");
+        }
       }
 
       const { challenge1, challenge2, challenge3, ...rest } = data;
