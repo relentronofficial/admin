@@ -1483,6 +1483,14 @@ export default function CourseDetailPage({
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextVisible, setUpNextVisible] = useState(false);
+  // Video-ended auto-completion: the lesson whose completion is being saved (replaces
+  // the Mark Complete button meanwhile), and the lesson to advance from once this
+  // lesson's quiz / reflection / feedback prompts are closed.
+  const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
+  const [pendingAdvance, setPendingAdvance] = useState<{ from: string; notBefore: number } | null>(null);
+  const [advanceTick, setAdvanceTick] = useState(0);
+  const advanceToLessonRef = useRef<(lesson: any) => void>(() => {});
+  const scopedLessonsRef = useRef<any[] | null>(null);
   const [videoKey, setVideoKey] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(() => {
     if (typeof window !== "undefined") {
@@ -1670,7 +1678,7 @@ export default function CourseDetailPage({
   const [pendingReflection, setPendingReflection] = useState<{ lessonId: string; title: string } | null>(null);
   const [feedbackEpisodeId, setFeedbackEpisodeId] = useState<string | null>(null);
   const feedbackShownRef = useRef<Set<string>>(new Set());
-  const { data: feedbackQuestions = [] } = useVideoFeedbackQuestions(feedbackEpisodeId);
+  const { data: feedbackQuestions = [], isFetching: feedbackFetching } = useVideoFeedbackQuestions(feedbackEpisodeId);
   const [completionTimes, setCompletionTimes] = useState<Record<string, number>>({});
   const [reflectionCount, setReflectionCount] = useState(0);
   const reflectedRef = useRef<Set<string>>(new Set());
@@ -1882,6 +1890,31 @@ export default function CourseDetailPage({
       setTimeout(() => setFeedbackEpisodeId(lid), delay);
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After a video-ended completion is saved, move to the next lesson with a video in
+  // course order — but only once this lesson's quiz / reflection / feedback prompts
+  // (scheduled within ~1.2 s of completion) and the completion celebration are done. Uses the normal
+  // lesson selection, so lock / focus-timer / lifeline rules and the start dialog apply.
+  useEffect(() => {
+    if (!pendingAdvance) return;
+    if (selectedLesson?.id !== pendingAdvance.from) { setPendingAdvance(null); return; } // member moved on
+    const promptOpen = !!quizModal || !!cueQuizModal || !!pendingReflection || !!focusDialog || !!missionComplete
+      || (!!feedbackEpisodeId && (feedbackFetching || feedbackQuestions.length > 0));
+    if (promptOpen) return;
+    const wait = pendingAdvance.notBefore - Date.now();
+    if (wait > 0) {
+      const t = setTimeout(() => setAdvanceTick((n) => n + 1), wait);
+      return () => clearTimeout(t);
+    }
+    setPendingAdvance(null);
+    const lessons: any[] = scopedLessonsRef.current ?? courseRef.current?.lessons ?? [];
+    const idx = lessons.findIndex((l: any) => l.id === pendingAdvance.from);
+    const next = idx >= 0 ? lessons.slice(idx + 1).find((l: any) => !!l.videoUrl) : undefined;
+    if (!next) return; // final lesson — stay on it (course-complete toast already shown)
+    clearInterval(upNextTimerRef.current);
+    setUpNextVisible(false);
+    advanceToLessonRef.current(next);
+  }, [pendingAdvance, advanceTick, selectedLesson?.id, quizModal, cueQuizModal, pendingReflection, focusDialog, missionComplete, feedbackEpisodeId, feedbackFetching, feedbackQuestions.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tracking refs ────────────────────────────────────────────────────────────
   const markCalledRef = useRef(false);
@@ -2109,32 +2142,66 @@ export default function CourseDetailPage({
     try { localStorage.setItem("tbt_speed", String(s)); } catch {}
   };
 
-  const handleVideoEnded = () => {
+  // The video actually ended (player "ended" event — never a seek, an open or a refresh).
+  // Saves completion through the existing progress API once; the lesson shows as
+  // completed and auto-advances only after the server confirms it. On failure: error
+  // toast, no completion, no navigation (the Mark Complete button is back as a retry).
+  const completeFromVideoEndRef = useRef<() => void>(() => {});
+  completeFromVideoEndRef.current = () => {
     isPlayingRef.current = false;
+    doMarkCompleteRef.current = false;
     const lesson = selectedLessonRef.current;
     if (!lesson) return;
-    justCompletedInSessionRef.current = true;
-    setWatchState("completed");
-    // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
-    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
-    if (!lessonData?.hasQuiz) triggerUpNextRef.current();
-    const allLessons = courseRef.current?.lessons ?? [];
-    const willBeAllDone = allLessons.length > 0 &&
-      allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
-    if (willBeAllDone && !markCalledRef.current) {
-      setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+    const alreadyDone = completedIdsRef.current.has(lesson.id) || !!lesson.isCompleted;
+    if (alreadyDone) {
+      // Rewatched a completed lesson to the end: nothing to save, just move on.
+      setWatchState("completed");
+      setPendingAdvance({ from: lesson.id, notBefore: Date.now() + 1500 });
+      return;
     }
-    if (!markCalledRef.current) {
-      markCalledRef.current = true;
-      doMarkCompleteRef.current = false;
-      // Mark server timer session as completed
-      if (timerLessonRef.current === lesson.id) {
-        heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
-        clearInterval(timerIntervalRef.current);
-        timerLessonRef.current = null;
-      }
-      markComplete.mutate({ lessonId: lesson.id, watchedSeconds: Math.floor(lastPlayheadRef.current), isCompleted: true, videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
+    if (markCalledRef.current) return; // completion already requested — no duplicate request / navigation
+    markCalledRef.current = true;
+    // Mark server timer session as completed
+    if (timerLessonRef.current === lesson.id) {
+      heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
     }
+    setAutoCompletingId(lesson.id);
+    // At the ended event the playhead is the video's end; send it as the duration when the
+    // player never reported one so the server's threshold check uses the real length.
+    const endPlayhead = Math.floor(lastPlayheadRef.current);
+    const duration = realDurationRef.current > 0 ? realDurationRef.current : (endPlayhead > 0 ? endPlayhead : undefined);
+    markComplete.mutate({ lessonId: lesson.id, watchedSeconds: endPlayhead, isCompleted: true, videoDuration: duration }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const saved = (res?.data ?? res)?.completed === true;
+        if (!saved) {
+          markCalledRef.current = false;
+          if (selectedLessonRef.current?.id === lesson.id) setWatchState("paused");
+          toast.error("This lesson wasn't counted as complete — watch the whole video, then try again.", { id: "lesson-complete-failed" });
+          return;
+        }
+        if (selectedLessonRef.current?.id !== lesson.id) return; // member already moved to another lesson
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+        setPendingAdvance({ from: lesson.id, notBefore: Date.now() + 1500 });
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        markCalledRef.current = false;
+        if (selectedLessonRef.current?.id === lesson.id) setWatchState("paused");
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
+      },
+    });
+  };
+
+  const handleVideoEnded = () => {
+    completeFromVideoEndRef.current();
   };
 
   const handleMarkComplete = () => {
@@ -2187,23 +2254,8 @@ export default function CourseDetailPage({
 
     const BUNNY_ORIGIN = "https://iframe.mediadelivery.net";
 
-    const doMarkComplete = () => {
-      const lesson = selectedLessonRef.current;
-      if (!lesson) return;
-      isPlayingRef.current = false;
-      doMarkCompleteRef.current = false;
-      justCompletedInSessionRef.current = true;
-      setWatchState("completed");
-      // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz.
-      // Same guard as handleVideoEnded (HLS path). Without this, the 5-second up-next countdown
-      // starts while the quiz modal is simultaneously opening, navigating away before the user answers.
-      const lessonDataForComplete = courseRef.current?.lessons?.find((l: any) => l.id === lesson.id);
-      if (!lessonDataForComplete?.hasQuiz) triggerUpNextRef.current();
-      if (!markCalledRef.current) {
-        markCalledRef.current = true;
-        markComplete.mutate({ lessonId: lesson.id, isCompleted: true, watchedSeconds: Math.floor(lastPlayheadRef.current), videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined });
-      }
-    };
+    // Iframe "ended" — same video-ended completion flow as the HLS player.
+    const doMarkComplete = () => completeFromVideoEndRef.current();
 
     const handler = (e: MessageEvent) => {
       if (e.origin && !e.origin.includes("mediadelivery.net")) return;
@@ -2447,6 +2499,23 @@ export default function CourseDetailPage({
     ));
   }, [(course as any)?.sections?.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // When arriving from a section module card (?section=...) scope the sidebar
+  // and next/prev navigation to only that section's lessons. These hooks live
+  // above the early returns: placed after them, the first render (still loading)
+  // ran fewer hooks than the next one and React crashed ("Something went wrong").
+  const sectionFilteredLessons: Lesson[] = useMemo(() => {
+    const all: Lesson[] = course?.lessons ?? [];
+    if (!targetSectionId) return all;
+    return all.filter((l: any) => l.sectionId === targetSectionId);
+  }, [course?.lessons, targetSectionId]);
+  scopedLessonsRef.current = sectionFilteredLessons;
+
+  const courseSectionsEarly: any[] = (course as any)?.sections ?? [];
+  const activeSectionMeta = useMemo(() =>
+    targetSectionId ? (courseSectionsEarly.find((s: any) => s.id === targetSectionId) ?? null) : null,
+    [targetSectionId, courseSectionsEarly],
+  );
+
   if (isLoading) return <PageLoader />;
   if (!course) {
     // The server explains refusals (e.g. a course outside the member's selected
@@ -2469,19 +2538,7 @@ export default function CourseDetailPage({
   }
 
   const lessons: Lesson[] = course.lessons ?? [];
-
-  // When arriving from a section module card (?section=...) scope the sidebar
-  // and next/prev navigation to only that section's lessons.
-  const sectionFilteredLessons: Lesson[] = useMemo(() => {
-    if (!targetSectionId) return lessons;
-    return lessons.filter((l: any) => l.sectionId === targetSectionId);
-  }, [lessons, targetSectionId]);
-
-  const courseSectionsEarly: any[] = (course as any)?.sections ?? [];
-  const activeSectionMeta = useMemo(() =>
-    targetSectionId ? (courseSectionsEarly.find((s: any) => s.id === targetSectionId) ?? null) : null,
-    [targetSectionId, courseSectionsEarly],
-  );
+  // sectionFilteredLessons / activeSectionMeta are computed above the early returns.
 
   // Next lesson respects section scope when active
   const currentLessonIdx = sectionFilteredLessons.findIndex((l: any) => l.id === selectedLesson?.id);
@@ -2592,6 +2649,8 @@ export default function CourseDetailPage({
     const duration = getLessonTimerDuration(lesson);
     setFocusDialog({ lesson, duration });
   };
+
+  advanceToLessonRef.current = handleSelectLessonWithFocus;
 
   // Spends one free lifeline on the server. Local count/lock state change only after the
   // server confirms — returns "ok", "exhausted" (caller opens the coin dialog) or "failed"
@@ -3208,6 +3267,14 @@ export default function CourseDetailPage({
                   style={{ background: "var(--color-success)", color: "#fff" }}
                 >
                   <CheckCircle2 size={13} /> Completed
+                </span>
+              ) : autoCompletingId === selectedLesson.id ? (
+                <span
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap opacity-80"
+                  style={{ background: "var(--color-success)", color: "#fff" }}
+                  aria-live="polite"
+                >
+                  <Loader2 size={13} className="animate-spin" /> Saving progress…
                 </span>
               ) : (
                 <button
