@@ -1,47 +1,59 @@
-// Which activity markers the Weekly Activity Graph's progression line passes
-// through, and in what order — pure, so the rule is unit-tested on its own.
+// Where the Weekly Activity Graph's progression line runs — pure, so the rule
+// is unit-tested on its own.
 //
-// Rules (from the existing data model and progress logic):
-//  • only activities whose status is "completed" — the admin-approved work the
-//    backend counts as progress (weeklyGraphLogic.ts). Awaiting approval, not
-//    started and upcoming activities stay markers only, never progress;
-//  • only activities linked to a configured milestone (level ≥ 1): an activity
-//    with no milestone has no height to progress to, so it is not joined in;
-//  • chronological order: week order on the X axis, then program day, then the
-//    order the API returns (the admin's day / sort order) — never DB row order;
-//  • several eligible points in one week on the same milestone are one step:
-//    only the first is used, so duplicate coordinates never draw an artificial
-//    segment;
+// The line follows each week's actual progress, as the backend measures it
+// (weekProgressLevel in backend lib/weeklyGraphLogic.ts → week.progressLevel):
+//  • the share of that week's activities the admin approved, scaled onto the
+//    activity milestones (none approved = the baseline, all approved = the
+//    highest activity milestone);
+//  • lifted to a milestone's row when an approved activity is linked to it,
+//    when the member's reported revenue reaches a revenue milestone's
+//    threshold, or when the admin recorded that milestone for the week.
+// Each week stands alone, so the line rises when a week has more approved
+// work and falls back when a later week is missed or only partly done.
+// Awaiting-approval, in-progress and not-started work never lifts a week; an
+// activity approved later lifts its own week on the next load.
+//
+// Points: one per week, in X-axis order —
+//  • none for a week that has not started (progressLevel null);
+//  • none for a week with nothing to measure (no activities assigned and no
+//    revenue / recorded milestone lifting it), so an empty week never drags
+//    the line to the baseline;
 //  • fewer than two points → no line (nothing is fabricated).
 
-export interface ProgressionCandidate {
-  key: string;
-  /** Position of the activity's week on the X axis (0-based). */
+export interface ProgressionWeek {
+  weekNumber: number;
+  /** null = not started yet. */
+  progressLevel: number | null | undefined;
+  total?: number;
+  completed?: number;
+}
+
+export interface ProgressionPoint {
+  weekNumber: number;
+  /** Position of the week on the X axis (0-based). */
   weekIndex: number;
-  dayNumber: number;
-  /** Index of the activity in its week's API list (the admin's ordering). */
-  order: number;
-  /** Milestone row (1 = first milestone); 0 = not linked. */
   level: number;
-  status: string;
-  /** The marker's drawn coordinates, so the line meets the markers exactly. */
   x: number;
   y: number;
 }
 
-export interface ProgressionPoint { key: string; x: number; y: number }
-
-export function progressionPoints(candidates: ProgressionCandidate[]): ProgressionPoint[] {
-  const eligible = candidates
-    .filter((c) => c.status === "completed" && c.level >= 1)
-    .sort((a, b) => a.weekIndex - b.weekIndex || a.dayNumber - b.dayNumber || a.order - b.order);
-
+export function weekProgressionPoints(
+  weeks: ProgressionWeek[],
+  colX: (weekIndex: number) => number,
+  yFor: (level: number) => number,
+): ProgressionPoint[] {
   const points: ProgressionPoint[] = [];
-  let prev: ProgressionCandidate | null = null;
-  for (const c of eligible) {
-    if (prev && prev.weekIndex === c.weekIndex && prev.level === c.level) continue;
-    points.push({ key: c.key, x: c.x, y: c.y });
-    prev = c;
-  }
-  return points.length >= 2 ? points : [];
+  weeks.forEach((w, i) => {
+    const level = w.progressLevel;
+    if (typeof level !== "number" || !Number.isFinite(level)) return;
+    if ((w.total ?? 0) === 0 && level <= 0) return;
+    points.push({ weekNumber: w.weekNumber, weekIndex: i, level, x: colX(i), y: yFor(level) });
+  });
+  return points;
+}
+
+/** The polyline's points attribute, or null when there are fewer than two points. */
+export function progressionLine(points: ProgressionPoint[]): string | null {
+  return points.length >= 2 ? points.map((p) => `${p.x},${p.y}`).join(" ") : null;
 }

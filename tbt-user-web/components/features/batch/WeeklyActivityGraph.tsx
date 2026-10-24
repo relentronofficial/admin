@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { progressionPoints } from "./weeklyGraphProgression";
+import { progressionLine, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -18,8 +18,9 @@ import { progressionPoints } from "./weeklyGraphProgression";
 //    never means "achieved" — its fill shows the activity's own status;
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
-//  • a red progression line through the approved activities, in time order
-//    (weeklyGraphProgression.ts).
+//  • a red progression line through each started week's actual progress
+//    (week.progressLevel: approved work, milestone links, reported revenue,
+//    admin records), rising and falling week to week (weeklyGraphProgression.ts).
 // Every marker is a keyboard-focusable button that opens a popup with the
 // Week, Milestone and Activity.
 
@@ -182,17 +183,14 @@ function WeeklyActivityGraphContent() {
     revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
   });
 
-  // Progression line: through the approved activities' own markers, in
-  // chronological order, rising and falling with their milestones
-  // (rules in weeklyGraphProgression.ts). Recomputed on every render, so it
-  // follows refreshed data, milestone order and week configuration.
-  const progression = progressionPoints(
-    markers.map((m) => ({
-      key: m.key, weekIndex: m.weekIndex, dayNumber: m.activity.dayNumber, order: m.order,
-      level: m.level, status: m.activity.status, x: m.x, y: m.y,
-    })),
-  );
-  const linePoints = progression.map((p) => `${p.x},${p.y}`).join(" ");
+  // Progression line: one point per started week at that week's measured
+  // progress (week.progressLevel from the API), so it rises with approved work
+  // and falls when a later week is missed (rules in weeklyGraphProgression.ts).
+  // Recomputed on every render, so it follows refreshed data and configuration.
+  const progression = weekProgressionPoints(weeks, colX, yFor);
+  const linePoints = progressionLine(progression);
+  const progressTitle = (w: WeeklyGraphWeek) =>
+    `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
 
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
   const revenueTotal = graph!.revenue?.totalToDate ?? null;
@@ -300,12 +298,18 @@ function WeeklyActivityGraphContent() {
             </text>
           ))}
 
-          {/* Progression line through the approved activities' markers (drawn
-              before the markers so they stay on top of it) */}
-          {progression.length > 1 && (
+          {/* Progression line + one dot per week's progress point (drawn before
+              the activity markers so those stay on top) */}
+          {linePoints && (
             <polyline data-testid="progress-line" points={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
               strokeWidth={2.5} strokeLinejoin="miter" strokeLinecap="round" aria-hidden="true" />
           )}
+          {progression.map((p) => (
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={3.5}
+              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
+              <title>{progressTitle(weeks[p.weekIndex])}</title>
+            </circle>
+          ))}
 
           {/* Activity markers */}
           {markers.map((m) => {
