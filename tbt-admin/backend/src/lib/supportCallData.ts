@@ -5,6 +5,7 @@ import {
   SUPPORT_USAGE_COUNTS_SQL,
   APPROVED_CREDIT_PURCHASES_SQL,
   COIN_UNLOCKED_BOOKINGS_SQL,
+  COIN_PURCHASED_CALLS_SQL,
 } from './supportQuota.js';
 import { categoryQuota, quotaBucketFor, type CategoryQuota, type SupportCallCategory } from './supportCallLogic.js';
 
@@ -55,7 +56,7 @@ export async function loadCategoryQuota(
   plan: string,
   category: SupportCallCategory,
 ): Promise<CategoryQuota> {
-  const [entRows, usageRows, purchasedRows, coinRows, reserved] = await Promise.all([
+  const [entRows, usageRows, purchasedRows, coinRows, coinPurchasedRows, reserved] = await Promise.all([
     db.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -65,9 +66,10 @@ export async function loadCategoryQuota(
     db.$queryRawUnsafe<any[]>(SUPPORT_USAGE_COUNTS_SQL, memberId),
     db.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
     db.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
+    db.$queryRawUnsafe<any[]>(COIN_PURCHASED_CALLS_SQL, memberId),
     countReserved(db, memberId, category),
   ]);
-  const quota = computeSupportQuota(plan, entRows, usageRows, [], purchasedRows, coinRows);
+  const quota = computeSupportQuota(plan, entRows, usageRows, [], purchasedRows, coinRows, coinPurchasedRows);
   return categoryQuota(quotaBucketFor(quota, category), reserved);
 }
 

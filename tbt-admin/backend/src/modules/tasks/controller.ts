@@ -127,16 +127,36 @@ export async function updateTaskHandler(request: FastifyRequest, reply: FastifyR
     }
     throw err;
   }
+  // Strip raw SQL-only columns before passing to Prisma
+  const { timerSeconds, memberId, ...prismaBody } = body as any;
   // Normalize empty-string UUID fields to null (Postgres rejects "" as invalid UUID)
-  const data: any = { ...body };
+  const data: any = { ...prismaBody };
   if (data.stepId === '') data.stepId = null;
   const audienceBefore = await resolveTaskAudience(request.server.prisma, [id]);
   const task = await request.server.prisma.task.update({ where: { id }, data });
+
+  // Persist raw SQL columns that Prisma doesn't know about
+  const setClauses: string[] = [];
+  const vals: unknown[] = [];
+  let pi = 1;
+  if (timerSeconds !== undefined) { setClauses.push(`timer_seconds = $${pi++}`); vals.push(timerSeconds != null ? Number(timerSeconds) : null); }
+  if (memberId !== undefined) {
+    if (memberId != null) { setClauses.push(`member_id = $${pi++}::uuid`); vals.push(memberId); }
+    else                  { setClauses.push('member_id = NULL'); }
+  }
+  if (setClauses.length) {
+    vals.push(id);
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE tasks SET ${setClauses.join(', ')} WHERE id = $${pi}::uuid`,
+      ...vals
+    );
+  }
+
   // A changed dayNumber moves the activity to another week; refresh everyone
   // who could see it before or after the change.
   void resolveTaskAudience(request.server.prisma, [id]).then((after) =>
     notifyWeeklyGraphChanged(request.server, mergeAudiences(audienceBefore, after), 'task_updated'));
-  return reply.send({ success: true, data: task, error: null });
+  return reply.send({ success: true, data: { ...task, timerSeconds: timerSeconds ?? null, memberId: memberId ?? null }, error: null });
 }
 
 export async function deleteTaskHandler(request: FastifyRequest, reply: FastifyReply) {

@@ -71,6 +71,18 @@ export const COIN_UNLOCKED_BOOKINGS_SQL = `
   WHERE b.member_id = $1::uuid AND b.coin_cost IS NOT NULL AND b.status <> 'cancelled'
   GROUP BY s.category`;
 
+/** Upfront coin-purchased extra call quota, grouped by category. */
+export interface CoinPurchasedCallRow {
+  type: string;
+  cnt: number;
+}
+
+export const COIN_PURCHASED_CALLS_SQL = `
+  SELECT category AS type, COALESCE(SUM(quantity), 0)::int AS cnt
+  FROM support_call_coin_purchases
+  WHERE member_id = $1::uuid
+  GROUP BY category`;
+
 export interface SupportQuotaBucket {
   allocated: number;
   used: number;
@@ -113,6 +125,7 @@ export function computeSupportQuota(
   lifelineRows: LifelineRow[],
   purchasedRows: PurchasedCreditRow[] = [],
   coinUnlockRows: CoinUnlockRow[] = [],
+  coinPurchasedCallRows: CoinPurchasedCallRow[] = [],
 ): SupportQuota {
   const ent = entRows[0] ?? DEFAULT_ENTITLEMENT;
 
@@ -125,11 +138,11 @@ export function computeSupportQuota(
     if (type) extra[type] = (extra[type] ?? 0) + Math.max(0, Number(row.qty) || 0);
   }
 
-  // A coin-paid booking adds its own call to the allocation, so booking it
-  // never eats into the plan's included calls (and attending it moves it
-  // from reserved to used without changing what remains).
+  // Coin-paid bookings (per-slot) AND upfront coin-purchased quota both add to
+  // the allocation so they never eat into the plan's included calls.
   const unlocked: Record<string, number> = {};
   for (const row of coinUnlockRows) unlocked[row.type] = (unlocked[row.type] ?? 0) + Math.max(0, Number(row.cnt) || 0);
+  for (const row of coinPurchasedCallRows) unlocked[row.type] = (unlocked[row.type] ?? 0) + Math.max(0, Number(row.cnt) || 0);
 
   const lifelinesTotal = lifelineRows[0]?.lifelines_total ?? DEFAULT_LIFELINES_TOTAL;
   const lifelinesUsed = lifelineRows[0]?.lifelines_used ?? 0;

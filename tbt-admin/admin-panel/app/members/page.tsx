@@ -48,7 +48,8 @@ import { useForm, Controller } from "react-hook-form";
 import CreatableSelect from "@/components/shared/CreatableSelect";
 import {
   useCities, useStates, useBusinessTypes,
-  useCreateCity, useCreateState, useCreateBusinessType,
+  useCreateCity, useCreateBusinessType,
+  useLocationStates, useLocationCities,
 } from "@/lib/hooks/useMasters";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -205,14 +206,15 @@ export default function MembersListPage() {
     };
   }, [members]);
 
-  // Master-data lists power the City / State / BusinessType dropdowns
-  // in both the edit modal below and the filter drawer at the bottom.
-  const { data: cities, isLoading: citiesLoading } = useCities();
-  const { data: states, isLoading: statesLoading } = useStates();
+  // Master-data lists power the filter drawer facets.
+  const { data: cities } = useCities();
+  const { data: states } = useStates();
   const { data: businessTypes, isLoading: businessTypesLoading } = useBusinessTypes();
   const createCity = useCreateCity();
-  const createState = useCreateState();
   const createBusinessType = useCreateBusinessType();
+
+  // States list fetched early — independent of form, powers the edit modal dropdown.
+  const { data: locationStates, isLoading: locationStatesLoading } = useLocationStates();
 
   /**
    * Union master-data lists (authoritative) with distinct values found
@@ -292,6 +294,17 @@ export default function MembersListPage() {
 
   const watchChannels = watch("marketingChannels") || [];
   const watchHasSMM = watch("hasMarketingTeam");
+
+  // Cascading city dropdown — depends on the watched state field.
+  const skipCityClearRef = useRef(false);
+  const watchEditState = watch("state");
+  const editStateIsoCode = locationStates?.find((s) => s.name === watchEditState)?.id ?? "";
+  const { data: locationCities, isLoading: locationCitiesLoading } = useLocationCities(editStateIsoCode);
+
+  useEffect(() => {
+    if (skipCityClearRef.current) { skipCityClearRef.current = false; return; }
+    setValue("city", "");
+  }, [watchEditState]); // eslint-disable-line react-hooks/exhaustive-deps
   const watchHasVideo = watch("hasVideoEditing");
   const watchPlan = watch("membershipPlan");
   const watchHasWebsite = watch("hasWebsite");
@@ -333,6 +346,7 @@ export default function MembersListPage() {
       setApproveBatchId(editingMember.batchId || "");
       setEditProfilePhotoUrl(editingMember.profilePhotoUrl || "");
       setEditBusinessCategories(Array.isArray((editingMember as any).businessCategories) ? (editingMember as any).businessCategories : []);
+      skipCityClearRef.current = true;
       reset({
         firstName: editingMember.firstName || "",
         lastName: editingMember.lastName || "",
@@ -1042,23 +1056,6 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
-                        <Controller
-                          name="city"
-                          control={control}
-                          render={({ field }) => (
-                            <CreatableSelect
-                              value={field.value ?? ""}
-                              onChange={field.onChange}
-                              options={cities ?? []}
-                              onCreate={(name) => createCity.mutateAsync(name)}
-                              isLoading={citiesLoading}
-                              placeholder="Search or add city…"
-                            />
-                          )}
-                        />
-                      </div>
-                      <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">State</label>
                         <Controller
                           name="state"
@@ -1067,10 +1064,27 @@ export default function MembersListPage() {
                             <CreatableSelect
                               value={field.value ?? ""}
                               onChange={field.onChange}
-                              options={states ?? []}
-                              onCreate={(name) => createState.mutateAsync(name)}
-                              isLoading={statesLoading}
-                              placeholder="Search or add state…"
+                              options={locationStates ?? []}
+                              isLoading={locationStatesLoading}
+                              placeholder="Search state…"
+                            />
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
+                        <Controller
+                          name="city"
+                          control={control}
+                          render={({ field }) => (
+                            <CreatableSelect
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              options={locationCities ?? []}
+                              onCreate={(name) => createCity.mutateAsync(name)}
+                              isLoading={locationCitiesLoading}
+                              placeholder={editStateIsoCode ? "Search or add city…" : "Select a state first"}
+                              disabled={!editStateIsoCode}
                             />
                           )}
                         />
