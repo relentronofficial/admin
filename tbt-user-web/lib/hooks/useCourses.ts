@@ -59,10 +59,12 @@ export const useLessonProgress = (courseId: string) =>
 export const useMarkLessonComplete = (courseId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number }) =>
+    // optimistic: false — don't show the lesson as completed until the server confirms it
+    // (automatic 90% completion; a refused or failed save must never show the green tick).
+    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number; optimistic?: boolean }) =>
       coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds),
-    onMutate: async ({ lessonId, isCompleted }) => {
-      if (!isCompleted) return;
+    onMutate: async ({ lessonId, isCompleted, optimistic }) => {
+      if (!isCompleted || optimistic === false) return;
       await queryClient.cancelQueries({ queryKey: ["user", "progress", courseId] });
       const previous = queryClient.getQueryData(["user", "progress", courseId]);
       queryClient.setQueryData(["user", "progress", courseId], (old: any) => {
