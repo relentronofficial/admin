@@ -102,13 +102,22 @@ export const coursesService = {
     apiClient.get<never, ApiResponse<EpisodeTimerSession | null>>(`/api/user/episodes/${episodeId}/timer/session`),
 
   heartbeatEpisodeTimer: (episodeId: string, completed?: boolean) =>
-    apiClient.post<never, ApiResponse<{ status: string; remainingSeconds: number }>>(`/api/user/episodes/${episodeId}/timer/heartbeat`, { completed }),
+    apiClient.post<never, ApiResponse<{ status: string; remainingSeconds: number; lifelines?: CourseLifelineState | null }>>(`/api/user/episodes/${episodeId}/timer/heartbeat`, { completed }),
 
   getEpisodeLifelines: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeLifelineState>>(`/api/user/episodes/${episodeId}/lifelines`),
 
   useEpisodeLifeline: (episodeId: string, type: 'free' | 'coin') =>
     apiClient.post<never, ApiResponse<{ freeRemaining: number; totalUsed: number; coinsDeducted?: number; remainingCoins?: number }>>(`/api/user/episodes/${episodeId}/lifelines/use`, { type }),
+
+  getCourseLifelines: (courseId: string) =>
+    apiClient.get<never, ApiResponse<CourseLifelineState>>(`/api/user/courses/${courseId}/lifelines`),
+
+  consumeCourseLifeline: (courseId: string) =>
+    apiClient.post<never, ApiResponse<CourseLifelineState>>(`/api/user/courses/${courseId}/lifelines/consume`),
+
+  purchaseCourseLifelines: (courseId: string, body: { quantity: number; expectedCoinCostEach: number }) =>
+    apiClient.post<never, ApiResponse<{ purchased: number; coinsSpent: number; newBalance: number; lifelines: CourseLifelineState }>>(`/api/user/courses/${courseId}/lifelines/purchase`, body),
 
   submitEpisodeForm: (episodeId: string, data: Record<string, unknown>) =>
     apiClient.post<never, ApiResponse<{ id: string; submittedAt: string }>>(`/api/user/episodes/${episodeId}/form-submissions`, { data }),
@@ -222,6 +231,15 @@ export interface EpisodeLifelineState {
   purchasedUsed: number;
   totalUsed: number;
   freeRemaining: number;
+}
+
+export interface CourseLifelineState {
+  freeTotal: number;
+  freeUsed: number;
+  purchasedTotal: number;
+  purchasedUsed: number;
+  remaining: number;
+  coinCost: number;
 }
 
 export interface EpisodeTask {

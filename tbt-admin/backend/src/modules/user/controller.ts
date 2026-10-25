@@ -66,6 +66,12 @@ import {
   SESSION_COLUMNS,
 } from '../../lib/supportCallData.js';
 import {
+  getCourseLifelines,
+  consumeCourseLifeline,
+  purchaseCourseLifelines,
+  type CourseLifelineState,
+} from '../../lib/courseLifelines.js';
+import {
   creditCoinOrder,
   isLegacyCoinOrderFor,
   LEGACY_COIN_PACKAGE,
@@ -5141,9 +5147,24 @@ export async function heartbeatEpisodeTimerHandler(request: FastifyRequest, repl
       `UPDATE lesson_timer_sessions SET status = 'EXPIRED' WHERE member_id = $1::uuid AND episode_id = $2::uuid`,
       memberId, episodeId,
     ).catch(() => {});
+    // Auto-consume 1 course lifeline when timer expires. Resolve course_id from episode.
+    const epRows = await request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT course_id AS "courseId" FROM course_episodes WHERE id = $1::uuid`,
+      episodeId,
+    ).catch(() => [] as any[]);
+    let lifelinesData: CourseLifelineState | null = null;
+    if (epRows[0]?.courseId) {
+      try {
+        lifelinesData = await consumeCourseLifeline(request.server.prisma as any, memberId, epRows[0].courseId);
+      } catch {
+        // exhausted — still return EXPIRED; let client handle the 0-remaining state
+        lifelinesData = await getCourseLifelines(request.server.prisma as any, memberId, epRows[0].courseId).catch(() => null);
+      }
+    }
+    return reply.send({ success: true, data: { status: 'EXPIRED', remainingSeconds: 0, lifelines: lifelinesData }, error: null });
   }
-  const remainingSeconds = isExpired ? 0 : Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
-  return reply.send({ success: true, data: { status: isExpired ? 'EXPIRED' : 'ACTIVE', remainingSeconds }, error: null });
+  const remainingSeconds = Math.max(0, Math.ceil((new Date(row.expiresAt).getTime() - Date.now()) / 1000));
+  return reply.send({ success: true, data: { status: 'ACTIVE', remainingSeconds }, error: null });
 }
 
 // ── Episode Lifelines ──────────────────────────────────────────────────────────
@@ -5260,6 +5281,49 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
     },
     error: null,
   });
+}
+
+// ── Course Lifelines (unified pool) ──────────────────────────────────────────
+// GET /api/user/courses/:id/lifelines
+export async function getCourseLifelinesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const data = await getCourseLifelines(request.server.prisma as any, memberId, courseId);
+  return reply.send({ success: true, data, error: null });
+}
+
+// POST /api/user/courses/:id/lifelines/consume — manual consume (fallback; heartbeat auto-consumes)
+export async function consumeCourseLifelineHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  try {
+    const data = await consumeCourseLifeline(request.server.prisma as any, memberId, courseId);
+    return reply.send({ success: true, data, error: null });
+  } catch (err: any) {
+    return fail(reply, 400, err.message ?? 'No lifelines remaining');
+  }
+}
+
+// POST /api/user/courses/:id/lifelines/purchase — buy extra lifelines with TBT coins
+export async function purchaseCourseLifelinesHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const { quantity, expectedCoinCostEach } = request.body as { quantity: number; expectedCoinCostEach: number };
+  const memberId = request.memberId!;
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+    return fail(reply, 400, 'quantity must be 1–10');
+  }
+  if (typeof expectedCoinCostEach !== 'number' || expectedCoinCostEach < 1) {
+    return fail(reply, 400, 'expectedCoinCostEach is required');
+  }
+  try {
+    const result = await request.server.prisma.$transaction(async (tx: any) => {
+      return purchaseCourseLifelines(tx, memberId, courseId, quantity, expectedCoinCostEach);
+    });
+    void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
+    return reply.send({ success: true, data: result, error: null });
+  } catch (err: any) {
+    return fail(reply, 400, err.message ?? 'Purchase failed');
+  }
 }
 
 export async function getUserResourcesHandler(request: FastifyRequest, reply: FastifyReply) {
