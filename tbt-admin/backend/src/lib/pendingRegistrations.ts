@@ -38,7 +38,7 @@ export async function savePendingRegistration(prisma: Prisma, reg: PendingRegist
   );
   await prisma.$executeRawUnsafe(
     `INSERT INTO pending_registrations (phone_e164, email, payload, claim_member_id, created_at, expires_at)
-     VALUES ($1, $2, $3::jsonb, $4::uuid, NOW(), NOW() + make_interval(mins => $5))
+     VALUES ($1, $2, $3::jsonb, $4::uuid, NOW(), NOW() + make_interval(mins => $5::int))
      ON CONFLICT (phone_e164) DO UPDATE
        SET email = EXCLUDED.email, payload = EXCLUDED.payload, claim_member_id = EXCLUDED.claim_member_id,
            created_at = NOW(), expires_at = EXCLUDED.expires_at`,
