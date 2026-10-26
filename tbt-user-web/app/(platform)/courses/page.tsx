@@ -1074,7 +1074,7 @@ function SavedVideoCard({ item, onUnsave }: { item: any; onUnsave?: (episodeId: 
       <div
         className="relative flex flex-col justify-end overflow-hidden"
         style={{
-          height: 151,
+          aspectRatio: "16 / 9",
           borderRadius: 12,
           border: "1px solid #414146",
           cursor: "pointer",
