@@ -1312,9 +1312,11 @@ export async function requestCourseAccessHandler(request: FastifyRequest, reply:
   });
   if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
 
-  // Idempotent — return existing pending payment if already requested
+  // Idempotent — return the existing pending access request if already requested.
+  // A pending Razorpay row is an unpaid (often abandoned) checkout, not an access
+  // request: reusing it here returned without ever notifying the admins.
   const existing = await (request.server.prisma as any).coursePayment.findFirst({
-    where: { memberId, courseId, status: 'pending' },
+    where: { memberId, courseId, status: 'pending', method: { not: 'razorpay' } },
     select: { id: true },
   }).catch(() => null);
 
