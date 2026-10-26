@@ -214,3 +214,65 @@ describe('pending registrations', () => {
     expect(sent.filter((s) => s.phone === '+447400123456')).toHaveLength(2);
   });
 });
+
+describe('login when the phone also belongs to a soft-deleted account', () => {
+  const bcryptHash = async (pw: string) => (await import('bcrypt')).default.hash(pw, 4);
+  const deletedRow = async (): Promise<Member> => ({
+    id: 'deleted-old', memberId: 'TBT-9', firstName: 'Old', lastName: null, email: 'old@x.com', phone: '9876543210',
+    passwordHash: await bcryptHash('oldpass1'), status: 'active', verificationStatus: 'verified', onboardingSubmittedAt: new Date(),
+    deletedAt: new Date('2026-09-01'),
+  });
+
+  it('signs in the live account, never the deleted one (deleted row listed first)', async () => {
+    members.push(await deletedRow());
+    members.push({ id: 'live', memberId: 'TBT-10', firstName: 'New', lastName: null, email: 'new@x.com', phone: '+919876543210',
+      passwordHash: await bcryptHash('newpass1'), status: 'pending', verificationStatus: 'awaiting_kyc', onboardingSubmittedAt: null, deletedAt: null });
+    for (const typed of ['9876543210', '+91 98765 43210', '+919876543210']) {
+      server.redis = fakeRedis(); // past the 60 s OTP resend cooldown
+      const l = await call(auth.login, { phone: typed, password: 'newpass1' });
+      expect(l.status, typed).toBe(200);
+      expect(l.body.data.step, typed).toBe('otp_required');
+      expect(l.body.error).toBeUndefined();
+    }
+    const v = await call(auth.verifyOtp, { phone: '+919876543210', otp: lastOtpFor('+919876543210') });
+    expect(v.status).toBe(200);
+    expect(v.body.data.id).toBe('live');
+  });
+
+  it('a phone whose only account is deleted still gets "Account not found" (same message)', async () => {
+    members.push(await deletedRow());
+    const l = await call(auth.login, { phone: '9876543210', password: 'oldpass1' });
+    expect(l.status).toBe(404);
+    expect(l.body.error).toBe('Account not found. Please contact admin.');
+  });
+
+  it('re-registering after the old account was deleted: signup → OTP → login works, one live account', async () => {
+    members.push(await deletedRow());
+    const r = await call(auth.signup, { ...SIGNUP, phone: '98765 43210' });
+    expect(r.status).toBe(201);
+    const v = await call(auth.verifyOtp, { phone: '+919876543210', otp: lastOtpFor('+919876543210') });
+    expect(v.status).toBe(200);
+    expect(v.body.data.id).not.toBe('deleted-old');
+    const live = members.filter((m) => !m.deletedAt);
+    expect(live).toHaveLength(1);
+    expect(members.find((m) => m.id === 'deleted-old')?.deletedAt).toBeInstanceOf(Date); // untouched
+    sessions = []; // signed out
+    server.redis = fakeRedis(); // past the 60 s OTP resend cooldown
+    const l = await call(auth.login, { phone: '9876543210', password: 'secret123' });
+    expect(l.status).toBe(200);
+    expect(l.body.data.step).toBe('otp_required');
+    const wrong = await call(auth.login, { phone: '9876543210', password: 'oldpass1' });
+    expect(wrong.status).toBe(401); // the deleted account's password does not open the live one
+  });
+
+  it('forgot-password and resend-OTP reach the live account too', async () => {
+    members.push(await deletedRow());
+    members.push({ id: 'live', memberId: 'TBT-10', firstName: 'New', lastName: null, email: 'new@x.com', phone: '+919876543210',
+      passwordHash: await bcryptHash('newpass1'), status: 'active', verificationStatus: 'verified', onboardingSubmittedAt: new Date(), deletedAt: null });
+    const fp = await call(auth.forgotPassword, { phone: '9876543210' });
+    expect(fp.status).toBe(200);
+    const rs = await call(auth.resendOtp, { phone: '+919876543210' });
+    expect([200, 429]).toContain(rs.status); // 429 = within the 60 s cooldown of the OTP just sent
+    expect(rs.body.error).not.toMatch(/Account not found/);
+  });
+});
