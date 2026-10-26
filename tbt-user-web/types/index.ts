@@ -61,6 +61,10 @@ export interface Course {
   durationHours?: number | null;
   durationDisplay?: string | null;
   taskDurationDisplay?: string | null;
+  /** Catalog: sum of every visible video's length; null if any length is unknown. */
+  videoSeconds?: number | null;
+  /** Catalog: estimated minutes of the course's active tasks; null when it has none. */
+  taskMinutes?: number | null;
   isPublished: boolean;
   isFeatured: boolean;
   createdAt: string;
@@ -95,6 +99,8 @@ export interface Lesson {
   videoType?: 'hls' | 'iframe';
   duration?: number | null;
   durationSeconds?: number | null;
+  /** Estimated minutes of this lesson's active tasks (tasks.estimated_minutes); null when none. */
+  taskMinutes?: number | null;
   order: number;
   isFree: boolean;
   locked?: boolean;

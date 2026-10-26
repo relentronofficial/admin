@@ -1337,6 +1337,7 @@ export async function createEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
   await req.server.prisma.$executeRawUnsafe(
     `UPDATE tasks SET completion_mode = $1 WHERE id = $2::uuid`, completionMode, task.id
   );
+  bustHome(req);
   return reply.status(201).send({ success: true, data: { ...task, timerSeconds: timerSecs, completionMode, courseEpisodeId: eid }, error: null });
 }
 
@@ -1361,12 +1362,14 @@ export async function updateEpisodeTaskHandler(req: FastifyRequest, reply: Fasti
       `UPDATE tasks SET completion_mode = $1 WHERE id = $2::uuid`, completionMode, tid
     );
   }
+  bustHome(req);
   return reply.send({ success: true, data: { ...task, timerSeconds: timerSecs ?? null, completionMode: completionMode ?? undefined }, error: null });
 }
 
 export async function deleteEpisodeTaskHandler(req: FastifyRequest, reply: FastifyReply) {
   const { tid } = req.params as any;
   await req.server.prisma.task.delete({ where: { id: tid } });
+  bustHome(req);
   return reply.send({ success: true, data: null, error: null });
 }
 
