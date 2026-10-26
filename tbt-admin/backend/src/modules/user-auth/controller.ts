@@ -827,6 +827,21 @@ async function toExistingAccount(fastify: FastifyInstance, m: any | null): Promi
   };
 }
 
+const REMOVED_ACCOUNT =
+  'This email or phone number belongs to a removed account. Please use a different one or contact support.';
+
+/** Generated member IDs (TBT-1000…TBT-9999) are retried this many times on a clash. */
+const MEMBER_ID_ATTEMPTS = 5;
+const newMemberId = () => `TBT-${Math.floor(1000 + Math.random() * 9000)}`;
+
+/** Field / constraint names from a Prisma P2002 error — never the values. */
+function uniqueTarget(err: any): string[] {
+  const t = err?.meta?.target;
+  return Array.isArray(t) ? t.map(String) : t ? [String(t)] : [];
+}
+const isMemberIdClash = (err: any) =>
+  err?.code === 'P2002' && uniqueTarget(err).some((f) => f === 'memberId' || f.includes('member_id'));
+
 /**
  * Turns a verified pending sign-up into a member: creates it, or updates the
  * old never-verified row it claimed (nothing is deleted). Re-checks that the
@@ -867,14 +882,18 @@ async function completePendingRegistration(
       await (fastify.prisma.member as any).update({ where: { id: pending.claimMemberId }, data });
       memberId = pending.claimMemberId;
     } else {
-      const created = await (fastify.prisma.member as any).create({
-        data: {
-          ...data,
-          memberId: `TBT-${Math.floor(1000 + Math.random() * 9000)}`,
-          status: 'pending',
-          membershipPlan: 'free',
-        },
-      });
+      let created: any;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          created = await (fastify.prisma.member as any).create({
+            data: { ...data, memberId: newMemberId(), status: 'pending', membershipPlan: 'free' },
+          });
+          break;
+        } catch (err) {
+          // Only a generated-ID clash is retried; anything else goes to the catch below.
+          if (!isMemberIdClash(err) || attempt >= MEMBER_ID_ATTEMPTS) throw err;
+        }
+      }
       memberId = created.id;
     }
     await deletePendingRegistration(fastify.prisma, pending.phoneE164);
@@ -884,6 +903,7 @@ async function completePendingRegistration(
     return { memberId };
   } catch (err: any) {
     if (err?.code === 'P2002') {
+      fastify.log.warn({ target: uniqueTarget(err) }, 'Self-signup create hit a unique constraint');
       return { status: 409, error: 'An account with this phone number or email already exists. Please log in.' };
     }
     throw err;
@@ -934,6 +954,15 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
     emailMember: await toExistingAccount(fastify, emailRow),
   });
   if (!decision.ok) return reply.status(decision.status).send({ success: false, data: null, error: decision.error });
+
+  // The unique indexes compare exact values and include removed (soft-deleted)
+  // accounts, which the checks above skip — catch that clash before the OTP,
+  // so a verified OTP can never fail to create the account.
+  const removedHolder = await fastify.prisma.member.findFirst({
+    where: { deletedAt: { not: null }, OR: [{ email: cleanEmail }, { phone: phoneCheck.e164 }] } as any,
+    select: { id: true },
+  });
+  if (removedHolder) return reply.status(409).send({ success: false, data: null, error: REMOVED_ACCOUNT });
 
   await savePendingRegistration(fastify.prisma, {
     phoneE164: phoneCheck.e164,

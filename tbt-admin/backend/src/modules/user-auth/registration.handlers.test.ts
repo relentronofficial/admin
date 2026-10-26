@@ -30,15 +30,25 @@ let members: Member[];
 let sessions: Array<{ memberId: string }>;
 let pending: Map<string, { phone_e164: string; email: string; payload: any; claim_member_id: string | null; expires_at: number }>;
 let seq = 0;
+const warnings: Array<{ obj: any; msg?: string }> = [];
 
 const pick = (m: Member | undefined, select: any) => (m ? Object.fromEntries(Object.keys(select ?? m).map((k) => [k, (m as any)[k] ?? null])) : null);
 const matches = (m: Member, where: any): boolean => {
   if (where.id && m.id !== where.id) return false;
   if ('deletedAt' in where && where.deletedAt === null && m.deletedAt) return false;
+  if (where.deletedAt?.not === null && !m.deletedAt) return false;
+  if (where.OR && !where.OR.some((c: any) => matches(m, c))) return false;
   if (where.phone?.in && !where.phone.in.includes(m.phone)) return false;
+  if (typeof where.phone === 'string' && m.phone !== where.phone) return false;
   if (where.email?.equals && m.email.toLowerCase() !== String(where.email.equals).toLowerCase()) return false;
+  if (typeof where.email === 'string' && m.email !== where.email) return false;
   return true;
 };
+/** Like the real members_*_key unique indexes: exact values, deleted rows included. */
+const uniqueClash = (data: any): string | null =>
+  members.some((m) => m.email === data.email) ? 'email'
+    : members.some((m) => m.phone === data.phone) ? 'phone'
+    : members.some((m) => m.memberId === data.memberId) ? 'member_id' : null;
 
 function prisma() {
   return {
@@ -46,9 +56,8 @@ function prisma() {
       findFirst: vi.fn(async ({ where, select }: any) => pick(members.find((m) => matches(m, where)), select)),
       findUnique: vi.fn(async ({ where, select }: any) => pick(members.find((m) => m.id === where.id), select)),
       create: vi.fn(async ({ data }: any) => {
-        if (members.some((m) => m.email.toLowerCase() === data.email.toLowerCase() || m.phone === data.phone)) {
-          throw Object.assign(new Error('Unique constraint'), { code: 'P2002' });
-        }
+        const field = uniqueClash(data);
+        if (field) throw Object.assign(new Error('Unique constraint'), { code: 'P2002', meta: { target: [field] } });
         const m: Member = { id: `m${++seq}`, verificationStatus: 'awaiting_kyc', onboardingSubmittedAt: null, deletedAt: null, profilePhotoUrl: null, ...data };
         members.push(m);
         return m;
@@ -112,7 +121,9 @@ const SIGNUP = { firstName: 'Priya', lastName: 'K', email: 'Priya@Example.com', 
 
 beforeEach(() => {
   members = []; sessions = []; pending = new Map(); sent.length = 0; seq = 0;
-  server = { prisma: prisma(), redis: fakeRedis(), jwt: { sign: vi.fn(async () => 'access-token') }, log: { info() {}, warn() {}, error() {} } };
+  warnings.length = 0;
+  server = { prisma: prisma(), redis: fakeRedis(), jwt: { sign: vi.fn(async () => 'access-token') },
+    log: { info() {}, warn: (obj: any, msg?: string) => { warnings.push({ obj, msg }); }, error() {} } };
 });
 
 describe('international phone numbers', () => {
@@ -274,5 +285,106 @@ describe('login when the phone also belongs to a soft-deleted account', () => {
     const rs = await call(auth.resendOtp, { phone: '+919876543210' });
     expect([200, 429]).toContain(rs.status); // 429 = within the 60 s cooldown of the OTP just sent
     expect(rs.body.error).not.toMatch(/Account not found/);
+  });
+});
+
+describe('exact unique values (deleted accounts included) and generated member IDs', () => {
+  const REMOVED = 'This email or phone number belongs to a removed account. Please use a different one or contact support.';
+  const removed = (over: Partial<Member>): Member => ({
+    id: 'gone', memberId: 'TBT-5000', firstName: 'Gone', lastName: null, email: 'gone@x.com', phone: '9000000009',
+    passwordHash: 'x', status: 'active', verificationStatus: 'verified', onboardingSubmittedAt: new Date(), deletedAt: new Date('2026-09-01'), ...over,
+  });
+
+  it('a removed account holding the exact email → 409 before any OTP, nothing saved', async () => {
+    members.push(removed({ email: 'priya@example.com' }));
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678' }); // email normalises to priya@example.com
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe(REMOVED);
+    expect(sent).toHaveLength(0);
+    expect(pending.size).toBe(0);
+  });
+
+  it('a removed account holding the exact E.164 phone → 409 before any OTP, nothing saved', async () => {
+    members.push(removed({ phone: '+919812345678' }));
+    const r = await call(auth.signup, { ...SIGNUP, phone: '98123 45678' });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe(REMOVED);
+    expect(sent).toHaveLength(0);
+    expect(pending.size).toBe(0);
+  });
+
+  it('a removed account with the phone only in legacy form does not block (no unique clash)', async () => {
+    members.push(removed({ phone: '9812345678' }));
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    expect(r.status).toBe(201);
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(v.status).toBe(200);
+    expect(members.filter((m) => !m.deletedAt)).toHaveLength(1);
+  });
+
+  it('live duplicates keep their existing messages (email any case, phone any format)', async () => {
+    members.push({ id: 'live', memberId: 'TBT-6000', firstName: 'L', lastName: null, email: 'priya@example.com', phone: '9812345678',
+      passwordHash: 'x', status: 'active', verificationStatus: 'verified', onboardingSubmittedAt: new Date(), deletedAt: null });
+    const byPhone = await call(auth.signup, { ...SIGNUP, email: 'other@example.com', phone: '+919812345678' });
+    expect(byPhone.status).toBe(409);
+    expect(byPhone.body.error).toBe('An account with this phone number already exists. Please log in.');
+    const byEmail = await call(auth.signup, { ...SIGNUP, email: 'PRIYA@example.com', phone: '+919800000001' });
+    expect(byEmail.status).toBe(409);
+    expect(byEmail.body.error).toBe('An account with this email already exists. Please log in.');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('a generated member ID clash is retried and the account is still created', async () => {
+    members.push(removed({ memberId: 'TBT-1000' }));
+    await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    // first draw → TBT-1000 (taken), second draw → TBT-5500
+    const rnd = vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.5);
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    rnd.mockRestore();
+    expect(v.status).toBe(200);
+    const live = members.filter((m) => !m.deletedAt);
+    expect(live).toHaveLength(1);
+    expect(live[0].memberId).toBe('TBT-5500');
+    expect(server.prisma.member.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('member ID clashes stop after 5 attempts → 409, pending kept, field name logged (no values)', async () => {
+    members.push(removed({ memberId: 'TBT-1000' }));
+    await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0); // always TBT-1000
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    rnd.mockRestore();
+    expect(v.status).toBe(409);
+    expect(server.prisma.member.create).toHaveBeenCalledTimes(5);
+    expect(members.filter((m) => !m.deletedAt)).toHaveLength(0);
+    expect(pending.size).toBe(1);
+    expect(warnings).toEqual([{ obj: { target: ['member_id'] }, msg: 'Self-signup create hit a unique constraint' }]);
+    const logged = JSON.stringify(warnings);
+    for (const value of ['+919812345678', '9812345678', 'priya@example.com', 'secret123', 'TBT-1000']) expect(logged).not.toContain(value);
+  });
+
+  it('a unique clash that appears only at OTP time (race) is a 409 that logs the field name only', async () => {
+    await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    members.push(removed({ email: 'priya@example.com' })); // appeared after the pre-OTP check
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(v.status).toBe(409);
+    expect(server.prisma.member.create).toHaveBeenCalledTimes(1); // not a member-ID clash → no retry
+    expect(warnings).toEqual([{ obj: { target: ['email'] }, msg: 'Self-signup create hit a unique constraint' }]);
+    expect(JSON.stringify(warnings)).not.toContain('priya@example.com');
+  });
+
+  it('a clean signup still goes signup → OTP → one account → login', async () => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    expect(r.status).toBe(201);
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(v.status).toBe(200);
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ phone: '+919812345678', email: 'priya@example.com', status: 'pending' });
+    expect(members[0].memberId).toMatch(/^TBT-\d{4}$/);
+    sessions = []; server.redis = fakeRedis();
+    const l = await call(auth.login, { phone: '98123 45678', password: 'secret123' });
+    expect(l.status).toBe(200);
+    expect(l.body.data.step).toBe('otp_required');
+    expect(warnings).toHaveLength(0);
   });
 });
