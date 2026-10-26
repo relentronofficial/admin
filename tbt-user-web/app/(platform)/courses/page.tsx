@@ -116,7 +116,6 @@ function ModuleCard({
       <div
         className="relative overflow-hidden"
         style={{
-          height: 248,
           borderRadius: 12,
           background: "#16161a",
           border: "1px solid #2e2e34",
@@ -134,11 +133,11 @@ function ModuleCard({
           (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
-        {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
+        {/* ── Thumbnail (16:9) — clean image, no text overlay ─── */}
         <div
           style={{
             position: "relative",
-            height: 140,
+            aspectRatio: "16 / 9",
             overflow: "hidden",
             background: hasThumbnail
               ? `url(${JSON.stringify(course.thumbnailUrl)}) center / cover no-repeat`
@@ -366,7 +365,6 @@ function SectionCard({
       <div
         className="relative overflow-hidden"
         style={{
-          height: 248,
           borderRadius: 12,
           background: "#16161a",
           border: "1px solid #2e2e34",
@@ -386,11 +384,11 @@ function SectionCard({
           (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
-        {/* ── Thumbnail (140px) — clean image, no text overlay ─── */}
+        {/* ── Thumbnail (16:9) — clean image, no text overlay ─── */}
         <div
           style={{
             position: "relative",
-            height: 140,
+            aspectRatio: "16 / 9",
             overflow: "hidden",
             background: thumbnail
               ? `url(${JSON.stringify(thumbnail)}) center / cover no-repeat`
@@ -620,7 +618,6 @@ function CourseModuleCard({
       <div
         className="relative overflow-hidden"
         style={{
-          height: 248,
           borderRadius: 12,
           background: "#16161a",
           border: "1px solid #2e2e34",
@@ -640,11 +637,11 @@ function CourseModuleCard({
           (e.currentTarget as HTMLElement).style.transform = "translateY(0) scale(1)";
         }}
       >
-        {/* ── Thumbnail (140px) ─── */}
+        {/* ── Thumbnail (16:9) ─── */}
         <div
           style={{
             position: "relative",
-            height: 140,
+            aspectRatio: "16 / 9",
             overflow: "hidden",
             background: thumbnail
               ? `url(${JSON.stringify(thumbnail)}) center / cover no-repeat`
