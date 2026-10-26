@@ -1173,7 +1173,8 @@ function DailyInputsGrid({
       {/* Daily data inputs */}
       <div>
         <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Daily Inputs</p>
-        <div className="grid grid-cols-7 gap-1.5">
+        <div className="overflow-x-auto -mx-1 px-1">
+        <div className="grid grid-cols-7 gap-1.5 min-w-[320px]">
           {weekDays.map((d, i) => (
             <div key={i} className="flex flex-col gap-1">
               <p className="text-[8px] font-bold text-center uppercase" style={{ color: "var(--color-text-subtle)" }}>
@@ -1205,6 +1206,7 @@ function DailyInputsGrid({
               />
             </div>
           ))}
+        </div>
         </div>
         <div className="flex items-center gap-4 mt-1.5">
           <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
@@ -1579,8 +1581,8 @@ function NowLearningSection() {
 
           {/* 3-column grid: thumbnail | details | next lesson */}
           <div
-            className="flex flex-col lg:grid gap-[24px]"
-            style={{ gridTemplateColumns: "240px 1fr 110px", alignItems: "center", padding: "0 32px" }}
+            className="flex flex-col lg:grid gap-[24px] lg:px-8"
+            style={{ gridTemplateColumns: "240px 1fr 110px", alignItems: "center" }}
           >
             {/* ── Column 1: course cover thumbnail ─── */}
             <div
