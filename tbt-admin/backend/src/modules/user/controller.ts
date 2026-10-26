@@ -1677,50 +1677,16 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   });
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
 
-  // ── Sequential-unlock guard ──────────────────────────────────────
-  // Verify this lesson is currently unlocked for the member BEFORE
-  // writing any progress. A modified client that POSTs directly to a
-  // locked lesson gets a 403 — the lock is enforced at the API
-  // boundary, not just in the UI. Skipped when the course opts out
-  // of sequential unlock via `requireSequential = false`.
+  // Course config — needed for thresholdFraction and the sequential-unlock guard.
+  // The expensive all-episodes + all-progress scan is deferred: it runs only when
+  // this call is about to write a NEW completion (see guard below, after
+  // finalIsCompleted is computed). This avoids 2 DB queries on every 30-second
+  // heartbeat — those queries were the root cause of the 15 s Axios timeouts.
   const courseUnlockCfg = await (request.server.prisma as any).course.findUnique({
     where: { id: courseId },
     select: { requireSequential: true, completionThresholdPercent: true },
   }) as { requireSequential: boolean | null; completionThresholdPercent: number | null } | null;
   const requireSequential = courseUnlockCfg?.requireSequential ?? true;
-  if (requireSequential) {
-    const allEpisodes = await request.server.prisma.courseEpisode.findMany({
-      where: { courseId, isVisible: true },
-      orderBy: { order: 'asc' },
-      select: { id: true, order: true, durationSeconds: true },
-    });
-    const allProgress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
-      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e) => e.id) } },
-      select: { episodeId: true, actualWatchedSecs: true, lastWatchedSecs: true, completed: true },
-    });
-    const unlocked = isEpisodeUnlocked(
-      episodeId,
-      allEpisodes.map((e) => ({
-        id: e.id,
-        order: e.order ?? 0,
-        durationSeconds: e.durationSeconds ?? null,
-      })),
-      allProgress.map((p: any) => ({
-        episodeId: p.episodeId,
-        actualWatchedSecs: p.actualWatchedSecs ?? 0,
-        lastWatchedSecs: p.lastWatchedSecs ?? 0,
-        isCompleted: p.completed ?? false,
-      })),
-      {
-        requireSequential: true,
-        completionThresholdPercent: courseUnlockCfg?.completionThresholdPercent ?? 95,
-      },
-    );
-    if (!unlocked) {
-      return fail(reply, 403,
-        'This lesson is locked. Complete the previous lesson to unlock it.');
-    }
-  }
 
   // Daily Time Spent: a validated progress post with real watched seconds is a
   // server-side "watching" signal (see lib/memberActivity.ts).
@@ -1823,6 +1789,47 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   } else if (requestedCompletion === true && cumulativeActualSecs >= 5) {
     // Legacy fallback — episode has no duration metadata.
     finalIsCompleted = true;
+  }
+
+  // ── Sequential-unlock guard (deferred) ───────────────────────────────────────
+  // Runs only when this call would write a new completion for the first time.
+  // Heartbeats that don't reach the completion threshold skip this entirely
+  // (saves 2 DB queries per 30-second tick). Security guarantee is preserved:
+  // a modified client cannot record a locked lesson as complete — the guard
+  // catches it whether the completion came from an explicit `isCompleted: true`
+  // flag or from heartbeat accumulation reaching the server threshold.
+  if (requireSequential && finalIsCompleted && !existingProgress?.completed) {
+    const allEpisodes = await request.server.prisma.courseEpisode.findMany({
+      where: { courseId, isVisible: true },
+      orderBy: { order: 'asc' },
+      select: { id: true, order: true, durationSeconds: true },
+    });
+    const allProgress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
+      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e) => e.id) } },
+      select: { episodeId: true, actualWatchedSecs: true, lastWatchedSecs: true, completed: true },
+    });
+    const unlocked = isEpisodeUnlocked(
+      episodeId,
+      allEpisodes.map((e) => ({
+        id: e.id,
+        order: e.order ?? 0,
+        durationSeconds: e.durationSeconds ?? null,
+      })),
+      allProgress.map((p: any) => ({
+        episodeId: p.episodeId,
+        actualWatchedSecs: p.actualWatchedSecs ?? 0,
+        lastWatchedSecs: p.lastWatchedSecs ?? 0,
+        isCompleted: p.completed ?? false,
+      })),
+      {
+        requireSequential: true,
+        completionThresholdPercent: courseUnlockCfg?.completionThresholdPercent ?? 95,
+      },
+    );
+    if (!unlocked) {
+      return fail(reply, 403,
+        'This lesson is locked. Complete the previous lesson to unlock it.');
+    }
   }
 
   const progress = await (request.server.prisma as any).courseEpisodeProgress.upsert({
