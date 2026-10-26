@@ -16,7 +16,7 @@ async function cached<T>(redis: RedisLike | null, key: string, ttlSeconds: numbe
   return value;
 }
 import { cacheGet, cacheSet, invalidateCache, type RedisLike } from './cache.js';
-import { parseModuleList, resolveModuleAccess, type ModuleAccess } from './mentorshipModules.js';
+import { modulesForProductServiceType, parseModuleList, resolveModuleAccess, type ModuleAccess } from './mentorshipModules.js';
 
 export interface MentorshipModuleOption {
   moduleName: string;
@@ -60,7 +60,7 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
     // grant every module.
     const [memberRows, options] = await Promise.all([
       prisma.$queryRawUnsafe(
-        `SELECT s.allowed_modules, s.mentorship_modules, m.business_type, p.allowed_modules AS program_modules,
+        `SELECT s.allowed_modules, s.mentorship_modules, m.business_type, m.product_service_type, p.allowed_modules AS program_modules,
                 (SELECT mc.module_name FROM module_config mc
                  WHERE mc.is_active = true
                    AND lower(m.business_type) = ANY(
@@ -86,6 +86,7 @@ export async function loadMemberModuleAccess(prisma: any, redis: RedisLike | nul
       programModules: parseModuleList(row.program_modules) ?? [],
       selection: parseModuleList(row.mentorship_modules),
       businessType: resolvedBusinessType,
+      businessTypeModules: modulesForProductServiceType(row.product_service_type),
     });
   });
 }

@@ -535,7 +535,7 @@ export async function updateMeHandler(request: FastifyRequest, reply: FastifyRep
   });
 
   void invalidateCache(request.server.redis ?? null, `me:${request.memberId}`);
-  if (businessType !== undefined) {
+  if (businessType !== undefined || productServiceType !== undefined) {
     void invalidateMemberModuleAccess(request.server.redis ?? null, request.memberId!);
   }
 
