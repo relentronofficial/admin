@@ -18,7 +18,7 @@ import {
   useUploadOnboardingDocument,
   useDeleteOnboardingDocument,
   useSubmitOnboarding,
-  usePresignProfilePhoto,
+  useUploadProfilePhoto,
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import { useMentorshipModules, useUpdateMentorshipModules } from "@/lib/hooks/useMentorship";
@@ -507,7 +507,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const saveProgress = useSaveOnboardingProgress();
   const uploadDoc = useUploadOnboardingDocument();
   const deleteDoc = useDeleteOnboardingDocument();
-  const presignPhoto = usePresignProfilePhoto();
+  const uploadPhoto = useUploadProfilePhoto();
   const submit = useSubmitOnboarding();
 
   const { data: psycQuestions, isLoading: psycQuestionsLoading } = usePsychometricQuestions();
@@ -693,12 +693,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const handlePhotoUpload = async (file: File) => {
     setPhotoUploading(true);
     try {
-      const { data } = await presignPhoto.mutateAsync({ filename: file.name, contentType: file.type });
-      await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const { data } = await uploadPhoto.mutateAsync(file);
       setProfileState((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
       toast.success("Photo uploaded");
-    } catch {
-      toast.error("Photo upload failed. Please try again.");
+    } catch (err: any) {
+      toast.error(err?.message || "Photo upload failed. Please try again.");
     } finally {
       setPhotoUploading(false);
     }
