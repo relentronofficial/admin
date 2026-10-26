@@ -170,6 +170,16 @@ function normalizePhoneForLookup(raw: string): string[] {
 }
 
 /**
+ * The live (not soft-deleted) member with this phone. Signup only counts live
+ * members, so a phone whose old account was deleted can register again; without
+ * this filter login / OTP could pick the deleted row first and answer
+ * "Account not found" — or sign in as the deleted account.
+ */
+function activeMemberByPhone(raw: string): any {
+  return { phone: { in: normalizePhoneForLookup(raw) }, deletedAt: null };
+}
+
+/**
  * Sends the OTP for a pending (not yet verified) registration. When the
  * sign-up call just sent one (cooldown active), the same OTP stays valid, so
  * the client is simply told to enter it — that keeps the existing apps'
@@ -197,7 +207,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: activeMemberByPhone(phone),
     select: { id: true, phone: true, passwordHash: true, status: true, deletedAt: true } as any,
   });
 
@@ -299,7 +309,7 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
 
   const memberSelect = { id: true, memberId: true, firstName: true, lastName: true, email: true, phone: true, profilePhotoUrl: true } as any;
   let member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: activeMemberByPhone(phone),
     select: memberSelect,
   });
 
@@ -458,7 +468,7 @@ export async function setPassword(fastify: FastifyInstance, request: any, reply:
   const passwordHash = await bcrypt.hash(password, 12);
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: activeMemberByPhone(phone),
     select: { id: true } as any,
   });
 
@@ -489,7 +499,7 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: activeMemberByPhone(phone),
     select: { id: true, phone: true, status: true } as any,
   });
 
@@ -522,7 +532,7 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
   const member = await fastify.prisma.member.findFirst({
-    where: { phone: { in: normalizePhoneForLookup(phone) } } as any,
+    where: activeMemberByPhone(phone),
     select: { id: true, phone: true } as any,
   });
 
