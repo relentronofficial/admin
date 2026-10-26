@@ -27,10 +27,12 @@ import {
   useEpisodeResources, useAllCourseEpisodeResources, useEpisodeTasks, useSubmitEpisodeTask, useUploadEpisodeTaskProof,
   useEpisodeTimerSession, useStartEpisodeTimer, useHeartbeatEpisodeTimer,
   useEpisodeLifelines, useUseEpisodeLifeline,
+  useCourseLifelines, usePurchaseCourseLifelines,
   useCreateRazorpayOrder, useVerifyRazorpayPayment,
   useCreateCoinOrder, useVerifyCoinPayment,
-  type EpisodeResource, type EpisodeTask,
+  type EpisodeResource, type EpisodeTask, type CourseLifelineState,
 } from "@/lib/hooks/useCourses";
+import { AUTO_COMPLETE_FRACTION, AUTO_COMPLETE_RETRY_MS, genuineWatchedSeconds, shouldAutoComplete } from "@/lib/utils/lessonAutoComplete";
 import { invalidateCoinBalance, useCoinBalance } from "@/lib/hooks/useCoins";
 import { coursesService } from "@/lib/api/services/courses.service";
 import { useSpendCoins, useUseProgramLifeline, useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -59,7 +61,7 @@ function isBunnyEmbed(url: string) {
 // Three signals, any one is sufficient:
 //   1. completedIds (from progress query) — authoritative DB state
 //   2. lesson.isCompleted (from course query) — may be stale but usually correct
-//   3. durationSeconds threshold — 85% of stored duration
+//   3. durationSeconds threshold — 90% of stored duration (same as automatic completion)
 // NOTE: there is intentionally NO position proximity heuristic — it was removed because
 // |resumeAtSeconds - actualWatchedSecs| < 5 caused false positives for partially-watched lessons.
 function lessonAlreadyDone(
@@ -74,7 +76,7 @@ function lessonAlreadyDone(
   const dur = durationSeconds ?? 0;
   const watched = actualWatchedSecs ?? 0;
   const resume = resumeAtSeconds ?? 0;
-  if (dur > 0 && watched >= dur * 0.85) return true;
+  if (dur > 0 && watched >= dur * AUTO_COMPLETE_FRACTION) return true;
   return false;
 }
 
@@ -1483,8 +1485,8 @@ export default function CourseDetailPage({
   const [liveRealDuration, setLiveRealDuration] = useState<number>(0);
   const [hlsFailed, setHlsFailed] = useState(false);
   const [upNextVisible, setUpNextVisible] = useState(false);
-  // Video-ended auto-completion: the lesson whose completion is being saved (replaces
-  // the Mark Complete button meanwhile), and the lesson to advance from once this
+  // Automatic completion (90% watched or video ended): the lesson whose completion is being saved (shows
+  // "Saving progress…" meanwhile), and the lesson to advance from once this
   // lesson's quiz / reflection / feedback prompts are closed.
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<{ from: string; notBefore: number } | null>(null);
@@ -1524,14 +1526,12 @@ export default function CourseDetailPage({
   useEffect(() => { setRightTab("lessons"); }, [selectedLesson?.id]);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
-  const MAX_FREE_LIFELINES = 3; // fallback until config/batch loads
+  const MAX_FREE_LIFELINES = 3;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [coinDialog, setCoinDialog] = useState<{ lesson: any; duration: number } | null>(null);
   const [lifelineDialog, setLifelineDialog] = useState<{ lesson: any; duration: number } | null>(null);
-  // Single in-flight guard for every lifeline/coin request — the ref blocks a rapid
-  // double-click synchronously (before React re-renders); the state disables the buttons.
   const lifelineInFlightRef = useRef(false);
   const [lifelineBusy, setLifelineBusy] = useState(false);
   const [lessonTimers, setLessonTimers] = useState<Record<string, number>>({});
@@ -1539,40 +1539,23 @@ export default function CourseDetailPage({
   const timerLessonRef = useRef<string | null>(null);
   const timerEndTimeRef = useRef<number>(0);
   const timerDurationRef = useRef<number>(0);
-  // MG-04: track when focus timer was started (ms) and duration for early-completion bonus
   const timerStartedAtRef = useRef<number | undefined>(undefined);
   const lifelinesLeftRef = useRef(MAX_FREE_LIFELINES);
-  const lifelinesInitializedRef = useRef(false);
-  // program-wide lifeline tracking: true when member has an active batch
-  const useProgramLifeline = useUseProgramLifeline();
-  const { data: batchData } = useMyBatchProgram();
-  const batchId = (batchData as any)?.batch?.id as string | undefined;
-  const isProgramLifeline = !!batchId;
-  // Stable ref so the setInterval tick function can call the mutation without stale closure
-  const programLifelineMutateRef = useRef(useProgramLifeline.mutateAsync);
-  useEffect(() => { programLifelineMutateRef.current = useProgramLifeline.mutateAsync; }, [useProgramLifeline.mutateAsync]);
-  const batchIdRef = useRef(batchId);
-  useEffect(() => { batchIdRef.current = batchId; }, [batchId]);
-  const isProgramLifelineRef = useRef(isProgramLifeline);
-  useEffect(() => { isProgramLifelineRef.current = isProgramLifeline; }, [isProgramLifeline]);
-  // Tracks the last lessonId for which the focus dialog was shown via URL auto-select,
-  // preventing an infinite loop when selectedLesson stays null (user hasn't confirmed yet).
+  // Tracks the last lessonId for which the focus dialog was shown via URL auto-select.
   const urlFocusDialogShownRef = useRef<string | null>(null);
   const spendCoins = useSpendCoins();
-  // Coin package for Razorpay purchase (mirrors COIN_PACKAGE_* constants in backend)
   const COIN_PACKAGE_COINS = 200;
   const COIN_PACKAGE_PRICE = 99; // INR
   const createCoinOrder = useCreateCoinOrder();
   const verifyCoinPayment = useVerifyCoinPayment();
   const [coinPurchaseOpen, setCoinPurchaseOpen] = useState(false);
-  // Server-side timer session + per-episode lifeline persistence
+  // Server-side timer session
   const startEpisodeTimerMutation = useStartEpisodeTimer();
   const heartbeatEpisodeTimerMutation = useHeartbeatEpisodeTimer();
-  const useEpisodeLifelineMutation = useUseEpisodeLifeline(selectedLesson?.id);
-  const { data: episodeLifelineData } = useEpisodeLifelines(selectedLesson?.id);
-  // The server charges this episode's configured price against the ledger balance;
-  // show and gate on the same two values (the navbar reads the same balance query).
-  const LIFELINE_COIN_COST = Number(episodeLifelineData?.lifelineCoinCost ?? 50);
+  // Course-scoped unified lifeline pool (replaces per-episode + program-wide systems)
+  const { data: courseLifelinesData, refetch: refetchCourseLifelines } = useCourseLifelines(courseId);
+  const purchaseCourseLifelinesMutation = usePurchaseCourseLifelines(courseId);
+  const LIFELINE_COIN_COST = Number(courseLifelinesData?.coinCost ?? 50);
   const { data: coinBalance } = useCoinBalance();
   const { data: savedVideosData } = useSavedVideos({ limit: 500 });
   const savedEpisodeIds = useMemo(() => {
@@ -1582,37 +1565,25 @@ export default function CourseDetailPage({
   const saveVideo = useSaveVideo();
   const unsaveVideo = useUnsaveVideo();
   const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
-  // Stable refs for mutation functions (safe inside setInterval callbacks)
   const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
   useEffect(() => { startEpisodeTimerRef.current = startEpisodeTimerMutation.mutate; }, [startEpisodeTimerMutation.mutate]);
-  const episodeLifelineMutateRef = useRef(useEpisodeLifelineMutation.mutateAsync);
-  useEffect(() => { episodeLifelineMutateRef.current = useEpisodeLifelineMutation.mutateAsync; }, [useEpisodeLifelineMutation.mutateAsync]);
   const heartbeatMutateRef = useRef(heartbeatEpisodeTimerMutation.mutate);
   useEffect(() => { heartbeatMutateRef.current = heartbeatEpisodeTimerMutation.mutate; }, [heartbeatEpisodeTimerMutation.mutate]);
-  // Timer restoration tracking
   const timerRestoredForRef = useRef<string | null>(null);
   useEffect(() => () => { clearInterval(timerIntervalRef.current); }, []);
   useEffect(() => { lifelinesLeftRef.current = lifelinesLeft; }, [lifelinesLeft]);
-  // Initialize lifeline count: program-wide DB value takes priority over session config
+  // Sync lifeline count from server whenever courseLifelinesData loads/updates
   useEffect(() => {
-    if (lifelinesInitializedRef.current) return;
-    if (batchData !== undefined) {
-      // batch data loaded — use program-wide count if in a batch
-      lifelinesInitializedRef.current = true;
-      const programRemaining = (batchData as any)?.lifelinesRemaining;
-      const count = programRemaining != null ? programRemaining : (config?.freeLifelinesPerSession ?? MAX_FREE_LIFELINES);
-      setLifelinesLeft(count);
-      lifelinesLeftRef.current = count;
-    } else if (batchData === null && config?.freeLifelinesPerSession != null) {
-      // not in a batch — fall back to session-based config value
-      lifelinesInitializedRef.current = true;
-      setLifelinesLeft(config.freeLifelinesPerSession);
-      lifelinesLeftRef.current = config.freeLifelinesPerSession;
+    if (courseLifelinesData != null) {
+      setLifelinesLeft(courseLifelinesData.remaining);
+      lifelinesLeftRef.current = courseLifelinesData.remaining;
     }
-  }, [batchData, config?.freeLifelinesPerSession]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Lifelines are user-global — count persists across all episodes for the entire session.
-  // The per-episode server endpoint is still called to record usage, but its returned
-  // freeRemaining is intentionally NOT used to reset the counter here.
+  }, [courseLifelinesData]);
+  // Keep batchData for backward compat (other parts of the page use it)
+  const { data: batchData } = useMyBatchProgram();
+  const batchId = (batchData as any)?.batch?.id as string | undefined;
+  const isProgramLifeline = false; // unified — course lifelines replace program-wide
+  // Lifelines are course-scoped — count persists across all episodes in the course.
   // Restore active timer session from server on lesson load (survives page refresh)
   useEffect(() => {
     if (!selectedLesson || !existingTimerSession) return;
@@ -1632,15 +1603,31 @@ export default function CourseDetailPage({
       timerStartedAtRef.current = new Date(existingTimerSession.startedAt).getTime();
     }
   }, [selectedLesson?.id, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Apply lifeline state from a heartbeat response (when timer just expired server-side)
+  const applyLifelinesFromHeartbeatRef = useRef((lifelines: CourseLifelineState | null | undefined) => {
+    if (!lifelines) return;
+    qc.setQueryData(["course-lifelines", courseId], lifelines);
+    setLifelinesLeft(lifelines.remaining);
+    lifelinesLeftRef.current = lifelines.remaining;
+  });
+
   // 30s heartbeat to keep server timer session alive while lesson is open
   useEffect(() => {
     const id = setInterval(() => {
       const lessonId = timerLessonRef.current;
       if (!lessonId) return;
-      heartbeatMutateRef.current({ episodeId: lessonId });
+      heartbeatMutateRef.current(
+        { episodeId: lessonId },
+        {
+          onSuccess: (res: any) => {
+            const lifelines = res?.data?.lifelines as CourseLifelineState | null | undefined;
+            applyLifelinesFromHeartbeatRef.current(lifelines);
+          },
+        },
+      );
     }, 30_000);
     return () => clearInterval(id);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Preload Razorpay Checkout.js for the coin purchase flow
   const razorpayOn = isRazorpayEnabled(course);
   useEffect(() => {
@@ -1963,7 +1950,7 @@ export default function CourseDetailPage({
     const active = timerLessonRef.current;
     if (active && completedIdsRef.current.has(active)) {
       // Only clear the running timer when completion was user-triggered.
-      // markCalledRef is set synchronously before the mutation in handleMarkComplete /
+      // markCalledRef is set synchronously before the mutation in completeAtThreshold /
       // handleVideoEnded / doMarkComplete. The 30s progress heartbeat never sets it,
       // so a server-auto-completion via heartbeat won't kill a running timer 2 — tick()
       // will fire at expiry and show the lifeline/coin dialog as intended.
@@ -2067,19 +2054,80 @@ export default function CourseDetailPage({
     return () => clearTimeout(t);
   }, [watchState]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Once the player reports the real video duration, re-evaluate completion using
-  // accurate duration (overrides wrong durationSeconds stored in DB).
+  // Automatic completion at 90% genuine watch progress (lib/utils/lessonAutoComplete.ts):
+  // the server's watched seconds when the lesson was opened + this session's live watch
+  // time (counted only while playing, visible and not seeking). Re-checked every second
+  // as live watch time grows, and once the player reports the real duration. Saves once;
+  // the green tick appears only after the server confirms. The video keeps playing — the
+  // existing end-of-video flow then moves to the next lesson.
+  const autoCompleteRetryRef = useRef(0);
+  const completeAtThresholdRef = useRef<(genuineSecs: number) => void>(() => {});
+  useEffect(() => { autoCompleteRetryRef.current = 0; }, [selectedLesson?.id]);
   useEffect(() => {
-    if (!selectedLesson || liveRealDuration <= 0) return;
-    if (selectedLesson.isCompleted || completedIds.has(selectedLesson.id)) return;
-    if (markCalledRef.current) return;
-    const watched = selectedLesson.actualWatchedSecs ?? 0;
-    if (watched < liveRealDuration * 0.85) return;
-    justCompletedInSessionRef.current = true;
-    setWatchState("completed");
+    if (!selectedLesson) return;
+    const genuine = genuineWatchedSeconds(selectedLesson.actualWatchedSecs, liveWatchedRef.current);
+    if (!shouldAutoComplete({
+      genuineSecs: genuine,
+      durationSecs: liveRealDuration,
+      alreadyCompleted: !!selectedLesson.isCompleted || completedIds.has(selectedLesson.id),
+      requestInFlight: markCalledRef.current,
+      retryNotBefore: autoCompleteRetryRef.current,
+      now: Date.now(),
+    })) return;
+    completeAtThresholdRef.current(genuine);
+  }, [liveWatched, liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  completeAtThresholdRef.current = (genuineSecs: number) => {
+    const lesson = selectedLessonRef.current;
+    if (!lesson || markCalledRef.current) return;
     markCalledRef.current = true;
-    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: Math.floor(watched), isCompleted: true, videoDuration: liveRealDuration });
-  }, [liveRealDuration]); // eslint-disable-line react-hooks/exhaustive-deps
+    setAutoCompletingId(lesson.id);
+    // Focus timer: capture it for the early-completion bonus, then close the session.
+    const wasTimerLesson = timerLessonRef.current === lesson.id;
+    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
+    if (wasTimerLesson) {
+      heartbeatMutateRef.current({ episodeId: lesson.id, completed: true });
+      clearInterval(timerIntervalRef.current);
+      timerLessonRef.current = null;
+    }
+    markComplete.mutate({
+      lessonId: lesson.id,
+      watchedSeconds: Math.floor(Math.max(lastPlayheadRef.current, genuineSecs)),
+      isCompleted: true,
+      videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
+      timerStartedAt: wasTimerLesson ? timerStartedAtRef.current : undefined,
+      timerSeconds: capturedTimerDuration,
+      optimistic: false,
+    }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const data = res?.data ?? res;
+        if (data?.completed !== true) {
+          // Not counted by the server — stay incomplete and retry after more watching.
+          markCalledRef.current = false;
+          autoCompleteRetryRef.current = Date.now() + AUTO_COMPLETE_RETRY_MS;
+          return;
+        }
+        if (selectedLessonRef.current?.id !== lesson.id) return; // member already moved on
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
+          setBonusXpFlash(data.bonusXpAwarded);
+          setTimeout(() => setBonusXpFlash(null), 3500);
+        }
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === lesson.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        markCalledRef.current = false;
+        autoCompleteRetryRef.current = Date.now() + AUTO_COMPLETE_RETRY_MS;
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. We'll try again shortly.", { id: "lesson-complete-failed" });
+      },
+    });
+  };
 
   // ── Native VideoPlayer callbacks ─────────────────────────────────────────────
   const handleVideoReady = (duration: number) => {
@@ -2145,7 +2193,7 @@ export default function CourseDetailPage({
   // The video actually ended (player "ended" event — never a seek, an open or a refresh).
   // Saves completion through the existing progress API once; the lesson shows as
   // completed and auto-advances only after the server confirms it. On failure: error
-  // toast, no completion, no navigation (the Mark Complete button is back as a retry).
+  // toast, no completion, no navigation (automatic completion retries after a back-off).
   const completeFromVideoEndRef = useRef<() => void>(() => {});
   completeFromVideoEndRef.current = () => {
     isPlayingRef.current = false;
@@ -2202,49 +2250,6 @@ export default function CourseDetailPage({
 
   const handleVideoEnded = () => {
     completeFromVideoEndRef.current();
-  };
-
-  const handleMarkComplete = () => {
-    if (!selectedLesson || markCalledRef.current) return;
-    markCalledRef.current = true;
-    justCompletedInSessionRef.current = true;
-    setWatchState("completed");
-    // Only auto-advance if this lesson has no quiz — quiz lessons advance in handleCloseQuiz
-    const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
-    if (!lessonData?.hasQuiz) triggerUpNextRef.current();
-    const allLessons = courseRef.current?.lessons ?? [];
-    const willBeAllDone = allLessons.length > 0 &&
-      allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
-    if (willBeAllDone) {
-      setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
-    }
-    const playhead = lastPlayheadRef.current > 0
-      ? Math.floor(lastPlayheadRef.current)
-      : (selectedLesson.resumeAtSeconds ?? 0);
-    // Capture timer data before clearing (for MG-04 early completion bonus)
-    const wasTimerLesson = timerLessonRef.current === selectedLesson.id;
-    const capturedTimerDuration = wasTimerLesson ? timerDurationRef.current : undefined;
-    // Mark server timer session as completed (if timer was running for this lesson)
-    if (wasTimerLesson) {
-      heartbeatMutateRef.current({ episodeId: selectedLesson.id, completed: true });
-      clearInterval(timerIntervalRef.current);
-      timerLessonRef.current = null;
-    }
-    markComplete.mutate({
-      lessonId: selectedLesson.id,
-      watchedSeconds: playhead,
-      isCompleted: true,
-      videoDuration: realDurationRef.current > 0 ? realDurationRef.current : undefined,
-      timerStartedAt: timerStartedAtRef.current,
-      timerSeconds: capturedTimerDuration,
-    }, {
-      onSuccess: (data: any) => {
-        if (data?.bonusXpAwarded > 0 && data?.completedEarly) {
-          setBonusXpFlash(data.bonusXpAwarded);
-          setTimeout(() => setBonusXpFlash(null), 3500);
-        }
-      },
-    });
   };
 
   // ── Bunny iframe message handler — only runs when HLS is unavailable or failed ──
@@ -2431,7 +2436,7 @@ export default function CourseDetailPage({
   // ── 30-second heartbeat ──────────────────────────────────────────────────────
   // watchedSeconds uses the actual video playhead (lastPlayheadRef) — not
   // wall-clock elapsed — so pausing for several minutes doesn't inflate the
-  // stored position and falsely trigger the 85% completion threshold.
+  // stored position and falsely trigger the 90% completion threshold.
   // deltaSeconds still uses elapsed time (capped at 30s) to measure activity
   // since the last heartbeat, which is correct regardless of player type.
   useEffect(() => {
@@ -2656,29 +2661,22 @@ export default function CourseDetailPage({
   // server confirms — returns "ok", "exhausted" (caller opens the coin dialog) or "failed"
   // (error toast already shown). Every lifeline toast shares one id so repeats replace
   // each other instead of stacking.
-  const consumeFreeLifeline = async (lesson: any): Promise<"ok" | "exhausted" | "failed"> => {
+  const consumeFreeLifeline = async (_lesson: any): Promise<"ok" | "exhausted" | "failed"> => {
     try {
-      if (isProgramLifeline && batchId) {
-        const res = await useProgramLifeline.mutateAsync({ batchId, episodeId: lesson.id, context: 'episode' });
-        setLifelinesLeft(res.lifelinesRemaining);
-        lifelinesLeftRef.current = res.lifelinesRemaining;
-      } else {
-        // Call the service with the target lesson's id so clicking a focus-locked lesson
-        // from the sidebar (while another lesson is selected) charges the right episode.
-        await coursesService.useEpisodeLifeline(lesson.id, 'free');
-        const remaining = Math.max(0, lifelinesLeftRef.current - 1);
-        setLifelinesLeft(remaining);
-        lifelinesLeftRef.current = remaining;
-      }
+      const res = await coursesService.consumeCourseLifeline(courseId);
+      const state = (res as any)?.data as CourseLifelineState | undefined;
+      const remaining = state?.remaining ?? Math.max(0, lifelinesLeftRef.current - 1);
+      setLifelinesLeft(remaining);
+      lifelinesLeftRef.current = remaining;
       return "ok";
     } catch (err: any) {
       const code = err?.code ?? err?.response?.data?.error;
-      if (code === 'exhausted' || code === 'No free lifelines remaining') {
+      if (code === 'exhausted' || code === 'No lifelines remaining') {
         setLifelinesLeft(0);
         lifelinesLeftRef.current = 0;
         return "exhausted";
       }
-      console.error("[lifeline] free lifeline request failed", err);
+      console.error("[lifeline] consume failed", err);
       toast.error(
         err?.response?.status
           ? `Couldn't use lifeline (${code ?? `HTTP ${err.response.status}`}). Please try again.`
@@ -2721,14 +2719,21 @@ export default function CourseDetailPage({
     lifelineInFlightRef.current = true;
     setLifelineBusy(true);
     try {
-      // Call the service directly so the coin deduction always targets lesson.id regardless
-      // of which lesson is currently selected (avoids stale hook binding for cross-episode clicks)
-      const res = await coursesService.useEpisodeLifeline(lesson.id, 'coin');
+      const res = await coursesService.purchaseCourseLifelines(courseId, {
+        quantity: 1,
+        expectedCoinCostEach: LIFELINE_COIN_COST,
+      });
       void invalidateCoinBalance(qc);
+      const state = (res as any)?.data?.lifelines as CourseLifelineState | undefined;
+      if (state) {
+        setLifelinesLeft(state.remaining);
+        lifelinesLeftRef.current = state.remaining;
+      }
       unlockAfterLifeline(lesson, duration);
       handleSelectLesson(lesson);
       setCoinDialog(null);
-      toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted. Remaining: ${(res as any).data?.remainingCoins ?? '?'} coins.`, { id: "lifeline" });
+      const newBalance = (res as any)?.data?.newBalance;
+      toast.success(`Lifeline purchased! ${LIFELINE_COIN_COST} TBT coins deducted.${newBalance != null ? ` Balance: ${newBalance}` : ""}`, { id: "lifeline" });
     } catch (err: any) {
       console.error("[lifeline] coin lifeline request failed", err);
       setCoinDialog(null);
@@ -2770,16 +2775,21 @@ export default function CourseDetailPage({
             });
             const totalCoins = (result as any).data?.totalCoins ?? "?";
             toast.success(`${coins} TBT Coins added! Balance: ${totalCoins} coins.`, { duration: 5000 });
-            // Now spend 50 coins to resume the lesson automatically
+            // Now spend coins to purchase a lifeline and resume the lesson automatically
             if (lesson) {
               setCoinDialog(null);
               try {
-                const res = await coursesService.useEpisodeLifeline(lesson.id, "coin");
+                const purchaseRes = await coursesService.purchaseCourseLifelines(courseId, {
+                  quantity: 1,
+                  expectedCoinCostEach: LIFELINE_COIN_COST,
+                });
                 void invalidateCoinBalance(qc);
+                const state = (purchaseRes as any)?.data?.lifelines as CourseLifelineState | undefined;
+                if (state) { setLifelinesLeft(state.remaining); lifelinesLeftRef.current = state.remaining; }
                 setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
                 startLessonTimer(lesson.id, duration);
                 handleSelectLesson(lesson);
-                toast.success(`Lifeline activated! ${LIFELINE_COIN_COST} TBT coins deducted.`);
+                toast.success(`Lifeline purchased! ${LIFELINE_COIN_COST} TBT coins deducted.`);
               } catch (spendErr: any) {
                 toast.error(spendErr?.response?.data?.error ?? "Not enough TBT coins");
               }
@@ -2880,9 +2890,9 @@ export default function CourseDetailPage({
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
   const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
-  const maxLifelines = isProgramLifeline
-    ? ((batchData as any)?.lifelinesTotal ?? MAX_FREE_LIFELINES)
-    : (episodeLifelineData?.lifelineCount ?? MAX_FREE_LIFELINES);
+  const maxLifelines = courseLifelinesData
+    ? courseLifelinesData.freeTotal + courseLifelinesData.purchasedTotal
+    : MAX_FREE_LIFELINES;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
@@ -3276,17 +3286,7 @@ export default function CourseDetailPage({
                 >
                   <Loader2 size={13} className="animate-spin" /> Saving progress…
                 </span>
-              ) : (
-                <button
-                  onClick={handleMarkComplete}
-                  disabled={markComplete.isPending}
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-90 disabled:opacity-60"
-                  style={{ background: "var(--color-success)", color: "#fff" }}
-                >
-                  {markComplete.isPending ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-                  Mark Complete
-                </button>
-              )}
+              ) : null}
             </div>
 
             {/* Lesson navigation — Previous / counter / Next */}
@@ -3331,10 +3331,10 @@ export default function CourseDetailPage({
               </div>
             )}
 
-            {/* 85% completion progress indicator */}
+            {/* 90% completion progress indicator */}
             {watchState !== "completed" && !selectedLesson.isCompleted && activeDuration > 0 && liveWatched > 0 && (() => {
               const pct = Math.min(100, Math.round((liveWatched / activeDuration) * 100));
-              const toComplete = Math.max(0, Math.ceil(activeDuration * 0.95 - liveWatched));
+              const toComplete = Math.max(0, Math.ceil(activeDuration * AUTO_COMPLETE_FRACTION - liveWatched));
               const currentLesson = course?.lessons?.find((l: any) => l.id === selectedLesson.id) as any;
               const hasQuiz = !!currentLesson?.hasQuiz;
               const quizUnlockPct: number = currentLesson?.quizUnlockPercent ?? 80;
@@ -3344,7 +3344,7 @@ export default function CourseDetailPage({
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs" style={{ color: "var(--color-text-subtle)" }}>
                     <span>{pct}% watched</span>
-                    {pct < 95 ? (
+                    {pct < AUTO_COMPLETE_FRACTION * 100 ? (
                       <span>
                         {toComplete > 60
                           ? `${Math.ceil(toComplete / 60)}m to complete`

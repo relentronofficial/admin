@@ -16,6 +16,7 @@ import { toast } from "react-hot-toast";
 import { getServerNow } from "@/lib/api/client";
 import {
   useBookSupportCall,
+  useBuyExtraSupportCalls,
   useCancelSupportCallBooking,
   useJoinSupportCall,
   useSupportCalls,
@@ -337,6 +338,114 @@ function CoinPurchaseBox({ needed }: { needed: number | null }) {
   );
 }
 
+const BUY_QUANTITIES = [1, 2, 3, 5] as const;
+
+/**
+ * Pre-purchase N extra call credits with TBT coins. Coins deducted immediately;
+ * the purchased quota adds to the member's allocation so future bookings are free.
+ */
+function BuyExtraCallsBox({
+  category,
+  coinCostEach,
+  coinBalance,
+}: {
+  category: SupportCallCategory;
+  coinCostEach: number;
+  coinBalance: number;
+}) {
+  const [qty, setQty] = useState<number>(1);
+  const [bought, setBought] = useState<{ qty: number; spent: number; balance: number } | null>(null);
+  const buyMutation = useBuyExtraSupportCalls();
+  const totalCost = qty * coinCostEach;
+  const canAfford = coinBalance >= totalCost;
+
+  if (bought) {
+    return (
+      <div className="rounded-[10px] p-3.5 space-y-1.5" style={{ background: CARD, border: `1px solid ${GREEN}55` }}>
+        <p className="text-xs font-semibold" style={{ color: GREEN }}>
+          ✓ {bought.qty} extra call{bought.qty !== 1 ? "s" : ""} added to your quota
+        </p>
+        <p className="text-[11px]" style={{ color: SOFT }}>
+          {bought.spent} TBT coins deducted · New balance: {bought.balance} coins
+        </p>
+        <p className="text-[11px]" style={{ color: MUTED }}>Pick any available slot below — no coin payment at booking.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[10px] p-3.5 space-y-3" style={{ background: CARD, border: `1px solid ${GOLD}55` }}>
+      <div className="flex items-center gap-1.5">
+        <Coins size={13} style={{ color: GOLD }} />
+        <span className="text-xs font-semibold" style={{ color: TEXT }}>Buy Extra Calls with TBT Coins</span>
+      </div>
+      <p className="text-[11px]" style={{ color: SOFT }}>
+        Choose how many extra calls to buy. Coins are deducted now; book any published slot afterwards — no per-slot payment.
+      </p>
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Number of calls</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {BUY_QUANTITIES.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setQty(n)}
+              className="w-10 h-10 rounded-lg text-sm font-bold transition-colors"
+              style={{
+                background: qty === n ? GOLD : CHIP,
+                color: qty === n ? "#1a1a1d" : SOFT,
+                border: qty === n ? `1px solid ${GOLD}` : "1px solid #2a2a2e",
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-lg px-3 py-2.5 space-y-0.5" style={{ background: "#1a1a1d" }}>
+        <div className="flex items-center justify-between text-[11px]">
+          <span style={{ color: MUTED }}>Cost: {qty} × {coinCostEach.toLocaleString("en-IN")} coins</span>
+          <span className="font-bold" style={{ color: GOLD }}>{totalCost.toLocaleString("en-IN")} coins</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span style={{ color: MUTED }}>Your balance</span>
+          <span style={{ color: canAfford ? SOFT : RED }}>{coinBalance.toLocaleString("en-IN")} coins{canAfford ? "" : " (insufficient)"}</span>
+        </div>
+        {canAfford && (
+          <div className="flex items-center justify-between text-[11px]">
+            <span style={{ color: MUTED }}>After purchase</span>
+            <span style={{ color: SOFT }}>{(coinBalance - totalCost).toLocaleString("en-IN")} coins</span>
+          </div>
+        )}
+      </div>
+      {canAfford ? (
+        <button
+          type="button"
+          disabled={buyMutation.isPending}
+          onClick={async () => {
+            try {
+              const res = await buyMutation.mutateAsync({ category, quantity: qty, expectedCoinCostEach: coinCostEach });
+              setBought({ qty, spent: res.coinsSpent, balance: res.newBalance });
+            } catch (err: any) {
+              const msg = err?.response?.data?.error ?? err?.message ?? "Failed to purchase extra calls";
+              toast.error(typeof msg === "string" ? msg : "Failed to purchase extra calls", { id: "buy-extra-calls" });
+            }
+          }}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-opacity disabled:opacity-60"
+          style={{ background: GOLD, color: "#1a1a1d" }}
+        >
+          {buyMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+          Buy {qty} Call{qty !== 1 ? "s" : ""} · {totalCost.toLocaleString("en-IN")} Coins
+        </button>
+      ) : (
+        <p className="text-[11px] text-center py-2" style={{ color: RED }}>
+          You need {(totalCost - coinBalance).toLocaleString("en-IN")} more coins. Use the &ldquo;Purchase TBT Coins&rdquo; option below.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ConfirmCard({
   session,
   categoryLabel,
@@ -638,13 +747,17 @@ export default function SupportCallPanel({
 
   const quota = data?.quota;
   const coin = data?.coin ?? null;
-  // Free calls left → normal booking. All used but a coin price is set → slots stay
-  // bookable as extra, coin-paid calls (the server still decides).
-  const coinPath = !!quota && quota.remaining <= 0 && (coin?.action === "unlock_with_coins" || coin?.action === "purchase_coins");
+  // notIncluded: category has 0 plan-allocated calls (plan doesn't include this call type at all).
+  const notIncluded = !!quota && (quota.included ?? quota.allocated) <= 0;
+  // coinPath: included calls exhausted AND admin has set a coin price — extra call can be booked
+  // with TBT coins regardless of whether the member currently has enough (they can buy more).
+  // Also covers the edge case where action is still 'locked' because Razorpay isn't configured —
+  // the member may already have enough coins and the ConfirmCard will handle the short-balance case.
+  const coinPath = !!quota && quota.remaining <= 0 && !notIncluded && coin?.cost != null;
   const member = useMemo(
     // Same rule as the server: only plan-included calls make a category bookable (coin unlocks don't).
-    () => ({ notIncluded: !!quota && (quota.included ?? quota.allocated) <= 0, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
-    [quota, coinPath],
+    () => ({ notIncluded, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
+    [quota, notIncluded, coinPath],
   );
   const byDate = useMemo(() => groupByDate(data?.sessions ?? []), [data?.sessions]);
   const openDates = useMemo(() => datesWithOpenSlots(byDate, nowMs), [byDate, nowMs]);
@@ -756,29 +869,32 @@ export default function SupportCallPanel({
               {justBooked && <BookingConfirmation booking={justBooked} categoryLabel={label} onDismiss={() => setJustBooked(null)} />}
 
               {coinPath && coin?.cost != null && (
-                <div className="rounded-[10px] p-3.5 space-y-2" style={{ background: CARD, border: `1px solid ${GOLD}55` }} data-testid="coin-unlock-banner">
-                  <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
-                    <Lock size={13} style={{ color: GOLD }} /> All your included calls are used or booked
-                  </p>
-                  <p className="text-[11px]" style={{ color: SOFT }}>
-                    You can book an extra call for <strong style={{ color: GOLD }}>{coin.cost} TBT coins</strong>. Your balance: {coin.balance} coins.
-                    {coin.action === "unlock_with_coins" ? " Pick a slot and confirm. Coins are only deducted when you confirm." : ""}
-                  </p>
-                  {/* Stays open once used, so the purchase result is still shown after the
-                      refreshed balance flips the action to unlock_with_coins. */}
-                  {(coin.action === "purchase_coins" || showCoinShop) && (
-                    showCoinShop ? (
-                      <CoinPurchaseBox needed={Math.max(0, coin.cost - coin.balance)} />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => setShowCoinShop(true)}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg"
-                        style={{ background: GOLD, color: "#1a1a1d" }}
-                      >
-                        <Coins size={13} /> Purchase TBT Coins
-                      </button>
-                    )
+                <div className="space-y-3" data-testid="coin-unlock-banner">
+                  {/* Pre-purchase extra calls upfront — coins spent now, book any slot for free */}
+                  <BuyExtraCallsBox
+                    category={category}
+                    coinCostEach={coin.cost}
+                    coinBalance={coin.balance}
+                  />
+                  {/* If the member doesn't have enough coins, let them buy coins via Razorpay */}
+                  {coin.balance < coin.cost && (
+                    <div className="rounded-[10px] p-3.5 space-y-2" style={{ background: CARD, border: `1px solid #2a2a2e` }}>
+                      <p className="text-[11px] font-semibold" style={{ color: SOFT }}>
+                        Not enough coins? Top up your balance first.
+                      </p>
+                      {showCoinShop ? (
+                        <CoinPurchaseBox needed={Math.max(0, coin.cost - coin.balance)} />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowCoinShop(true)}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg"
+                          style={{ background: CHIP, color: GOLD, border: `1px solid ${GOLD}55` }}
+                        >
+                          <Coins size={13} /> Purchase TBT Coins
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -814,12 +930,14 @@ export default function SupportCallPanel({
                     ) : member.notIncluded || !member.canBookMore ? (
                       <div className="rounded-[10px] p-4" style={{ background: CARD }}>
                         <p className="text-xs font-semibold" style={{ color: TEXT }}>
-                          {member.notIncluded ? "This call type isn't included in your plan." : "You have no calls left to book in this category."}
+                          {member.notIncluded
+                            ? "This call type isn't included in your plan."
+                            : "You've used all your included calls."}
                         </p>
                         <p className="text-[11px] mt-1" style={{ color: MUTED }}>
                           {member.notIncluded
                             ? "Your plan doesn't include this call type, so its slots can't be booked."
-                            : "A call becomes available again if you cancel an upcoming booking."}
+                            : "Extra call purchases aren't configured for this category yet. Contact your program manager."}
                         </p>
                       </div>
                     ) : !selectedDate ? (

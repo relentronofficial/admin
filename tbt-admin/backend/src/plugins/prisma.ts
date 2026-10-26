@@ -2030,6 +2030,29 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ADD COLUMN IF NOT EXISTS max_purchased_lifelines INT NOT NULL DEFAULT 5
     `).catch(() => {});
 
+    // ── Course-scoped Lifeline Pool (2026-10-24) ─────────────────────────────
+    // Replaces per-episode lifeline state with a single pool per member per course.
+    // 3 free lifelines are available by default; purchased lifelines extend the pool.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_course_lifelines (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        free_used INT NOT NULL DEFAULT 0,
+        purchased_total INT NOT NULL DEFAULT 0,
+        purchased_used INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_mcl_member_course UNIQUE (member_id, course_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_mcl_member ON member_course_lifelines(member_id)`
+    ).catch(() => {});
+    // Global coin cost for purchasing one extra course lifeline
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS lifeline_coin_cost INT NOT NULL DEFAULT 50`
+    ).catch(() => {});
+
     // ── Razorpay course payments (2026-09-23) ────────────────────────────────
     // Three separate calls — see CLAUDE.md pitfall #32 (multi-statement fails).
     await prisma.$executeRawUnsafe(
@@ -2324,6 +2347,22 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     `).catch(() => {});
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_coin_orders_member ON coin_orders(member_id)`
+    ).catch(() => {});
+    // Upfront coin purchases of extra support call quota. Member spends coins to
+    // pre-purchase N extra calls for a category; the purchased quantity is added
+    // to their allocated count so they can book slots without per-slot coin deduction.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS support_call_coin_purchases (
+        id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id   UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        category    VARCHAR(50) NOT NULL,
+        quantity    INT NOT NULL CHECK (quantity > 0),
+        coins_each  INT NOT NULL CHECK (coins_each > 0),
+        purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_sccp_member ON support_call_coin_purchases(member_id)`
     ).catch(() => {});
 
     // ── Admin-configurable Weekly Activity Graph (2026-10-17) ───────────────

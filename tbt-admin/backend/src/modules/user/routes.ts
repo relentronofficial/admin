@@ -111,6 +111,7 @@ import {
   bookSupportCallHandler,
   cancelSupportCallBookingHandler,
   joinSupportCallHandler,
+  buyExtraSupportCallsHandler,
   getMyStreakPointsHandler,
   getMyStreakHandler,
   activityHeartbeatHandler,
@@ -119,6 +120,9 @@ import {
   heartbeatEpisodeTimerHandler,
   getEpisodeLifelinesHandler,
   useEpisodeLifelineHandler,
+  getCourseLifelinesHandler,
+  consumeCourseLifelineHandler,
+  purchaseCourseLifelinesHandler,
   submitEpisodeFormHandler,
   getMyEpisodeFormSubmissionHandler,
   getPsychometricQuestionsHandler,
@@ -168,6 +172,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/support-calls/sessions/:id/book', bookSupportCallHandler);
   fastify.post('/support-calls/bookings/:id/cancel', cancelSupportCallBookingHandler);
   fastify.get('/support-calls/bookings/:id/join', joinSupportCallHandler);
+  fastify.post('/support-calls/buy', buyExtraSupportCallsHandler);
 
   // ── Mentorship Dashboard ───────────────────────────────────────────────────
   fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
@@ -300,6 +305,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/episodes/:id/timer/heartbeat', heartbeatEpisodeTimerHandler);
   fastify.get('/episodes/:id/lifelines', getEpisodeLifelinesHandler);
   fastify.post('/episodes/:id/lifelines/use', useEpisodeLifelineHandler);
+  // ── Course-scoped lifeline pool ───────────────────────────────────────────
+  fastify.get('/courses/:id/lifelines', getCourseLifelinesHandler);
+  fastify.post('/courses/:id/lifelines/consume', consumeCourseLifelineHandler);
+  fastify.post('/courses/:id/lifelines/purchase', purchaseCourseLifelinesHandler);
   fastify.post('/episodes/:id/form-submissions', submitEpisodeFormHandler);
   fastify.get('/episodes/:id/form-submissions/mine', getMyEpisodeFormSubmissionHandler);
 

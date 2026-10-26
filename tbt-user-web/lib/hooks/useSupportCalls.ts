@@ -100,3 +100,17 @@ export function useJoinSupportCall() {
     mutationFn: async (bookingId: string) => (await supportCallsService.join(bookingId)).data.meetingUrl,
   });
 }
+
+/**
+ * Pre-purchase N extra call slots for a category using TBT coins.
+ * Coins are deducted immediately; the purchased quota is added to the member's
+ * allocation so future slot bookings don't require per-slot coin payment.
+ */
+export function useBuyExtraSupportCalls() {
+  const invalidate = useInvalidateSupportCalls();
+  return useMutation({
+    mutationFn: async (input: { category: SupportCallCategory; quantity: number; expectedCoinCostEach: number }) =>
+      (await supportCallsService.buyExtra(input)).data,
+    onSettled: invalidate,
+  });
+}
