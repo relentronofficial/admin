@@ -103,7 +103,7 @@ export async function updateOnboardingHandler(req: FastifyRequest, reply: Fastif
   ];
   const [updated] = await Promise.all(promises);
 
-  if (prismaFields.businessType !== undefined) {
+  if (prismaFields.businessType !== undefined || prismaFields.productServiceType !== undefined) {
     void invalidateMemberModuleAccess(req.server.redis ?? null, memberId);
   }
 

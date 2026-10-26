@@ -22,6 +22,8 @@ const MODULES = [
 ];
 
 let selections: Record<string, unknown>;
+/** The member's saved onboarding answers / program, as the members + programs rows hold them. */
+let profiles: Record<string, { business_type?: string | null; product_service_type?: string | null; program_modules?: unknown }>;
 let tableMissing: boolean;
 let updateFails: boolean;
 const updates: Array<{ memberId: string; value: string }> = [];
@@ -39,7 +41,12 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('SELECT s.allowed_modules, s.mentorship_modules') && q.includes('LEFT JOIN member_module_settings s')) {
     if (tableMissing) throw missingTable();
     const sel = selections[a[0]];
-    return [{ allowed_modules: null, mentorship_modules: sel === undefined ? null : sel, business_type: null, program_modules: null }];
+    const p = profiles[a[0]] ?? {};
+    return [{
+      allowed_modules: null, mentorship_modules: sel === undefined ? null : sel,
+      business_type: p.business_type ?? null, product_service_type: p.product_service_type ?? null,
+      program_modules: p.program_modules ?? null, resolved_module_key: p.business_type ?? null,
+    }];
   }
   if (q.startsWith('INSERT INTO member_module_settings (member_id, mentorship_modules')) {
     if (tableMissing) throw missingTable();
@@ -71,6 +78,7 @@ const load = (memberId?: string) => call(user.getMentorshipModulesHandler, { mem
 
 beforeEach(async () => {
   selections = {};
+  profiles = {};
   tableMissing = false;
   updateFails = false;
   updates.length = 0;
@@ -159,5 +167,63 @@ describe('onboarding step 2 — save mentorship modules', () => {
     const again = await save(['Product']);
     expect(again.status).toBe(200);
     expect(selections[MEMBER]).toEqual(['Product']);
+  });
+});
+
+describe('/courses modules from the onboarding business type (no explicit module selection)', () => {
+  const effective = async () => {
+    await invalidateMemberModuleAccess(null, MEMBER); // a fresh request: what a refresh or a new login reads
+    return (await load()).body.data;
+  };
+
+  it('Product-based → E-commerce (Product) only', async () => {
+    profiles[MEMBER] = { product_service_type: 'Product-based' };
+    const d = await effective();
+    expect(d.effective).toEqual(['Product']);
+    expect(d.selectionRequired).toBe(false);
+  });
+
+  it('Service-based → Service and Coaching', async () => {
+    profiles[MEMBER] = { product_service_type: 'Service-based' };
+    const d = await effective();
+    expect(d.effective).toEqual(['Service', 'Coaching']);
+    expect(d.selectionRequired).toBe(false);
+  });
+
+  it('Both → Product, Service and Coaching', async () => {
+    profiles[MEMBER] = { product_service_type: 'Both' };
+    expect((await effective()).effective).toEqual(['Product', 'Service', 'Coaching']);
+  });
+
+  it('the optional Course Track adds its module to the business type ones', async () => {
+    profiles[MEMBER] = { product_service_type: 'Product-based', business_type: 'Coaching' };
+    expect((await effective()).effective).toEqual(['Product', 'Coaching']);
+  });
+
+  it('missing or "Other" business type keeps the existing fallback (choose modules), never an error', async () => {
+    for (const p of [{}, { product_service_type: 'Other' }, { product_service_type: '  ' }]) {
+      profiles[MEMBER] = p;
+      const d = await effective();
+      expect(d.effective).toEqual([]);
+      expect(d.selectionRequired).toBe(true);
+    }
+  });
+
+  it('an explicit module selection still wins over the business type', async () => {
+    profiles[MEMBER] = { product_service_type: 'Service-based' };
+    await save(['Product']);
+    expect((await effective()).effective).toEqual(['Product']);
+  });
+
+  it("the program's module ceiling still applies (never widens access)", async () => {
+    profiles[MEMBER] = { product_service_type: 'Service-based', program_modules: ['Service'] };
+    expect((await effective()).effective).toEqual(['Service']);
+  });
+
+  it('changing the saved business type changes the modules on the next read', async () => {
+    profiles[MEMBER] = { product_service_type: 'Product-based' };
+    expect((await effective()).effective).toEqual(['Product']);
+    profiles[MEMBER] = { product_service_type: 'Service-based' };
+    expect((await effective()).effective).toEqual(['Service', 'Coaching']);
   });
 });

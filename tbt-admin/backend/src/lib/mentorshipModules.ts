@@ -10,11 +10,15 @@
 //      → programs.allowed_modules (via batch; [] = unrestricted) → unrestricted.
 //   2. The member's own selection (member_module_settings.mentorship_modules), made during
 //      onboarding. It can only narrow the ceiling, never widen it.
-//   3. Business-type derivation (members.business_type): when the member has
-//      no explicit selection, their business type is used as the default
-//      effective module (if it falls within the selectable set). This means
-//      a member who chose "Service" as their business type automatically sees
-//      the Service course tab without having to separately pick a module.
+//   3. Business-type derivation: when the member has no explicit selection,
+//      the modules their onboarding answers point to are the default
+//      effective modules (those within the selectable set):
+//        • members.product_service_type — the required onboarding "Business
+//          Type" (Product-based → Product (E-commerce); Service-based →
+//          Service + Coaching; Both → all three; Other → none), see
+//          modulesForProductServiceType;
+//        • members.business_type — the optional onboarding "Course Track"
+//          (mapped to one module through module_config.business_type_keys).
 //      The stored selection (mentorship_modules) always wins if non-null.
 //
 // A member with no saved selection AND no business type keeps the legacy
@@ -31,6 +35,23 @@ export interface ModuleAccessInput {
   selection: string[] | null;
   /** members.business_type — used as default effective when selection is null. */
   businessType?: string | null;
+  /** Modules derived from members.product_service_type (modulesForProductServiceType). */
+  businessTypeModules?: string[];
+}
+
+/**
+ * Modules the required onboarding "Business Type" answer
+ * (members.product_service_type: Product-based / Service-based / Both / Other)
+ * points to. Matching ignores case, spaces and hyphens. Anything else → [].
+ */
+export function modulesForProductServiceType(value: string | null | undefined): string[] {
+  const key = (value ?? '').toLowerCase().replace(/[^a-z]/g, '');
+  switch (key) {
+    case 'productbased': return ['Product'];
+    case 'servicebased': return ['Service', 'Coaching'];
+    case 'both': return ['Product', 'Service', 'Coaching'];
+    default: return [];
+  }
 }
 
 export interface ModuleAccess {
@@ -72,7 +93,7 @@ export function parseModuleList(raw: unknown): string[] | null {
 }
 
 export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
-  const { activeModules, adminOverride, programModules, selection, businessType } = input;
+  const { activeModules, adminOverride, programModules, selection, businessType, businessTypeModules } = input;
 
   const entitled: string[] | null =
     adminOverride !== null
@@ -82,14 +103,17 @@ export function resolveModuleAccess(input: ModuleAccessInput): ModuleAccess {
   const selectable = activeModules.filter((m) => entitled === null || entitled.includes(m));
 
   if (selection === null) {
-    // No explicit selection: use business type as the default effective module
-    // when it maps to a currently-selectable module.
-    if (businessType && selectable.includes(businessType)) {
+    // No explicit selection: the modules the member's business type points to
+    // (course track + onboarding business type) are the default effective
+    // modules, when they are currently selectable. Kept in active order.
+    const wanted = new Set([...(businessType ? [businessType] : []), ...(businessTypeModules ?? [])]);
+    const derived = selectable.filter((m) => wanted.has(m));
+    if (derived.length > 0) {
       return {
         entitled,
         selectable,
         selection: null,
-        effective: [businessType],
+        effective: derived,
         restricted: true,
         selectionRequired: false,
         businessTypeDerived: true,

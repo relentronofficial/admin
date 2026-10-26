@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  modulesForProductServiceType,
   parseModuleList,
   resolveModuleAccess,
   isCourseModuleAllowed,
@@ -174,5 +175,28 @@ describe('validateModuleSelection', () => {
   });
   it('rejects when nothing is selectable', () => {
     expect(validateModuleSelection(['Service'], []).ok).toBe(false);
+  });
+});
+
+describe('modulesForProductServiceType (onboarding "Business Type")', () => {
+  it('maps the onboarding options, ignoring case, spaces and hyphens', () => {
+    expect(modulesForProductServiceType('Product-based')).toEqual(['Product']);
+    expect(modulesForProductServiceType('product based')).toEqual(['Product']);
+    expect(modulesForProductServiceType('Service-based')).toEqual(['Service', 'Coaching']);
+    expect(modulesForProductServiceType('SERVICE-BASED')).toEqual(['Service', 'Coaching']);
+    expect(modulesForProductServiceType('Both')).toEqual(['Product', 'Service', 'Coaching']);
+    expect(modulesForProductServiceType('Other')).toEqual([]);
+    expect(modulesForProductServiceType(null)).toEqual([]);
+    expect(modulesForProductServiceType(undefined)).toEqual([]);
+  });
+
+  it('derived modules are limited to active, entitled modules, in module order', () => {
+    const base = { activeModules: ['Introduction', 'Product', 'Service', 'Coaching'], adminOverride: null, programModules: [], selection: null };
+    expect(resolveModuleAccess({ ...base, businessTypeModules: ['Coaching', 'Service'] }).effective).toEqual(['Service', 'Coaching']);
+    // Coaching withdrawn by the admin (module_config.is_active = false)
+    expect(resolveModuleAccess({ ...base, activeModules: ['Introduction', 'Product', 'Service'], businessTypeModules: ['Service', 'Coaching'] }).effective).toEqual(['Service']);
+    const r = resolveModuleAccess({ ...base, businessTypeModules: ['Service', 'Coaching'] });
+    expect(r.restricted).toBe(true);
+    expect(r.businessTypeDerived).toBe(true);
   });
 });
