@@ -1,6 +1,6 @@
 // Growth milestones on the Learning Roadmap — pure level logic.
 //
-// The member's batch-program milestones (Ads → Website → Funnels → 1 lakh →
+// The member's batch-program milestones (Ads → Website → Funnels → 1 lakh → 5 Lakhs →
 // 1 crore by default; admins can rename/reorder them per program) from
 // GET /api/user-batch/weekly-graph. Nothing here infers progress:
 //   • a milestone is REACHED only when the backend says so (`reached`), i.e.
@@ -35,6 +35,7 @@ export const DEFAULT_GROWTH_MILESTONES: ReadonlyArray<{ label: string; kind: "ac
   { label: "Website", kind: "activity" },
   { label: "Funnels", kind: "activity" },
   { label: "1 lakh", kind: "revenue" },
+  { label: "5 Lakhs", kind: "revenue" },
   { label: "1 crore", kind: "revenue" },
 ];
 

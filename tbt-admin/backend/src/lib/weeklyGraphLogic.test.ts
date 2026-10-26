@@ -260,6 +260,7 @@ describe('buildWeeklyGraph — per-milestone reached/dayNumber (Learning Roadmap
     expect(g.config.milestones.map((m) => ({ id: m.id, label: m.label, kind: m.kind }))).toEqual([
       { id: null, label: 'Ads', kind: 'activity' }, { id: null, label: 'Website', kind: 'activity' },
       { id: null, label: 'Funnels', kind: 'activity' }, { id: null, label: '1 lakh', kind: 'revenue' },
+      { id: null, label: '5 Lakhs', kind: 'revenue' },
       { id: null, label: '1 crore', kind: 'revenue' },
     ]);
     expect(g.config.milestones.every((m) => m.reached === false && m.dayNumber === null)).toBe(true);
@@ -310,6 +311,6 @@ describe('buildWeeklyGraph — per-milestone reached/dayNumber (Learning Roadmap
 
   it('default (unsaved) revenue milestones can never be reached — records need a saved milestone id', () => {
     const g = graph({ records: [{ milestoneId: 'anything', weekId: null }] });
-    expect(g.config.milestones.slice(3).map((m) => [m.id, m.reached])).toEqual([[null, false], [null, false]]);
+    expect(g.config.milestones.slice(3).map((m) => [m.id, m.reached])).toEqual([[null, false], [null, false], [null, false]]);
   });
 });

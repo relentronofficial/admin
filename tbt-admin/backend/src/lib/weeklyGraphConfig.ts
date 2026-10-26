@@ -52,6 +52,7 @@ export const DEFAULT_GRAPH_MILESTONES: ReadonlyArray<{ label: string; kind: Mile
   { label: 'Website', kind: 'activity' },
   { label: 'Funnels', kind: 'activity' },
   { label: '1 lakh', kind: 'revenue' },
+  { label: '5 Lakhs', kind: 'revenue' },
   { label: '1 crore', kind: 'revenue' },
 ];
 

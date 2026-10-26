@@ -166,7 +166,7 @@ function percent(part: number, whole: number): number | null {
 }
 
 // ── Milestone axis ───────────────────────────────────────────────────────────
-// The member graph's Y axis is Ads → Website → Funnels → 1 lakh → 1 crore.
+// The member graph's Y axis is Ads → Website → Funnels → 1 lakh → 5 Lakhs → 1 crore.
 // Only the first three are activity milestones that task completion can
 // evidence. Revenue milestones are never reached from tasks (approved tasks do
 // not prove revenue): only from the member's own reported revenue
