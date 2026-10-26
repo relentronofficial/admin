@@ -1940,7 +1940,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // ── Psychometric Assessment (2026-09-22) ────────────────────────────────
     // Standalone test available to all members from the profile page.
     // questions: admin-managed; responses: one per submission (members can retake).
-    prisma.$executeRawUnsafe(`
+    // Sequential awaits required so the unique index exists before the seed INSERT runs.
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS psychometric_questions (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         question_text TEXT NOT NULL,
@@ -1950,9 +1951,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         is_active BOOLEAN NOT NULL DEFAULT true,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {}),
-    prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_questions_active ON psychometric_questions(is_active, sort_order)`).catch(() => {}),
-    prisma.$executeRawUnsafe(`
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_questions_active ON psychometric_questions(is_active, sort_order)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_psychometric_questions_text ON psychometric_questions (question_text)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS psychometric_responses (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
@@ -1960,9 +1962,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         results JSONB NOT NULL DEFAULT '{}',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `).catch(() => {}),
-    prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_responses_member ON psychometric_responses(member_id, created_at DESC)`).catch(() => {}),
-    prisma.$executeRawUnsafe(`
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psychometric_responses_member ON psychometric_responses(member_id, created_at DESC)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
       INSERT INTO psychometric_questions (question_text, category, options, sort_order) VALUES
         ('How clearly can you describe your business 5 years from now?', 'Vision', '[{"id":"a","text":"I have a specific written vision with clear milestones","score":4},{"id":"b","text":"I have a general idea of where I want to go","score":3},{"id":"c","text":"I think about it sometimes but haven''t defined it clearly","score":2},{"id":"d","text":"I focus on today rather than the future","score":1}]', 1),
         ('When setting goals, how do you approach them?', 'Vision', '[{"id":"a","text":"I set SMART goals with deadlines and track progress weekly","score":4},{"id":"b","text":"I set goals at the start of the year and review occasionally","score":3},{"id":"c","text":"I have loose goals in mind but rarely write them down","score":2},{"id":"d","text":"I prefer to go with the flow rather than set goals","score":1}]', 2),
@@ -1979,8 +1981,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ('How do you respond when a business plan fails?', 'Resilience', '[{"id":"a","text":"I analyze what went wrong, learn from it, and pivot quickly","score":4},{"id":"b","text":"I take some time to recover, then replan with new learnings","score":3},{"id":"c","text":"Setbacks discourage me for a significant period","score":2},{"id":"d","text":"Failures make me question if I should continue","score":1}]', 13),
         ('How do you manage stress during challenging business periods?', 'Resilience', '[{"id":"a","text":"I have healthy coping strategies and stay productive under pressure","score":4},{"id":"b","text":"I manage stress reasonably well most of the time","score":3},{"id":"c","text":"Stress affects my focus and decision-making more than I''d like","score":2},{"id":"d","text":"I struggle significantly with stress and pressure","score":1}]', 14),
         ('What is your attitude toward criticism and feedback?', 'Resilience', '[{"id":"a","text":"I actively seek feedback and use it to improve consistently","score":4},{"id":"b","text":"I accept feedback well even when it stings","score":3},{"id":"c","text":"I accept feedback but find it hard to act on sometimes","score":2},{"id":"d","text":"Criticism feels personal and discourages me","score":1}]', 15)
-      ON CONFLICT DO NOTHING
-    `).catch(() => {}),
+      ON CONFLICT (question_text) DO NOTHING
+    `).catch(() => {});
 
     // ── Episode Timer Sessions (2026-09-16) ─────────────────────────────────
     // Server-side timer tracking so focus timers survive page refresh.
