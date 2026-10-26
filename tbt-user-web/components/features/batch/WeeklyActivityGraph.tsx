@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { progressionLine, weekProgressionPoints } from "./weeklyGraphProgression";
+import { progressionSvgPath, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -188,7 +188,7 @@ function WeeklyActivityGraphContent() {
   // and falls when a later week is missed (rules in weeklyGraphProgression.ts).
   // Recomputed on every render, so it follows refreshed data and configuration.
   const progression = weekProgressionPoints(weeks, colX, yFor);
-  const linePoints = progressionLine(progression);
+  const linePoints = progressionSvgPath(progression, LEFT, yFor(0));
   const progressTitle = (w: WeeklyGraphWeek) =>
     `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
 
@@ -301,8 +301,8 @@ function WeeklyActivityGraphContent() {
           {/* Progression line + one dot per week's progress point (drawn before
               the activity markers so those stay on top) */}
           {linePoints && (
-            <polyline data-testid="progress-line" points={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
-              strokeWidth={2.5} strokeLinejoin="miter" strokeLinecap="round" aria-hidden="true" />
+            <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
+              strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" />
           )}
           {progression.map((p) => (
             <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={3.5}

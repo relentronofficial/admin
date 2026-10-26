@@ -59,3 +59,39 @@ export function weekProgressionPoints(
 export function progressionLine(points: ProgressionPoint[]): string | null {
   return points.length >= 2 ? points.map((p) => `${p.x},${p.y}`).join(" ") : null;
 }
+
+/**
+ * Returns an SVG path `d` attribute using Catmull-Rom → cubic Bézier smooth
+ * interpolation.  The line always begins at the chart origin (originX, originY)
+ * and runs through every progression point; null when there are no real points
+ * (nothing to connect the origin to).
+ */
+export function progressionSvgPath(
+  points: ProgressionPoint[],
+  originX: number,
+  originY: number,
+): string | null {
+  if (points.length === 0) return null;
+  const all: { x: number; y: number }[] = [
+    { x: originX, y: originY },
+    ...points.map((p) => ({ x: p.x, y: p.y })),
+  ];
+  // Single progression point → straight line from origin
+  if (all.length === 2) {
+    return `M ${all[0].x},${all[0].y} L ${all[1].x},${all[1].y}`;
+  }
+  // Catmull-Rom → cubic Bézier: CP1 = P1 + (P2-P0)/6, CP2 = P2 - (P3-P1)/6
+  let d = `M ${all[0].x},${all[0].y}`;
+  for (let i = 0; i < all.length - 1; i++) {
+    const p0 = all[Math.max(0, i - 1)];
+    const p1 = all[i];
+    const p2 = all[i + 1];
+    const p3 = all[Math.min(all.length - 1, i + 2)];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(2)},${cp1y.toFixed(2)} ${cp2x.toFixed(2)},${cp2y.toFixed(2)} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
