@@ -268,12 +268,12 @@ function WeeklyActivityGraphContent() {
             ) : null,
           )}
 
-          {/* Milestone gridlines + labels (reached: accent; not reached: dashed) */}
+          {/* Milestone gridlines: always subtle and dashed, so the red progress line is the
+              only red line on the chart. A reached milestone shows through its accent label. */}
           {milestones.map((m, i) => (
             <g key={m.id ?? `m${i}`} aria-hidden="true">
               <line x1={LEFT} x2={width - RIGHT} y1={yFor(i + 1)} y2={yFor(i + 1)}
-                stroke={m.reached ? "var(--color-accent)" : "var(--color-border-subtle)"}
-                strokeWidth={m.reached ? 1.5 : 1} strokeDasharray={m.reached ? undefined : "3,3"} opacity={m.reached ? 0.55 : 0.9} />
+                stroke="var(--color-border-subtle)" strokeWidth={1} strokeDasharray="3,3" opacity={0.9} />
               <text data-testid="milestone-label" x={LEFT - 8} y={yFor(i + 1) + 4} textAnchor="end" fontSize="11"
                 fill={m.reached ? "var(--color-accent)" : "var(--color-text-secondary)"} fontWeight={m.reached ? "600" : "400"}>
                 {m.label}

@@ -237,13 +237,14 @@ describe("LearningRoadmap — Growth milestones tab", () => {
     expect(milestone(4).getAttribute("data-level-state")).not.toBe("completed");
   });
 
-  it("not in a batch: five default milestones, all locked, with a join message", () => {
+  it("not in a batch: the six default milestones, all locked, with a join message", () => {
+    const DEFAULT_LABELS = ["Ads", "Website", "Funnels", "1 lakh", "5 Lakhs", "1 crore"];
     growth.query.data = null;
     renderMap(["a1"]);
     openGrowth();
     expect(dialog().textContent).toContain("Join a batch program to unlock");
-    expect(mStates()).toEqual(["locked", "locked", "locked", "locked", "locked"]);
-    LABELS.forEach((label, i) => expect(milestone(i + 1).getAttribute("aria-label")).toContain(label));
+    expect(DEFAULT_LABELS.map((_, i) => milestone(i + 1).getAttribute("data-level-state"))).toEqual(DEFAULT_LABELS.map(() => "locked"));
+    DEFAULT_LABELS.forEach((label, i) => expect(milestone(i + 1).getAttribute("aria-label")).toContain(label));
   });
 
   it("loading and error (with retry) states", () => {

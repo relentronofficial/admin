@@ -39,8 +39,8 @@ const DEFAULT_MS = [
 const FOUR_WEEKS = [week('w1', 'W1', 1, 7, 0), week('w2', 'W2', 8, 14, 1), week('w3', 'W3', 15, 21, 2), week('w4', 'W4', 22, 28, 3)];
 
 describe('defaults', () => {
-  it('keeps the current five labels, three activity then two revenue', () => {
-    expect(DEFAULT_GRAPH_MILESTONES.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
+  it('keeps the default six labels, three activity then three revenue', () => {
+    expect(DEFAULT_GRAPH_MILESTONES.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '5 Lakhs', '1 crore']);
     expect(taskProgressCap(DEFAULT_GRAPH_MILESTONES)).toBe(3);
   });
 
