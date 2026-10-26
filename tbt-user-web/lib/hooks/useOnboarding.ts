@@ -71,6 +71,14 @@ export const useDeleteOnboardingDocument = () => {
 export const usePresignProfilePhoto = () =>
   useMutation({ mutationFn: onboardingService.presignProfilePhoto });
 
+export const useUploadProfilePhoto = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: onboardingService.uploadProfilePhoto,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["onboarding", "state"] }),
+  });
+};
+
 export const useSubmitOnboarding = () => {
   const queryClient = useQueryClient();
   return useMutation({
