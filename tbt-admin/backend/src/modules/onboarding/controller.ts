@@ -240,6 +240,75 @@ export async function uploadOnboardingDocumentHandler(req: FastifyRequest, reply
   return reply.status(201).send({ success: true, data: doc, error: null });
 }
 
+// POST /api/onboarding/photo/upload — member-facing, upload the profile photo via
+// the backend (same reason as documents/upload: the R2 bucket's CORS rejects a
+// direct browser PUT from the user-web domain). Saves the URL on the member so
+// the photo survives a refresh before the profile step is submitted.
+export async function uploadProfilePhotoHandler(req: FastifyRequest, reply: FastifyReply) {
+  const memberId = req.memberId!;
+  const { filename = 'photo' } = req.query as { filename?: string };
+
+  const member = await req.server.prisma.member.findUnique({ where: { id: memberId }, select: { verificationStatus: true } as any });
+  if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  if (!canEditOnboarding((member as any).verificationStatus)) {
+    return reply.status(403).send({ success: false, data: null, error: 'Profile photo cannot be changed in the current state' });
+  }
+
+  const contentType = (req.headers['content-type'] ?? '').split(';')[0].trim();
+  if (!contentType.startsWith('image/')) {
+    return reply.status(400).send({ success: false, data: null, error: 'Please choose an image file' });
+  }
+  const body = req.body as Buffer;
+  if (!Buffer.isBuffer(body) || body.length === 0) {
+    return reply.status(400).send({ success: false, data: null, error: 'No file received' });
+  }
+
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
+  const key = `members/${memberId}/${Date.now()}-${safeFilename}`;
+
+  let publicUrl: string | undefined;
+
+  // Primary: Bunny Storage
+  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
+    try {
+      const res = await fetch(`https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`, {
+        method: 'PUT',
+        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+        body: new Uint8Array(body),
+      });
+      if (res.ok) {
+        publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
+      } else {
+        req.log.warn(`Bunny profile photo upload [${res.status}] – trying R2`);
+      }
+    } catch (e: any) {
+      req.log.warn(`Bunny profile photo upload error – trying R2: ${e.message}`);
+    }
+  }
+
+  // Fallback: R2
+  if (!publicUrl && env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
+    try {
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY },
+      });
+      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+      publicUrl = env.BUNNY_CDN_URL ? `https://${env.BUNNY_CDN_URL}/${key}` : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
+    } catch (e: any) {
+      req.log.error(`R2 profile photo upload failed: ${e.message}`);
+    }
+  }
+
+  if (!publicUrl) {
+    return reply.status(502).send({ success: false, data: null, error: 'Upload failed – no storage service available' });
+  }
+
+  await req.server.prisma.member.update({ where: { id: memberId }, data: { profilePhotoUrl: publicUrl } as any });
+  return reply.status(201).send({ success: true, data: { publicUrl }, error: null });
+}
+
 // POST /api/onboarding/documents — member-facing, register an uploaded document
 export async function registerOnboardingDocumentHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = req.memberId!;
