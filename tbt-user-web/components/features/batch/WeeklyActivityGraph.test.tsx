@@ -236,7 +236,18 @@ describe("WeeklyActivityGraph", () => {
       return data;
     };
     const line = (container: HTMLElement) => container.querySelector('[data-testid="progress-line"]');
-    const pts = (container: HTMLElement) => line(container)!.getAttribute("points")!.split(" ").map((p) => p.split(",").map(Number));
+    // The line is a smooth <path d="M origin C … p1 C … p2 …"> (progressionSvgPath): it starts at the
+    // chart origin, then passes through each weekly point — the end point of every segment.
+    const onCurve = (container: HTMLElement) => {
+      const d = line(container)!.getAttribute("d")!;
+      const segs = d.trim().split(/(?=[MLC])/).map((x) => x.trim());
+      return segs.map((seg) => {
+        const nums = seg.slice(1).trim().split(/[\s,]+/).map(Number);
+        return nums.slice(-2); // M x,y | L x,y | C c1x,c1y c2x,c2y x,y → the point it reaches
+      });
+    };
+    const origin = (container: HTMLElement) => onCurve(container)[0];
+    const pts = (container: HTMLElement) => onCurve(container).slice(1);
     const dots = (container: HTMLElement) =>
       [...container.querySelectorAll('[data-testid="progress-point"]')].map((c) => [Number(c.getAttribute("cx")), Number(c.getAttribute("cy"))]);
     const weekX = (label: string) => {
@@ -336,15 +347,33 @@ describe("WeeklyActivityGraph", () => {
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it("draws no line with fewer than two started weeks (nothing fabricated), markers still drawn", async () => {
+    it("one week with progress: a line from the chart origin to that point; no progress at all: no line", async () => {
       const data = weeksData();
       data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({ ...w, progressLevel: null }))];
       get.mockResolvedValue(ok(data));
       const { container } = renderGraph();
       await chart();
-      expect(line(container)).toBeNull();
-      expect(dots(container)).toHaveLength(1);
+      expect(pts(container)).toEqual([[weekX("W1"), rowY("Ads")]]);
+      expect(dots(container)).toEqual(pts(container));
       expect(screen.getAllByTestId("activity-marker")).toHaveLength(8);
+      cleanup();
+
+      const none = weeksData();
+      none.weeks = none.weeks.map((w: any) => ({ ...w, progressLevel: w.progressLevel === null ? null : 0 }));
+      get.mockResolvedValue(ok(none));
+      const r = renderGraph();
+      await chart();
+      expect(line(r.container)).toBeNull(); // nothing fabricated
+      expect(r.container.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(0);
+    });
+
+    it("the line starts at the chart origin (Start, on the baseline left of W1)", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const { container } = renderGraph();
+      await chart();
+      const [ox, oy] = origin(container);
+      expect(ox).toBeLessThan(weekX("W1"));
+      expect(oy).toBeGreaterThan(rowY("Ads")); // the baseline is below the first milestone row
     });
 
     it("keeps the status legend unchanged", async () => {

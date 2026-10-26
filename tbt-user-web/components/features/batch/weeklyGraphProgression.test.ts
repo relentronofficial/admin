@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressionLine, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
+import { progressionLine, progressionSvgPath, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
 
 // x = weekIndex * 100, y = 100 - level * 10: easy to read back.
 const colX = (i: number) => i * 100;
@@ -52,5 +52,26 @@ describe("progressionLine", () => {
     expect(progressionLine(pts)).toBe("0,90 100,70 200,95");
     expect(progressionLine(pts.slice(0, 1))).toBeNull();
     expect(progressionLine([])).toBeNull();
+  });
+});
+
+describe("progressionSvgPath (smooth line from the chart origin)", () => {
+  const P = (x: number, y: number, i = 0) => ({ weekNumber: i + 1, weekIndex: i, level: 1, x, y });
+  const ends = (d: string) => d.trim().split(/(?=[MLC])/).map((seg) => seg.slice(1).trim().split(/[\s,]+/).map(Number).slice(-2));
+
+  it("no points → no line (nothing fabricated)", () => {
+    expect(progressionSvgPath([], 76, 200)).toBeNull();
+  });
+
+  it("one point → a straight segment from the origin to it", () => {
+    expect(progressionSvgPath([P(108, 160)], 76, 200)).toBe("M 76,200 L 108,160");
+  });
+
+  it("several points → starts at the origin and passes exactly through every point, in order", () => {
+    const pts = [P(108, 160, 0), P(172, 100, 1), P(236, 180, 2)];
+    const d = progressionSvgPath(pts, 76, 200)!;
+    expect(d.startsWith("M 76,200")).toBe(true);
+    expect(ends(d)).toEqual([[76, 200], [108, 160], [172, 100], [236, 180]]);
+    expect(d.match(/C /g)).toHaveLength(3);
   });
 });
