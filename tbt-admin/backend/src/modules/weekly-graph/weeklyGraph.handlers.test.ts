@@ -240,7 +240,7 @@ describe('before any configuration (backward compatibility)', () => {
     const c = await config();
     expect(c.saved).toBe(false);
     expect(c.weeks.map((w: any) => [w.id, w.label])).toEqual([[null, 'W1'], [null, 'W2'], [null, 'W3'], [null, 'W4']]);
-    expect(c.milestones.map((m: any) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
+    expect(c.milestones.map((m: any) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '5 Lakhs', '1 crore']);
   });
 
   it('the member graph is unchanged: default weeks, legacy milestone label still lifts', async () => {
@@ -327,26 +327,26 @@ describe('milestones (including revenue milestones)', () => {
     expect(g.weeks[0].progressLevel).toBe(3);
   });
 
-  it('changing "1 lakh" to "₹5 Lakhs" and adding "Sales Automation" shows in the member graph', async () => {
+  it('changing "1 lakh" to "₹2 Lakhs" and adding "Sales Automation" shows in the member graph', async () => {
     await call(graph.initializeHandler, { params: P });
     const lakh = (await config()).milestones.find((m: any) => m.label === '1 lakh');
-    await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { label: '₹5 Lakhs' } });
+    await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { label: '₹2 Lakhs' } });
     const created = await call(graph.createMilestoneHandler, { params: P, body: { label: 'Sales Automation', kind: 'activity' } });
     expect(created.status).toBe(200);
     // Put the new activity milestone after Funnels, before the revenue milestones
     const ids = (await config()).milestones.map((m: any) => m.id);
     const sa = created.body.data.id;
-    const order = [ids[0], ids[1], ids[2], sa, ids[3], ids[4]];
+    const order = [ids[0], ids[1], ids[2], sa, ids[3], ids[4], ids[5]];
     expect((await call(graph.reorderMilestonesHandler, { params: P, body: { ids: order } })).status).toBe(200);
     expect((await memberGraph()).config.milestones.map((m: any) => m.label))
-      .toEqual(['Ads', 'Website', 'Funnels', 'Sales Automation', '₹5 Lakhs', '1 crore']);
+      .toEqual(['Ads', 'Website', 'Funnels', 'Sales Automation', '₹2 Lakhs', '5 Lakhs', '1 crore']);
   });
 
   it('a disabled milestone leaves the member axis; a linked one cannot be deleted', async () => {
     await call(graph.initializeHandler, { params: P });
     const ms = (await config()).milestones;
     await call(graph.updateMilestoneHandler, { params: { ...P, id: ms[4].id }, body: { isActive: false } });
-    expect((await memberGraph()).config.milestones.map((m: any) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh']);
+    expect((await memberGraph()).config.milestones.map((m: any) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
     expect((await call(graph.deleteMilestoneHandler, { params: { ...P, id: ms[0].id } })).status).toBe(409); // linked activity
     expect((await call(graph.deleteMilestoneHandler, { params: { ...P, id: ms[4].id } })).status).toBe(200);
   });
@@ -487,22 +487,22 @@ describe('revenue milestones and activity markers (admin → API → member grap
   const milestoneByLabel = async (label: string) => (await config()).milestones.find((m: any) => m.label === label);
   const msOf = (g: any, label: string) => g.config.milestones.find((m: any) => m.label === label);
 
-  /** Admin turns the default "1 lakh" / "1 crore" into ₹1 Lakh / ₹5 Lakhs with real thresholds. */
+  /** Admin turns the default "1 lakh" / "5 Lakhs" into ₹1 Lakh / ₹5 Lakhs with real thresholds ("1 crore" keeps none). */
   const configureThresholds = async () => {
     await call(graph.initializeHandler, { params: P });
     const lakh = await milestoneByLabel('1 lakh');
-    const crore = await milestoneByLabel('1 crore');
+    const fiveLakhs = await milestoneByLabel('5 Lakhs');
     expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: lakh.id }, body: { label: '₹1 Lakh', threshold: 100000 } })).status).toBe(200);
-    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: crore.id }, body: { label: '₹5 Lakhs', threshold: '500000' } })).status).toBe(200);
+    expect((await call(graph.updateMilestoneHandler, { params: { ...P, id: fiveLakhs.id }, body: { label: '₹5 Lakhs', threshold: '500000' } })).status).toBe(200);
   };
 
   it('saved thresholds persist and the member graph uses them; nothing is reached without revenue', async () => {
     await configureThresholds();
     expect((await config()).milestones.filter((m: any) => m.kind === 'revenue').map((m: any) => [m.label, m.threshold]))
-      .toEqual([['₹1 Lakh', 100000], ['₹5 Lakhs', 500000]]);
+      .toEqual([['₹1 Lakh', 100000], ['₹5 Lakhs', 500000], ['1 crore', null]]);
     const g = await memberGraph();
     expect(g.config.milestones.filter((m: any) => m.kind === 'revenue').map((m: any) => [m.label, m.threshold, m.reached]))
-      .toEqual([['₹1 Lakh', 100000, false], ['₹5 Lakhs', 500000, false]]);
+      .toEqual([['₹1 Lakh', 100000, false], ['₹5 Lakhs', 500000, false], ['1 crore', null, false]]);
     expect(g.revenue).toEqual({ source: 'self_reported', totalToDate: null });
     expect(g.weeks.every((w: any) => w.cumulativeRevenue === null)).toBe(true);
   });
