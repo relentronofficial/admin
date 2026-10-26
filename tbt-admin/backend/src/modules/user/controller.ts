@@ -128,6 +128,27 @@ function invalidateStreakCache(redis: any, memberId: string) {
 const PROGRAM_TZ = resolveProgramTimezone(env.PROGRAM_TIMEZONE);
 const ACTIVITY_DATE_SQL = `(NOW() AT TIME ZONE '${PROGRAM_TZ}')::DATE`;
 
+// Catalog card totals. Task time is the admin-set tasks.estimated_minutes of the
+// active tasks on a course's visible episodes — never the focus-timer setting.
+const CATALOG_TASK_MINUTES_JOIN = `LEFT JOIN (
+  SELECT ce.course_id, SUM(t.estimated_minutes)::int AS task_minutes
+  FROM tasks t JOIN course_episodes ce ON ce.id = t.course_episode_id
+  WHERE t.is_active = true AND ce.is_visible = true
+  GROUP BY ce.course_id
+) tk ON tk.course_id = c.id`;
+
+// videoSeconds is null unless every visible episode has a known duration, so a
+// card never shows a partial sum as the course total.
+function catalogDurationTotals(r: any): { videoSeconds: number | null; taskMinutes: number | null } {
+  const totalSecs = Number(r.total_secs ?? 0);
+  const missing = Number(r.missing_secs_count ?? 0);
+  const taskMinutes = r.task_minutes != null ? Number(r.task_minutes) : null;
+  return {
+    videoSeconds: totalSecs > 0 && missing === 0 ? totalSecs : null,
+    taskMinutes: taskMinutes != null && taskMinutes > 0 ? taskMinutes : null,
+  };
+}
+
 // `markActive` is true for real member activity (lesson/episode/challenge/
 // assignment). A profile read (`GET /me`) passes false: viewing or refreshing
 // the page must not stamp `lastActiveAt`, which drives the Health recency
@@ -607,13 +628,14 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
   const catalogKey = canCache
-    ? `courses:catalog:v3:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
+    ? `courses:catalog:v4:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
     : null;
 
   type CatalogEntry = {
     id: string; title: string; slug: string; description: string | null;
     thumbnailUrl: string | null; level: string | null; durationHours: number | null;
     durationDisplay: string | null; taskDurationDisplay: string | null; price: number | null; isPublished: boolean;
+    videoSeconds: number | null; taskMinutes: number | null;
     isFeatured: boolean; createdAt: Date; xpPerEpisode: number;
     instructor: any; module: string | null; requiredTier: number;
     applicableBusinessTypes: string[] | null;
@@ -656,6 +678,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
           COALESCE(ea.total_secs, 0)::bigint AS total_secs,
           COALESCE(ea.total_timer_secs, 0)::bigint AS total_timer_secs,
+          COALESCE(ea.missing_secs_count, 0)::int AS missing_secs_count, tk.task_minutes,
           COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
           COUNT(*) OVER () AS total_count
         FROM courses c
@@ -663,9 +686,11 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         LEFT JOIN (
           SELECT course_id, COUNT(*)::int AS episode_count,
                  SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs,
-                 SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs
+                 SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs,
+                 COUNT(*) FILTER (WHERE COALESCE(duration_seconds, 0) <= 0)::int AS missing_secs_count
           FROM course_episodes WHERE is_visible = true GROUP BY course_id
         ) ea ON ea.course_id = c.id
+        ${CATALOG_TASK_MINUTES_JOIN}
         LEFT JOIN (
           SELECT course_id, COUNT(*)::int AS enrollment_count
           FROM course_enrollments GROUP BY course_id
@@ -711,6 +736,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
           batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
           _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
+          ...catalogDurationTotals(r),
         };
       });
 
@@ -747,6 +773,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
         COALESCE(ea.total_secs, 0)::bigint AS total_secs,
         COALESCE(ea.total_timer_secs, 0)::bigint AS total_timer_secs,
+        COALESCE(ea.missing_secs_count, 0)::int AS missing_secs_count, tk.task_minutes,
         COALESCE(enr.enrollment_count, 0)::int AS enrollment_count,
         COUNT(*) OVER () AS total_count
       FROM courses c
@@ -754,9 +781,11 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       LEFT JOIN (
         SELECT course_id, COUNT(*)::int AS episode_count,
                SUM(COALESCE(duration_seconds, 0))::bigint AS total_secs,
-               SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs
+               SUM(COALESCE(timer_seconds, 0))::bigint AS total_timer_secs,
+               COUNT(*) FILTER (WHERE COALESCE(duration_seconds, 0) <= 0)::int AS missing_secs_count
         FROM course_episodes WHERE is_visible = true GROUP BY course_id
       ) ea ON ea.course_id = c.id
+      ${CATALOG_TASK_MINUTES_JOIN}
       LEFT JOIN (
         SELECT course_id, COUNT(*)::int AS enrollment_count
         FROM course_enrollments GROUP BY course_id
@@ -801,6 +830,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
         batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
         _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
+        ...catalogDurationTotals(r),
       };
     });
   }
@@ -1010,6 +1040,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     episodeSectionRows,
     moduleRows,
     episodeModuleRows,
+    episodeTaskRows,
     moduleAccess,
   ] = await Promise.all([
     prisma.course.findUnique({
@@ -1063,6 +1094,14 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       `SELECT cem.episode_id, cem.module_id FROM course_episode_modules cem
        JOIN course_modules cm ON cm.id = cem.module_id WHERE cm.course_id = $1::uuid`, id,
     ).catch(() => [] as any[]),
+    // Admin-set estimated minutes of each episode's active tasks (same task set as
+    // GET /episodes/:id/tasks) — drives the "Task" total on the /courses cards.
+    prisma.$queryRawUnsafe<{ episode_id: string; task_minutes: number }[]>(
+      `SELECT t.course_episode_id AS episode_id, SUM(t.estimated_minutes)::int AS task_minutes
+       FROM tasks t JOIN course_episodes e ON e.id = t.course_episode_id
+       WHERE e.course_id = $1::uuid AND t.is_active = true
+       GROUP BY t.course_episode_id`, id,
+    ).catch(() => [] as { episode_id: string; task_minutes: number }[]),
     loadMemberModuleAccess(prisma, redis, memberId).catch((): ModuleAccess => ({ restricted: false, selection: null, selectable: [], effective: [], selectionRequired: false, businessTypeDerived: false, entitled: null })),
   ]);
 
@@ -1180,6 +1219,10 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     }]),
   );
 
+  const episodeTaskMinutesMap = new Map(
+    episodeTaskRows.map((r) => [r.episode_id, Number(r.task_minutes)]),
+  );
+
   const episodeModuleMap = new Map<string, string[]>();
   for (const r of (episodeModuleRows as any[])) {
     if (!episodeModuleMap.has(r.episode_id)) episodeModuleMap.set(r.episode_id, []);
@@ -1258,6 +1301,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       sectionOrder: episodeSectionMap.get(ep.id)?.sectionOrder ?? null,
       sectionTimerSeconds: episodeSectionMap.get(ep.id)?.sectionTimerSeconds ?? null,
       moduleIds: episodeModuleMap.get(ep.id) ?? [],
+      taskMinutes: episodeTaskMinutesMap.get(ep.id) ?? null,
       thumbnailUrl: ep.thumbnailUrl ?? null,
       sideContent: episodeSectionMap.get(ep.id)?.sideContent ?? null,
       formConfig: episodeSectionMap.get(ep.id)?.formConfig ?? null,

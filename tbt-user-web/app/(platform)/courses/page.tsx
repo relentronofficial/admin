@@ -10,6 +10,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
+import { formatMinutes, formatSeconds, sumLessonDurations } from "@/lib/utils/courseDurations";
 
 // ── Scroll-reveal + stagger hook (items 2 + 6) ───────────────────────────────
 function useRevealGrid(ref: React.RefObject<HTMLDivElement | null>, ready: boolean) {
@@ -55,6 +56,10 @@ interface SectionCardData {
   firstLessonId: string | null;
   isLocked: boolean;
   thumbnail: string | null;
+  /** Full video length of every lesson in the card; null if any length is unknown. */
+  videoSeconds: number | null;
+  /** Estimated minutes of the lessons' tasks; null when there are none. */
+  taskMinutes: number | null;
 }
 
 interface CourseModuleCardData {
@@ -67,6 +72,10 @@ interface CourseModuleCardData {
   firstLessonId: string | null;
   isLocked: boolean;
   thumbnail: string | null;
+  /** Full video length of every lesson in the card; null if any length is unknown. */
+  videoSeconds: number | null;
+  /** Estimated minutes of the lessons' tasks; null when there are none. */
+  taskMinutes: number | null;
 }
 
 interface ModuleConfig {
@@ -78,6 +87,26 @@ interface ModuleConfig {
   iconUrl: string | null;
   accentColor: string | null;
   sortOrder: number;
+}
+
+// "· Task: 30 min · Videos: 2 hr 15 min" — whole-card totals, each part shown
+// only when it is known. `leadingDot` separates it from text already in the row.
+function DurationParts({ taskMinutes, videoSeconds, leadingDot }: { taskMinutes: number | null | undefined; videoSeconds: number | null | undefined; leadingDot: boolean }) {
+  const parts = [
+    { label: "Task", value: formatMinutes(taskMinutes) },
+    { label: "Videos", value: formatSeconds(videoSeconds) },
+  ].filter((p): p is { label: string; value: string } => p.value != null);
+  return (
+    <>
+      {parts.map((p, i) => (
+        <span key={p.label} style={{ whiteSpace: "nowrap" }}>
+          {(leadingDot || i > 0) && <span style={{ margin: "0 5px", color: "#28282f" }}>·</span>}
+          <span>{p.label}: </span>
+          <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{p.value}</strong>
+        </span>
+      ))}
+    </>
+  );
 }
 
 // ── ModuleCard ────────────────────────────────────────────────────────────────
@@ -247,21 +276,7 @@ function ModuleCard({
 
           {/* Duration / price row */}
           <div style={{ color: "#72727c", fontSize: 11, lineHeight: 1 }}>
-            {course.durationDisplay && (
-              <>
-                <span>Video </span>
-                <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{course.durationDisplay}</strong>
-              </>
-            )}
-            {course.durationDisplay && course.taskDurationDisplay && (
-              <span style={{ margin: "0 5px", color: "#2e2e38" }}>·</span>
-            )}
-            {course.taskDurationDisplay && (
-              <>
-                <span>Tasks </span>
-                <strong style={{ color: "#c0c0ca", fontWeight: 500 }}>{course.taskDurationDisplay}</strong>
-              </>
-            )}
+            <DurationParts taskMinutes={course.taskMinutes} videoSeconds={course.videoSeconds} leadingDot={false} />
             {!course.hasAccess && !enrollment && course.price > 0 && (
               <span style={{ marginLeft: 6, color: "#ffe000", fontWeight: 700 }}>
                 ₹{(course.price as number).toLocaleString("en-IN")}
@@ -486,6 +501,7 @@ function SectionCard({
                 </span>
               </>
             )}
+            <DurationParts taskMinutes={section.taskMinutes} videoSeconds={section.videoSeconds} leadingDot />
           </div>
 
           {/* Status circle — top-right */}
@@ -734,6 +750,7 @@ function CourseModuleCard({
                 </span>
               </>
             )}
+            <DurationParts taskMinutes={module.taskMinutes} videoSeconds={module.videoSeconds} leadingDot />
           </div>
 
           {/* Status circle */}
@@ -1488,6 +1505,7 @@ export default function CoursesPage() {
         firstLessonId: secLessons[0]?.id ?? null,
         isLocked,
         thumbnail: secLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
+        ...sumLessonDurations(secLessons),
       };
     });
   }, [primaryCourseDetail]);
@@ -1518,6 +1536,7 @@ export default function CoursesPage() {
         isLocked,
         // Prefer the module's own thumbnail; fall back to the first episode thumbnail
         thumbnail: mod.thumbnailUrl ?? modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
+        ...sumLessonDurations(modLessons),
       };
     });
   }, [primaryCourseDetail]);
