@@ -367,6 +367,11 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
     readProfileExtras(req.server.prisma, memberId),
   ]);
   if (!member) return reply.status(404).send({ success: false, data: null, error: 'Member not found' });
+  // A verified member editing their details: every step was already saved by
+  // PATCH /api/onboarding, so finishing the wizard needs no new review.
+  if ((member as any).verificationStatus === 'verified') {
+    return reply.send({ success: true, data: { verificationStatus: 'verified', onboardingSubmittedAt: null }, error: null });
+  }
   if (!canSubmitOnboarding((member as any).verificationStatus)) {
     return reply.status(403).send({ success: false, data: null, error: 'Onboarding cannot be submitted in its current state' });
   }
