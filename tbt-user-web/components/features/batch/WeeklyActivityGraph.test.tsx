@@ -236,7 +236,7 @@ describe("WeeklyActivityGraph", () => {
       return data;
     };
     const line = (container: HTMLElement) => container.querySelector('[data-testid="progress-line"]');
-    // The line is a smooth <path d="M origin C … p1 C … p2 …"> (progressionSvgPath): it starts at the
+    // The line is a <path d="M origin L p1 L p2 …"> of straight segments: it starts at the
     // chart origin, then passes through each weekly point — the end point of every segment.
     const onCurve = (container: HTMLElement) => {
       const d = line(container)!.getAttribute("d")!;
@@ -344,8 +344,9 @@ describe("WeeklyActivityGraph", () => {
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
-      expect(Number(l.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(4);
-      expect(Number(l.getAttribute("stroke-width"))).toBeLessThanOrEqual(5);
+      expect(Number(l.getAttribute("stroke-width"))).toBe(2); // like the admin Members revenue chart line
+      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( L [\d.]+,[\d.]+)+$/); // straight segments, no curves
+      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("2.5");
       const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
