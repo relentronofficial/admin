@@ -872,21 +872,17 @@ export default function CoursesPage() {
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
       <div style={{ paddingTop: 32, paddingBottom: 16, borderTop: "1px solid #2a2a2e" }}>
-        <div className="flex flex-col sm:flex-row sm:items-start gap-6 justify-between">
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
-              ✦ Tamil Business Tribe
-            </div>
-            <div style={{ fontSize: 12, color: "#92929b", maxWidth: 280, lineHeight: 1.6 }}>
-              {uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance."}
-            </div>
+        <div className="flex flex-col items-center text-center px-4">
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
+            ✦ Tamil Business Tribe
           </div>
-          <div style={{ fontSize: 12, color: "#92929b" }}>
-            <div style={{ marginBottom: 6 }}>📞 +91 80151 39542</div>
-            <div style={{ marginBottom: 12 }}>✉ helpdesk@tamilbusinesstribe.com</div>
-            <div style={{ fontSize: 10, color: "#55555b" }}>
-              © {new Date().getFullYear()} Tamil Business Tribe. All rights reserved.
-            </div>
+          <div style={{ fontSize: 12, color: "#92929b", lineHeight: 1.6 }}>
+            {/* One sentence per line, centred under the logo */}
+            {(uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance.")
+              .split(/(?<=\.)\s+/)
+              .map((line: string, i: number) => (
+                <div key={i}>{line}</div>
+              ))}
           </div>
         </div>
       </div>
