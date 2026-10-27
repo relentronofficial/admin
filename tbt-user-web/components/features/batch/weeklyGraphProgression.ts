@@ -58,12 +58,13 @@ export function weekProgressionPoints(
 }
 
 /**
- * Where the red line runs: one point per started week, at the higher of the
- * week's measured progress (progressLevel) and its highest activity marker, so
- * the line passes through the dots the member sees — whatever their status —
- * while revenue progression still lifts it. Weeks not started (progressLevel
- * null) and weeks with nothing above the baseline get no point, so the line
- * never runs along the X axis. The small progress dots keep using
+ * Where the red line runs: one point per week, at the higher of the week's
+ * measured progress (progressLevel) and its highest activity marker, so the
+ * line passes through the dots the member sees — whatever their status — while
+ * revenue progression still lifts it. A week that has not started yet
+ * (progressLevel null) counts as no progress, so a newly added week's dot still
+ * extends the line. Weeks with nothing above the baseline get no point, so the
+ * line never runs along the X axis. The small progress dots keep using
  * weekProgressionPoints (approved progress only).
  */
 export function weekLinePoints(
@@ -73,8 +74,7 @@ export function weekLinePoints(
 ): ProgressionPoint[] {
   const points: ProgressionPoint[] = [];
   weeks.forEach((w, i) => {
-    const progress = w.progressLevel;
-    if (typeof progress !== "number" || !Number.isFinite(progress)) return;
+    const progress = typeof w.progressLevel === "number" && Number.isFinite(w.progressLevel) ? w.progressLevel : 0;
     const topMarker = (w.activities ?? []).reduce(
       (top, a) => (typeof a?.level === "number" && Number.isFinite(a.level) ? Math.max(top, a.level) : top),
       0,

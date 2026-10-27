@@ -338,6 +338,26 @@ describe("WeeklyActivityGraph", () => {
       expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W4"].map(weekX));
     });
 
+    it("extends to a newly added week's dot (W6), then to W7 when its data arrives", async () => {
+      // W4 is the current week; W5 has not started and has only a baseline dot.
+      const data = weeksData();
+      data.weeks.push(week(6, { activities: [activity("t6", "Website W6", 38, "upcoming", ["m-web", "Website", 2])], total: 1 }));
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(pts(container).at(-1)).toEqual([weekX("W6"), rowY("Website")]);
+      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4", "W6"].map(weekX));
+
+      const later = weeksData();
+      later.weeks.push(
+        week(6, { activities: [activity("t6", "Website W6", 38, "upcoming", ["m-web", "Website", 2])], total: 1 }),
+        week(7, { activities: [activity("t7", "Funnels W7", 45, "upcoming", ["m-fun", "Funnels", 3])], total: 1 }),
+      );
+      lastQc.setQueryData(["my-batch", "weekly-graph"], later);
+      await waitFor(() => expect(pts(container).at(-1)).toEqual([weekX("W7"), rowY("Funnels")]));
+      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4", "W6", "W7"].map(weekX));
+    });
+
     it("is drawn red and under the markers, so marker borders stay visible", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
@@ -353,7 +373,10 @@ describe("WeeklyActivityGraph", () => {
 
     it("one week with a dot: a line from the chart origin to it; nothing above the baseline: no line", async () => {
       const data = weeksData();
-      data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({ ...w, progressLevel: null }))];
+      data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({
+        ...w, progressLevel: null,
+        activities: w.activities.map((a: any) => ({ ...a, milestoneId: null, milestoneLabel: null, level: 0 })),
+      }))];
       get.mockResolvedValue(ok(data));
       const { container } = renderGraph();
       await chart();
