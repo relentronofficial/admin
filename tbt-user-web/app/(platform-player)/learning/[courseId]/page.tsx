@@ -3147,6 +3147,37 @@ export default function CourseDetailPage({
       <div ref={topRef}>
         {selectedLesson ? (
           <div className="space-y-4">
+            {!selectedLesson.videoUrl ? (
+              /* ── Text lesson: full-width content block, no aspect-ratio constraint ── */
+              <div
+                className="w-full rounded-xl overflow-hidden"
+                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle, rgba(255,255,255,0.08))" }}
+              >
+                <div className="p-6 md:p-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <FileText size={18} style={{ color: "var(--color-accent)" }} />
+                    <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+                      Reading Material
+                    </span>
+                  </div>
+                  {(() => {
+                    const sc = (selectedLesson as any).sideContent;
+                    const body = (sc?.enabled && sc?.text?.trim()) ? sc.text.trim()
+                      : (selectedLesson.description?.trim() ?? "");
+                    return body ? (
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap"
+                        style={{ color: "var(--color-text-secondary)" }}>
+                        {body}
+                      </p>
+                    ) : (
+                      <p className="text-sm italic" style={{ color: "var(--color-text-subtle)" }}>
+                        No content for this lesson yet.
+                      </p>
+                    );
+                  })()}
+                </div>
+              </div>
+            ) : (
             <VideoWatermark
               className="w-full aspect-video rounded-xl overflow-hidden relative bg-black"
               containerId="course-video-root"
@@ -3178,7 +3209,7 @@ export default function CourseDetailPage({
                   allow="accelerometer; gyroscope; autoplay; encrypted-media"
                   title={selectedLesson.title}
                 />
-              ) : selectedLesson.videoUrl ? (
+              ) : (
                 <VideoPlayer
                   key={`${selectedLesson.id}-${videoKey}`}
                   src={selectedLesson.videoUrl}
@@ -3192,37 +3223,6 @@ export default function CourseDetailPage({
                   onSpeedChange={handleVideoSpeedChange}
                   onEnded={handleVideoEnded}
                 />
-              ) : (
-                /* Text lesson — no video; show content in the player area */
-                <div className="absolute inset-0 w-full h-full overflow-y-auto flex flex-col"
-                  style={{ background: "var(--color-bg-surface)" }}>
-                  <div className="flex-1 p-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <FileText size={18} style={{ color: "var(--color-accent)" }} />
-                      <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)" }}>
-                        Reading Material
-                      </span>
-                    </div>
-                    <h3 className="text-base font-semibold mb-3" style={{ color: "var(--color-text-normal)" }}>
-                      {selectedLesson.title}
-                    </h3>
-                    {(() => {
-                      const sc = (selectedLesson as any).sideContent;
-                      const body = (sc?.enabled && sc?.text?.trim()) ? sc.text.trim()
-                        : (selectedLesson.description?.trim() ?? "");
-                      return body ? (
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap"
-                          style={{ color: "var(--color-text-secondary)" }}>
-                          {body}
-                        </p>
-                      ) : (
-                        <p className="text-sm italic" style={{ color: "var(--color-text-subtle)" }}>
-                          No content for this lesson yet.
-                        </p>
-                      );
-                    })()}
-                  </div>
-                </div>
               )}
               {showTimerOverlay && (() => {
                 const totalDuration = getLessonTimerDuration(selectedLesson);
@@ -3273,6 +3273,7 @@ export default function CourseDetailPage({
                 );
               })()}
             </VideoWatermark>
+            )}
 
             {/* ── Learning Challenge Timer Card ──────────────────────────────
                 Shows while timer is active OR when the lesson is already done

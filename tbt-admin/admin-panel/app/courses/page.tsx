@@ -101,6 +101,7 @@ const EMPTY_EP = {
   maxPurchasedLifelines: 5 as number,
   sideContent: { ...EMPTY_SIDE_CONTENT } as any,
   formConfig: { ...EMPTY_FORM_CONFIG } as any,
+  lessonType: "video" as "video" | "text",
   // Assessment type (2026-09) — a simplified single-task view over the same
   // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
   // completion_mode. "none" = no active task linked to this episode — only
@@ -967,6 +968,7 @@ function EpisodesTab({ course }: { course: any }) {
     // Normalise stored cues: add atTime display field
     const rawCues = ep.quizData?.cues ?? [];
     const cues = rawCues.map((c: any) => ({ ...c, atTime: secsToTime(c.atSeconds ?? 0) }));
+    const isText = ep.videoUrl === "";
     setEpForm({
       title: ep.title, videoUrl: ep.videoUrl, bunnyVideoId: ep.bunnyVideoId || "",
       position: ep.position != null ? String(ep.position) : "",
@@ -985,6 +987,7 @@ function EpisodesTab({ course }: { course: any }) {
       maxPurchasedLifelines: ep.maxPurchasedLifelines ?? 5,
       sideContent: ep.sideContent ?? { ...EMPTY_SIDE_CONTENT },
       formConfig: ep.formConfig ?? { ...EMPTY_FORM_CONFIG },
+      lessonType: isText ? "text" : "video",
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
@@ -1122,10 +1125,10 @@ function EpisodesTab({ course }: { course: any }) {
   const handleSaveEp = async () => {
     const errs: { title?: string; video?: string } = {};
     if (!epForm.title.trim()) errs.title = "Title is required";
-    if (!epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
+    if (epForm.lessonType !== "text" && !epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
     if (errs.title || errs.video) {
       setEpErrors(errs);
-      toast.error("Title and video are required");
+      toast.error(errs.title && errs.video ? "Title and video are required" : errs.title ? "Title is required" : "Video is required");
       return;
     }
     const rawPosition = String(epForm.position ?? "").trim();
@@ -1149,15 +1152,20 @@ function EpisodesTab({ course }: { course: any }) {
         .filter((c: any) => c.questions.length > 0);
       if (questions.length > 0 || cues.length > 0) quizData = { questions, cues };
     }
-    const { position: _position, ...epFields } = epForm;
+    const isTextLesson = epForm.lessonType === "text";
+    const { position: _position, lessonType: _lessonType, ...epFields } = epForm;
+    const finalSideContent = isTextLesson
+      ? { ...(epForm.sideContent ?? {}), enabled: true }
+      : epForm.sideContent;
     const payload = {
-      ...epFields, videoUrl: normalizedVideoUrl,
+      ...epFields,
+      videoUrl: isTextLesson ? "" : normalizedVideoUrl,
       ...(editingEp && rawPosition !== "" ? { position: Number(rawPosition) } : {}),
-      durationSeconds: Number(epForm.durationSeconds) || 0,
-      bunnyVideoId: epForm.bunnyVideoId || undefined,
+      durationSeconds: isTextLesson ? 0 : (Number(epForm.durationSeconds) || 0),
+      bunnyVideoId: isTextLesson ? undefined : (epForm.bunnyVideoId || undefined),
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
-      drmEnabled: epForm.drmEnabled,
-      bunnyDrmToken: epForm.bunnyDrmToken || undefined,
+      drmEnabled: isTextLesson ? false : epForm.drmEnabled,
+      bunnyDrmToken: isTextLesson ? undefined : (epForm.bunnyDrmToken || undefined),
       streakPoints: Number(epForm.streakPoints) || 0,
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
@@ -1167,7 +1175,7 @@ function EpisodesTab({ course }: { course: any }) {
       lifelineCount: Number(epForm.lifelineCount) || 3,
       lifelineCoinCost: Number(epForm.lifelineCoinCost) || 50,
       maxPurchasedLifelines: Number(epForm.maxPurchasedLifelines) || 5,
-      sideContent: epForm.sideContent,
+      sideContent: finalSideContent,
       formConfig: epForm.formConfig,
     };
     try {
@@ -1300,6 +1308,7 @@ function EpisodesTab({ course }: { course: any }) {
         <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
+          {ep.videoUrl === "" && <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 rounded font-bold uppercase flex items-center gap-0.5"><Type size={8} /> Text</span>}
           {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
           {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
           {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
@@ -1497,7 +1506,22 @@ function EpisodesTab({ course }: { course: any }) {
               {(epErrors as any).position && <p className="text-[10px] text-red-500 mt-1">{(epErrors as any).position}</p>}
             </div>
           )}
-          {/* Video */}
+          {/* Lesson Type */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Lesson Type</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setEpField("lessonType", "video")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.lessonType !== "text" ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                <Video size={10} /> Video
+              </button>
+              <button type="button" onClick={() => setEpField("lessonType", "text")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.lessonType === "text" ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                <Type size={10} /> Text
+              </button>
+            </div>
+          </div>
+          {/* Video — only for video lessons */}
+          {epForm.lessonType !== "text" && (
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
             <div className="flex items-center gap-2">
@@ -1516,6 +1540,21 @@ function EpisodesTab({ course }: { course: any }) {
             <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
+          )}
+          {/* Text Lesson Content — only for text lessons */}
+          {epForm.lessonType === "text" && (
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Lesson Content *</label>
+            <textarea
+              value={epForm.sideContent?.text ?? ""}
+              onChange={e => setEpField("sideContent", { ...(epForm.sideContent ?? {}), enabled: true, text: e.target.value })}
+              placeholder="Write the reading material, instructions, or notes for this lesson..."
+              rows={8}
+              className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
+            />
+            <p className="text-[10px] text-[#555] mt-1">This text will be displayed in the lesson player. Supports plain text with line breaks.</p>
+          </div>
+          )}
           {/* ── Inline Tasks ─────────────────────────────────────── */}
           <div className="border-t border-[#2a2a2a] pt-3 space-y-2">
             <div className="flex items-center justify-between">
