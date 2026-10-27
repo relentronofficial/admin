@@ -2625,6 +2625,37 @@ export default function CourseDetailPage({
     timerIntervalRef.current = setInterval(tick, 500);
   };
 
+  const handleTextComplete = useCallback(() => {
+    if (markCalledRef.current) return;
+    markCalledRef.current = true;
+    setAutoCompletingId(selectedLesson!.id);
+    markComplete.mutate({ lessonId: selectedLesson!.id, watchedSeconds: 5, isCompleted: true }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const saved = (res?.data ?? res)?.completed === true;
+        if (!saved) {
+          markCalledRef.current = false;
+          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
+          return;
+        }
+        if (selectedLessonRef.current?.id !== selectedLesson!.id) return;
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson!.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+        setPendingAdvance({ from: selectedLesson!.id, notBefore: Date.now() + 1500 });
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        markCalledRef.current = false;
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
   const handleSelectLessonWithFocus = (lesson: any) => {
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
@@ -3149,34 +3180,40 @@ export default function CourseDetailPage({
           <div className="space-y-4">
             {!selectedLesson.videoUrl ? (
               /* ── Text lesson: full-width content block, no aspect-ratio constraint ── */
-              <div
-                className="w-full rounded-xl overflow-hidden"
-                style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle, rgba(255,255,255,0.08))" }}
-              >
-                <div className="p-6 md:p-8">
-                  <div className="flex items-center gap-2 mb-4">
-                    <FileText size={18} style={{ color: "var(--color-accent)" }} />
-                    <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
-                      Reading Material
-                    </span>
+              (() => {
+                const sc = (selectedLesson as any).sideContent;
+                const interactionType: string = sc?.interactionType ?? "";
+                const body = (sc?.enabled && sc?.text?.trim()) ? sc.text.trim()
+                  : (selectedLesson.description?.trim() ?? "");
+                const isQuestion = !!interactionType;
+                return (
+                  <div
+                    className="w-full rounded-xl overflow-hidden"
+                    style={{ background: "var(--color-bg-surface)", border: `1px solid ${isQuestion ? "color-mix(in srgb, var(--color-accent) 25%, transparent)" : "var(--color-border-subtle, rgba(255,255,255,0.08))"}` }}
+                  >
+                    <div className="p-6 md:p-8">
+                      <div className="flex items-center gap-2 mb-4">
+                        {isQuestion
+                          ? <Brain size={18} style={{ color: "var(--color-accent)" }} />
+                          : <FileText size={18} style={{ color: "var(--color-accent)" }} />}
+                        <span className="text-xs font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>
+                          {isQuestion ? "Question" : "Reading Material"}
+                        </span>
+                      </div>
+                      {body ? (
+                        <p className="text-base font-semibold leading-relaxed whitespace-pre-wrap"
+                          style={{ color: isQuestion ? "var(--color-text-normal)" : "var(--color-text-secondary)" }}>
+                          {body}
+                        </p>
+                      ) : (
+                        <p className="text-sm italic" style={{ color: "var(--color-text-subtle)" }}>
+                          No content for this lesson yet.
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  {(() => {
-                    const sc = (selectedLesson as any).sideContent;
-                    const body = (sc?.enabled && sc?.text?.trim()) ? sc.text.trim()
-                      : (selectedLesson.description?.trim() ?? "");
-                    return body ? (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap"
-                        style={{ color: "var(--color-text-secondary)" }}>
-                        {body}
-                      </p>
-                    ) : (
-                      <p className="text-sm italic" style={{ color: "var(--color-text-subtle)" }}>
-                        No content for this lesson yet.
-                      </p>
-                    );
-                  })()}
-                </div>
-              </div>
+                );
+              })()
             ) : (
             <VideoWatermark
               className="w-full aspect-video rounded-xl overflow-hidden relative bg-black"
@@ -3321,43 +3358,45 @@ export default function CourseDetailPage({
                   <Loader2 size={13} className="animate-spin" /> Saving progress…
                 </span>
               ) : !selectedLesson.videoUrl ? (
-                /* Text lesson — manual complete button */
-                <button
-                  onClick={() => {
-                    if (markCalledRef.current) return;
-                    markCalledRef.current = true;
-                    setAutoCompletingId(selectedLesson.id);
-                    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: 5, isCompleted: true }, {
-                      onSuccess: (res: any) => {
-                        setAutoCompletingId(null);
-                        const saved = (res?.data ?? res)?.completed === true;
-                        if (!saved) {
-                          markCalledRef.current = false;
-                          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
-                          return;
-                        }
-                        if (selectedLessonRef.current?.id !== selectedLesson.id) return;
-                        justCompletedInSessionRef.current = true;
-                        setWatchState("completed");
-                        const allLessons = courseRef.current?.lessons ?? [];
-                        const allDone = allLessons.length > 0 &&
-                          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
-                        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
-                        setPendingAdvance({ from: selectedLesson.id, notBefore: Date.now() + 1500 });
-                      },
-                      onError: (err: any) => {
-                        setAutoCompletingId(null);
-                        markCalledRef.current = false;
-                        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
-                      },
-                    });
-                  }}
-                  disabled={markComplete.isPending}
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
-                  style={{ background: "var(--color-accent)", color: "#fff" }}
-                >
-                  <CheckCircle2 size={13} /> Mark Complete
-                </button>
+                /* Text lesson — interactive response or plain mark-complete */
+                (() => {
+                  const sc = (selectedLesson as any).sideContent;
+                  const interactionType: string = sc?.interactionType ?? "";
+                  if (interactionType === "yes_no" || interactionType === "agree_disagree") {
+                    const [posLabel, negLabel] = interactionType === "yes_no"
+                      ? ["Yes", "No"]
+                      : ["I Agree", "I Disagree"];
+                    return (
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          onClick={() => toast("Re-read the question and come back when you're ready!", { icon: "📖", id: "lesson-disagree" })}
+                          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 border"
+                          style={{ borderColor: "var(--color-border-medium, rgba(255,255,255,0.15))", color: "var(--color-text-subtle)" }}
+                        >
+                          {negLabel}
+                        </button>
+                        <button
+                          onClick={handleTextComplete}
+                          disabled={markComplete.isPending}
+                          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
+                          style={{ background: "var(--color-accent)", color: "#fff" }}
+                        >
+                          <CheckCircle2 size={13} /> {posLabel}
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      onClick={handleTextComplete}
+                      disabled={markComplete.isPending}
+                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
+                      style={{ background: "var(--color-accent)", color: "#fff" }}
+                    >
+                      <CheckCircle2 size={13} /> Mark Complete
+                    </button>
+                  );
+                })()
               ) : null}
             </div>
 

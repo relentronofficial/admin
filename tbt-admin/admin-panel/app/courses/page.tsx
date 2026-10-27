@@ -1555,6 +1555,23 @@ function EpisodesTab({ course }: { course: any }) {
               className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
             />
             <p className="text-[10px] text-[#555] mt-1">This text will be displayed in the lesson player. Supports plain text with line breaks.</p>
+            <div className="mt-3">
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Member Response Type</label>
+              <div className="flex gap-2">
+                {([
+                  { value: "", label: "None (Read Only)" },
+                  { value: "yes_no", label: "Yes / No" },
+                  { value: "agree_disagree", label: "Agree / Disagree" },
+                ] as const).map(opt => (
+                  <button key={opt.value} type="button"
+                    onClick={() => setEpField("sideContent", { ...(epForm.sideContent ?? {}), enabled: true, interactionType: opt.value })}
+                    className={`flex-1 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${(epForm.sideContent?.interactionType ?? "") === opt.value ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#555] mt-1">Choose how the member responds to complete this lesson.</p>
+            </div>
           </div>
           )}
           {/* Assessment Check By — only for new episodes */}
