@@ -32,6 +32,7 @@ vi.mock("@/lib/hooks/useOnboarding", () => ({
   useDeleteOnboardingDocument: () => idle,
   useSubmitOnboarding: () => idle,
   usePresignProfilePhoto: () => idle,
+  useUploadProfilePhoto: () => idle,
 }));
 vi.mock("@/lib/hooks/useOnboardingMeetings", () => ({ useMyOnboardingMeetings: () => ({ data: [] }) }));
 vi.mock("@/lib/hooks/useUser", () => ({
@@ -73,7 +74,6 @@ describe("Onboarding — Choose your mentorship (step 2)", () => {
     [/Product Mastery/, "Product"],
     [/Service Excellence/, "Service"],
     [/Business Coaching/, "Coaching"],
-    [/^Introduction/, "Introduction"],
   ])("saves %s as %j and advances to the next step on success", async (label, moduleName) => {
     openMentorshipStep();
     const at = progress();
@@ -110,6 +110,13 @@ describe("Onboarding — Choose your mentorship (step 2)", () => {
     expect(state.update.mutateAsync).toHaveBeenCalledTimes(1);
     resolve({ selection: ["Product"] });
     await waitFor(() => expect(screen.queryByText("Choose your mentorship")).toBeNull());
+  });
+
+  it("does not offer Introduction; Product Mastery, Service Excellence and Business Coaching are offered", () => {
+    openMentorshipStep();
+    expect(screen.queryByRole("button", { name: /^Introduction/ })).toBeNull();
+    expect(screen.queryByText("Introduction")).toBeNull();
+    for (const label of [/Product Mastery/, /Service Excellence/, /Business Coaching/]) expect(option(label)).toBeTruthy();
   });
 
   it("Continue is disabled until a module is selected", () => {

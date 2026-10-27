@@ -842,7 +842,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
             ) : (
               <MentorshipModuleOptions
-                options={mentorshipData.options}
+                // Step 2 does not offer the Introduction module (shown elsewhere unchanged).
+                options={mentorshipData.options.filter((o) => o.moduleName !== "Introduction")}
                 value={mentorshipValue}
                 onChange={setMentorshipValue}
                 disabled={updateMentorship.isPending}
