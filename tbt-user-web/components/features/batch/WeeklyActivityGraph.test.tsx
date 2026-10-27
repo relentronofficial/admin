@@ -259,33 +259,35 @@ describe("WeeklyActivityGraph", () => {
       return Number(t.getAttribute("y")) - 4;
     };
 
-    it("connects only the real weekly points: up, then down, with no line along the baseline", async () => {
+    it("runs through each started week's highest visible dot (or its progress when higher), never along the baseline", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const p = pts(container);
-      // W3 had nothing approved (level 0) and W5 has not started: neither gets a point.
-      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W4"].map(weekX));
+      // W5 has not started: no point. W3's awaiting-approval Website dot is on the line.
+      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4"].map(weekX));
       expect(p[0][1]).toBe(rowY("Ads"));
       expect(p[1][1]).toBe(rowY("Funnels"));
+      expect(p[2][1]).toBe(rowY("Website"));
       const ys = p.map(([, y]) => y);
       expect(ys[1]).toBeLessThan(ys[0]); // up
-      expect(ys[2]).toBeGreaterThan(ys[1]); // down: W4 only half approved
-      expect(ys[2]).toBeGreaterThan(rowY("Website")); // 1.5 sits between Ads and Website
-      expect(ys[2]).toBeLessThan(rowY("Ads"));
+      expect(ys[2]).toBeGreaterThan(ys[1]); // down
+      expect(ys[3]).toBeGreaterThan(rowY("Website")); // W4 progress 1.5 sits between Ads and Website
+      expect(ys[3]).toBeLessThan(rowY("Ads"));
       // Nothing on the baseline: no segment duplicates the X axis.
       expect(ys.every((y) => y <= rowY("Ads"))).toBe(true);
-      expect(dots(container)).toEqual(p); // a dot on every point, exactly on the line
+      // The approved-progress dots keep their places, each one on the line.
+      expect(dots(container)).toEqual([p[0], p[1], p[3]]);
     });
 
-    it("awaiting approval, in progress and not started never lift a week", async () => {
+    it("the line passes through an awaiting-approval dot; the progress dot still counts approved work only", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      // W3's "Website" activity is awaiting approval: its marker stays on the Website row, but W3 gets no progress point.
       const marker = screen.getByRole("button", { name: "W3, Website, Website W3, Awaiting approval" }).querySelector("circle")!;
       expect(Number(marker.getAttribute("cy"))).toBe(rowY("Website"));
-      expect(pts(container).map(([x]) => x)).not.toContain(weekX("W3"));
+      expect(pts(container)).toContainEqual([weekX("W3"), rowY("Website")]);
+      expect(dots(container).map(([x]) => x)).not.toContain(weekX("W3"));
     });
 
     it("shows revenue progression through the ₹1 lakh, ₹5 lakhs and ₹1 crore rows from reported revenue", async () => {
@@ -313,18 +315,18 @@ describe("WeeklyActivityGraph", () => {
       expect(ys[3]).toBe(rowY("₹1 crore"));
     });
 
-    it("an activity approved later lifts its own week on refresh", async () => {
+    it("an activity approved later adds its week's progress dot, on the line", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      const before = pts(container)[2][1];
+      expect(dots(container).map(([x]) => x)).not.toContain(weekX("W3"));
       const later = weeksData();
       later.weeks[2].activities[0] = activity("t3", "Website W3", 16, "completed", ["m-web", "Website", 2]);
       later.weeks[2].completed = 1;
       later.weeks[2].progressLevel = 2; // backend: Website link approved
       lastQc.setQueryData(["my-batch", "weekly-graph"], later);
-      await waitFor(() => expect(pts(container)[2][1]).toBe(rowY("Website")));
-      expect(pts(container)[2][1]).toBeLessThan(before);
+      await waitFor(() => expect(dots(container)).toContainEqual([weekX("W3"), rowY("Website")]));
+      expect(pts(container)[2]).toEqual([weekX("W3"), rowY("Website")]);
     });
 
     it("a week with nothing assigned is skipped, never a false dip to the baseline", async () => {
@@ -342,12 +344,13 @@ describe("WeeklyActivityGraph", () => {
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
-      expect(Number(l.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(2);
+      expect(Number(l.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(4);
+      expect(Number(l.getAttribute("stroke-width"))).toBeLessThanOrEqual(5);
       const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it("one week with progress: a line from the chart origin to that point; no progress at all: no line", async () => {
+    it("one week with a dot: a line from the chart origin to it; nothing above the baseline: no line", async () => {
       const data = weeksData();
       data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({ ...w, progressLevel: null }))];
       get.mockResolvedValue(ok(data));
@@ -359,7 +362,11 @@ describe("WeeklyActivityGraph", () => {
       cleanup();
 
       const none = weeksData();
-      none.weeks = none.weeks.map((w: any) => ({ ...w, progressLevel: w.progressLevel === null ? null : 0 }));
+      none.weeks = none.weeks.map((w: any) => ({
+        ...w,
+        progressLevel: w.progressLevel === null ? null : 0,
+        activities: w.activities.map((a: any) => ({ ...a, milestoneId: null, milestoneLabel: null, level: 0 })),
+      }));
       get.mockResolvedValue(ok(none));
       const r = renderGraph();
       await chart();
