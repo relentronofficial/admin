@@ -32,6 +32,7 @@ vi.mock("@/lib/hooks/useOnboarding", () => ({
   useDeleteOnboardingDocument: () => stable.idle,
   useSubmitOnboarding: () => stable.idle,
   usePresignProfilePhoto: () => stable.idle,
+  useUploadProfilePhoto: () => stable.idle,
 }));
 // No mentorship modules → no mentorship step: Welcome → the video steps.
 // Hook results are stable objects, as React Query returns them.
