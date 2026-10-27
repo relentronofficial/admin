@@ -1830,23 +1830,17 @@ export default function CoursesPage() {
       )}
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
-      <div style={{ paddingTop: 32, paddingBottom: 16, borderTop: "1px solid #2a2a2e" }}>
-        <div className="flex flex-col sm:flex-row sm:items-start gap-6 justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2" style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/tbt_logo.webp" alt="" width={120} height={28} className="h-6 sm:h-7 w-auto shrink-0 object-contain" />
-            </div>
-            <div style={{ fontSize: 12, color: "#92929b", maxWidth: 280, lineHeight: 1.6 }}>
-              {uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance."}
-            </div>
+      <div style={{ paddingTop: 32, paddingBottom: 32, borderTop: "1px solid #2a2a2e" }}>
+        {/* Logo with the tagline below it, centred; one tagline sentence per line. */}
+        <div className="flex flex-col items-center text-center px-4">
+          <div className="flex items-center justify-center gap-2" style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/tbt_logo.webp" alt="" width={120} height={28} className="h-6 sm:h-7 w-auto shrink-0 object-contain" />
           </div>
-          <div className="min-w-0 [overflow-wrap:anywhere]" style={{ fontSize: 12, color: "#92929b" }}>
-            <div style={{ marginBottom: 6 }}>📞 +91 80151 39542</div>
-            <div style={{ marginBottom: 12 }}>✉ helpdesk@tamilbusinesstribe.com</div>
-            <div style={{ fontSize: 10, color: "#55555b" }}>
-              © {new Date().getFullYear()} Tamil Business Tribe. All rights reserved.
-            </div>
+          <div style={{ fontSize: 12, color: "#92929b", lineHeight: 1.6 }}>
+            {(uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance.")
+              .split(/(?<=\.)\s+/)
+              .map((sentence, i) => <div key={i}>{sentence}</div>)}
           </div>
         </div>
       </div>
