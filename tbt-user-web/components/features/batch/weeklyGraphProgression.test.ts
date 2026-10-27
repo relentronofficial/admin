@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressionLine, progressionSvgPath, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
+import { progressionLine, progressionSvgPath, weekLinePoints, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
 
 // x = weekIndex * 100, y = 100 - level * 10: easy to read back.
 const colX = (i: number) => i * 100;
@@ -43,6 +43,47 @@ describe("weekProgressionPoints", () => {
   it("tolerates missing or broken values", () => {
     expect(levels([{ weekNumber: 1, progressLevel: undefined }, { weekNumber: 2, progressLevel: NaN, total: 1 }])).toEqual([]);
     expect(weekProgressionPoints([], colX, yFor)).toEqual([]);
+  });
+});
+
+describe("weekLinePoints (where the red line runs)", () => {
+  const dots = (...ls: Array<number | null | undefined>) => ls.map((level) => ({ level }));
+  const line = (weeks: ProgressionWeek[]) => weekLinePoints(weeks, colX, yFor).map((p) => [p.weekNumber, p.level]);
+
+  it("passes through each started week's highest dot, whatever its status", () => {
+    expect(line([
+      { ...w(1, 0), activities: dots(1) },
+      { ...w(2, 0), activities: dots(0, 3, 2) },
+      { ...w(3, 0), activities: dots(2) },
+    ])).toEqual([[1, 1], [2, 3], [3, 2]]);
+  });
+
+  it("uses the week's progress when it is higher than its dots (revenue progression)", () => {
+    expect(line([{ ...w(1, 4.5), activities: dots(3) }, { ...w(2, 1.5), activities: dots(1) }])).toEqual([[1, 4.5], [2, 1.5]]);
+  });
+
+  it("at exactly the week's column and that height", () => {
+    expect(weekLinePoints([{ ...w(1, 0), activities: dots(2) }], colX, yFor)).toEqual([
+      { weekNumber: 1, weekIndex: 0, level: 2, x: 0, y: 80 },
+    ]);
+  });
+
+  it("no point for weeks not started, or with nothing above the baseline", () => {
+    expect(line([
+      { ...w(1, 0), activities: dots(0, 0) },
+      { ...w(2, 0), activities: [] },
+      { ...w(3, null), activities: dots(3) },
+      { ...w(4, 0), activities: dots(1) },
+    ])).toEqual([[4, 1]]);
+  });
+
+  it("tolerates missing or broken levels", () => {
+    expect(line([
+      { ...w(1, 0), activities: dots(undefined, null, NaN) },
+      { weekNumber: 2, progressLevel: undefined, activities: dots(2) },
+      { ...w(3, 1) },
+    ])).toEqual([[3, 1]]);
+    expect(weekLinePoints([], colX, yFor)).toEqual([]);
   });
 });
 
