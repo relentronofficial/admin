@@ -1711,25 +1711,31 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     timerSeconds?: number;
   };
 
-  const accessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId);
+  // Every DB round trip here costs ~0.35 s in production (Cloud Run → Supabase
+  // pooler), so the independent reads run together instead of one after
+  // another; the checks below still apply in the same order (same responses).
+  // Course config is needed for thresholdFraction and the sequential-unlock
+  // guard; the all-episodes + all-progress scan is deferred until this call is
+  // about to write a NEW completion (see guard below).
+  const [accessRecord, inMemberModules, episode, courseUnlockCfg, existingProgress] = await Promise.all([
+    getCourseAccessRecord(request.server.prisma as any, request.memberId, courseId),
+    isCourseInMemberModules(request, courseId),
+    request.server.prisma.courseEpisode.findFirst({
+      where: { id: episodeId, courseId },
+      select: { id: true, title: true, durationSeconds: true },
+    }),
+    (request.server.prisma as any).course.findUnique({
+      where: { id: courseId },
+      select: { requireSequential: true, completionThresholdPercent: true },
+    }) as Promise<{ requireSequential: boolean | null; completionThresholdPercent: number | null } | null>,
+    (request.server.prisma as any).courseEpisodeProgress.findUnique({
+      where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
+      select: { completed: true, actualWatchedSecs: true, lastWatchedSecs: true, updatedAt: true },
+    }),
+  ]);
   if (!isAccessValid(accessRecord)) return fail(reply, 403, 'Access required for this course');
-  if (!(await isCourseInMemberModules(request, courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
-
-  const episode = await request.server.prisma.courseEpisode.findFirst({
-    where: { id: episodeId, courseId },
-    select: { id: true, title: true, durationSeconds: true },
-  });
+  if (!inMemberModules) return fail(reply, 403, MODULE_NOT_SELECTED);
   if (!episode) return fail(reply, 404, 'Episode not found in this course');
-
-  // Course config — needed for thresholdFraction and the sequential-unlock guard.
-  // The expensive all-episodes + all-progress scan is deferred: it runs only when
-  // this call is about to write a NEW completion (see guard below, after
-  // finalIsCompleted is computed). This avoids 2 DB queries on every 30-second
-  // heartbeat — those queries were the root cause of the 15 s Axios timeouts.
-  const courseUnlockCfg = await (request.server.prisma as any).course.findUnique({
-    where: { id: courseId },
-    select: { requireSequential: true, completionThresholdPercent: true },
-  }) as { requireSequential: boolean | null; completionThresholdPercent: number | null } | null;
   const requireSequential = courseUnlockCfg?.requireSequential ?? true;
 
   // Daily Time Spent: a validated progress post with real watched seconds is a
@@ -1745,11 +1751,6 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   let finalIsCompleted = false;
 
   const deviceId = request.headers['x-device-id'] as string | undefined;
-
-  const existingProgress = await (request.server.prisma as any).courseEpisodeProgress.findUnique({
-    where: { memberId_episodeId: { memberId: request.memberId, episodeId } },
-    select: { completed: true, actualWatchedSecs: true, lastWatchedSecs: true, updatedAt: true }
-  });
 
   // Log excessive skipping if the playhead jumped forward significantly without actual watch time
   if (
@@ -1772,9 +1773,9 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
     }).catch(() => {});
   }
 
-  // Update session last active time
+  // Update session last active time (bookkeeping only — never holds the response)
   if (deviceId) {
-    await request.server.prisma.memberSession.updateMany({
+    void request.server.prisma.memberSession.updateMany({
       where: { memberId: request.memberId, deviceId },
       data: { lastActiveAt: new Date() }
     }).catch(() => {});
@@ -1843,15 +1844,17 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   // catches it whether the completion came from an explicit `isCompleted: true`
   // flag or from heartbeat accumulation reaching the server threshold.
   if (requireSequential && finalIsCompleted && !existingProgress?.completed) {
-    const allEpisodes = await request.server.prisma.courseEpisode.findMany({
-      where: { courseId, isVisible: true },
-      orderBy: { order: 'asc' },
-      select: { id: true, order: true, durationSeconds: true },
-    });
-    const allProgress = await (request.server.prisma as any).courseEpisodeProgress.findMany({
-      where: { memberId: request.memberId, episodeId: { in: allEpisodes.map((e) => e.id) } },
-      select: { episodeId: true, actualWatchedSecs: true, lastWatchedSecs: true, completed: true },
-    });
+    const [allEpisodes, allProgress] = await Promise.all([
+      request.server.prisma.courseEpisode.findMany({
+        where: { courseId, isVisible: true },
+        orderBy: { order: 'asc' },
+        select: { id: true, order: true, durationSeconds: true },
+      }),
+      (request.server.prisma as any).courseEpisodeProgress.findMany({
+        where: { memberId: request.memberId, episode: { courseId, isVisible: true } },
+        select: { episodeId: true, actualWatchedSecs: true, lastWatchedSecs: true, completed: true },
+      }),
+    ]);
     const unlocked = isEpisodeUnlocked(
       episodeId,
       allEpisodes.map((e) => ({
@@ -1930,30 +1933,37 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
   })().catch(() => {});
 
   if (finalIsCompleted && !existingProgress?.completed) {
-    const pct = await recalculateCourseProgress(request, courseId);
+    // Course % and the XP award are independent — run them together.
+    const [pct, courseForXp] = await Promise.all([
+      recalculateCourseProgress(request, courseId),
+      (async () => {
+        const course = await request.server.prisma.course.findUnique({
+          where: { id: courseId },
+          select: { xpPerEpisode: true, title: true },
+        });
+        // XP (and its tbt_activity_log row) is written before the stats refresh
+        // below reads it. Idempotent: ON CONFLICT on (member_id, episode_id).
+        await awardEpisodeXp(
+          request.server.prisma as any,
+          request.memberId,
+          courseId,
+          episodeId,
+          (course as any)?.xpPerEpisode ?? 10,
+        );
+        return course;
+      })(),
+    ]);
     // Bust the enrollments cache so the /courses page progress bars reflect the
     // new progressPercentage immediately (not after the 60 s TTL expires).
     void invalidateCache(request.server.redis ?? null, `enrollments:v1:${request.memberId!}`);
-
-    const courseForXp = await request.server.prisma.course.findUnique({
-      where: { id: courseId },
-      select: { xpPerEpisode: true, title: true },
-    });
-    // Await XP award first so tbt_activity_log has today's row before
-    // recalculateMemberStats reads it. The function is fast (1–2 DB writes).
-    await awardEpisodeXp(
-      request.server.prisma as any,
-      request.memberId,
-      courseId,
-      episodeId,
-      (courseForXp as any)?.xpPerEpisode ?? 10,
-    );
     void awardVideoStreakPoints(request.server.prisma as any, request.memberId!, episodeId);
 
-    // Await so the Redis me: cache is invalidated before the 200 reaches the client.
-    // Profile page fetches /me immediately on mount; awaiting here guarantees a
-    // cache miss (fresh DB read) instead of a stale Redis hit.
-    await recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis, { markActive: true });
+    // Points / streak / health refresh: ~12 sequential statements (incl. the
+    // ledger backfill), ~4–5 s in production — awaiting it pushed completions
+    // past the client's 15 s timeout. It only updates the stored header totals
+    // and clears the me: cache when done (same as GET /me, which also runs it
+    // without waiting), so the completion response does not wait for it.
+    void recalculateMemberStats(request.server.prisma, request.memberId!, request.server.redis, { markActive: true }).catch(() => {});
 
     // 7.1 — episode complete notification
     void notifyEpisodeCompleted({
