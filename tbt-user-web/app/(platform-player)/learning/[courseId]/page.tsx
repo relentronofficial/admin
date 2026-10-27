@@ -113,6 +113,7 @@ interface SelectedLesson {
   actualWatchedSecs?: number;
   isCompleted?: boolean;
   sectionId?: string | null;
+  sideContent?: any | null;
 }
 
 // ── Practice Arena Modal (Retrieval Practice + Interleaving) ─────────────────
@@ -1770,37 +1771,36 @@ export default function CourseDetailPage({
         toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
         return;
       }
-      if (target && target.videoUrl && !(target as any).locked) {
+      if (target && !(target as any).locked) {
         const alreadyDone = lessonAlreadyDone(
           target.id, completedIds, (target as any).isCompleted,
           target.durationSeconds, (target as any).actualWatchedSecs, (target as any).resumeAtSeconds,
         );
         if (alreadyDone) {
-          // Completed lesson — auto-select and play immediately (no focus needed)
+          // Completed lesson — auto-select immediately (no focus needed)
           setSelectedLesson({
             id: target.id,
             title: target.title,
             description: (target as any).description ?? null,
-            videoUrl: target.videoUrl,
+            videoUrl: target.videoUrl ?? "",
             hlsUrl: (target as any).hlsUrl ?? null,
             durationSeconds: target.durationSeconds ?? 0,
             resumeAtSeconds: 0,
             actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
             isCompleted: true,
             sectionId: (target as any).sectionId ?? null,
+            sideContent: (target as any).sideContent ?? null,
           });
         } else {
-          // Incomplete lesson — show focus dialog instead of auto-playing
+          // Incomplete lesson — show focus dialog
           urlFocusDialogShownRef.current = targetLessonId;
           const dur = (target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300;
           setFocusDialog({ lesson: target, duration: dur });
         }
-      } else if (target && target.videoUrl && (target as any).locked) {
-        // Direct/deep-linked navigation to a locked lesson (e.g. a stale bookmark,
-        // shared link, or browser history entry) — tell the member why nothing opened
-        // instead of silently doing nothing.
+      } else if (target && (target as any).locked) {
+        // Direct/deep-linked navigation to a locked lesson
         urlFocusDialogShownRef.current = targetLessonId;
-        toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
+        toast.error("Complete the previous lesson first to unlock this one.", { id: "lesson-locked", duration: 3000 });
       }
     }
   }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1896,7 +1896,7 @@ export default function CourseDetailPage({
     setPendingAdvance(null);
     const lessons: any[] = scopedLessonsRef.current ?? courseRef.current?.lessons ?? [];
     const idx = lessons.findIndex((l: any) => l.id === pendingAdvance.from);
-    const next = idx >= 0 ? lessons.slice(idx + 1).find((l: any) => !!l.videoUrl) : undefined;
+    const next = idx >= 0 ? lessons.slice(idx + 1).find((l: any) => !l.locked) : undefined;
     if (!next) return; // final lesson — stay on it (course-complete toast already shown)
     clearInterval(upNextTimerRef.current);
     setUpNextVisible(false);
@@ -1935,7 +1935,7 @@ export default function CourseDetailPage({
     const currentIdx = lessons.findIndex((l: any) => l.id === selectedLessonRef.current?.id);
     if (currentIdx < 0 || currentIdx >= lessons.length - 1) return;
     const next = lessons[currentIdx + 1];
-    if (!next?.videoUrl) return;
+    if (!next) return;
     setUpNextVisible(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2552,7 +2552,6 @@ export default function CourseDetailPage({
     : null;
 
   const handleSelectLesson = (lesson: any) => {
-    if (!lesson.videoUrl) return;
     // Reset in-session completion flag synchronously so the completion effects
     // for the OLD lesson don't bleed into the newly selected lesson's render cycle.
     justCompletedInSessionRef.current = false;
@@ -2567,13 +2566,14 @@ export default function CourseDetailPage({
       id: lesson.id,
       title: lesson.title,
       description: lesson.description ?? null,
-      videoUrl: lesson.videoUrl,
+      videoUrl: lesson.videoUrl ?? "",
       hlsUrl: lesson.hlsUrl ?? null,
       durationSeconds: lesson.durationSeconds ?? 0,
       resumeAtSeconds: alreadyDone ? 0 : (lesson.resumeAtSeconds ?? 0),
       actualWatchedSecs: lesson.actualWatchedSecs ?? 0,
       isCompleted: alreadyDone,
       sectionId: (lesson as any).sectionId ?? null,
+      sideContent: (lesson as any).sideContent ?? null,
     });
     topRef.current?.scrollIntoView({ behavior: "smooth" });
     const sectionParam = targetSectionId ? `&section=${targetSectionId}` : "";
@@ -2626,12 +2626,11 @@ export default function CourseDetailPage({
   };
 
   const handleSelectLessonWithFocus = (lesson: any) => {
-    if (!lesson.videoUrl) return;
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
     if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
       // Fixed toast id de-dupes repeated clicks on the same locked lesson instead of stacking.
-      toast.error("Complete the previous video first to unlock this video.", { id: "lesson-locked", duration: 3000 });
+      toast.error("Complete the previous lesson first to unlock this one.", { id: "lesson-locked", duration: 3000 });
       return;
     }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
@@ -2954,8 +2953,10 @@ export default function CourseDetailPage({
                   You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
                   After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
                 </>
-              ) : (
+              ) : focusDialog.lesson.videoUrl ? (
                 "The video will start playing once you confirm."
+              ) : (
+                "Open this lesson to read the content."
               )}
             </p>
             <div className="flex gap-3">
@@ -2976,7 +2977,7 @@ export default function CourseDetailPage({
                 style={{ background: "var(--color-accent)" }}
               >
                 <Zap size={14} />
-                Start Video
+                {focusDialog.lesson.videoUrl ? "Start Video" : "Start Lesson"}
               </button>
             </div>
           </div>
@@ -3177,7 +3178,7 @@ export default function CourseDetailPage({
                   allow="accelerometer; gyroscope; autoplay; encrypted-media"
                   title={selectedLesson.title}
                 />
-              ) : (
+              ) : selectedLesson.videoUrl ? (
                 <VideoPlayer
                   key={`${selectedLesson.id}-${videoKey}`}
                   src={selectedLesson.videoUrl}
@@ -3191,6 +3192,37 @@ export default function CourseDetailPage({
                   onSpeedChange={handleVideoSpeedChange}
                   onEnded={handleVideoEnded}
                 />
+              ) : (
+                /* Text lesson — no video; show content in the player area */
+                <div className="absolute inset-0 w-full h-full overflow-y-auto flex flex-col"
+                  style={{ background: "var(--color-bg-surface)" }}>
+                  <div className="flex-1 p-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <FileText size={18} style={{ color: "var(--color-accent)" }} />
+                      <span className="text-sm font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)" }}>
+                        Reading Material
+                      </span>
+                    </div>
+                    <h3 className="text-base font-semibold mb-3" style={{ color: "var(--color-text-normal)" }}>
+                      {selectedLesson.title}
+                    </h3>
+                    {(() => {
+                      const sc = (selectedLesson as any).sideContent;
+                      const body = (sc?.enabled && sc?.text?.trim()) ? sc.text.trim()
+                        : (selectedLesson.description?.trim() ?? "");
+                      return body ? (
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap"
+                          style={{ color: "var(--color-text-secondary)" }}>
+                          {body}
+                        </p>
+                      ) : (
+                        <p className="text-sm italic" style={{ color: "var(--color-text-subtle)" }}>
+                          No content for this lesson yet.
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </div>
               )}
               {showTimerOverlay && (() => {
                 const totalDuration = getLessonTimerDuration(selectedLesson);
@@ -3265,7 +3297,8 @@ export default function CourseDetailPage({
             <div className="flex items-start justify-between gap-4">
               <div className="flex-1 min-w-0">
                 <h2 className="text-lg font-semibold text-foreground leading-snug">{selectedLesson.title}</h2>
-                {selectedLesson.description && (
+                {/* Show description for video lessons only — text lessons render it inside the player panel */}
+                {selectedLesson.description && !!selectedLesson.videoUrl && (
                   <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>
                     {selectedLesson.description}
                   </p>
@@ -3286,6 +3319,44 @@ export default function CourseDetailPage({
                 >
                   <Loader2 size={13} className="animate-spin" /> Saving progress…
                 </span>
+              ) : !selectedLesson.videoUrl ? (
+                /* Text lesson — manual complete button */
+                <button
+                  onClick={() => {
+                    if (markCalledRef.current) return;
+                    markCalledRef.current = true;
+                    setAutoCompletingId(selectedLesson.id);
+                    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: 5, isCompleted: true }, {
+                      onSuccess: (res: any) => {
+                        setAutoCompletingId(null);
+                        const saved = (res?.data ?? res)?.completed === true;
+                        if (!saved) {
+                          markCalledRef.current = false;
+                          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
+                          return;
+                        }
+                        if (selectedLessonRef.current?.id !== selectedLesson.id) return;
+                        justCompletedInSessionRef.current = true;
+                        setWatchState("completed");
+                        const allLessons = courseRef.current?.lessons ?? [];
+                        const allDone = allLessons.length > 0 &&
+                          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
+                        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+                        setPendingAdvance({ from: selectedLesson.id, notBefore: Date.now() + 1500 });
+                      },
+                      onError: (err: any) => {
+                        setAutoCompletingId(null);
+                        markCalledRef.current = false;
+                        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
+                      },
+                    });
+                  }}
+                  disabled={markComplete.isPending}
+                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
+                  style={{ background: "var(--color-accent)", color: "#fff" }}
+                >
+                  <CheckCircle2 size={13} /> Mark Complete
+                </button>
               ) : null}
             </div>
 
@@ -3296,7 +3367,7 @@ export default function CourseDetailPage({
                   onClick={() => {
                     if (currentLessonIdx > 0) handleSelectLessonWithFocus(lessons[currentLessonIdx - 1] as any);
                   }}
-                  disabled={currentLessonIdx === 0 || !(lessons[currentLessonIdx - 1] as any)?.videoUrl}
+                  disabled={currentLessonIdx === 0}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed"
                   style={{ border: "1px solid var(--color-border-strong)", color: "var(--color-text-subtle)" }}
                 >
@@ -3309,15 +3380,11 @@ export default function CourseDetailPage({
                   // Locked-next stays clickable (not disabled) so the click
                   // reaches handleSelectLessonWithFocus and surfaces the
                   // lock toast, instead of a disabled button silently
-                  // swallowing the click. Only a real dead end (no next
-                  // lesson, or it has no video) is disabled.
+                  // swallowing the click. Only a real dead end (last lesson) is disabled.
                   onClick={() => {
                     if (currentLessonIdx < lessons.length - 1) handleSelectLessonWithFocus(lessons[currentLessonIdx + 1] as any);
                   }}
-                  disabled={
-                    currentLessonIdx === lessons.length - 1
-                    || !(lessons[currentLessonIdx + 1] as any)?.videoUrl
-                  }
+                  disabled={currentLessonIdx === lessons.length - 1}
                   title={
                     (lessons[currentLessonIdx + 1] as any)?.locked === true && watchState !== "completed"
                       ? "Complete the previous lesson to unlock."
@@ -3448,9 +3515,15 @@ export default function CourseDetailPage({
               </div>
             )}
 
-            {/* Episode Side Content (admin-configured text + buttons) */}
-            {(selectedLesson as any)?.sideContent?.enabled && (
+            {/* Episode Side Content (admin-configured text + buttons) — suppress for text lessons
+                since the text content is already rendered inside the player area */}
+            {!!(selectedLesson as any)?.sideContent?.enabled && !!selectedLesson.videoUrl && (
               <EpisodeSideContent config={(selectedLesson as any).sideContent} />
+            )}
+            {/* For text lessons, still render any side-content buttons so links stay accessible */}
+            {!!(selectedLesson as any)?.sideContent?.enabled && !selectedLesson.videoUrl &&
+              !!((selectedLesson as any)?.sideContent?.buttons?.filter((b: any) => b.label && b.destination).length) && (
+              <EpisodeSideContent config={{ ...(selectedLesson as any).sideContent, text: "" }} />
             )}
 
             {/* Episode Custom Form */}
@@ -3524,8 +3597,8 @@ export default function CourseDetailPage({
 
             {/* Start / Resume / Review button */}
             {lessons.length > 0 && (() => {
-              const firstUnfinished = lessons.find((l: any) => !completedIds.has(l.id) && l.videoUrl);
-              const targetLesson = firstUnfinished ?? (lessons.find((l: any) => l.videoUrl) as any ?? null);
+              const firstUnfinished = lessons.find((l: any) => !completedIds.has(l.id));
+              const targetLesson = firstUnfinished ?? (lessons[0] as any ?? null);
               if (!targetLesson) return null;
               const label =
                 completedCount === 0 ? "Start Learning"
@@ -3723,7 +3796,7 @@ export default function CourseDetailPage({
               const isLocked = (lesson as any).locked === true;
               const isFocusLocked = focusLockedIds.has(lesson.id) && !isCompleted;
               const hasVideo = !!lesson.videoUrl;
-              const canPlay = hasVideo && !isLocked && !isFocusLocked;
+              const canPlay = !isLocked && !isFocusLocked;
               const duration = isActive && liveRealDuration > 0 ? liveRealDuration : (lesson.durationSeconds ?? 0);
               const activeLessonDuration = (isActive && activeDuration > 0 ? activeDuration : duration) ?? 0;
               const livePct = isActive && liveWatched > 0 && activeLessonDuration > 0
@@ -3787,7 +3860,7 @@ export default function CourseDetailPage({
                       }}
                     >
                       <button
-                        onClick={() => hasVideo && handleSelectLessonWithFocus(lesson)}
+                        onClick={() => handleSelectLessonWithFocus(lesson)}
                         aria-disabled={!canPlay}
                         title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
                         className={cn("w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors", canPlay ? "cursor-pointer hover:opacity-90" : "cursor-default")}
@@ -3807,9 +3880,9 @@ export default function CourseDetailPage({
                           ) : isFocusLocked ? (
                             <Lock size={12} style={{ color: "#ef4444" }} />
                           ) : isActive ? (
-                            <Play size={13} fill="currentColor" />
+                            !hasVideo ? <FileText size={13} /> : <Play size={13} fill="currentColor" />
                           ) : (
-                            <span className="text-xs font-bold">{idx + 1}</span>
+                            !hasVideo ? <FileText size={11} /> : <span className="text-xs font-bold">{idx + 1}</span>
                           )}
                         </div>
                         {/* Title + meta badges */}
