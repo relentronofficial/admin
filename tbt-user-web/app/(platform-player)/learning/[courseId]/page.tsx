@@ -1794,7 +1794,7 @@ export default function CourseDetailPage({
         } else {
           // Incomplete lesson — show focus dialog
           urlFocusDialogShownRef.current = targetLessonId;
-          const dur = (target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300;
+          const dur = target.videoUrl ? ((target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300) : 0;
           setFocusDialog({ lesson: target, duration: dur });
         }
       } else if (target && (target as any).locked) {
@@ -2581,8 +2581,10 @@ export default function CourseDetailPage({
   };
 
   // ── Focus timer helpers ───────────────────────────────────────────────────
-  const getLessonTimerDuration = (lesson: any): number =>
-    lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
+  const getLessonTimerDuration = (lesson: any): number => {
+    if (!lesson?.videoUrl) return 0; // text lessons never have a focus timer
+    return lesson?.timerSeconds ?? (lesson?.sectionTimerSeconds ?? null) ?? config?.taskTimerSeconds ?? 300;
+  };
 
   const startLessonTimer = (lessonId: string, duration: number, skipServerStart?: boolean) => {
     clearInterval(timerIntervalRef.current);
