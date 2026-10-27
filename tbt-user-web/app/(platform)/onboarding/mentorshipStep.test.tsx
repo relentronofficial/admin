@@ -32,6 +32,7 @@ vi.mock("@/lib/hooks/useOnboarding", () => ({
   useDeleteOnboardingDocument: () => idle,
   useSubmitOnboarding: () => idle,
   usePresignProfilePhoto: () => idle,
+  useUploadProfilePhoto: () => idle,
 }));
 vi.mock("@/lib/hooks/useOnboardingMeetings", () => ({ useMyOnboardingMeetings: () => ({ data: [] }) }));
 vi.mock("@/lib/hooks/useUser", () => ({
