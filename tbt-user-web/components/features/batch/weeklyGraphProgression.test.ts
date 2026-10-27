@@ -68,13 +68,14 @@ describe("weekLinePoints (where the red line runs)", () => {
     ]);
   });
 
-  it("no point for weeks not started, or with nothing above the baseline", () => {
+  it("a week not started yet still gets a point at its dot; weeks with nothing above the baseline get none", () => {
     expect(line([
       { ...w(1, 0), activities: dots(0, 0) },
       { ...w(2, 0), activities: [] },
       { ...w(3, null), activities: dots(3) },
       { ...w(4, 0), activities: dots(1) },
-    ])).toEqual([[4, 1]]);
+      { ...w(5, null), activities: [] },
+    ])).toEqual([[3, 3], [4, 1]]);
   });
 
   it("tolerates missing or broken levels", () => {
@@ -82,7 +83,7 @@ describe("weekLinePoints (where the red line runs)", () => {
       { ...w(1, 0), activities: dots(undefined, null, NaN) },
       { weekNumber: 2, progressLevel: undefined, activities: dots(2) },
       { ...w(3, 1) },
-    ])).toEqual([[3, 1]]);
+    ])).toEqual([[2, 2], [3, 1]]);
     expect(weekLinePoints([], colX, yFor)).toEqual([]);
   });
 });
