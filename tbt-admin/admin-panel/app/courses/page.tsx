@@ -1539,7 +1539,7 @@ function EpisodesTab({ course }: { course: any }) {
               )}
             </div>
             {epErrors.video && <p className="text-[10px] text-red-500 mt-1">{epErrors.video}</p>}
-            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
           )}
