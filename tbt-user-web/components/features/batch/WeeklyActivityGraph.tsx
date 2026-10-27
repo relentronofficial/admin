@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { progressionSvgPath, weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
+import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -188,8 +188,12 @@ function WeeklyActivityGraphContent() {
   // and falls when a later week is missed (rules in weeklyGraphProgression.ts).
   // Recomputed on every render, so it follows refreshed data and configuration.
   const progression = weekProgressionPoints(weeks, colX, yFor);
-  // The red line itself runs through each started week's highest visible dot (weekLinePoints).
-  const linePoints = progressionSvgPath(weekLinePoints(weeks, colX, yFor), LEFT, yFor(0));
+  // The red line itself runs through each started week's highest visible dot (weekLinePoints),
+  // from Start in straight segments — styled like the admin Members revenue chart line.
+  const linePts = weekLinePoints(weeks, colX, yFor);
+  const linePoints = linePts.length > 0
+    ? [`M ${LEFT},${yFor(0)}`, ...linePts.map((p) => `L ${p.x},${p.y}`)].join(" ")
+    : null;
   const progressTitle = (w: WeeklyGraphWeek) =>
     `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
 
@@ -303,10 +307,10 @@ function WeeklyActivityGraphContent() {
               the activity markers so those stay on top) */}
           {linePoints && (
             <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
-              strokeWidth={4.5} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" />
+              strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" />
           )}
           {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={3.5}
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
               fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
               <title>{progressTitle(weeks[p.weekIndex])}</title>
             </circle>
