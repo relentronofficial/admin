@@ -102,11 +102,8 @@ const EMPTY_EP = {
   sideContent: { ...EMPTY_SIDE_CONTENT } as any,
   formConfig: { ...EMPTY_FORM_CONFIG } as any,
   lessonType: "video" as "video" | "text",
-  // Assessment type (2026-09) — a simplified single-task view over the same
-  // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
-  // completion_mode. "none" = no active task linked to this episode — only
-  // reachable by editing an episode that predates this feature; new episodes
-  // must pick "self" or "admin" ("" = not yet chosen, blocks save).
+  assessmentType: "" as "" | "self" | "admin",
+  assessmentTaskTitle: "",
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -1123,12 +1120,13 @@ function EpisodesTab({ course }: { course: any }) {
   };
 
   const handleSaveEp = async () => {
-    const errs: { title?: string; video?: string } = {};
+    const errs: { title?: string; video?: string; assessment?: string } = {};
     if (!epForm.title.trim()) errs.title = "Title is required";
     if (epForm.lessonType !== "text" && !epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
-    if (errs.title || errs.video) {
+    if (!editingEp && !epForm.assessmentType) errs.assessment = "Choose Self or Admin Assessment";
+    if (errs.title || errs.video || errs.assessment) {
       setEpErrors(errs);
-      toast.error(errs.title && errs.video ? "Title and video are required" : errs.title ? "Title is required" : "Video is required");
+      toast.error(errs.title ? "Title is required" : errs.video ? "Video is required" : "Assessment Check By is required");
       return;
     }
     const rawPosition = String(epForm.position ?? "").trim();
@@ -1153,11 +1151,11 @@ function EpisodesTab({ course }: { course: any }) {
       if (questions.length > 0 || cues.length > 0) quizData = { questions, cues };
     }
     const isTextLesson = epForm.lessonType === "text";
-    const { position: _position, lessonType: _lessonType, ...epFields } = epForm;
+    const { position: _position, lessonType: _lessonType, assessmentType: _assessmentType, assessmentTaskTitle: _assessmentTaskTitle, ...epFields } = epForm;
     const finalSideContent = isTextLesson
       ? { ...(epForm.sideContent ?? {}), enabled: true }
       : epForm.sideContent;
-    const payload = {
+    const payload: any = {
       ...epFields,
       videoUrl: isTextLesson ? "" : normalizedVideoUrl,
       ...(editingEp && rawPosition !== "" ? { position: Number(rawPosition) } : {}),
@@ -1177,6 +1175,10 @@ function EpisodesTab({ course }: { course: any }) {
       maxPurchasedLifelines: Number(epForm.maxPurchasedLifelines) || 5,
       sideContent: finalSideContent,
       formConfig: epForm.formConfig,
+      ...(!editingEp && {
+        assessmentType: epForm.assessmentType,
+        assessmentTaskTitle: epForm.assessmentTaskTitle.trim() || epForm.title.trim(),
+      }),
     };
     try {
       if (editingEp) {
@@ -1553,6 +1555,22 @@ function EpisodesTab({ course }: { course: any }) {
               className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
             />
             <p className="text-[10px] text-[#555] mt-1">This text will be displayed in the lesson player. Supports plain text with line breaks.</p>
+          </div>
+          )}
+          {/* Assessment Check By — only for new episodes */}
+          {!editingEp && (
+          <div className="border-t border-[#2a2a2a] pt-3">
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Assessment Check By *</label>
+            <div className="flex gap-2">
+              {(["self", "admin"] as const).map(t => (
+                <button key={t} type="button" onClick={() => setEpField("assessmentType", t)}
+                  className={`flex-1 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.assessmentType === t ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                  {t === "self" ? "Self Assessment" : "Admin Assessment"}
+                </button>
+              ))}
+            </div>
+            {(epErrors as any).assessment && <p className="text-[10px] text-red-500 mt-1">{(epErrors as any).assessment}</p>}
+            <p className="text-[10px] text-[#555] mt-1">{epForm.assessmentType === "self" ? "Member marks lesson done themselves." : epForm.assessmentType === "admin" ? "Admin reviews and approves completion." : "Choose who confirms lesson completion."}</p>
           </div>
           )}
           {/* ── Inline Tasks ─────────────────────────────────────── */}
