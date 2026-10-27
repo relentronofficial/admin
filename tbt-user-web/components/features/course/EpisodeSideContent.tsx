@@ -25,7 +25,7 @@ export function EpisodeSideContent({ config }: Props) {
 
   if (!config?.enabled) return null;
   const hasText = config.text && config.text.trim().length > 0;
-  const buttons = config.buttons?.filter((b) => b.label && b.destination) ?? [];
+  const buttons = config.buttons?.filter((b) => b.label) ?? [];
   if (!hasText && buttons.length === 0) return null;
 
   return (
@@ -59,36 +59,30 @@ export function EpisodeSideContent({ config }: Props) {
         {buttons.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {buttons.map((btn) => {
-              const href =
-                btn.type === "external"
-                  ? btn.destination
-                  : btn.destination.startsWith("/")
-                  ? btn.destination
-                  : `/${btn.destination}`;
+              const hasDestination = !!btn.destination;
               const isExternal = btn.type === "external";
+              const href = hasDestination
+                ? (isExternal
+                    ? btn.destination
+                    : btn.destination.startsWith("/")
+                    ? btn.destination
+                    : `/${btn.destination}`)
+                : undefined;
               const isPrimary = btn.variant === "primary" || !btn.variant;
-              return (
+              const btnStyle = isPrimary
+                ? { background: "var(--color-accent)", color: "#fff" }
+                : btn.variant === "outline"
+                ? { border: "1px solid var(--color-accent)", color: "var(--color-accent)", background: "transparent" }
+                : { background: "var(--color-bg-surface)", color: "var(--color-text-normal)", border: "1px solid var(--color-border-card)" };
+              const className = "inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-all";
+              return hasDestination ? (
                 <a
                   key={btn.id}
                   href={href}
                   target={isExternal ? "_blank" : undefined}
                   rel={isExternal ? "noopener noreferrer" : undefined}
-                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg transition-all"
-                  style={
-                    isPrimary
-                      ? { background: "var(--color-accent)", color: "#fff" }
-                      : btn.variant === "outline"
-                      ? {
-                          border: "1px solid var(--color-accent)",
-                          color: "var(--color-accent)",
-                          background: "transparent",
-                        }
-                      : {
-                          background: "var(--color-bg-surface)",
-                          color: "var(--color-text-normal)",
-                          border: "1px solid var(--color-border-card)",
-                        }
-                  }
+                  className={className}
+                  style={btnStyle}
                 >
                   {btn.label}
                   {isExternal && (
@@ -99,6 +93,10 @@ export function EpisodeSideContent({ config }: Props) {
                     </svg>
                   )}
                 </a>
+              ) : (
+                <button key={btn.id} type="button" className={className} style={btnStyle}>
+                  {btn.label}
+                </button>
               );
             })}
           </div>

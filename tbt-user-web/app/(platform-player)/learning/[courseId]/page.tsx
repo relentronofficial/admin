@@ -3564,7 +3564,7 @@ export default function CourseDetailPage({
             )}
             {/* For text lessons, still render any side-content buttons so links stay accessible */}
             {!!(selectedLesson as any)?.sideContent?.enabled && !selectedLesson.videoUrl &&
-              !!((selectedLesson as any)?.sideContent?.buttons?.filter((b: any) => b.label && b.destination).length) && (
+              !!((selectedLesson as any)?.sideContent?.buttons?.filter((b: any) => b.label).length) && (
               <EpisodeSideContent config={{ ...(selectedLesson as any).sideContent, text: "" }} />
             )}
 
