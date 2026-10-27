@@ -723,8 +723,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
   const handleSubmit = async () => {
     try {
-      await submit.mutateAsync();
-      toast.success("Onboarding submitted!");
+      const res = await submit.mutateAsync();
+      // A verified member editing their details is not sent back for review.
+      toast.success(res?.data?.verificationStatus === "verified" ? "Your details have been saved." : "Onboarding submitted!");
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Please complete all required fields first.");
     }
