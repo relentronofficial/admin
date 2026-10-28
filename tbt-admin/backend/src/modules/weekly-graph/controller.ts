@@ -329,6 +329,35 @@ export async function updateActivityHandler(req: FastifyRequest<{ Params: PI }>,
   return ok(reply, { id: task.id });
 }
 
+export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>, reply: FastifyReply) {
+  if (!(await requireEditor(req, reply))) return;
+  const program = await loadProgram(req, reply);
+  if (!program) return;
+  const prisma = req.server.prisma;
+  const [task] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL`,
+    program.id, UUID.test(req.params.id) ? req.params.id : '00000000-0000-0000-0000-000000000000',
+  );
+  if (!task) return fail(reply, 404, 'Activity not found in this program');
+  // Never lose member work: task_submissions cascade on a task delete, so an
+  // activity with submissions can only be disabled. The NOT EXISTS keeps that
+  // check and the delete in one statement.
+  const deleted = await prisma.$queryRawUnsafe<any[]>(
+    `DELETE FROM tasks t WHERE t.id = $2::uuid AND t.program_id = $1::uuid AND t.batch_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM task_submissions s WHERE s.task_id = t.id)
+     RETURNING t.id::text AS id`,
+    program.id, task.id,
+  );
+  if (deleted.length === 0) {
+    const [use] = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id = $1::uuid`, task.id,
+    );
+    return fail(reply, 409, `"${task.title}" has ${use?.submissions ?? 0} submissions. Disable it instead of deleting.`);
+  }
+  changed(req, program.id, 'graph_activity_deleted');
+  return ok(reply, { deleted: task.id });
+}
+
 // ── Member milestone records (admin-verified achievements) ───────────────────
 
 type M = { memberId: string };

@@ -21,6 +21,7 @@ import {
   useDeleteGraphMilestone,
   useReorderGraphMilestones,
   useSaveGraphActivity,
+  useDeleteGraphActivity,
   useGraphMemberRecords,
   useSaveGraphMemberRecord,
   useDeleteGraphMemberRecord,
@@ -444,7 +445,10 @@ function MilestoneForm({ initial, isNew, onClose, onSave }: {
 
 function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; programId: string }) {
   const save = useSaveGraphActivity(programId);
+  const del = useDeleteGraphActivity(programId);
   const [editing, setEditing] = useState<GraphActivityItem | "new" | null>(null);
+  const [deleting, setDeleting] = useState<GraphActivityItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const weekName = (a: GraphActivityItem) =>
     config.weeks.find((w) => (a.weekId ? w.id === a.weekId : w.startDay <= a.dayNumber && a.dayNumber <= w.endDay))?.label ?? `Day ${a.dayNumber}`;
   const msName = (a: GraphActivityItem) => config.milestones.find((m) => m.id && m.id === a.milestoneId)?.label ?? (a.isMilestone ? a.milestoneLabel : null);
@@ -453,6 +457,14 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
     if (a.isActive && !window.confirm(`Disable "${a.title}"? It is hidden from members. Submissions and reviews are kept.`)) return;
     try { await save.mutateAsync({ id: a.id, isActive: !a.isActive }); toast.success(a.isActive ? "Activity disabled" : "Activity enabled"); }
     catch (e) { toast.error(errMsg(e, "Could not update the activity")); }
+  };
+  const openDelete = (a: GraphActivityItem) => { setDeleteError(null); setDeleting(a); };
+  const closeDelete = () => { if (!del.isPending) { setDeleting(null); setDeleteError(null); } };
+  const confirmDelete = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try { await del.mutateAsync(deleting.id); toast.success("Activity deleted"); setDeleting(null); }
+    catch (e) { setDeleteError(errMsg(e, "Could not delete the activity")); }
   };
 
   return (
@@ -482,6 +494,7 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
                   <td className="px-4 py-2 text-right whitespace-nowrap">
                     <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Edit"} onClick={() => setEditing(a)}><Edit2 size={14} /></button>
                     <button className={ICON_BTN} disabled={!config.saved} title={a.isActive ? "Disable" : "Enable"} onClick={() => toggle(a)}>{a.isActive ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                    <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Delete"} aria-label={`Delete ${a.title}`} onClick={() => openDelete(a)}><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -496,6 +509,17 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
           onClose={() => setEditing(null)}
           onSave={async (v) => { await save.mutateAsync(v); toast.success(editing === "new" ? "Activity added" : "Activity saved"); setEditing(null); }}
         />
+      )}
+      {deleting && (
+        <Modal title="Delete activity" onClose={closeDelete}>
+          <p className="text-[13px] text-[#a0a0a0]">Are you sure you want to delete this activity?</p>
+          <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
+          {deleteError && <p className="text-[13px] text-[#ef4444]">{deleteError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={del.isPending}>Cancel</button>
+            <button type="button" className={BTN_PRIMARY} onClick={confirmDelete} disabled={del.isPending}>{del.isPending && <Loader2 size={14} className="animate-spin" />} Delete</button>
+          </div>
+        </Modal>
       )}
     </section>
   );
