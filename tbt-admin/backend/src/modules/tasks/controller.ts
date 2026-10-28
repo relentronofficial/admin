@@ -9,6 +9,11 @@ export async function listTasksHandler(request: FastifyRequest, reply: FastifyRe
   const where: any = {};
   if (programId) where.programId = programId;
   if (stepId) where.stepId = stepId;
+  // Archived (soft-deleted) activities stay out of admin lists; deleted_at is a raw SQL column.
+  const archived = await request.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id::text AS id FROM tasks WHERE deleted_at IS NOT NULL`,
+  ).catch(() => [] as Array<{ id: string }>);
+  if (archived.length > 0) where.id = { notIn: archived.map((r) => r.id) };
 
   const [tasks, total] = await Promise.all([
     request.server.prisma.task.findMany({
