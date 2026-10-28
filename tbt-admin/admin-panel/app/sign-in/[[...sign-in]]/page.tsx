@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState } from "react";
-import { useSignIn } from "@clerk/nextjs";
+import { useSignIn, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Lock, Mail, User, Eye, EyeOff, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
+  const { isSignedIn } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -28,6 +29,11 @@ export default function SignInPage() {
         </div>
       </div>
     );
+  }
+
+  if (isSignedIn) {
+    router.replace("/dashboard");
+    return null;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
