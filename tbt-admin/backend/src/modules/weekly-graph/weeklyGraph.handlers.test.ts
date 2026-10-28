@@ -165,6 +165,18 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return db.submissions.filter((s) => s.memberId === a[1]).map((s) => ({ taskId: s.taskId, dayNumber: s.dayNumber, status: s.status }));
   }
   if (q.includes('FROM members m JOIN batches b')) return []; // refresh notification audience
+  if (q.startsWith('SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL')) {
+    return db.tasks.filter((t) => t.id === a[1] && t.programId === a[0] && !t.batchId).map((t) => ({ id: t.id, title: t.title }));
+  }
+  if (q.startsWith('DELETE FROM tasks t WHERE t.id = $2::uuid AND t.program_id = $1::uuid AND t.batch_id IS NULL AND NOT EXISTS')) {
+    const t = db.tasks.find((x) => x.id === a[1] && x.programId === a[0] && !x.batchId);
+    if (!t || db.submissions.some((sub) => sub.taskId === t.id)) return [];
+    db.tasks = db.tasks.filter((x) => x !== t);
+    return [{ id: t.id }];
+  }
+  if (q.startsWith('SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id')) {
+    return [{ submissions: db.submissions.filter((sub) => sub.taskId === a[0]).length }];
+  }
   unhandled.push(q.slice(0, 160));
   throw new Error(`Unhandled SQL in test store: ${q.slice(0, 120)}`);
 }
@@ -597,5 +609,46 @@ describe('test store', () => {
     await config();
     await memberGraph();
     expect(unhandled).toEqual([]);
+  });
+});
+
+describe('activities: delete', () => {
+  const del = (id: string, clerk = 'clerk_admin', programId = PROGRAM) =>
+    call(graph.deleteActivityHandler, { clerk, params: { programId, id } });
+
+  it('deletes only the chosen activity (no submissions); it disappears for admins and members', async () => {
+    const res = await del(TASK_W2);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ deleted: TASK_W2 });
+    expect(db.tasks.map((t) => t.id)).toEqual([TASK_ADS]); // only that one row removed
+    expect((await config()).activities.map((a: any) => a.id)).toEqual([TASK_ADS]); // fresh request (refresh)
+    const g = await memberGraph();
+    expect(g.weeks.flatMap((w: any) => w.activities.map((x: any) => x.taskId))).toEqual([TASK_ADS]);
+    expect(db.submissions).toHaveLength(1);
+    expect(unhandled).toEqual([]);
+  });
+
+  it('an activity with submissions is not deleted (disable instead); its submissions are kept', async () => {
+    const res = await del(TASK_ADS);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/1 submissions. Disable it instead of deleting/);
+    expect(db.tasks.map((t) => t.id)).toEqual([TASK_ADS, TASK_W2]);
+    expect(db.submissions).toEqual([{ taskId: TASK_ADS, memberId: MEMBER, dayNumber: 2, status: 'approved' }]);
+  });
+
+  it('only Admin / Super Admin can delete; Mentor and Moderator get 403 and nothing changes', async () => {
+    expect((await del(TASK_W2, 'clerk_mentor')).status).toBe(403);
+    expect((await del(TASK_W2, 'clerk_mod')).status).toBe(403);
+    expect(db.tasks).toHaveLength(2);
+    expect((await del(TASK_W2, 'clerk_super')).status).toBe(200);
+  });
+
+  it('an id from another program, a batch task, or a bad id → 404 and nothing is deleted', async () => {
+    db.tasks.push({ id: '40000000-0000-4000-8000-000000000009', programId: null, batchId: BATCH, title: 'Batch task', dayNumber: 3, sortOrder: 0,
+      isRequired: true, isActive: true, memberId: null, weekId: null, milestoneId: null, isMilestone: false, milestoneLabel: null });
+    expect((await del(TASK_W2, 'clerk_admin', OTHER_PROGRAM)).status).toBe(404);
+    expect((await del('40000000-0000-4000-8000-000000000009')).status).toBe(404);
+    expect((await del('not-a-uuid')).status).toBe(404);
+    expect(db.tasks).toHaveLength(3);
   });
 });

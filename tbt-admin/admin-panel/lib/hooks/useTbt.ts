@@ -2891,6 +2891,9 @@ export const useSaveGraphActivity = (programId: string) =>
   useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string; title?: string; weekId?: string | null; milestoneId?: string | null; isRequired?: boolean; isActive?: boolean }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/activities/${id}`, body) : await apiClient.post(`${wgBase(programId)}/activities`, body)) as any).data);
 
+export const useDeleteGraphActivity = (programId: string) =>
+  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/activities/${id}`) as any).data);
+
 const graphRecordsKey = (memberId: string) => ['weekly-graph-records', memberId];
 
 export const useGraphMemberRecords = (memberId: string) =>
