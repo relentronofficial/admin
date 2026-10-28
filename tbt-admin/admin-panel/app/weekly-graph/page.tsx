@@ -449,6 +449,8 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
   const [editing, setEditing] = useState<GraphActivityItem | "new" | null>(null);
   const [deleting, setDeleting] = useState<GraphActivityItem | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set when the server refused the delete (409: the activity has member submissions).
+  const [blockedSubmissions, setBlockedSubmissions] = useState<number | null>(null);
   const weekName = (a: GraphActivityItem) =>
     config.weeks.find((w) => (a.weekId ? w.id === a.weekId : w.startDay <= a.dayNumber && a.dayNumber <= w.endDay))?.label ?? `Day ${a.dayNumber}`;
   const msName = (a: GraphActivityItem) => config.milestones.find((m) => m.id && m.id === a.milestoneId)?.label ?? (a.isMilestone ? a.milestoneLabel : null);
@@ -458,13 +460,28 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
     try { await save.mutateAsync({ id: a.id, isActive: !a.isActive }); toast.success(a.isActive ? "Activity disabled" : "Activity enabled"); }
     catch (e) { toast.error(errMsg(e, "Could not update the activity")); }
   };
-  const openDelete = (a: GraphActivityItem) => { setDeleteError(null); setDeleting(a); };
-  const closeDelete = () => { if (!del.isPending) { setDeleting(null); setDeleteError(null); } };
+  const deleteBusy = del.isPending || save.isPending;
+  const openDelete = (a: GraphActivityItem) => { setDeleteError(null); setBlockedSubmissions(null); setDeleting(a); };
+  const closeDelete = () => { if (!deleteBusy) { setDeleting(null); setDeleteError(null); setBlockedSubmissions(null); } };
   const confirmDelete = async () => {
     if (!deleting?.id) return;
     setDeleteError(null);
     try { await del.mutateAsync(deleting.id); toast.success("Activity deleted"); setDeleting(null); }
-    catch (e) { setDeleteError(errMsg(e, "Could not delete the activity")); }
+    catch (e: any) {
+      if (e?.response?.status === 409) {
+        // Delete protection: submissions are never removed — offer disabling instead.
+        setBlockedSubmissions(Number(String(e?.message ?? "").match(/has (\d+) submission/)?.[1] ?? 0));
+      } else {
+        setDeleteError(errMsg(e, "Could not delete the activity"));
+      }
+    }
+  };
+  // Same operation as the row's eye button, run only on the admin's click.
+  const disableInstead = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try { await save.mutateAsync({ id: deleting.id, isActive: false }); toast.success("Activity disabled"); setDeleting(null); setBlockedSubmissions(null); }
+    catch (e) { setDeleteError(errMsg(e, "Could not disable the activity")); }
   };
 
   return (
@@ -510,7 +527,7 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
           onSave={async (v) => { await save.mutateAsync(v); toast.success(editing === "new" ? "Activity added" : "Activity saved"); setEditing(null); }}
         />
       )}
-      {deleting && (
+      {deleting && blockedSubmissions === null && (
         <Modal title="Delete activity" onClose={closeDelete}>
           <p className="text-[13px] text-[#a0a0a0]">Are you sure you want to delete this activity?</p>
           <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
@@ -518,6 +535,26 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={del.isPending}>Cancel</button>
             <button type="button" className={BTN_PRIMARY} onClick={confirmDelete} disabled={del.isPending}>{del.isPending && <Loader2 size={14} className="animate-spin" />} Delete</button>
+          </div>
+        </Modal>
+      )}
+      {deleting && blockedSubmissions !== null && (
+        <Modal title="Can't delete this activity" onClose={closeDelete}>
+          <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
+          <p className="text-[13px] text-[#a0a0a0]">
+            Members have already submitted work for this activity{blockedSubmissions > 0 ? ` (${blockedSubmissions} ${blockedSubmissions === 1 ? "submission" : "submissions"})` : ""}, so it can&apos;t be deleted — that would also remove their submissions.
+          </p>
+          <p className="text-[13px] text-[#a0a0a0]">
+            {deleting.isActive
+              ? "You can disable it instead: it is hidden from members, and all submissions and reviews are kept. You can enable it again later."
+              : "This activity is already disabled, so members no longer see it. Its submissions are kept."}
+          </p>
+          {deleteError && <p className="text-[13px] text-[#ef4444]">{deleteError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={deleteBusy}>{deleting.isActive ? "Cancel" : "Close"}</button>
+            {deleting.isActive && (
+              <button type="button" className={BTN_PRIMARY} onClick={disableInstead} disabled={deleteBusy}>{save.isPending && <Loader2 size={14} className="animate-spin" />} Disable activity</button>
+            )}
           </div>
         </Modal>
       )}
