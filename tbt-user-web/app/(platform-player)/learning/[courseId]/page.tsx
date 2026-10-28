@@ -3415,7 +3415,7 @@ export default function CourseDetailPage({
                         onClick={isLessonCompleted ? undefined : handleTextComplete}
                         disabled={isLessonCompleted || markComplete.isPending}
                         className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-100 disabled:cursor-default"
-                        style={{ background: "var(--color-success)", color: "#fff" }}
+                        style={{ background: isLessonCompleted ? "var(--color-success)" : "var(--color-accent)", color: "#fff" }}
                       >
                         <CheckCircle2 size={13} /> {isLessonCompleted ? "Completed" : posLabel}
                       </button>
