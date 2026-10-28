@@ -3372,50 +3372,67 @@ export default function CourseDetailPage({
                   </p>
                 )}
               </div>
-              {(watchState === "completed" || !!selectedLesson.isCompleted) ? (
-                <span
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
-                  style={{ background: "var(--color-success)", color: "#fff" }}
-                >
-                  <CheckCircle2 size={13} /> Completed
-                </span>
-              ) : autoCompletingId === selectedLesson.id ? (
-                <span
-                  className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap opacity-80"
-                  style={{ background: "var(--color-success)", color: "#fff" }}
-                  aria-live="polite"
-                >
-                  <Loader2 size={13} className="animate-spin" /> Saving progress…
-                </span>
-              ) : !selectedLesson.videoUrl ? (
-                /* Text lesson — interactive response or plain mark-complete */
-                (() => {
-                  const sc = (selectedLesson as any).sideContent;
-                  const interactionType: string = sc?.interactionType ?? "";
-                  if (interactionType === "yes_no" || interactionType === "agree_disagree") {
-                    const [posLabel, negLabel] = interactionType === "yes_no"
-                      ? ["Yes", "No"]
-                      : ["I Agree", "I Disagree"];
-                    return (
-                      <div className="shrink-0 flex items-center gap-2">
-                        <button
-                          onClick={() => toast("Re-read the question and come back when you're ready!", { icon: "📖", id: "lesson-disagree" })}
-                          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 border"
-                          style={{ borderColor: "var(--color-border-medium, rgba(255,255,255,0.15))", color: "var(--color-text-subtle)" }}
-                        >
-                          {negLabel}
-                        </button>
-                        <button
-                          onClick={handleTextComplete}
-                          disabled={markComplete.isPending}
-                          className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
-                          style={{ background: "var(--color-accent)", color: "#fff" }}
-                        >
-                          <CheckCircle2 size={13} /> {posLabel}
-                        </button>
-                      </div>
-                    );
-                  }
+              {(() => {
+                const isLessonCompleted = watchState === "completed" || !!selectedLesson.isCompleted;
+                const isAutoCompleting = autoCompletingId === selectedLesson.id;
+                const isTextLesson = !selectedLesson.videoUrl;
+                const sc = isTextLesson ? (selectedLesson as any).sideContent : null;
+                const interactionType: string = sc?.interactionType ?? "";
+                const hasInteraction = interactionType === "yes_no" || interactionType === "agree_disagree";
+
+                if (isAutoCompleting) {
+                  return (
+                    <span
+                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap opacity-80"
+                      style={{ background: "var(--color-success)", color: "#fff" }}
+                      aria-live="polite"
+                    >
+                      <Loader2 size={13} className="animate-spin" /> Saving progress…
+                    </span>
+                  );
+                }
+
+                // Interaction text lessons (yes_no / agree_disagree) always show their buttons
+                // so the user can read the question context. When already completed the positive
+                // button becomes a green "Completed" indicator and both buttons are disabled.
+                if (isTextLesson && hasInteraction) {
+                  const [posLabel, negLabel] = interactionType === "yes_no"
+                    ? ["Yes", "No"]
+                    : ["I Agree", "I Disagree"];
+                  return (
+                    <div className="shrink-0 flex items-center gap-2">
+                      <button
+                        disabled={isLessonCompleted}
+                        onClick={isLessonCompleted ? undefined : () => toast("Re-read the question and come back when you're ready!", { icon: "📖", id: "lesson-disagree" })}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 border disabled:opacity-30 disabled:cursor-default"
+                        style={{ borderColor: "var(--color-border-medium, rgba(255,255,255,0.15))", color: "var(--color-text-subtle)" }}
+                      >
+                        {negLabel}
+                      </button>
+                      <button
+                        onClick={isLessonCompleted ? undefined : handleTextComplete}
+                        disabled={isLessonCompleted || markComplete.isPending}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-100 disabled:cursor-default"
+                        style={{ background: "var(--color-success)", color: "#fff" }}
+                      >
+                        <CheckCircle2 size={13} /> {isLessonCompleted ? "Completed" : posLabel}
+                      </button>
+                    </div>
+                  );
+                }
+
+                if (isLessonCompleted) {
+                  return (
+                    <span
+                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap"
+                      style={{ background: "var(--color-success)", color: "#fff" }}
+                    >
+                      <CheckCircle2 size={13} /> Completed
+                    </span>
+                  );
+                }
+
+                if (isTextLesson) {
                   return (
                     <span
                       className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap opacity-60"
@@ -3427,8 +3444,10 @@ export default function CourseDetailPage({
                         : "Completing…"}
                     </span>
                   );
-                })()
-              ) : null}
+                }
+
+                return null;
+              })()}
             </div>
 
             {/* Lesson navigation — Previous / counter / Next */}
