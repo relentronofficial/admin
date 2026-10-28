@@ -2522,6 +2522,66 @@ export default function CourseDetailPage({
     [targetSectionId, courseSectionsEarly],
   );
 
+  // These hooks must live ABOVE the early returns — placing any hook after an early return
+  // changes the hook count between renders (loading → loaded) and React throws.
+  const handleTextComplete = useCallback(() => {
+    if (markCalledRef.current) return;
+    markCalledRef.current = true;
+    setAutoCompletingId(selectedLesson!.id);
+    markComplete.mutate({ lessonId: selectedLesson!.id, watchedSeconds: 5, isCompleted: true }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const saved = (res?.data ?? res)?.completed === true;
+        if (!saved) {
+          markCalledRef.current = false;
+          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
+          return;
+        }
+        if (selectedLessonRef.current?.id !== selectedLesson!.id) return;
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson!.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+        setPendingAdvance({ from: selectedLesson!.id, notBefore: Date.now() + 1500 });
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        markCalledRef.current = false;
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
+  // Auto-complete plain text lessons (no video, no interactionType) after 5 s of dwell time
+  const textAutoTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  useEffect(() => {
+    clearInterval(textAutoTimerRef.current);
+    setTextLessonCountdown(null);
+    if (!selectedLesson || selectedLesson.videoUrl) return;
+    const sc = (selectedLesson as any).sideContent;
+    const interactionType: string = sc?.interactionType ?? "";
+    if (interactionType === "yes_no" || interactionType === "agree_disagree") return;
+    if (markCalledRef.current || completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted) return;
+    const DELAY = 5;
+    setTextLessonCountdown(DELAY);
+    let remaining = DELAY;
+    textAutoTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0) {
+        setTextLessonCountdown(remaining);
+      } else {
+        clearInterval(textAutoTimerRef.current);
+        setTextLessonCountdown(null);
+        handleTextComplete();
+      }
+    }, 1000);
+    return () => { clearInterval(textAutoTimerRef.current); setTextLessonCountdown(null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
   if (isLoading) return <PageLoader />;
   if (!course) {
     // The server explains refusals (e.g. a course outside the member's selected
@@ -2627,64 +2687,6 @@ export default function CourseDetailPage({
 
     timerIntervalRef.current = setInterval(tick, 500);
   };
-
-  const handleTextComplete = useCallback(() => {
-    if (markCalledRef.current) return;
-    markCalledRef.current = true;
-    setAutoCompletingId(selectedLesson!.id);
-    markComplete.mutate({ lessonId: selectedLesson!.id, watchedSeconds: 5, isCompleted: true }, {
-      onSuccess: (res: any) => {
-        setAutoCompletingId(null);
-        const saved = (res?.data ?? res)?.completed === true;
-        if (!saved) {
-          markCalledRef.current = false;
-          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
-          return;
-        }
-        if (selectedLessonRef.current?.id !== selectedLesson!.id) return;
-        justCompletedInSessionRef.current = true;
-        setWatchState("completed");
-        const allLessons = courseRef.current?.lessons ?? [];
-        const allDone = allLessons.length > 0 &&
-          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson!.id);
-        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
-        setPendingAdvance({ from: selectedLesson!.id, notBefore: Date.now() + 1500 });
-      },
-      onError: (err: any) => {
-        setAutoCompletingId(null);
-        markCalledRef.current = false;
-        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your progress. Please try again.", { id: "lesson-complete-failed" });
-      },
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLesson?.id]);
-
-  // Auto-complete plain text lessons (no video, no interactionType) after 5 s of dwell time
-  const textAutoTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  useEffect(() => {
-    clearInterval(textAutoTimerRef.current);
-    setTextLessonCountdown(null);
-    if (!selectedLesson || selectedLesson.videoUrl) return;
-    const sc = (selectedLesson as any).sideContent;
-    const interactionType: string = sc?.interactionType ?? "";
-    if (interactionType === "yes_no" || interactionType === "agree_disagree") return;
-    if (markCalledRef.current || completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted) return;
-    const DELAY = 5;
-    setTextLessonCountdown(DELAY);
-    let remaining = DELAY;
-    textAutoTimerRef.current = setInterval(() => {
-      remaining -= 1;
-      if (remaining > 0) {
-        setTextLessonCountdown(remaining);
-      } else {
-        clearInterval(textAutoTimerRef.current);
-        setTextLessonCountdown(null);
-        handleTextComplete();
-      }
-    }, 1000);
-    return () => { clearInterval(textAutoTimerRef.current); setTextLessonCountdown(null); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLesson?.id]);
 
   const handleSelectLessonWithFocus = (lesson: any) => {
     // Sequential lock: block locked lessons unless the current one was just completed
