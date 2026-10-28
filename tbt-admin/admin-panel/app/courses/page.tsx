@@ -36,6 +36,9 @@ import {
   useListCourseFaqsAdmin, useCreateCourseFaq, useUpdateCourseFaq, useDeleteCourseFaq, useReorderCourseFaqs,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+// Bundled with the page, not lazy-loaded on click: a tab opened before an admin
+// deploy would ask for the old build's chunk, which 404s (ChunkLoadError).
+import { Upload as TusUpload } from "tus-js-client";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { useListBatches } from "@/lib/hooks/useTbt";
 import { useBusinessTypes } from "@/lib/hooks/useMasters";
@@ -1012,9 +1015,8 @@ function EpisodesTab({ course }: { course: any }) {
       const secs = await detectDuration(file);
       if (secs > 0) setEpField("durationSeconds", String(secs));
       const { videoId, tusUploadUrl, tusHeaders, embedUrl } = await createBunnyVideo.mutateAsync({ title: epForm.title || file.name });
-      const { Upload } = await import("tus-js-client");
       await new Promise<void>((resolve, reject) => {
-        const upload = new Upload(file, {
+        const upload = new TusUpload(file, {
           endpoint: tusUploadUrl,
           headers: { AuthorizationSignature: tusHeaders.AuthorizationSignature, AuthorizationExpire: String(tusHeaders.AuthorizationExpire), VideoId: tusHeaders.VideoId, LibraryId: tusHeaders.LibraryId },
           chunkSize: 5 * 1024 * 1024, retryDelays: [0, 3000, 5000, 10000],
@@ -1539,7 +1541,7 @@ function EpisodesTab({ course }: { course: any }) {
               )}
             </div>
             {epErrors.video && <p className="text-[10px] text-red-500 mt-1">{epErrors.video}</p>}
-            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
           )}
