@@ -2891,8 +2891,11 @@ export const useSaveGraphActivity = (programId: string) =>
   useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string; title?: string; weekId?: string | null; milestoneId?: string | null; isRequired?: boolean; isActive?: boolean }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/activities/${id}`, body) : await apiClient.post(`${wgBase(programId)}/activities`, body)) as any).data);
 
+// archive: true is the admin's explicit confirmation to delete an activity that has
+// submissions — the server archives it and keeps every submission.
 export const useDeleteGraphActivity = (programId: string) =>
-  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/activities/${id}`) as any).data);
+  useWeeklyGraphMutation(programId, async ({ id, archive }: { id: string; archive?: boolean }) =>
+    (await apiClient.delete(`${wgBase(programId)}/activities/${id}`, archive ? { params: { archive: "true" } } : undefined) as any).data);
 
 const graphRecordsKey = (memberId: string) => ['weekly-graph-records', memberId];
 

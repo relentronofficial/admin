@@ -59,7 +59,7 @@ async function listActivities(prisma: any, programId: string) {
     `SELECT id::text, title, day_number AS "dayNumber", sort_order AS "sortOrder", is_required AS "isRequired",
             is_active AS "isActive", member_id::text AS "memberId", graph_week_id::text AS "weekId",
             graph_milestone_id::text AS "milestoneId", is_milestone AS "isMilestone", milestone_label AS "milestoneLabel"
-     FROM tasks WHERE program_id = $1::uuid AND batch_id IS NULL
+     FROM tasks WHERE program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL
      ORDER BY day_number, sort_order, title`,
     programId,
   );
@@ -304,7 +304,7 @@ export async function updateActivityHandler(req: FastifyRequest<{ Params: PI }>,
   const [task] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT id::text, title, day_number AS "dayNumber", is_required AS "isRequired", is_active AS "isActive",
             graph_week_id::text AS "weekId", graph_milestone_id::text AS "milestoneId"
-     FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL`,
+     FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
     program.id, UUID.test(req.params.id) ? req.params.id : '00000000-0000-0000-0000-000000000000',
   );
   if (!task) return fail(reply, 404, 'Activity not found in this program');
@@ -335,12 +335,12 @@ export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>,
   if (!program) return;
   const prisma = req.server.prisma;
   const [task] = await prisma.$queryRawUnsafe<any[]>(
-    `SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL`,
+    `SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
     program.id, UUID.test(req.params.id) ? req.params.id : '00000000-0000-0000-0000-000000000000',
   );
   if (!task) return fail(reply, 404, 'Activity not found in this program');
-  // Never lose member work: task_submissions cascade on a task delete, so an
-  // activity with submissions can only be disabled. The NOT EXISTS keeps that
+  // Never lose member work: task_submissions cascade on a task delete, so only
+  // an activity without submissions is really deleted. The NOT EXISTS keeps that
   // check and the delete in one statement.
   const deleted = await prisma.$queryRawUnsafe<any[]>(
     `DELETE FROM tasks t WHERE t.id = $2::uuid AND t.program_id = $1::uuid AND t.batch_id IS NULL
@@ -348,14 +348,27 @@ export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>,
      RETURNING t.id::text AS id`,
     program.id, task.id,
   );
-  if (deleted.length === 0) {
-    const [use] = await prisma.$queryRawUnsafe<any[]>(
-      `SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id = $1::uuid`, task.id,
-    );
-    return fail(reply, 409, `"${task.title}" has ${use?.submissions ?? 0} submissions. Disable it instead of deleting.`);
+  if (deleted.length > 0) {
+    changed(req, program.id, 'graph_activity_deleted');
+    return ok(reply, { deleted: task.id });
   }
-  changed(req, program.id, 'graph_activity_deleted');
-  return ok(reply, { deleted: task.id });
+  const [use] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id = $1::uuid`, task.id,
+  );
+  const submissions = use?.submissions ?? 0;
+  // With submissions, deleting needs the admin's explicit confirmation (?archive=true):
+  // the activity is archived — hidden from admins and members, inactive — and its
+  // row and every submission, review and point are kept.
+  if ((req.query as any)?.archive !== 'true') {
+    return fail(reply, 409, `"${task.title}" has ${submissions} submissions. Deleting it archives the activity and keeps its submissions.`);
+  }
+  await prisma.$executeRawUnsafe(
+    `UPDATE tasks SET deleted_at = NOW(), is_active = false, updated_at = NOW()
+     WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
+    program.id, task.id,
+  );
+  changed(req, program.id, 'graph_activity_archived');
+  return ok(reply, { archived: task.id, submissions });
 }
 
 // ── Member milestone records (admin-verified achievements) ───────────────────

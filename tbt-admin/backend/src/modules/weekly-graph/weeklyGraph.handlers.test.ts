@@ -30,7 +30,7 @@ interface Store {
   milestones: Array<{ id: string; programId: string; label: string; kind: string; sortOrder: number; isActive: boolean; threshold?: number | null }>;
   tasks: Array<{ id: string; programId: string | null; batchId: string | null; title: string; dayNumber: number; sortOrder: number;
     isRequired: boolean; isActive: boolean; memberId: string | null; weekId: string | null; milestoneId: string | null;
-    isMilestone: boolean; milestoneLabel: string | null }>;
+    isMilestone: boolean; milestoneLabel: string | null; deletedAt?: Date | null }>;
   submissions: Array<{ taskId: string; memberId: string; dayNumber: number; status: string }>;
   records: Array<{ id: string; memberId: string; milestoneId: string; weekId: string | null; note: string | null; recordedBy: string; recordedAt: Date }>;
   members: Array<{ id: string; firstName: string; lastName: string; batchId: string | null }>;
@@ -116,7 +116,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return 1;
   }
   if (q.startsWith('SELECT id::text, title, day_number AS "dayNumber", sort_order')) {
-    return db.tasks.filter((t) => t.programId === a[0] && !t.batchId).map((t) => ({ ...t }));
+    if (!q.includes('deleted_at IS NULL')) throw new Error('activity list must skip archived activities');
+    return db.tasks.filter((t) => t.programId === a[0] && !t.batchId && !t.deletedAt).map((t) => ({ ...t }));
   }
   if (q.startsWith('INSERT INTO tasks (program_id, day_number, title')) {
     const t = { id: uuid(), programId: a[0], batchId: null, dayNumber: a[1], title: a[2], isRequired: a[3], isActive: a[4], sortOrder: 0,
@@ -125,7 +126,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return [{ id: t.id }];
   }
   if (q.startsWith('SELECT id::text, title, day_number AS "dayNumber", is_required')) {
-    return db.tasks.filter((t) => t.id === a[1] && t.programId === a[0] && !t.batchId).map((t) => ({ ...t }));
+    return db.tasks.filter((t) => t.id === a[1] && t.programId === a[0] && !t.batchId && (!q.includes('deleted_at IS NULL') || !t.deletedAt)).map((t) => ({ ...t }));
   }
   if (q.startsWith('UPDATE tasks SET title = $2')) {
     const t = db.tasks.find((x) => x.id === a[0])!;
@@ -166,13 +167,18 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   }
   if (q.includes('FROM members m JOIN batches b')) return []; // refresh notification audience
   if (q.startsWith('SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL')) {
-    return db.tasks.filter((t) => t.id === a[1] && t.programId === a[0] && !t.batchId).map((t) => ({ id: t.id, title: t.title }));
+    return db.tasks.filter((t) => t.id === a[1] && t.programId === a[0] && !t.batchId && !t.deletedAt).map((t) => ({ id: t.id, title: t.title }));
   }
   if (q.startsWith('DELETE FROM tasks t WHERE t.id = $2::uuid AND t.program_id = $1::uuid AND t.batch_id IS NULL AND NOT EXISTS')) {
     const t = db.tasks.find((x) => x.id === a[1] && x.programId === a[0] && !x.batchId);
     if (!t || db.submissions.some((sub) => sub.taskId === t.id)) return [];
     db.tasks = db.tasks.filter((x) => x !== t);
     return [{ id: t.id }];
+  }
+  if (q.startsWith('UPDATE tasks SET deleted_at = NOW(), is_active = false')) {
+    const t = db.tasks.find((x) => x.id === a[1] && x.programId === a[0] && !x.batchId && !x.deletedAt);
+    if (t) { t.deletedAt = new Date(); t.isActive = false; }
+    return t ? 1 : 0;
   }
   if (q.startsWith('SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id')) {
     return [{ submissions: db.submissions.filter((sub) => sub.taskId === a[0]).length }];
@@ -203,7 +209,7 @@ function server() {
 }
 
 /** A fresh request + reply each call (nothing carried between calls but the store). */
-async function call(handler: any, opts: { clerk?: string; memberId?: string; params?: any; body?: any } = {}) {
+async function call(handler: any, opts: { clerk?: string; memberId?: string; params?: any; body?: any; query?: any } = {}) {
   const sent: { status: number; body?: any } = { status: 200 };
   const reply: any = {
     status(code: number) { sent.status = code; return reply; },
@@ -211,7 +217,7 @@ async function call(handler: any, opts: { clerk?: string; memberId?: string; par
     header() { return reply; },
     send(b: any) { sent.body = b; return reply; },
   };
-  const req: any = { user: opts.clerk ?? 'clerk_admin', memberId: opts.memberId, params: opts.params ?? {}, body: opts.body, query: {}, server: server(), log: { warn() {}, error() {} } };
+  const req: any = { user: opts.clerk ?? 'clerk_admin', memberId: opts.memberId, params: opts.params ?? {}, body: opts.body, query: opts.query ?? {}, server: server(), log: { warn() {}, error() {} } };
   await handler(req, reply);
   return sent;
 }
@@ -628,10 +634,10 @@ describe('activities: delete', () => {
     expect(unhandled).toEqual([]);
   });
 
-  it('an activity with submissions is not deleted (disable instead); its submissions are kept', async () => {
+  it('an activity with submissions is not deleted without explicit confirmation; its submissions are kept', async () => {
     const res = await del(TASK_ADS);
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/1 submissions. Disable it instead of deleting/);
+    expect(res.body.error).toMatch(/1 submissions. Deleting it archives the activity and keeps its submissions/);
     expect(db.tasks.map((t) => t.id)).toEqual([TASK_ADS, TASK_W2]);
     expect(db.submissions).toEqual([{ taskId: TASK_ADS, memberId: MEMBER, dayNumber: 2, status: 'approved' }]);
   });
@@ -650,5 +656,45 @@ describe('activities: delete', () => {
     expect((await del('40000000-0000-4000-8000-000000000009')).status).toBe(404);
     expect((await del('not-a-uuid')).status).toBe(404);
     expect(db.tasks).toHaveLength(3);
+  });
+});
+
+describe('activities: delete an activity that has submissions (archive)', () => {
+  const archive = (id: string, clerk = 'clerk_admin') =>
+    call(graph.deleteActivityHandler, { clerk, params: { programId: PROGRAM, id }, query: { archive: 'true' } });
+
+  it('with explicit confirmation the activity is archived: hidden for admins and members, submissions kept', async () => {
+    const res = await archive(TASK_ADS);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ archived: TASK_ADS, submissions: 1 });
+    const row = db.tasks.find((t) => t.id === TASK_ADS)!;
+    expect(row.deletedAt).toBeInstanceOf(Date); // row kept, marked archived
+    expect(row.isActive).toBe(false);
+    expect(db.submissions).toEqual([{ taskId: TASK_ADS, memberId: MEMBER, dayNumber: 2, status: 'approved' }]); // untouched
+    expect((await config()).activities.map((a: any) => a.id)).toEqual([TASK_W2]); // gone from the admin table
+    const g = await memberGraph();
+    expect(g.weeks.flatMap((w: any) => w.activities.map((x: any) => x.taskId))).toEqual([TASK_W2]); // and for members
+    expect(unhandled).toEqual([]);
+  });
+
+  it('an archived activity cannot be edited, re-archived or deleted (404)', async () => {
+    await archive(TASK_ADS);
+    expect((await call(graph.updateActivityHandler, { params: { ...P, id: TASK_ADS }, body: { title: 'x' } })).status).toBe(404);
+    expect((await archive(TASK_ADS)).status).toBe(404);
+    expect((await call(graph.deleteActivityHandler, { params: { ...P, id: TASK_ADS } })).status).toBe(404);
+    expect(db.submissions).toHaveLength(1);
+  });
+
+  it('archive=true on an activity without submissions still really deletes it (nothing to keep)', async () => {
+    const res = await archive(TASK_W2);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ deleted: TASK_W2 });
+    expect(db.tasks.map((t) => t.id)).toEqual([TASK_ADS]);
+  });
+
+  it('only Admin / Super Admin can archive; Mentor and Moderator get 403 and nothing changes', async () => {
+    expect((await archive(TASK_ADS, 'clerk_mentor')).status).toBe(403);
+    expect((await archive(TASK_ADS, 'clerk_mod')).status).toBe(403);
+    expect(db.tasks.find((t) => t.id === TASK_ADS)!.deletedAt ?? null).toBeNull();
   });
 });

@@ -466,15 +466,26 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
   const confirmDelete = async () => {
     if (!deleting?.id) return;
     setDeleteError(null);
-    try { await del.mutateAsync(deleting.id); toast.success("Activity deleted"); setDeleting(null); }
+    try { await del.mutateAsync({ id: deleting.id }); toast.success("Activity deleted"); setDeleting(null); }
     catch (e: any) {
       if (e?.response?.status === 409) {
-        // Delete protection: submissions are never removed — offer disabling instead.
+        // The activity has submissions: ask again, stating how many, before archiving it.
         setBlockedSubmissions(Number(String(e?.message ?? "").match(/has (\d+) submission/)?.[1] ?? 0));
       } else {
         setDeleteError(errMsg(e, "Could not delete the activity"));
       }
     }
+  };
+  // Explicit second confirmation: the server archives the activity and keeps every submission.
+  const deleteKeepingSubmissions = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try {
+      const res: any = await del.mutateAsync({ id: deleting.id, archive: true });
+      const kept = Number(res?.submissions ?? blockedSubmissions ?? 0);
+      toast.success(`Activity deleted — ${kept} ${kept === 1 ? "submission" : "submissions"} kept`);
+      setDeleting(null); setBlockedSubmissions(null);
+    } catch (e) { setDeleteError(errMsg(e, "Could not delete the activity")); }
   };
   // Same operation as the row's eye button, run only on the admin's click.
   const disableInstead = async () => {
@@ -539,22 +550,22 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
         </Modal>
       )}
       {deleting && blockedSubmissions !== null && (
-        <Modal title="Can't delete this activity" onClose={closeDelete}>
+        <Modal title="Delete activity with submissions" onClose={closeDelete}>
           <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
-          <p className="text-[13px] text-[#a0a0a0]">
-            Members have already submitted work for this activity{blockedSubmissions > 0 ? ` (${blockedSubmissions} ${blockedSubmissions === 1 ? "submission" : "submissions"})` : ""}, so it can&apos;t be deleted — that would also remove their submissions.
+          <p className="text-[13px] text-[#f0f0f0]">
+            This activity has {blockedSubmissions} member {blockedSubmissions === 1 ? "submission" : "submissions"}.
           </p>
           <p className="text-[13px] text-[#a0a0a0]">
-            {deleting.isActive
-              ? "You can disable it instead: it is hidden from members, and all submissions and reviews are kept. You can enable it again later."
-              : "This activity is already disabled, so members no longer see it. Its submissions are kept."}
+            Deleting it removes the activity from this list, from members&apos; checklists and from the weekly graph.
+            The {blockedSubmissions === 1 ? "submission is" : `${blockedSubmissions} submissions are`} kept — with their reviews and points — and are not erased.
           </p>
           {deleteError && <p className="text-[13px] text-[#ef4444]">{deleteError}</p>}
           <div className="flex justify-end gap-2 pt-1">
-            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={deleteBusy}>{deleting.isActive ? "Cancel" : "Close"}</button>
+            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={deleteBusy}>Cancel</button>
             {deleting.isActive && (
-              <button type="button" className={BTN_PRIMARY} onClick={disableInstead} disabled={deleteBusy}>{save.isPending && <Loader2 size={14} className="animate-spin" />} Disable activity</button>
+              <button type="button" className={BTN_GHOST} onClick={disableInstead} disabled={deleteBusy}>{save.isPending && <Loader2 size={14} className="animate-spin" />} Disable instead</button>
             )}
+            <button type="button" className={BTN_PRIMARY} onClick={deleteKeepingSubmissions} disabled={deleteBusy}>{del.isPending && <Loader2 size={14} className="animate-spin" />} Delete activity</button>
           </div>
         </Modal>
       )}
