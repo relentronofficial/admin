@@ -1490,6 +1490,7 @@ export default function CourseDetailPage({
   // "Saving progress…" meanwhile), and the lesson to advance from once this
   // lesson's quiz / reflection / feedback prompts are closed.
   const [autoCompletingId, setAutoCompletingId] = useState<string | null>(null);
+  const [textLessonCountdown, setTextLessonCountdown] = useState<number | null>(null);
   const [pendingAdvance, setPendingAdvance] = useState<{ from: string; notBefore: number } | null>(null);
   const [advanceTick, setAdvanceTick] = useState(0);
   const advanceToLessonRef = useRef<(lesson: any) => void>(() => {});
@@ -2658,6 +2659,33 @@ export default function CourseDetailPage({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLesson?.id]);
 
+  // Auto-complete plain text lessons (no video, no interactionType) after 5 s of dwell time
+  const textAutoTimerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  useEffect(() => {
+    clearInterval(textAutoTimerRef.current);
+    setTextLessonCountdown(null);
+    if (!selectedLesson || selectedLesson.videoUrl) return;
+    const sc = (selectedLesson as any).sideContent;
+    const interactionType: string = sc?.interactionType ?? "";
+    if (interactionType === "yes_no" || interactionType === "agree_disagree") return;
+    if (markCalledRef.current || completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted) return;
+    const DELAY = 5;
+    setTextLessonCountdown(DELAY);
+    let remaining = DELAY;
+    textAutoTimerRef.current = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0) {
+        setTextLessonCountdown(remaining);
+      } else {
+        clearInterval(textAutoTimerRef.current);
+        setTextLessonCountdown(null);
+        handleTextComplete();
+      }
+    }, 1000);
+    return () => { clearInterval(textAutoTimerRef.current); setTextLessonCountdown(null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
   const handleSelectLessonWithFocus = (lesson: any) => {
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
@@ -3389,14 +3417,15 @@ export default function CourseDetailPage({
                     );
                   }
                   return (
-                    <button
-                      onClick={handleTextComplete}
-                      disabled={markComplete.isPending}
-                      className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50"
-                      style={{ background: "var(--color-accent)", color: "#fff" }}
+                    <span
+                      className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap opacity-60"
+                      style={{ color: "var(--color-text-subtle)" }}
                     >
-                      <CheckCircle2 size={13} /> Mark Complete
-                    </button>
+                      <Loader2 size={12} className="animate-spin" />
+                      {textLessonCountdown !== null && textLessonCountdown > 0
+                        ? `Completing in ${textLessonCountdown}s…`
+                        : "Completing…"}
+                    </span>
                   );
                 })()
               ) : null}
