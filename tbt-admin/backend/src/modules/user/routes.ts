@@ -3,6 +3,7 @@ import {
   getMeHandler,
   updateMeHandler,
   updateAvatarHandler,
+  uploadAvatarHandler,
   avatarPresignHandler,
   assignmentImagePresignHandler,
   assignmentFilePresignHandler,
@@ -153,6 +154,8 @@ import {
   forwardConversationMessageHandler,
 } from './conversationMessageActions.js';
 
+const AVATAR_BODY_LIMIT = 10 * 1024 * 1024; // profile page allows up to 5 MB; headroom for the raw body
+
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
   fastify.addHook('preHandler', fastify.authenticateUser);
@@ -162,6 +165,11 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.patch('/me', updateMeHandler);
   fastify.patch('/me/avatar', updateAvatarHandler);
   fastify.post('/me/avatar-presign', avatarPresignHandler);
+  // Photo bytes go through the backend (raw image body); scoped so the image parser applies only here.
+  fastify.register(async (scope) => {
+    scope.addContentTypeParser(/^image\//, { parseAs: 'buffer', bodyLimit: AVATAR_BODY_LIMIT }, (_req, body, done) => done(null, body));
+    scope.post('/me/avatar/upload', { bodyLimit: AVATAR_BODY_LIMIT }, uploadAvatarHandler);
+  });
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
   fastify.get('/support-quota', getSupportQuotaHandler);
