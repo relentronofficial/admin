@@ -1138,7 +1138,8 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   }
 
   // Mentorship module gate (uses pre-fetched moduleAccess).
-  if (moduleAccess.restricted && !isCourseModuleAllowed((course as any).module ?? null, moduleAccess)) {
+  // Explicit CourseAccess granted by an admin bypasses the module restriction.
+  if (moduleAccess.restricted && !hasAccess && !isCourseModuleAllowed((course as any).module ?? null, moduleAccess)) {
     return fail(reply, 403, MODULE_NOT_SELECTED);
   }
 
@@ -2079,10 +2080,15 @@ const MODULE_NOT_SELECTED = 'This course belongs to a mentorship module you have
 // Mentorship-module gate on course content (lib/mentorshipModules.ts). Applied
 // on top of CourseAccess wherever content is served, so hiding a module in the
 // UI is never the only barrier. Fails closed: a lookup error denies.
+// Exception: explicit CourseAccess granted by an admin always bypasses the module gate —
+// a member with direct access to a course must be able to access it regardless of module selection.
 async function isCourseInMemberModules(request: FastifyRequest, courseId: string): Promise<boolean> {
   try {
     const access = await loadMemberModuleAccess(request.server.prisma, request.server.redis ?? null, request.memberId!);
     if (!access.restricted) return true;
+    // Explicit admin-granted CourseAccess overrides module restrictions
+    const courseAccess = await getCourseAccessRecord(request.server.prisma as any, request.memberId!, courseId);
+    if (isAccessValid(courseAccess)) return true;
     const rows = await request.server.prisma.$queryRawUnsafe<{ module: string | null }[]>(
       `SELECT module FROM courses WHERE id = $1::uuid`, courseId,
     );
