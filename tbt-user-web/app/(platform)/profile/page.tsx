@@ -11,7 +11,7 @@ import {
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
   Brain, ChevronLeft, RotateCcw, Flame,
 } from "lucide-react";
-import { useMe, useUpdateProfile, useGetAvatarPresignUrl, useUpdateAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
+import { useMe, useUpdateProfile, useUploadAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
 import { cn } from "@/lib/utils/cn";
@@ -1161,8 +1161,7 @@ export default function ProfilePage() {
     queryClient.invalidateQueries({ queryKey: ["user", "me"] });
   }, [queryClient]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const getPresign = useGetAvatarPresignUrl();
-  const updateAvatar = useUpdateAvatar();
+  const uploadAvatar = useUploadAvatar();
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   if (isLoading || !profile) return <ProfileSkeleton />;
@@ -1173,12 +1172,10 @@ export default function ProfilePage() {
 
     setAvatarUploading(true);
     try {
-      const { data } = await getPresign.mutateAsync({ filename: file.name, contentType: file.type });
-      await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      await updateAvatar.mutateAsync(data.publicUrl);
+      await uploadAvatar.mutateAsync(file);
       toast.success("Profile photo updated");
-    } catch {
-      toast.error("Failed to upload photo");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to upload photo");
     } finally {
       setAvatarUploading(false);
     }

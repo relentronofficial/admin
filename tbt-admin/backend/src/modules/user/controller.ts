@@ -5780,6 +5780,64 @@ export async function updateAvatarHandler(request: FastifyRequest, reply: Fastif
   return ok(reply, { avatarUrl });
 }
 
+// POST /api/user/me/avatar/upload — the profile page sends the photo through the
+// backend: R2's CORS rejects a direct browser PUT to the presigned URL from the
+// user-web domain, so the avatar-presign flow never stored anything. Same
+// storage as the onboarding photo (Bunny Storage first, R2 fallback), then the
+// same save + cache refresh as PATCH /me/avatar.
+export async function uploadAvatarHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { filename = 'photo' } = request.query as { filename?: string };
+
+  const contentType = (request.headers['content-type'] ?? '').split(';')[0].trim();
+  if (!contentType.startsWith('image/')) return fail(reply, 400, 'Please select an image file');
+  const body = request.body as Buffer;
+  if (!Buffer.isBuffer(body) || body.length === 0) return fail(reply, 400, 'No file received');
+
+  const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
+  const key = `members/${memberId}/${Date.now()}-${safeFilename}`;
+  const cdnOrigin = bunnyCdnOrigin();
+  let publicUrl: string | undefined;
+
+  // Primary: Bunny Storage
+  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && cdnOrigin) {
+    try {
+      const res = await fetch(`https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`, {
+        method: 'PUT',
+        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+        body: new Uint8Array(body),
+      });
+      if (res.ok) publicUrl = `${cdnOrigin}/${key}`;
+      else request.log.warn(`Bunny avatar upload [${res.status}] – trying R2`);
+    } catch (e: any) {
+      request.log.warn(`Bunny avatar upload error – trying R2: ${e.message}`);
+    }
+  }
+
+  // Fallback: R2
+  if (!publicUrl && env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
+    try {
+      const s3 = new S3Client({
+        region: 'auto',
+        endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY },
+      });
+      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+      publicUrl = cdnOrigin
+        ? `${cdnOrigin}/${key}`
+        : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
+    } catch (e: any) {
+      request.log.error(`R2 avatar upload failed: ${e.message}`);
+    }
+  }
+
+  if (!publicUrl) return fail(reply, 502, 'Upload failed – no storage service available');
+
+  await request.server.prisma.member.update({ where: { id: memberId }, data: { profilePhotoUrl: publicUrl } });
+  void invalidateCache(request.server.redis ?? null, `me:${memberId}`);
+  return ok(reply, { avatarUrl: publicUrl });
+}
+
 // Per-member presign quota: 50 upload URLs per hour across all three
 // presign handlers (avatar, assignment image, assignment file). Each
 // URL is valid for 3600 s and buys the caller the right to write one
