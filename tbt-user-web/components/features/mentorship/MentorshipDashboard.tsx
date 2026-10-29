@@ -9,7 +9,7 @@ import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
-import { useMyEnrollments, useCourseLifelines } from "@/lib/hooks/useCourses";
+import { useCourseLifelines } from "@/lib/hooks/useCourses";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota } from "@/lib/hooks/useUser";
@@ -1678,7 +1678,7 @@ function NowLearningSection() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function MentorshipDashboard({ showBackLink = false, titleOverride = null }: { showBackLink?: boolean; titleOverride?: string | null }) {
+export default function MentorshipDashboard({ showBackLink = false, titleOverride = null, courseId = null }: { showBackLink?: boolean; titleOverride?: string | null; courseId?: string | null }) {
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
@@ -1696,14 +1696,9 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  // Course-scoped lifelines (match the video player): use the first active enrolled course.
-  const { data: enrollments } = useMyEnrollments();
-  const activeCourseId =
-    enrollments?.find((e) => !e.completedAt)?.courseId ??
-    enrollments?.[0]?.courseId ??
-    null;
-  const { data: courseLifelines } = useCourseLifelines(activeCourseId);
-  // Derived from course lifelines so the count matches what the video player shows.
+  // Course-scoped lifelines — use the courseId passed from the courses page (primaryCourseId).
+  // This is the same courseId the video player uses, so the counts always match.
+  const { data: courseLifelines } = useCourseLifelines(courseId);
   const lifelinesTotal: number | null =
     courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
   const lifelinesUsed: number | null =

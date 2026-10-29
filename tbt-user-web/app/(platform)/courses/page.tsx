@@ -1577,7 +1577,7 @@ export default function CoursesPage() {
       {roadmapCourseId && <CoursesPageRoadmap courseId={roadmapCourseId} />}
 
       {/* ── Mentorship Dashboard ─────────────────────────────────────── */}
-      <MentorshipDashboard titleOverride={primaryCourseTitle} />
+      <MentorshipDashboard titleOverride={primaryCourseTitle} courseId={primaryCourseId} />
 
       {/* ── Catalog failed to load — never fall back to the "new member" view ── */}
       {catalogError && !catalogLoading && (
