@@ -85,6 +85,26 @@ export function profileExtrasSelect(alias = 'x'): string {
   return FIELDS.map((f) => `${alias}.${PROFILE_EXTRA_COLUMNS[f].col} AS "${f}"`).join(', ');
 }
 
+/** The six onboarding skill ratings (1–10), in the order the forms show them. */
+export const SKILL_RATING_FIELDS = [
+  'skillBusinessFoundation', 'skillContent', 'skillFunnels', 'skillAds', 'skillSales', 'skillOverallMarketing',
+] as const satisfies readonly ProfileExtraField[];
+
+/** Skill ratings for a page of members, keyed by member id (absent = never rated). */
+export function buildSkillRatingsQuery(): string {
+  const cols = SKILL_RATING_FIELDS.map((f) => `x.${PROFILE_EXTRA_COLUMNS[f].col} AS "${f}"`).join(', ');
+  return `SELECT x.member_id::text AS id, ${cols} FROM member_profile_extras x WHERE x.member_id = ANY($1::uuid[])`;
+}
+
+/** Copies each member's saved ratings onto the row; unrated fields become null. */
+export function mergeSkillRatings(members: Array<Record<string, any>>, rows: Array<Record<string, any>>): void {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const m of members) {
+    const r = byId.get(m.id);
+    for (const f of SKILL_RATING_FIELDS) m[f] = r?.[f] ?? null;
+  }
+}
+
 /** Saves the given fields (side table + members.team_size). Fields left undefined are untouched. */
 export async function writeProfileExtras(prisma: Prisma, memberId: string, fields: ProfileExtrasInput): Promise<void> {
   const upsert = buildProfileExtrasUpsert(memberId, fields);

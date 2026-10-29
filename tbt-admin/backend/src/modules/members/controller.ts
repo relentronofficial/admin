@@ -18,7 +18,7 @@ import {
   getMemberLastActiveAt,
 } from '../../lib/memberActivity.js';
 import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
-import { profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
+import { buildSkillRatingsQuery, mergeSkillRatings, profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
 import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
 
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
@@ -317,6 +317,16 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
       // Member-chosen mentorship modules (read-only for admins; null = not chosen yet)
       m.mentorshipModules = parseModuleList(selMap.get(m.id));
     }
+
+    // Skill ratings live in member_profile_extras. The edit modal is filled from
+    // these rows, so without them it showed 1/10 and saving overwrote the
+    // member's real ratings.
+    const skillRows = await request.server.prisma.$queryRawUnsafe<any[]>(buildSkillRatingsQuery(), ids)
+      .catch((err: unknown) => {
+        request.log.error({ err }, 'member skill ratings lookup failed');
+        return null;
+      });
+    if (skillRows) mergeSkillRatings(members as any[], skillRows);
   }
 
   return reply.send({ success: true, data: members, meta: { total, page, limit }, error: null });

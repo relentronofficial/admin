@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildProfileExtrasUpsert, PROFILE_EXTRA_COLUMNS, profileExtrasSelect } from './memberProfileExtras.js';
+import { buildProfileExtrasUpsert, buildSkillRatingsQuery, mergeSkillRatings, PROFILE_EXTRA_COLUMNS, profileExtrasSelect, SKILL_RATING_FIELDS } from './memberProfileExtras.js';
 
 describe('member profile extras (side table, members is at the column limit)', () => {
   it('nothing provided → no write', () => {
@@ -27,5 +27,19 @@ describe('member profile extras (side table, members is at the column limit)', (
     const cols = Object.values(PROFILE_EXTRA_COLUMNS).map((c) => c.col);
     expect(cols).toEqual(expect.arrayContaining(['has_website', 'watched_video_steps', 'revenue_goal_after_tbt']));
     expect(profileExtrasSelect('x').split(', ').every((part) => part.startsWith('x.'))).toBe(true);
+  });
+
+  it('members list reads all six skill ratings from the side table, for the page of ids', () => {
+    expect(SKILL_RATING_FIELDS).toEqual(['skillBusinessFoundation', 'skillContent', 'skillFunnels', 'skillAds', 'skillSales', 'skillOverallMarketing']);
+    const sql = buildSkillRatingsQuery();
+    expect(sql).toContain('FROM member_profile_extras x WHERE x.member_id = ANY($1::uuid[])');
+    for (const f of SKILL_RATING_FIELDS) expect(sql).toContain(`x.${PROFILE_EXTRA_COLUMNS[f].col} AS "${f}"`);
+  });
+
+  it('merges saved ratings onto each member row; unrated members get null, not 1', () => {
+    const members: any[] = [{ id: 'a' }, { id: 'b' }];
+    mergeSkillRatings(members, [{ id: 'a', skillBusinessFoundation: 7, skillContent: 3, skillFunnels: null, skillAds: 10, skillSales: 5, skillOverallMarketing: 8 }]);
+    expect(members[0]).toEqual({ id: 'a', skillBusinessFoundation: 7, skillContent: 3, skillFunnels: null, skillAds: 10, skillSales: 5, skillOverallMarketing: 8 });
+    expect(members[1]).toEqual({ id: 'b', skillBusinessFoundation: null, skillContent: null, skillFunnels: null, skillAds: null, skillSales: null, skillOverallMarketing: null });
   });
 });
