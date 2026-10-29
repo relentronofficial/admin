@@ -1035,15 +1035,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <input value={profile.businessName ?? ""} onChange={(e) => setField("businessName", e.target.value)} className={INPUT_CLS} style={inputStyle("businessName")} />
                   <FieldError error={errors.businessName} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Established On</label>
-                  <input
-                    type="date"
-                    value={profile.businessEstablishedOn ? (typeof profile.businessEstablishedOn === "string" ? profile.businessEstablishedOn.slice(0, 10) : new Date(profile.businessEstablishedOn).toISOString().slice(0, 10)) : ""}
-                    onChange={(e) => setField("businessEstablishedOn", e.target.value)}
-                    className={INPUT_CLS} style={inputStyle("businessEstablishedOn")}
-                  />
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1060,7 +1051,17 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 </div>
                 <div data-field-error={errors.businessStartedFrom ? true : undefined}>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Business Started From *</label>
-                  <input value={profile.businessStartedFrom ?? ""} onChange={(e) => setField("businessStartedFrom", e.target.value)} placeholder="e.g. 2019 or Yet to Start" className={INPUT_CLS} style={inputStyle("businessStartedFrom")} />
+                  {/* Stored as text: a picked date is saved as YYYY-MM-DD. Older free-text values
+                      (e.g. "2019") are kept as they are until a date is picked. */}
+                  <input
+                    type="date"
+                    value={/^\d{4}-\d{2}-\d{2}/.test(profile.businessStartedFrom ?? "") ? String(profile.businessStartedFrom).slice(0, 10) : ""}
+                    onChange={(e) => setField("businessStartedFrom", e.target.value)}
+                    className={INPUT_CLS} style={inputStyle("businessStartedFrom")}
+                  />
+                  {profile.businessStartedFrom && !/^\d{4}-\d{2}-\d{2}/.test(profile.businessStartedFrom) && (
+                    <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>Saved: {profile.businessStartedFrom}</p>
+                  )}
                   <FieldError error={errors.businessStartedFrom} />
                 </div>
               </div>
