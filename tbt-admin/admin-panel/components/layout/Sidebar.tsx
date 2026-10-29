@@ -40,6 +40,15 @@ import {
   CreditCard,
   Terminal,
   PhoneCall,
+  Brain,
+  LayoutGrid,
+  KeyRound,
+  FolderKanban,
+  ListChecks,
+  RefreshCcw,
+  Grid3x3,
+  Volume2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -82,6 +91,27 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
       { name: "Group Chats",   href: "/groups",            icon: Users },
       { name: "Ad Campaigns",  href: "/ads",               icon: Megaphone },
       { name: "AI Content",    href: "/ai-content",        icon: Bot },
+    ],
+  },
+  {
+    // Psychometric Admin (ported from the standalone Psychometric platform —
+    // its own API and admin sign-in), plus TBT's built-in onboarding quiz.
+    label: "Psychometric",
+    items: [
+      { name: "Dashboard", href: "/psychometric/dashboard", icon: LayoutGrid },
+      { name: "Users", href: "/psychometric/users", icon: Users },
+      { name: "Access Codes", href: "/psychometric/shared-ids", icon: KeyRound },
+      { name: "Question Types", href: "/psychometric/question-types", icon: FolderKanban },
+      { name: "Questions", href: "/psychometric/questions", icon: HelpCircle },
+      { name: "Question Sets", href: "/psychometric/question-sets", icon: Layers },
+      { name: "Answer Options", href: "/psychometric/answer-options", icon: ListChecks },
+      { name: "Results", href: "/psychometric/results", icon: BarChart3 },
+      { name: "Retest Requests", href: "/psychometric/retest-requests", icon: RefreshCcw },
+      { name: "Reports", href: "/psychometric/reports", icon: FileText },
+      { name: "Settings", href: "/psychometric/settings", icon: SlidersHorizontal },
+      { name: "Business Matrix", href: "/psychometric/business-matrix", icon: Grid3x3 },
+      { name: "Voice / Audio", href: "/psychometric/voice", icon: Volume2 },
+      { name: "Onboarding Quiz", href: "/onboarding-quiz", icon: Brain },
     ],
   },
   {
@@ -160,7 +190,7 @@ export function Sidebar() {
             )}
             {group.items.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname?.startsWith(item.href) ?? false;
+              const isActive = !!pathname && (pathname === item.href || pathname.startsWith(`${item.href}/`));
               return (
                 <Link
                   key={item.name}
