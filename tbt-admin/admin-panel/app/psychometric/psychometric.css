@@ -1,0 +1,123 @@
+/* Psychometric Admin styles, ported from the standalone Psychometric app
+   (admin-web/app/globals.css). Every rule is scoped under .psy-root (set by
+   app/psychometric/layout.tsx) so nothing leaks into the rest of TBT Admin.
+   The module keeps its original light theme inside the dark TBT shell. */
+
+.psy-root {
+  --tbt-primary: #CB1417;
+  --tbt-primary-dark: #970F12;
+  --tbt-primary-light: #FEF2F2;
+  --tbt-accent: #1F2937;
+  --tbt-success: #10B981;
+  --tbt-danger: #EF4444;
+  --tbt-text: #1F2937;
+  --tbt-muted: #6B7280;
+  --tbt-bg: #F9FAFB;
+  --tbt-card: #FFFFFF;
+  --tbt-border: #E5E7EB;
+
+  --tbt-sidebar-bg: #0B0B0D;
+  --tbt-sidebar-bg-alt: #16161A;
+  --tbt-sidebar-text: #9CA3AF;
+  --tbt-sidebar-active-bg: rgba(203, 20, 23, 0.16);
+  --tbt-sidebar-border: rgba(255, 255, 255, 0.08);
+}
+
+.psy-root * { box-sizing: border-box; }
+.psy-root { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--tbt-bg); color: var(--tbt-text); max-width: 100%; overflow-x: hidden; border-radius: 1rem; min-height: calc(100vh - 8rem); }
+/* Form controls: the source app ran on a light page; inside the dark TBT shell make sure inputs keep dark text on white. */
+.psy-root input, .psy-root select, .psy-root textarea { color: var(--tbt-text); background-color: #fff; }
+
+/* Spinner */
+.psy-root .spinner { width: 40px; height: 40px; border: 4px solid var(--tbt-border); border-top-color: var(--tbt-primary); border-radius: 50%; animation: psy-spin 0.8s linear infinite; }
+@keyframes psy-spin { to { transform: rotate(360deg); } }
+
+/* Toast */
+.psy-root #toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
+.psy-root .toast { padding: 0.75rem 1.25rem; border-radius: 0.5rem; color: #fff; font-size: 0.875rem; font-weight: 500; opacity: 0; transform: translateY(10px); transition: all 0.3s ease; max-width: 320px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.psy-root .toast.show { opacity: 1; transform: translateY(0); }
+.psy-root .toast.success { background: var(--tbt-success); }
+.psy-root .toast.error { background: var(--tbt-danger); }
+.psy-root .toast.info { background: var(--tbt-primary); }
+
+/* Admin table */
+.psy-root .data-table { width: 100%; border-collapse: collapse; }
+.psy-root .data-table th { background: transparent; color: var(--tbt-muted); padding: 0.75rem 0.5rem; text-align: left; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 1px solid var(--tbt-border); vertical-align: bottom; }
+.psy-root .data-table td { padding: 0.75rem 0.5rem; border-bottom: 1px solid var(--tbt-border); font-size: 0.875rem; vertical-align: middle; }
+.psy-root .data-table th:first-child, .psy-root .data-table td:first-child { padding-left: 0.25rem; }
+.psy-root .data-table th:last-child, .psy-root .data-table td:last-child { padding-right: 0.25rem; }
+.psy-root .data-table tr:hover td { background: #FAFAFA; }
+
+/* Reusable table layout helpers (shared across all admin list pages).
+   .table-scroll confines any horizontal overflow to the table region — never
+   the page. .table-fixed gives predictable, content-independent column widths
+   (set via <colgroup>) so one long email/value can't blow out the table or
+   make a row wrap into many lines. .truncate ellipsizes an overflowing cell to
+   its column width (pair with a title attribute for the full value). */
+.psy-root .table-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.psy-root .data-table.table-fixed { table-layout: fixed; min-width: 880px; }
+.psy-root .data-table td.truncate, .psy-root .data-table th.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.psy-root .data-table td.nowrap, .psy-root .data-table th.nowrap { white-space: nowrap; }
+
+/* Level badges */
+.psy-root .badge { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.psy-root .badge::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+.psy-root .badge-excellent { background: #D1FAE5; color: #065F46; }
+.psy-root .badge-good { background: #DBEAFE; color: #1E40AF; }
+.psy-root .badge-average { background: #FEF3C7; color: #92400E; }
+.psy-root .badge-needs { background: #FEE2E2; color: #991B1B; }
+.psy-root .badge-active { background: #D1FAE5; color: #059669; }
+.psy-root .badge-inactive { background: #F3F4F6; color: #6B7280; }
+.psy-root .badge-pending { background: #FEF3C7; color: #B45309; }
+
+/* Sidebar */
+.psy-root .sidebar { width: 248px; height: 100vh; top: 0; background: var(--tbt-sidebar-bg); color: white; flex-shrink: 0; }
+.psy-root .sidebar a { display: flex; align-items: center; gap: 0.75rem; margin: 0.125rem 0.75rem; padding: 0.625rem 0.75rem; color: var(--tbt-sidebar-text); text-decoration: none; font-size: 0.875rem; font-weight: 500; transition: all 0.2s; border-radius: 0.625rem; border-left: 3px solid transparent; }
+.psy-root .sidebar a:hover { color: white; background: rgba(255,255,255,0.06); }
+.psy-root .sidebar a.active { color: white; background: var(--tbt-sidebar-active-bg); border-left-color: var(--tbt-primary); }
+.psy-root .sidebar a svg { flex-shrink: 0; }
+
+/* Card */
+.psy-root .card { background: var(--tbt-card); border-radius: 1rem; border: 1px solid var(--tbt-border); padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+
+/* Btn */
+.psy-root .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.75rem 1.375rem; border-radius: 0.75rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
+.psy-root .btn-primary { background: var(--tbt-primary); color: white; box-shadow: 0 1px 2px rgba(203,20,23,0.25); }
+.psy-root .btn-primary:hover { background: var(--tbt-primary-dark); }
+.psy-root .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.psy-root .btn-accent { background: var(--tbt-accent); color: white; }
+.psy-root .btn-accent:hover { background: #d97706; }
+.psy-root .btn-outline { background: white; border: 1.5px solid var(--tbt-border); color: var(--tbt-text); }
+.psy-root .btn-outline:hover { background: #F9FAFB; border-color: var(--tbt-muted); }
+.psy-root .btn-danger { background: var(--tbt-danger); color: white; }
+.psy-root .btn-sm { padding: 0.5rem 0.875rem; font-size: 0.8125rem; border-radius: 0.625rem; }
+
+/* Category bars (Reports) */
+.psy-root .cat-bar { height: 10px; border-radius: 999px; background: var(--tbt-border); overflow: hidden; }
+.psy-root .cat-bar-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+
+/* Modal overlay */
+.psy-root .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+.psy-root .modal-box { background: white; border-radius: 1.25rem; max-width: 32rem; width: 100%; max-height: 90vh; overflow-y: auto; }
+
+/* Page header */
+.psy-root .page-header { background: white; border-bottom: 1px solid var(--tbt-border); padding: 1.25rem 1.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.psy-root .page-header h1 { font-size: 1.375rem; font-weight: 800; color: var(--tbt-text); }
+.psy-root .page-header .breadcrumb { font-size: 0.8125rem; color: var(--tbt-muted); margin-bottom: 0.125rem; }
+
+@media (max-width: 640px) {
+  .psy-root .page-header { padding: 1rem; }
+  .psy-root .page-header h1 { font-size: 1.125rem; }
+}
+
+/* Avatar */
+.psy-root .avatar-circle { width: 40px; height: 40px; border-radius: 999px; background: var(--tbt-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.875rem; flex-shrink: 0; }
+.psy-root .icon-btn { width: 38px; height: 38px; border-radius: 999px; display: flex; align-items: center; justify-content: center; color: var(--tbt-muted); background: #F3F4F6; flex-shrink: 0; border: none; cursor: pointer; }
+
+/* Notification dropdown — item read/unread background, hover, and loading skeleton */
+.psy-root .notif-item { background: #fff; transition: background 0.12s ease; }
+.psy-root .notif-item.unread { background: var(--tbt-primary-light); }
+.psy-root .notif-item:hover { background: var(--tbt-bg); }
+.psy-root .notif-item.unread:hover { background: #FCE7E7; }
+.psy-root .skeleton-pulse { animation: psy-skPulse 1.2s ease-in-out infinite; }
+@keyframes psy-skPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
