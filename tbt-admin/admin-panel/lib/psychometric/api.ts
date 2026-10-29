@@ -1,15 +1,14 @@
-// The standalone Psychometric platform's own API (Express + MongoDB, deployed
-// separately on Vercel). It has its own admin accounts, so these pages sign in
-// to it separately from Clerk; the token is kept under its own storage keys.
-const API_BASE = process.env.NEXT_PUBLIC_PSYCHOMETRIC_API_URL || "https://backend-three-peach-48.vercel.app/api/v1";
-const TOKEN_KEY = "tbt_psy_admin_token";
-const ADMIN_KEY = "tbt_psy_admin";
-export const LOGIN_PATH = "/psychometric/login";
+// Psychometric Admin talks to the standalone Psychometric platform through the
+// TBT backend's bridge (/api/psychometric-bridge), authenticated with the
+// admin's TBT (Clerk) session — no second login. The bridge holds the
+// Psychometric service-account session server-side and only allows Admin /
+// Super Admin. Paths passed in are the Psychometric ones ("/admin/...").
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/psychometric-bridge`;
 
 // Standard response envelope returned by (almost) every backend endpoint.
-// Some endpoints add top-level fields (auth: token/admin; list endpoints:
-// total/pages/stats) or return the payload directly (dashboard/reports) — those
-// call sites pass their own response shape as the generic argument.
+// Some endpoints add top-level fields (list endpoints: total/pages/stats) or
+// return the payload directly (dashboard/reports) — those call sites pass
+// their own response shape as the generic argument.
 export type ApiEnvelope<T = unknown> = {
   success: boolean;
   message?: string;
@@ -23,14 +22,18 @@ export type ApiEnvelope<T = unknown> = {
 
 export type ApiResult<T = unknown> = { ok: boolean; status: number; data: T };
 
-async function request<T = unknown>(
-  method: string,
-  path: string,
-  body?: unknown,
-  token?: string | null
-): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+/** The admin's current Clerk session token, as the rest of TBT Admin sends it. */
+export async function authHeaders(): Promise<Record<string, string>> {
+  if (typeof window === "undefined") return {};
+  const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string | null> } | null } }).Clerk;
+  const token = await clerk?.session?.getToken().catch(() => null);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+// The ported pages pass a `token` argument everywhere; it is ignored now (the
+// Clerk token is attached per request) but kept so the page code is unchanged.
+async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", ...(await authHeaders()) };
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
@@ -38,18 +41,8 @@ async function request<T = unknown>(
       body: body ? JSON.stringify(body) : undefined,
     });
     const data = await res.json().catch(() => ({ success: false, message: "Server error" }));
-
-    // A 401 on a request that carried a token means the session this app already
-    // considered "logged in" is no longer valid server-side (expired, or a later
-    // login elsewhere invalidated it — this app uses a single-active-session
-    // model). Don't leave the user stuck on a broken page: clear the stale token
-    // and send them back to login with an explanation. (A 401 with no token,
-    // e.g. a failed login attempt itself, is normal and left alone.)
-    if (res.status === 401 && token && typeof window !== "undefined" && !window.location.pathname.startsWith(LOGIN_PATH)) {
-      removeToken();
-      window.location.href = `${LOGIN_PATH}?reason=session-ended`;
-    }
-
+    // No redirect on 401/403: TBT Admin never auto-signs-out, and access is
+    // checked once in app/psychometric/layout.tsx.
     return { ok: res.ok, status: res.status, data };
   } catch (error) {
     console.error("Request failed:", error);
@@ -61,52 +54,33 @@ async function request<T = unknown>(
   }
 }
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
 export const api = {
-  get: <T = unknown>(path: string, token?: string | null) => request<T>("GET", path, undefined, token),
-  post: <T = unknown>(path: string, body?: unknown, token?: string | null) => request<T>("POST", path, body, token),
-  put: <T = unknown>(path: string, body?: unknown, token?: string | null) => request<T>("PUT", path, body, token),
-  patch: <T = unknown>(path: string, body?: unknown, token?: string | null) => request<T>("PATCH", path, body, token),
-  delete: <T = unknown>(path: string, token?: string | null) => request<T>("DELETE", path, undefined, token),
+  get: <T = unknown>(path: string, _token?: string | null) => request<T>("GET", path),
+  post: <T = unknown>(path: string, body?: unknown, _token?: string | null) => request<T>("POST", path, body),
+  put: <T = unknown>(path: string, body?: unknown, _token?: string | null) => request<T>("PUT", path, body),
+  patch: <T = unknown>(path: string, body?: unknown, _token?: string | null) => request<T>("PATCH", path, body),
+  delete: <T = unknown>(path: string, _token?: string | null) => request<T>("DELETE", path),
 };
+/* eslint-enable @typescript-eslint/no-unused-vars */
 
+/**
+ * Kept for the ported pages, which read a token before calling `api` and skip
+ * work when it is missing. Auth is the Clerk session now, so this is just a
+ * non-empty marker; it is never sent anywhere.
+ */
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function removeToken() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(ADMIN_KEY);
-}
-
-export function getStoredAdmin(): { _id: string; email: string } | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return JSON.parse(localStorage.getItem(ADMIN_KEY) || "null");
-  } catch {
-    return null;
-  }
-}
-
-export function setStoredAdmin(admin: { _id: string; email: string }) {
-  localStorage.setItem(ADMIN_KEY, JSON.stringify(admin));
+  return typeof window === "undefined" ? null : "tbt-session";
 }
 
 export const API_BASE_URL = API_BASE;
 
-// Export endpoints require the admin's bearer token, so they can't be plain
-// <a href> links (a browser navigation carries no Authorization header — the
-// user would just get redirected to a raw 401 JSON response). Fetch the file
-// with the token attached and trigger the download via a blob URL instead.
-export async function downloadFile(path: string, token: string | null, filename: string): Promise<{ ok: boolean; message?: string }> {
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+// Export endpoints need the admin's auth header, so they can't be plain <a href>
+// links. Fetch the file and trigger the download via a blob URL instead.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function downloadFile(path: string, _token: string | null, filename: string): Promise<{ ok: boolean; message?: string }> {
   try {
-    const res = await fetch(`${API_BASE}${path}`, { headers });
+    const res = await fetch(`${API_BASE}${path}`, { headers: await authHeaders() });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       return { ok: false, message: data.message || "Export failed." };
