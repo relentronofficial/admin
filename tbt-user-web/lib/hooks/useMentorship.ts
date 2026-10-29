@@ -29,6 +29,19 @@ export const useMentorshipRevenue = () =>
     staleTime: 300_000,
   });
 
+// Fetched only when the chart shows a longer period. The key sits under
+// ["user", "mentorship-revenue"], so saving revenue refreshes it too.
+export const useMentorshipRevenueHistory = (enabled: boolean) =>
+  useQuery({
+    queryKey: ["user", "mentorship-revenue", "history"],
+    queryFn: async () => {
+      const res = await mentorshipService.getRevenueHistory();
+      return res.data ?? null;
+    },
+    enabled,
+    staleTime: 300_000,
+  });
+
 export const useUpsertMentorshipRevenue = () => {
   const qc = useQueryClient();
   return useMutation({

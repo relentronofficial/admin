@@ -87,6 +87,19 @@ export type MentorshipModules = {
 export type UpsertRevenueBody = Partial<Omit<MentorshipRevenue, "weekNumber" | "year" | "updatedAt">>;
 export type UpsertSocialBody = Partial<Omit<MentorshipSocial, "weekNumber" | "year" | "updatedAt">>;
 
+/** Every week the member saved (oldest first) — for the chart's longer periods. */
+export type MentorshipRevenueHistory = {
+  currentWeek: { weekNumber: number; year: number };
+  weeks: {
+    weekNumber: number;
+    year: number;
+    revenueGenerated: number | null;
+    numberOfOrders: number | null;
+    dailyRevenue: (number | string | null)[] | null;
+    dailyOrders: (number | string | null)[] | null;
+  }[];
+};
+
 export type InstagramStatus =
   | { connected: false; enabled?: boolean }
   | { connected: true; username: string; syncedAt: string | null; expiresAt: string | null; enabled: boolean };
@@ -97,6 +110,9 @@ export const mentorshipService = {
 
   getRevenue: () =>
     apiClient.get<never, ApiResponse<MentorshipRevenue | null>>("/api/user/mentorship/revenue"),
+
+  getRevenueHistory: () =>
+    apiClient.get<never, ApiResponse<MentorshipRevenueHistory>>("/api/user/mentorship/revenue/history"),
 
   upsertRevenue: (data: UpsertRevenueBody) =>
     apiClient.put<never, ApiResponse<MentorshipRevenue>>("/api/user/mentorship/revenue", data),

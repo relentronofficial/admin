@@ -141,6 +141,7 @@ import {
   getMentorshipModulesHandler,
   updateMentorshipModulesHandler,
   getMentorshipRevenueHandler,
+  getMentorshipRevenueHistoryHandler,
   upsertMentorshipRevenueHandler,
   getMentorshipSocialHandler,
   upsertMentorshipSocialHandler,
@@ -192,6 +193,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/mentorship/modules', getMentorshipModulesHandler);
   fastify.put('/mentorship/modules', updateMentorshipModulesHandler);
   fastify.get('/mentorship/revenue', getMentorshipRevenueHandler);
+  fastify.get('/mentorship/revenue/history', getMentorshipRevenueHistoryHandler);
   fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
   fastify.get('/mentorship/social',  getMentorshipSocialHandler);
   fastify.put('/mentorship/social',  upsertMentorshipSocialHandler);
