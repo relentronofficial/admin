@@ -8,6 +8,8 @@ const state: Record<string, any> = {};
 vi.mock("@/lib/hooks/useMentorship", () => ({
   useMentorshipStats: () => state.stats,
   useMentorshipRevenue: () => state.revenue,
+  // History is only requested for the longer periods (enabled=false on Daily).
+  useMentorshipRevenueHistory: (enabled: boolean) => { state.historyRequested ||= enabled; return enabled ? state.history : { data: undefined, isLoading: false, isError: false }; },
   useUpsertMentorshipRevenue: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMentorshipSocial: () => ({ data: null }),
   useUpsertMentorshipSocial: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -27,6 +29,8 @@ vi.mock("@/lib/hooks/useBatchProgram", async (importOriginal) => ({
   useBuyExtraLifeline: () => state.buy,
 }));
 vi.mock("@/lib/hooks/useDashboard", () => ({ useContinueLearning: () => ({ data: [], isLoading: false }) }));
+// The dashboard reads course lifelines via useCourseLifelines (needs a QueryClient otherwise).
+vi.mock("@/lib/hooks/useCourses", () => ({ useCourseLifelines: () => ({ data: undefined }) }));
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
 vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota, useCreditPricing: () => ({ data: state.pricing }) }));
 vi.mock("@/lib/hooks/useSupportCalls", () => ({ useSupportCallsSummary: () => state.callSummary }));
@@ -87,6 +91,19 @@ function baseData() {
         dailyOrders: [60, 70, null, 85, 110, 130, 120],
         updatedAt: null,
       },
+    },
+    historyRequested: false,
+    // GET /api/user/mentorship/revenue/history: two saved weeks (W41 only weekly totals, W42 = the week above)
+    history: {
+      data: {
+        currentWeek: { weekNumber: 42, year: 2026 },
+        weeks: [
+          { weekNumber: 41, year: 2026, revenueGenerated: 300000, numberOfOrders: 400, dailyRevenue: null, dailyOrders: null },
+          { weekNumber: 42, year: 2026, revenueGenerated: 457856, numberOfOrders: 575,
+            dailyRevenue: [50000, 60000, null, 70000, 90000, 100000, 87856], dailyOrders: [60, 70, null, 85, 110, 130, 120] },
+        ],
+      },
+      isLoading: false, isError: false,
     },
   };
 }
@@ -211,21 +228,71 @@ describe("MentorshipDashboard", () => {
     expect(screen.getByTestId("peak-callout").textContent).toContain("₹96,300");
     expect(screen.getByTestId("peak-callout").textContent).toContain("117 Orders");
 
-    // Cumulative chart ends at the weekly total shown on the revenue card (₹499,900 → "₹500K" top tick)
-    fireEvent.click(screen.getByText("Cumulative"));
-    const ticks = [...document.querySelectorAll(`${chart} text`)].map((t) => t.textContent);
-    expect(ticks).toContain("₹500K");
   });
 
-  it("keeps the peak on the best daily value in cumulative mode", () => {
+  it("period dropdown replaces Daily/Cumulative: Daily, Weekly, Monthly, Yearly, Overall; Daily by default", () => {
     render(<MentorshipDashboard />);
-    fireEvent.click(screen.getByText("Cumulative"));
-    const peak = screen.getByTestId("peak-callout").textContent!;
-    expect(peak).toContain("PEAK DAY (SAT)");
-    expect(peak).toContain("₹1,00,000");
+    expect(screen.queryByText("Cumulative")).toBeNull();
+    const select = screen.getByRole("combobox", { name: "Chart period" }) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Daily", "Weekly", "Monthly", "Yearly", "Overall"]);
+    expect(select.value).toBe("daily");
+    expect(state.historyRequested).toBe(false); // Daily uses this week's data only
   });
 
-  it("shows a hover tooltip for the day under the pointer, from the saved data (daily and cumulative)", () => {
+  it("Weekly: one point per week from the saved history (daily sums, or the weekly total when no days were saved)", () => {
+    render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "weekly" } });
+    expect(state.historyRequested).toBe(true);
+    const svg = 'svg[aria-label="Weekly revenue and order trajectory"]';
+    expect(document.querySelectorAll(`${svg} circle`).length).toBe(2); // W41, W42 saved; W31–W40 are gaps
+    expect(screen.getByText("W42")).toBeTruthy();
+    const peak = screen.getByTestId("peak-callout").textContent!;
+    expect(peak).toContain("PEAK WEEK (W42)");
+    expect(peak).toContain("₹4,57,856"); // 50000+60000+70000+90000+100000+87856
+    expect(peak).toContain("575 Orders");
+    expect(screen.getByText("Weekly Revenue (₹)")).toBeTruthy();
+    expect(screen.getByText(/Comparative trendline for W31 – W42/)).toBeTruthy();
+  });
+
+  it("Monthly and Yearly group the same saved values by calendar month / year; Overall spans every saved week", () => {
+    render(<MentorshipDashboard />);
+    const select = screen.getByRole("combobox", { name: "Chart period" });
+    fireEvent.change(select, { target: { value: "monthly" } });
+    let peak = screen.getByTestId("peak-callout").textContent!;
+    expect(peak).toContain("PEAK MONTH (OCT 2026)");
+    expect(peak).toContain("₹7,57,856"); // W41 total (Thu 8 Oct) + W42 days, all in October
+    expect(peak).toContain("975 Orders");
+    expect(screen.getByText(/Comparative trendline for Nov 2025 – Oct 2026/)).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: "yearly" } });
+    peak = screen.getByTestId("peak-callout").textContent!;
+    expect(peak).toContain("PEAK YEAR (2026)");
+    expect(peak).toContain("₹7,57,856");
+
+    fireEvent.change(select, { target: { value: "overall" } });
+    expect(document.querySelectorAll('svg[aria-label="Weekly revenue and order trajectory"] circle').length).toBe(2);
+    expect(screen.getByText(/Comparative trendline for W41 – W42/)).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: "daily" } });
+    expect(screen.getByText("Mon(12)")).toBeTruthy(); // back to this week's days
+  });
+
+  it("longer periods: loading, error and no-history states are shown, never invented values", () => {
+    const { rerender } = render(<MentorshipDashboard />);
+    const select = screen.getByRole("combobox", { name: "Chart period" });
+    state.history = { data: undefined, isLoading: true, isError: false };
+    fireEvent.change(select, { target: { value: "yearly" } });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    state.history = { data: undefined, isLoading: false, isError: true };
+    rerender(<MentorshipDashboard />);
+    expect(screen.getByText("Couldn't load your revenue history")).toBeTruthy();
+    state.history = { data: { currentWeek: { weekNumber: 42, year: 2026 }, weeks: [] }, isLoading: false, isError: false };
+    rerender(<MentorshipDashboard />);
+    expect(screen.getByText("No revenue saved for this period yet")).toBeTruthy();
+    expect(screen.queryByTestId("peak-callout")).toBeNull();
+  });
+
+  it("shows a hover tooltip for the day under the pointer, from the saved data", () => {
     render(<MentorshipDashboard />);
     const svg = document.querySelector('svg[aria-label="Weekly revenue and order trajectory"]') as SVGSVGElement;
     // jsdom has no layout: give the chart its default 700px box (1 SVG unit = 1px).
@@ -244,10 +311,6 @@ describe("MentorshipDashboard", () => {
     expect(tip()).toContain("No revenue saved");
     expect(tip()).toContain("No orders saved");
 
-    fireEvent.click(screen.getByText("Cumulative"));
-    act(() => { hover(1); }); // running totals Mon+Tue
-    expect(tip()).toContain("Total ₹1,10,000");
-    expect(tip()).toContain("Total 130 orders");
 
     act(() => { capture.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, clientX: 900 })); });
     act(() => { fireEvent.pointerLeave(capture); });

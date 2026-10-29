@@ -6,9 +6,10 @@ import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
 } from "lucide-react";
 import {
-  useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
+  useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue, useMentorshipRevenueHistory,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
+import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
 import { useCourseLifelines } from "@/lib/hooks/useCourses";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
@@ -925,25 +926,29 @@ const WEEK_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 function WeeklyLineChart({
   revData,
   ordData,
-  weekDays,
-  mode,
+  labels,
+  tips,
+  peakTags,
+  peakKind,
 }: {
   revData: (number | null)[];
   ordData: (number | null)[];
-  weekDays: { label: string; day: number }[];
-  mode: "daily" | "cumulative";
+  /** x-axis label per point */
+  labels: string[];
+  /** tooltip heading per point */
+  tips: string[];
+  /** short name per point for the peak callout, e.g. "SAT", "W42", "OCT 2026" */
+  peakTags: string[];
+  /** "DAY" | "WEEK" | "MONTH" | "YEAR" */
+  peakKind: string;
 }) {
-  // Cumulative: running total over entered days; a missing day stays a gap.
-  const cum = (arr: (number | null)[]) => {
-    let run = 0;
-    return arr.map((v) => (v == null ? null : (run += v)));
-  };
-  const displayRev = mode === "cumulative" ? cum(revData) : revData;
-  const displayOrd = mode === "cumulative" ? cum(ordData) : ordData;
+  const displayRev = revData;
+  const displayOrd = ordData;
+  const n = revData.length;
 
   // Draw at the container's real width (1 unit = 1px) so the plot fills the card
   // instead of letterboxing a fixed 700-wide canvas. Below 360 it scales down so
-  // the seven day labels never overlap.
+  // the x-axis labels never overlap.
   const svgRef = useRef<SVGSVGElement>(null);
   const [W, setW] = useState(700);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -967,7 +972,7 @@ function WeeklyLineChart({
   const maxRev = Math.max(...nums(displayRev), 1);
   const maxOrd = Math.max(...nums(displayOrd), 1);
 
-  const xOf = (i: number) => PL + (i / 6) * PW;
+  const xOf = (i: number) => PL + (n > 1 ? i / (n - 1) : 0.5) * PW;
   const yRev = (v: number) => PT + (1 - v / maxRev) * PH;
   const yOrd = (v: number) => PT + (1 - v / maxOrd) * PH;
 
@@ -986,26 +991,30 @@ function WeeklyLineChart({
   const revSegs = segments(displayRev, yRev);
   const ordSegs = segments(displayOrd, yOrd);
 
-  // Peak day is always the best DAILY revenue (in cumulative mode the last point
-  // would otherwise always "peak"). The callout sits on the displayed line.
+  // Peak = the point with the best revenue. The callout sits on the displayed line.
   const dailyRevNums = nums(revData);
   const peakIdx = dailyRevNums.length ? revData.indexOf(Math.max(...dailyRevNums)) : -1;
   const peakDisplay = peakIdx >= 0 ? displayRev[peakIdx] : null;
   const peakX = peakIdx >= 0 ? xOf(peakIdx) : 0;
+  // Callout box: wide enough for its title, kept inside the plot (the newest point sits on the right edge).
+  const peakTitle = peakIdx >= 0 ? `PEAK ${peakKind} (${peakTags[peakIdx]})` : "";
+  const peakBoxW = Math.max(88, Math.round(peakTitle.length * 4.6 + 12));
+  const peakBoxX = Math.min(Math.max(peakX, PL + peakBoxW / 2), W - PR - peakBoxW / 2);
   const peakY = peakDisplay != null ? yRev(peakDisplay) : 0;
 
   const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
 
-  // Pointer → nearest weekday column (SVG units match CSS px; scaled if the box differs).
+  // Pointer → nearest point column (SVG units match CSS px; scaled if the box differs).
   const onPointer = (e: React.PointerEvent<SVGRectElement>) => {
     const box = svgRef.current?.getBoundingClientRect();
     if (!box || box.width === 0) return;
     const x = ((e.clientX - box.left) / box.width) * W;
-    setHoverIdx(Math.min(6, Math.max(0, Math.round(((x - PL) / PW) * 6))));
+    setHoverIdx(n > 1 ? Math.min(n - 1, Math.max(0, Math.round(((x - PL) / PW) * (n - 1)))) : 0);
   };
-  const tipW = 112;
+  const tipW = Math.max(112, ...tips.map((t) => t.length * 5 + 16));
   const tipX = hoverIdx != null ? Math.min(Math.max(xOf(hoverIdx) - tipW / 2, PL), W - PR - tipW) : 0;
-  const unit = mode === "cumulative" ? "Total " : "";
+  // Many points (Overall): label every k-th, counted back from the latest so it is always labelled.
+  const labelStep = Math.max(1, Math.ceil(n / 8));
 
   // Y-axis ticks (4 levels)
   const yTicks = [0, 0.33, 0.67, 1].map(p => ({
@@ -1054,15 +1063,15 @@ function WeeklyLineChart({
       {peakIdx >= 0 && peakDisplay != null && (
         <g data-testid="peak-callout">
           <line x1={peakX} y1={PT} x2={peakX} y2={PT + PH} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3 2" />
-          <rect x={peakX - 44} y={peakY - 36} width={88} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
-          <text x={peakX} y={peakY - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
-            PEAK DAY ({weekDays[peakIdx]?.label?.toUpperCase()})
+          <rect x={peakBoxX - peakBoxW / 2} y={peakY - 36} width={peakBoxW} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+          <text x={peakBoxX} y={peakY - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
+            {peakTitle}
           </text>
-          <text x={peakX} y={peakY - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
+          <text x={peakBoxX} y={peakY - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
             ₹{(revData[peakIdx] as number).toLocaleString("en-IN")}
           </text>
           {ordData[peakIdx] != null && (
-            <text x={peakX} y={peakY - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
+            <text x={peakBoxX} y={peakY - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
               {ordData[peakIdx]} Orders
             </text>
           )}
@@ -1078,13 +1087,13 @@ function WeeklyLineChart({
           )}
           <rect x={tipX} y={PT} width={tipW} height={46} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.18)" strokeWidth="1" />
           <text x={tipX + 8} y={PT + 13} fontSize="9" fill="rgba(255,255,255,0.55)" fontWeight="700">
-            {weekDays[hoverIdx]?.label} ({weekDays[hoverIdx]?.day}){mode === "cumulative" ? " · cumulative" : ""}
+            {tips[hoverIdx]}
           </text>
           <text x={tipX + 8} y={PT + 27} fontSize="10" fill="var(--color-accent)" fontWeight="800">
-            {displayRev[hoverIdx] != null ? `${unit}₹${(displayRev[hoverIdx] as number).toLocaleString("en-IN")}` : "No revenue saved"}
+            {displayRev[hoverIdx] != null ? `₹${(displayRev[hoverIdx] as number).toLocaleString("en-IN")}` : "No revenue saved"}
           </text>
           <text x={tipX + 8} y={PT + 40} fontSize="9" fill="#eab308">
-            {displayOrd[hoverIdx] != null ? `${unit}${displayOrd[hoverIdx]} orders` : "No orders saved"}
+            {displayOrd[hoverIdx] != null ? `${displayOrd[hoverIdx]} orders` : "No orders saved"}
           </text>
         </g>
       )}
@@ -1103,64 +1112,92 @@ function WeeklyLineChart({
       />
 
       {/* X-axis labels */}
-      {weekDays.map((d, i) => (
+      {labels.map((label, i) => (n - 1 - i) % labelStep === 0 && (
         <text key={i} x={xOf(i)} y={H - 6} textAnchor="middle" fontSize="9" fill="rgba(255,255,255,0.35)" fontWeight={i === peakIdx ? "700" : "400"}>
-          {d.label}({d.day})
+          {label}
         </text>
       ))}
     </svg>
   );
 }
 
-function WeeklyChartSection({ revenue }: { revenue: any }) {
-  const [mode, setMode] = useState<"daily" | "cumulative">("daily");
-  const weekDays = weekDaysFor(revenue);
+const PEAK_KIND: Record<ChartPeriod, string> = { daily: "DAY", weekly: "WEEK", monthly: "MONTH", yearly: "YEAR", overall: "WEEK" };
 
-  const revData = toSeries(revenue?.dailyRevenue);
-  const ordData = toSeries(revenue?.dailyOrders);
+function WeeklyChartSection({ revenue }: { revenue: any }) {
+  const [period, setPeriod] = useState<ChartPeriod>("daily");
+  const weekDays = weekDaysFor(revenue);
+  // Longer periods read every saved week; Daily keeps using this week's saved days.
+  const history = useMentorshipRevenueHistory(period !== "daily");
+
+  const points: PeriodPoint[] = period === "daily"
+    ? (() => {
+        const rev = toSeries(revenue?.dailyRevenue);
+        const ord = toSeries(revenue?.dailyOrders);
+        return weekDays.map((d, i) => ({ label: `${d.label}(${d.day})`, tip: `${d.label} (${d.day})`, rev: rev[i] ?? null, ord: ord[i] ?? null }));
+      })()
+    : history.data ? buildPeriodPoints(period, history.data.weeks, history.data.currentWeek) : [];
+  const revData = points.map(p => p.rev);
+  const ordData = points.map(p => p.ord);
   const hasData = revData.some(v => v != null) || ordData.some(v => v != null);
+  const periodLabel = CHART_PERIODS.find(p => p.value === period)!.label;
+  const subtitle = period === "daily"
+    ? `${weekDays[0]?.label} ${weekDays[0]?.day} – ${weekDays[6]?.label} ${weekDays[6]?.day}`
+    : points.length ? `${(period === "monthly" || period === "yearly" ? points[0].tip : points[0].label)} – ${(period === "monthly" || period === "yearly" ? points[points.length - 1].tip : points[points.length - 1].label)}` : null;
+  const emptyText = period === "daily"
+    ? "No daily revenue saved for this week yet"
+    : history.isLoading ? "Loading…"
+    : history.isError ? "Couldn't load your revenue history"
+    : "No revenue saved for this period yet";
 
   return (
     <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className="flex flex-wrap items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
-          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-            Comparative trendline for {weekDays[0]?.label} {weekDays[0]?.day} – {weekDays[6]?.label} {weekDays[6]?.day}
-          </p>
+          {subtitle && (
+            <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+              Comparative trendline for {subtitle}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-1">
           <div className="flex items-center gap-2 mr-3">
             <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
-              <span className="inline-block w-5 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Daily Revenue (₹)
+              <span className="inline-block w-5 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> {periodLabel} Revenue (₹)
             </span>
             <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.4)" }}>
               <span className="inline-block w-5 border-t border-dashed border-yellow-400" /> Order Velocity
             </span>
           </div>
-          {(["daily", "cumulative"] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all capitalize"
-              style={{
-                background: mode === m ? "var(--color-accent)" : "rgba(255,255,255,0.05)",
-                color: mode === m ? "white" : "var(--color-text-subtle)",
-              }}
-            >
-              {m.charAt(0).toUpperCase() + m.slice(1)}
-            </button>
-          ))}
+          <select
+            aria-label="Chart period"
+            value={period}
+            onChange={e => setPeriod(e.target.value as ChartPeriod)}
+            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all outline-none cursor-pointer"
+            style={{ background: "var(--color-accent)", color: "white" }}
+          >
+            {CHART_PERIODS.map(p => (
+              <option key={p.value} value={p.value} style={{ background: "var(--color-bg-surface, #141414)", color: "var(--color-text-normal)" }}>{p.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* Chart */}
       <div className="relative mt-3 rounded-xl overflow-hidden" style={{ background: "rgba(0,0,0,0.2)" }}>
         {hasData ? (
-          <WeeklyLineChart revData={revData} ordData={ordData} weekDays={weekDays} mode={mode} />
+          <WeeklyLineChart
+            key={period}
+            revData={revData}
+            ordData={ordData}
+            labels={points.map(p => p.label)}
+            tips={points.map(p => p.tip)}
+            peakTags={period === "daily" ? weekDays.map(d => d.label.toUpperCase()) : points.map(p => (period === "monthly" ? p.tip : p.label).toUpperCase())}
+            peakKind={PEAK_KIND[period]}
+          />
         ) : (
           <div className="flex items-center justify-center" style={{ height: 200 }}>
-            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>No daily revenue saved for this week yet</p>
+            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>{emptyText}</p>
           </div>
         )}
       </div>
