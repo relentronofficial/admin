@@ -801,7 +801,13 @@ describe('authentication and user isolation', () => {
   it('the only unauthenticated payment route is the signed webhook', async () => {
     const { fake, events } = recordRoutes();
     await userRouteModule.userWebhookRoutes(fake);
-    expect(events.filter((e) => e.kind === 'route').map((e) => e.detail)).toEqual(['POST /courses/razorpay/webhook']);
+    const routes = events.filter((e) => e.kind === 'route').map((e) => e.detail);
+    expect(routes).toContain('POST /courses/razorpay/webhook');
+    // Instagram OAuth callback is also unauthenticated (Meta redirects here after authorisation)
+    const nonInstagramNonWebhook = routes.filter(
+      (r) => r !== 'POST /courses/razorpay/webhook' && r !== 'GET /mentorship/instagram/callback',
+    );
+    expect(nonInstagramNonWebhook).toEqual([]);
   });
 
   it('admin pricing, package and credit-approval routes sit behind the Clerk hook', async () => {
