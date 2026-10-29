@@ -1702,13 +1702,14 @@ export async function getLessonProgressHandler(request: FastifyRequest, reply: F
 
 export async function markLessonCompleteHandler(request: FastifyRequest, reply: FastifyReply) {
   const { courseId, lessonId: episodeId } = request.params as { courseId: string; lessonId: string };
-  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration, timerStartedAt, timerSeconds } = request.body as {
+  const { watchedSeconds, deltaSeconds, isCompleted: requestedCompletion, videoDuration, timerStartedAt, timerSeconds, interactionResponse } = request.body as {
     watchedSeconds?: number;
     deltaSeconds?: number;
     isCompleted?: boolean;
     videoDuration?: number;
     timerStartedAt?: number;
     timerSeconds?: number;
+    interactionResponse?: string;
   };
 
   // Every DB round trip here costs ~0.35 s in production (Cloud Run → Supabase
@@ -1896,6 +1897,14 @@ export async function markLessonCompleteHandler(request: FastifyRequest, reply: 
       actualWatchedSecs: cumulativeActualSecs,
     },
   });
+
+  // Persist interaction response (agree/yes/disagree/no) for text lessons
+  if (interactionResponse) {
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE course_episode_progress SET interaction_response = $1 WHERE member_id = $2::uuid AND episode_id = $3::uuid`,
+      interactionResponse, request.memberId, episodeId
+    );
+  }
 
   // 5.3 — fire-and-forget anomaly detection for course progress
   void (async () => {
