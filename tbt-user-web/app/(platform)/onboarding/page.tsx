@@ -664,6 +664,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     try {
       const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
       const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
+      // An untouched skill slider shows 1/10; save that value so what the
+      // member saw is what gets stored (null was dropped below and never saved).
+      if (step === "skills") {
+        for (const { key } of SKILL_FIELDS) if (typeof editable[key] !== "number") editable[key] = 1;
+      }
       const body = Object.fromEntries(
         Object.entries({ ...editable, currentChallenges })
           .filter(([, v]) => v !== null && v !== undefined && v !== "")
