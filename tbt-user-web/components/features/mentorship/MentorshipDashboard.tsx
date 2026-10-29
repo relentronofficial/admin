@@ -9,9 +9,10 @@ import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
 } from "@/lib/hooks/useMentorship";
-import { useMyBatchProgram, useBuyExtraLifeline, extraLifelineMessage } from "@/lib/hooks/useBatchProgram";
+import { useMyEnrollments, useCourseLifelines } from "@/lib/hooks/useCourses";
+import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
-import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
+import { useUserSupportQuota } from "@/lib/hooks/useUser";
 import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
@@ -1695,20 +1696,18 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  // null when the member has no batch settings yet — header then shows no hearts
-  const lifelinesTotal: number | null = batchData?.lifelinesTotal ?? null;
-  const lifelinesUsed: number | null = batchData?.lifelinesUsed ?? null;
-  const { data: creditPricing } = useCreditPricing();
-  const lifelinePrice = creditPricing?.find((p) => p.credit_type === "lifeline")?.price_inr;
-  const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
-  const handleBuyLifeline = useCallback(async () => {
-    const msg = extraLifelineMessage(await buyLifeline());
-    if (!msg) return;
-    const opts = { id: "lifeline-buy", duration: msg.kind === "success" ? 4000 : 9000 };
-    if (msg.kind === "success") toast.success(msg.text, opts);
-    else if (msg.kind === "error") toast.error(msg.text, opts);
-    else toast(msg.text, opts);
-  }, [buyLifeline]);
+  // Course-scoped lifelines (match the video player): use the first active enrolled course.
+  const { data: enrollments } = useMyEnrollments();
+  const activeCourseId =
+    enrollments?.find((e) => !e.completedAt)?.courseId ??
+    enrollments?.[0]?.courseId ??
+    null;
+  const { data: courseLifelines } = useCourseLifelines(activeCourseId);
+  // Derived from course lifelines so the count matches what the video player shows.
+  const lifelinesTotal: number | null =
+    courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
+  const lifelinesUsed: number | null =
+    courseLifelines != null ? courseLifelines.freeUsed + courseLifelines.purchasedUsed : null;
 
   const dailyHrs = stats?.dailyTimeSpentHrs ?? 0;
   const dailyGoal: number | null = stats?.dailyTimeGoalHrs ?? null;
@@ -1781,9 +1780,6 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         streakDays={streakDays}
         lifelinesTotal={lifelinesTotal}
         lifelinesUsed={lifelinesUsed}
-        onBuyLifeline={handleBuyLifeline}
-        buyingLifeline={buyingLifeline}
-        lifelinePriceInr={lifelinePrice != null ? Number(lifelinePrice) : null}
         programVideos={stats?.programVideos ?? null}
       />
 
