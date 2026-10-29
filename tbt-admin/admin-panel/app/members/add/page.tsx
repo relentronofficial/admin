@@ -822,7 +822,7 @@ export default function AddMemberPage() {
         </div>
 
         {/* Sticky Footer */}
-        <div className="fixed bottom-0 right-0 left-[220px] bg-[#0a0a0a]/90 backdrop-blur-md border-t border-[#1f1f1f] px-8 py-4 flex items-center justify-between z-50">
+        <div className="fixed bottom-0 right-0 left-0 md:left-[220px] bg-[#0a0a0a]/90 backdrop-blur-md border-t border-[#1f1f1f] px-8 py-4 flex items-center justify-between z-50">
           <button onClick={() => signOut()} type="button" className="flex items-center gap-2 text-[#888] hover:text-white transition-colors text-[13px] font-semibold">
             <LogOut size={16} /> Logout
           </button>
