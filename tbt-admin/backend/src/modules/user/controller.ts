@@ -8785,7 +8785,7 @@ export async function getInstagramStatusHandler(request: FastifyRequest, reply: 
   );
   const r = rows[0];
   if (!r?.instagram_user_id) {
-    return reply.send({ success: true, data: { connected: false }, error: null });
+    return reply.send({ success: true, data: { connected: false, enabled: isInstagramConfigured() }, error: null });
   }
   return reply.send({
     success: true,
