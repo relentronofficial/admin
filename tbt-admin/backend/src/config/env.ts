@@ -68,6 +68,12 @@ const envSchema = z.object({
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
+  // Psychometric bridge (modules/psychometric-bridge): the standalone Psychometric
+  // API and the dedicated service account the TBT backend signs in with. The
+  // bridge answers 503 until both credentials are set.
+  PSYCHOMETRIC_API_URL: z.string().url().default('https://backend-three-peach-48.vercel.app/api/v1'),
+  PSYCHOMETRIC_ADMIN_EMAIL: z.string().optional().or(z.literal('')),
+  PSYCHOMETRIC_ADMIN_PASSWORD: z.string().optional().or(z.literal('')),
   // Mentorship dashboard demo mode (lib/mentorshipDemo.ts) — overlays demo
   // values on the mentorship revenue/social/stats, navbar streak and weekly
   // activity graph endpoints for ONE member, matched by BOTH their members.id
