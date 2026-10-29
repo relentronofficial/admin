@@ -3406,8 +3406,8 @@ export default function CourseDetailPage({
                       <button
                         disabled={isLessonCompleted}
                         onClick={isLessonCompleted ? undefined : () => toast("Re-read the question and come back when you're ready!", { icon: "📖", id: "lesson-disagree" })}
-                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 border disabled:cursor-default"
-                        style={{ borderColor: "var(--color-border-medium, rgba(255,255,255,0.15))", color: "var(--color-text-subtle)" }}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-default"
+                        style={{ background: "var(--color-accent)", color: "#fff" }}
                       >
                         {negLabel}
                       </button>
@@ -3417,7 +3417,7 @@ export default function CourseDetailPage({
                         className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-100 disabled:cursor-default"
                         style={{ background: isLessonCompleted ? "var(--color-success)" : "var(--color-accent)", color: "#fff" }}
                       >
-                        <CheckCircle2 size={13} /> {isLessonCompleted ? "Completed" : posLabel}
+                        <CheckCircle2 size={13} /> {posLabel}
                       </button>
                     </div>
                   );
