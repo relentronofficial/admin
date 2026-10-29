@@ -29,7 +29,7 @@ export const coursesService = {
   getLessonProgress: (courseId: string) =>
     apiClient.get<never, ApiResponse<LessonProgress[]>>(`/api/user/enrollments/${courseId}/progress`),
 
-  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean, videoDuration?: number, timerStartedAt?: number, timerSeconds?: number) =>
+  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean, videoDuration?: number, timerStartedAt?: number, timerSeconds?: number, interactionResponse?: string) =>
     apiClient.post<never, ApiResponse<LessonProgress>>(`/api/user/enrollments/${courseId}/progress/${lessonId}`, {
       watchedSeconds,
       deltaSeconds,
@@ -37,6 +37,7 @@ export const coursesService = {
       videoDuration,
       timerStartedAt,
       timerSeconds,
+      interactionResponse,
     }),
 
   submitQuiz: (courseId: string, episodeId: string, answers: Record<string, string>) =>

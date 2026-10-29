@@ -61,8 +61,8 @@ export const useMarkLessonComplete = (courseId: string) => {
   return useMutation({
     // optimistic: false — don't show the lesson as completed until the server confirms it
     // (automatic 90% completion; a refused or failed save must never show the green tick).
-    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number; optimistic?: boolean }) =>
-      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds),
+    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds, interactionResponse }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number; optimistic?: boolean; interactionResponse?: string }) =>
+      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds, interactionResponse),
     onMutate: async ({ lessonId, isCompleted, optimistic }) => {
       if (!isCompleted || optimistic === false) return;
       await queryClient.cancelQueries({ queryKey: ["user", "progress", courseId] });

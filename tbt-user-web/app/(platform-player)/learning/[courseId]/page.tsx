@@ -2524,11 +2524,24 @@ export default function CourseDetailPage({
 
   // These hooks must live ABOVE the early returns — placing any hook after an early return
   // changes the hook count between renders (loading → loaded) and React throws.
+  const handleTextDisagree = useCallback(() => {
+    if (!selectedLesson) return;
+    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: 0, isCompleted: false, interactionResponse: 'disagree' }, {
+      onSuccess: () => {
+        toast("Your response has been recorded. Please re-read and come back when ready!", { icon: "📖", id: "lesson-disagree" });
+      },
+      onError: () => {
+        toast.error("Couldn't save your response. Please try again.", { id: "lesson-disagree-failed" });
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
   const handleTextComplete = useCallback(() => {
     if (markCalledRef.current) return;
     markCalledRef.current = true;
     setAutoCompletingId(selectedLesson!.id);
-    markComplete.mutate({ lessonId: selectedLesson!.id, watchedSeconds: 5, isCompleted: true }, {
+    markComplete.mutate({ lessonId: selectedLesson!.id, watchedSeconds: 5, isCompleted: true, interactionResponse: 'agree' }, {
       onSuccess: (res: any) => {
         setAutoCompletingId(null);
         const saved = (res?.data ?? res)?.completed === true;
@@ -3404,9 +3417,9 @@ export default function CourseDetailPage({
                   return (
                     <div className="shrink-0 flex items-center gap-2">
                       <button
-                        disabled={isLessonCompleted}
-                        onClick={isLessonCompleted ? undefined : () => toast("Re-read the question and come back when you're ready!", { icon: "📖", id: "lesson-disagree" })}
-                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-default"
+                        onClick={handleTextDisagree}
+                        disabled={markComplete.isPending}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: "var(--color-accent)", color: "#fff" }}
                       >
                         {negLabel}
