@@ -2537,6 +2537,37 @@ export default function CourseDetailPage({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLesson?.id]);
 
+  // Agree handler for interaction-type text lessons. Does NOT guard on markCalledRef so it
+  // works even when the lesson was previously completed (e.g. re-affirming agreement).
+  const handleTextAgree = useCallback(() => {
+    if (!selectedLesson) return;
+    setAutoCompletingId(selectedLesson.id);
+    markComplete.mutate({ lessonId: selectedLesson.id, watchedSeconds: 5, isCompleted: true, interactionResponse: 'agree' }, {
+      onSuccess: (res: any) => {
+        setAutoCompletingId(null);
+        const saved = (res?.data ?? res)?.completed === true;
+        if (!saved) {
+          toast.error("Couldn't mark this lesson complete. Please try again.", { id: "lesson-complete-failed" });
+          return;
+        }
+        if (selectedLessonRef.current?.id !== selectedLesson.id) return;
+        markCalledRef.current = true;
+        justCompletedInSessionRef.current = true;
+        setWatchState("completed");
+        const allLessons = courseRef.current?.lessons ?? [];
+        const allDone = allLessons.length > 0 &&
+          allLessons.every((l: any) => completedIdsRef.current.has(l.id) || l.id === selectedLesson.id);
+        if (allDone) setTimeout(() => toast.success("🎉 Course complete! Great work!", { duration: 5000 }), 600);
+        setPendingAdvance({ from: selectedLesson.id, notBefore: Date.now() + 1500 });
+      },
+      onError: (err: any) => {
+        setAutoCompletingId(null);
+        toast.error(err?.message ? `Couldn't save your progress: ${err.message}` : "Couldn't save your response. Please try again.", { id: "lesson-agree-failed" });
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLesson?.id]);
+
   const handleTextComplete = useCallback(() => {
     if (markCalledRef.current) return;
     markCalledRef.current = true;
@@ -3425,9 +3456,9 @@ export default function CourseDetailPage({
                         {negLabel}
                       </button>
                       <button
-                        onClick={isLessonCompleted ? undefined : handleTextComplete}
-                        disabled={isLessonCompleted || markComplete.isPending}
-                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-100 disabled:cursor-default"
+                        onClick={handleTextAgree}
+                        disabled={markComplete.isPending}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: isLessonCompleted ? "var(--color-success)" : "var(--color-accent)", color: "#fff" }}
                       >
                         <CheckCircle2 size={13} /> {posLabel}
