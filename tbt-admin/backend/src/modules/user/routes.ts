@@ -144,6 +144,11 @@ import {
   upsertMentorshipRevenueHandler,
   getMentorshipSocialHandler,
   upsertMentorshipSocialHandler,
+  getInstagramAuthUrlHandler,
+  handleInstagramCallbackHandler,
+  getInstagramStatusHandler,
+  disconnectInstagramHandler,
+  syncInstagramNowHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
 import { createLifelineOrderHandler, verifyLifelinePaymentHandler } from './lifelinePurchase.js';
@@ -190,6 +195,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
   fastify.get('/mentorship/social',  getMentorshipSocialHandler);
   fastify.put('/mentorship/social',  upsertMentorshipSocialHandler);
+  fastify.get('/mentorship/instagram/auth-url',  getInstagramAuthUrlHandler);
+  fastify.get('/mentorship/instagram/status',    getInstagramStatusHandler);
+  fastify.delete('/mentorship/instagram/disconnect', disconnectInstagramHandler);
+  fastify.post('/mentorship/instagram/sync',     syncInstagramNowHandler);
 
   // ── Credits ───────────────────────────────────────────────────────────────
   fastify.get('/credits/pricing', getUserCreditPricingHandler);
@@ -374,6 +383,9 @@ export async function userRoutes(fastify: FastifyInstance) {
 // Webhook — registered separately (no authenticateUser hook).
 // Parses application/json but preserves the raw body string for HMAC.
 export async function userWebhookRoutes(fastify: FastifyInstance) {
+  // Instagram OAuth callback — unauthenticated, browser redirect from Meta
+  fastify.get('/mentorship/instagram/callback', handleInstagramCallbackHandler);
+
   fastify.register(async (child) => {
     // Remove the inherited parser before adding our own so Fastify doesn't
     // throw FST_ERR_CTP_ALREADY_PRESENT (child scopes inherit parent parsers).

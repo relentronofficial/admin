@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
+  Instagram, RefreshCw, Unlink,
 } from "lucide-react";
 import {
   useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue,
   useMentorshipSocial, useUpsertMentorshipSocial,
+  useInstagramStatus, useInstagramConnect, useInstagramDisconnect, useInstagramSync,
 } from "@/lib/hooks/useMentorship";
 import { useCourseLifelines } from "@/lib/hooks/useCourses";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
@@ -1274,10 +1276,32 @@ const EMPTY_SOCIAL: SocialFormState = {
 function SocialGrowthSection() {
   const upsert = useUpsertMentorshipSocial();
   const { data: social } = useMentorshipSocial();
+  const { data: igStatus } = useInstagramStatus();
+  const igConnect = useInstagramConnect();
+  const igDisconnect = useInstagramDisconnect();
+  const igSync = useInstagramSync();
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<SocialFormState>(EMPTY_SOCIAL);
   const [isDirty, setIsDirty] = useState(false);
+
+  // Show toast when redirected back after connecting/error
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ig = params.get("instagram");
+    if (!ig) return;
+    if (ig === "connected") toast.success("Instagram connected! Your stats are now auto-syncing.");
+    if (ig === "error") {
+      const reason = params.get("reason") ?? "unknown";
+      toast.error(`Instagram connection failed: ${reason}`);
+    }
+    // Remove params from URL without reload
+    params.delete("instagram");
+    params.delete("reason");
+    const newUrl = `${window.location.pathname}${params.toString() ? `?${params}` : ""}`;
+    window.history.replaceState({}, "", newUrl);
+  }, []);
 
   useEffect(() => {
     if (!social) return;
@@ -1445,20 +1469,91 @@ function SocialGrowthSection() {
         className="rounded-2xl p-4"
         style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}
       >
-        <div className="flex items-center justify-between mb-4 gap-3">
-          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Social Media Organic Growth</h2>
-          <span
-            className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0"
-            style={{
-              background: targetPace >= 100 ? "rgba(34,197,94,0.15)" : targetPace >= 50 ? "rgba(129,140,248,0.15)" : "rgba(255,255,255,0.05)",
-              color:      targetPace >= 100 ? "#22c55e"               : targetPace >= 50 ? "#818cf8"                : "rgba(255,255,255,0.4)",
-              border: `1px solid ${targetPace >= 100 ? "rgba(34,197,94,0.2)" : targetPace >= 50 ? "rgba(129,140,248,0.2)" : "rgba(255,255,255,0.08)"}`,
-            }}
-          >
-            <span className="w-1.5 h-1.5 rounded-full" style={{ background: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#818cf8" : "rgba(255,255,255,0.3)" }} />
-            Target Pace: {targetPace}%
-          </span>
+        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Social Media Organic Growth</h2>
+            {igStatus?.connected && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8", border: "1px solid rgba(129,140,248,0.25)" }}>
+                <Instagram size={8} /> Auto-sync ON
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <span
+              className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full"
+              style={{
+                background: targetPace >= 100 ? "rgba(34,197,94,0.15)" : targetPace >= 50 ? "rgba(129,140,248,0.15)" : "rgba(255,255,255,0.05)",
+                color:      targetPace >= 100 ? "#22c55e"               : targetPace >= 50 ? "#818cf8"                : "rgba(255,255,255,0.4)",
+                border: `1px solid ${targetPace >= 100 ? "rgba(34,197,94,0.2)" : targetPace >= 50 ? "rgba(129,140,248,0.2)" : "rgba(255,255,255,0.08)"}`,
+              }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: targetPace >= 100 ? "#22c55e" : targetPace >= 50 ? "#818cf8" : "rgba(255,255,255,0.3)" }} />
+              Target Pace: {targetPace}%
+            </span>
+          </div>
         </div>
+
+        {/* Instagram connection banner */}
+        {igStatus?.connected ? (
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl px-3 py-2 mb-4"
+            style={{ background: "rgba(129,140,248,0.08)", border: "1px solid rgba(129,140,248,0.18)" }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Instagram size={14} style={{ color: "#818cf8", flexShrink: 0 }} />
+              <span className="text-[11px] font-semibold truncate" style={{ color: "#818cf8" }}>
+                @{(igStatus as any).username}
+              </span>
+              {(igStatus as any).syncedAt && (
+                <span className="text-[10px] hidden sm:inline" style={{ color: "rgba(255,255,255,0.3)" }}>
+                  · synced {new Date((igStatus as any).syncedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => igSync.mutate()}
+                disabled={igSync.isPending}
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40"
+                style={{ background: "rgba(129,140,248,0.15)", color: "#818cf8" }}
+                title="Sync now"
+              >
+                <RefreshCw size={11} className={igSync.isPending ? "animate-spin" : ""} />
+                {igSync.isPending ? "Syncing…" : "Sync"}
+              </button>
+              <button
+                onClick={() => igDisconnect.mutate()}
+                disabled={igDisconnect.isPending}
+                className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-40"
+                style={{ background: "rgba(255,255,255,0.05)", color: "rgba(255,255,255,0.4)" }}
+                title="Disconnect Instagram"
+              >
+                <Unlink size={11} />
+              </button>
+            </div>
+          </div>
+        ) : igStatus?.enabled !== false ? (
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 mb-4"
+            style={{ background: "rgba(255,255,255,0.03)", border: "1px dashed rgba(255,255,255,0.1)" }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Instagram size={14} style={{ color: "rgba(255,255,255,0.3)", flexShrink: 0 }} />
+              <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                Connect Instagram to auto-sync your stats weekly
+              </span>
+            </div>
+            <button
+              onClick={() => igConnect.mutate()}
+              disabled={igConnect.isPending}
+              className="shrink-0 flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)", color: "#fff" }}
+            >
+              <Instagram size={12} />
+              {igConnect.isPending ? "Redirecting…" : "Connect"}
+            </button>
+          </div>
+        ) : null}
 
         {/* Read-only metric cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">

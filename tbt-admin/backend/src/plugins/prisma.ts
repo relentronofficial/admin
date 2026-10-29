@@ -2709,6 +2709,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_efs_member_episode ON episode_form_submissions(member_id, episode_id)`
     ).catch(() => {});
 
+    // ── Instagram OAuth integration (2026-10-29) ─────────────────────────────
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_user_id TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_username TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_access_token TEXT`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_token_expires_at TIMESTAMPTZ`);
+    await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_synced_at TIMESTAMPTZ`);
+    await safeAlter(`ALTER TABLE member_social_reports ADD COLUMN IF NOT EXISTS instagram_auto_sync BOOLEAN NOT NULL DEFAULT false`);
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }

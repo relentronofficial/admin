@@ -89,6 +89,12 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().or(z.literal('')),
   RAZORPAY_KEY_SECRET: z.string().optional().or(z.literal('')),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  // Instagram Graph API — optional; all Instagram features disabled when absent
+  INSTAGRAM_APP_ID: z.string().optional().or(z.literal('')),
+  INSTAGRAM_APP_SECRET: z.string().optional().or(z.literal('')),
+  // Must exactly match what's registered in the Meta App dashboard
+  // e.g. https://tbt-backend-464464507912.asia-south1.run.app/api/user/mentorship/instagram/callback
+  INSTAGRAM_REDIRECT_URI: z.string().url().optional().or(z.literal('')),
   // 'true' stops the Extra Lifeline reconciliation job from starting (jobs/lifelineReconcile.ts).
   LIFELINE_RECONCILE_DISABLED: z.string().optional().or(z.literal('')),
   // GitHub token for WhatsApp-intake → autonomous dev pipeline (creates Issues from WA messages)

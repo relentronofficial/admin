@@ -60,6 +60,7 @@ export type MentorshipSocial = {
   bioLinkClicks: number | null;
   bioLinkClicksPrev: number | null;
   updatedAt: string | null;
+  instagramAutoSync?: boolean;
 };
 
 export type MentorshipModuleOption = {
@@ -86,6 +87,10 @@ export type MentorshipModules = {
 export type UpsertRevenueBody = Partial<Omit<MentorshipRevenue, "weekNumber" | "year" | "updatedAt">>;
 export type UpsertSocialBody = Partial<Omit<MentorshipSocial, "weekNumber" | "year" | "updatedAt">>;
 
+export type InstagramStatus =
+  | { connected: false; enabled?: boolean }
+  | { connected: true; username: string; syncedAt: string | null; expiresAt: string | null; enabled: boolean };
+
 export const mentorshipService = {
   getStats: () =>
     apiClient.get<never, ApiResponse<MentorshipStats>>("/api/user/mentorship/stats"),
@@ -107,4 +112,16 @@ export const mentorshipService = {
 
   updateModules: (modules: string[]) =>
     apiClient.put<never, ApiResponse<MentorshipModules>>("/api/user/mentorship/modules", { modules }),
+
+  getInstagramStatus: () =>
+    apiClient.get<never, ApiResponse<InstagramStatus>>("/api/user/mentorship/instagram/status"),
+
+  getInstagramAuthUrl: () =>
+    apiClient.get<never, ApiResponse<{ url: string }>>("/api/user/mentorship/instagram/auth-url"),
+
+  disconnectInstagram: () =>
+    apiClient.delete<never, ApiResponse<{ disconnected: boolean }>>("/api/user/mentorship/instagram/disconnect"),
+
+  syncInstagram: () =>
+    apiClient.post<never, ApiResponse<{ synced: boolean }>>("/api/user/mentorship/instagram/sync"),
 };

@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { mentorshipService } from "@/lib/api/services/mentorship.service";
+import type { InstagramStatus } from "@/lib/api/services/mentorship.service";
 import { useUserSupportQuota } from "./useUser";
 import { weeklyGraphQueryKey } from "./useBatchProgram";
 
@@ -87,6 +88,54 @@ export const useUpdateMentorshipModules = () => {
       // Catalog and course detail are filtered/gated server-side by the selection.
       qc.invalidateQueries({ queryKey: ["courses"] });
       qc.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+};
+
+// ── Instagram integration ──────────────────────────────────────────────────
+
+export const instagramStatusKey = ["user", "instagram-status"] as const;
+
+export const useInstagramStatus = () =>
+  useQuery<InstagramStatus>({
+    queryKey: instagramStatusKey,
+    queryFn: async () => {
+      const res = await mentorshipService.getInstagramStatus();
+      return res.data ?? { connected: false };
+    },
+    staleTime: 60_000,
+  });
+
+export const useInstagramConnect = () => {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await mentorshipService.getInstagramAuthUrl();
+      return res.data?.url;
+    },
+    onSuccess: (url) => {
+      if (url) window.location.href = url;
+    },
+  });
+};
+
+export const useInstagramDisconnect = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: mentorshipService.disconnectInstagram,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: instagramStatusKey });
+      qc.invalidateQueries({ queryKey: ["user", "mentorship-social"] });
+    },
+  });
+};
+
+export const useInstagramSync = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: mentorshipService.syncInstagram,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: instagramStatusKey });
+      qc.invalidateQueries({ queryKey: ["user", "mentorship-social"] });
     },
   });
 };

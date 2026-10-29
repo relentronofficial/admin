@@ -29,6 +29,14 @@ import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
+import {
+  isInstagramConfigured,
+  buildInstagramOAuthUrl,
+  exchangeCodeForLongLivedToken,
+  getInstagramUserInfo,
+  getInstagramInsights,
+  refreshLongLivedToken,
+} from '../../lib/instagram.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess, saveMemberModuleSelection } from '../../lib/memberModuleAccess.js';
 import { isCourseVisible } from '../../lib/courseVisibility.js';
 import { summarizeDmReactions, type DmReactionSummary } from '../../lib/dmMessageActionRules.js';
@@ -8551,6 +8559,7 @@ export async function getMentorshipSocialHandler(request: FastifyRequest, reply:
     bioLinkClicks:        r.bio_link_clicks != null ? Number(r.bio_link_clicks) : null,
     bioLinkClicksPrev:    r.bio_link_clicks_prev != null ? Number(r.bio_link_clicks_prev) : null,
     updatedAt:            r.updated_at ? new Date(r.updated_at).toISOString() : null,
+    instagramAutoSync:    r.instagram_auto_sync === true,
   });
 }
 
@@ -8665,4 +8674,207 @@ export async function getMyEpisodeFormSubmissionHandler(request: FastifyRequest,
     episodeId, memberId,
   );
   return reply.send({ success: true, data: rows[0] ? { id: rows[0].id, data: rows[0].data, submittedAt: rows[0].submitted_at } : null, error: null });
+}
+
+// ── Instagram OAuth ───────────────────────────────────────────────────────────
+
+export async function getInstagramAuthUrlHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!isInstagramConfigured()) {
+    return reply.status(503).send({ success: false, error: 'Instagram integration not configured', data: null });
+  }
+  const memberId = request.memberId!;
+  const stateJwt = (request.server as any).jwt.sign({ memberId, purpose: 'ig_oauth' }, { expiresIn: '10m' });
+  const url = buildInstagramOAuthUrl(stateJwt);
+  return reply.send({ success: true, data: { url }, error: null });
+}
+
+/** Unauthenticated — Meta redirects here after user authorises the app. */
+export async function handleInstagramCallbackHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { code, state, error: oauthError } = request.query as Record<string, string>;
+  const userWebUrl = (env as any).USER_WEB_URL ?? 'https://app.tamilbusinesstribe.com';
+
+  if (oauthError) {
+    return reply.redirect(`${userWebUrl}/courses?instagram=error&reason=${encodeURIComponent(oauthError)}`);
+  }
+
+  if (!code || !state) {
+    return reply.redirect(`${userWebUrl}/courses?instagram=error&reason=missing_params`);
+  }
+
+  let memberId: string;
+  try {
+    const payload = (request.server as any).jwt.verify(state) as { memberId: string; purpose: string };
+    if (payload.purpose !== 'ig_oauth') throw new Error('invalid_purpose');
+    memberId = payload.memberId;
+  } catch {
+    return reply.redirect(`${userWebUrl}/courses?instagram=error&reason=invalid_state`);
+  }
+
+  try {
+    const { token, expiresAt } = await exchangeCodeForLongLivedToken(code);
+    const userInfo = await getInstagramUserInfo(token);
+
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE members SET
+         instagram_user_id = $1,
+         instagram_username = $2,
+         instagram_access_token = $3,
+         instagram_token_expires_at = $4,
+         instagram_synced_at = now()
+       WHERE id = $5::uuid`,
+      userInfo.igUserId,
+      userInfo.username,
+      token,
+      expiresAt.toISOString(),
+      memberId,
+    );
+
+    // Immediately sync current week's insights
+    await syncInstagramInsightsForMember(request.server.prisma, memberId, userInfo.igUserId, token);
+
+    return reply.redirect(`${userWebUrl}/courses?instagram=connected`);
+  } catch (err: any) {
+    const reason = encodeURIComponent(err?.message ?? 'sync_failed');
+    return reply.redirect(`${userWebUrl}/courses?instagram=error&reason=${reason}`);
+  }
+}
+
+export async function getInstagramStatusHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT instagram_user_id, instagram_username, instagram_access_token,
+            instagram_token_expires_at, instagram_synced_at
+     FROM members WHERE id = $1::uuid LIMIT 1`,
+    memberId,
+  );
+  const r = rows[0];
+  if (!r?.instagram_user_id) {
+    return reply.send({ success: true, data: { connected: false }, error: null });
+  }
+  return reply.send({
+    success: true,
+    data: {
+      connected:  true,
+      username:   r.instagram_username,
+      syncedAt:   r.instagram_synced_at ? new Date(r.instagram_synced_at).toISOString() : null,
+      expiresAt:  r.instagram_token_expires_at ? new Date(r.instagram_token_expires_at).toISOString() : null,
+      enabled:    isInstagramConfigured(),
+    },
+    error: null,
+  });
+}
+
+export async function disconnectInstagramHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE members SET
+       instagram_user_id = NULL,
+       instagram_username = NULL,
+       instagram_access_token = NULL,
+       instagram_token_expires_at = NULL,
+       instagram_synced_at = NULL
+     WHERE id = $1::uuid`,
+    memberId,
+  );
+  return reply.send({ success: true, data: { disconnected: true }, error: null });
+}
+
+export async function syncInstagramNowHandler(request: FastifyRequest, reply: FastifyReply) {
+  if (!isInstagramConfigured()) {
+    return reply.status(503).send({ success: false, error: 'Instagram integration not configured', data: null });
+  }
+  const memberId = request.memberId!;
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT instagram_user_id, instagram_access_token, instagram_token_expires_at
+     FROM members WHERE id = $1::uuid LIMIT 1`,
+    memberId,
+  );
+  const r = rows[0];
+  if (!r?.instagram_user_id || !r.instagram_access_token) {
+    return reply.status(400).send({ success: false, error: 'Instagram not connected', data: null });
+  }
+
+  // Refresh token if expiring within 7 days
+  let token = r.instagram_access_token as string;
+  if (r.instagram_token_expires_at) {
+    const msUntilExpiry = new Date(r.instagram_token_expires_at).getTime() - Date.now();
+    if (msUntilExpiry < 7 * 24 * 60 * 60 * 1000) {
+      try {
+        const refreshed = await refreshLongLivedToken(token);
+        token = refreshed.token;
+        await request.server.prisma.$executeRawUnsafe(
+          `UPDATE members SET instagram_access_token = $1, instagram_token_expires_at = $2 WHERE id = $3::uuid`,
+          refreshed.token, refreshed.expiresAt.toISOString(), memberId,
+        );
+      } catch {
+        // Token refresh failed; proceed with existing token
+      }
+    }
+  }
+
+  try {
+    await syncInstagramInsightsForMember(request.server.prisma, memberId, r.instagram_user_id as string, token);
+    await request.server.prisma.$executeRawUnsafe(
+      `UPDATE members SET instagram_synced_at = now() WHERE id = $1::uuid`, memberId,
+    );
+    return reply.send({ success: true, data: { synced: true }, error: null });
+  } catch (err: any) {
+    return reply.status(502).send({ success: false, error: err?.message ?? 'Instagram sync failed', data: null });
+  }
+}
+
+/** Fetch Instagram insights and upsert into member_social_reports for the current ISO week. */
+async function syncInstagramInsightsForMember(
+  prisma: any,
+  memberId: string,
+  igUserId: string,
+  accessToken: string,
+): Promise<void> {
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+  const insights = await getInstagramInsights(igUserId, accessToken);
+
+  // Read previous week to use as "prev" baseline
+  const { isoWeek: prevWeek, isoYear: prevYear } = isoWeekPartsForDate(
+    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+  );
+  const prevRows: any[] = await prisma.$queryRawUnsafe(
+    `SELECT total_followers, video_views, interactions, bio_link_clicks
+     FROM member_social_reports WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
+    memberId, prevWeek, prevYear,
+  ).catch(() => []);
+  const prev = prevRows[0];
+
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO member_social_reports
+       (member_id, week_number, year,
+        total_followers, followers_prev,
+        video_views, video_views_prev,
+        content_uploads,
+        interactions, interactions_prev,
+        bio_link_clicks, bio_link_clicks_prev,
+        instagram_auto_sync, updated_at)
+     VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, now())
+     ON CONFLICT (member_id, week_number, year) DO UPDATE SET
+       total_followers       = EXCLUDED.total_followers,
+       followers_prev        = EXCLUDED.followers_prev,
+       video_views           = EXCLUDED.video_views,
+       video_views_prev      = EXCLUDED.video_views_prev,
+       content_uploads       = EXCLUDED.content_uploads,
+       interactions          = EXCLUDED.interactions,
+       interactions_prev     = EXCLUDED.interactions_prev,
+       bio_link_clicks       = EXCLUDED.bio_link_clicks,
+       bio_link_clicks_prev  = EXCLUDED.bio_link_clicks_prev,
+       instagram_auto_sync   = true,
+       updated_at            = now()`,
+    memberId, isoWeek, isoYear,
+    insights.followersCount,
+    prev?.total_followers != null ? Number(prev.total_followers) : null,
+    insights.videoViews,
+    prev?.video_views != null ? Number(prev.video_views) : null,
+    insights.contentUploads,
+    insights.interactions,
+    prev?.interactions != null ? Number(prev.interactions) : null,
+    insights.bioLinkClicks,
+    prev?.bio_link_clicks != null ? Number(prev.bio_link_clicks) : null,
+  );
 }
