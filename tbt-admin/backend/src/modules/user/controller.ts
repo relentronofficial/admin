@@ -8434,6 +8434,42 @@ export async function getMentorshipRevenueHandler(request: FastifyRequest, reply
   });
 }
 
+// GET /api/user/mentorship/revenue/history — read-only: every week the member
+// saved (oldest first), for the dashboard chart's Weekly / Monthly / Yearly /
+// Overall views. Same table and figures as GET /mentorship/revenue.
+export async function getMentorshipRevenueHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
+  const currentWeek = { weekNumber: isoWeek, year: isoYear };
+
+  if (await isMentorshipDemoRequest(request)) {
+    markDemo(reply);
+    const d = demoRevenue({ isoWeek, isoYear });
+    return ok(reply, { currentWeek, weeks: [{
+      weekNumber: d.weekNumber, year: d.year, revenueGenerated: d.revenueGenerated, numberOfOrders: d.numberOfOrders,
+      dailyRevenue: d.dailyRevenue, dailyOrders: d.dailyOrders,
+    }] });
+  }
+
+  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT week_number, year, revenue_generated, number_of_orders, daily_revenue, daily_orders
+     FROM member_revenue_reports WHERE member_id = $1::uuid
+     ORDER BY year ASC, week_number ASC`,
+    memberId,
+  );
+  return ok(reply, {
+    currentWeek,
+    weeks: rows.map((r) => ({
+      weekNumber:       Number(r.week_number),
+      year:             Number(r.year),
+      revenueGenerated: r.revenue_generated != null ? Number(r.revenue_generated) : null,
+      numberOfOrders:   r.number_of_orders != null ? Number(r.number_of_orders) : null,
+      dailyRevenue:     r.daily_revenue ?? null,
+      dailyOrders:      r.daily_orders ?? null,
+    })),
+  });
+}
+
 export async function upsertMentorshipRevenueHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
