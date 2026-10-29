@@ -19,6 +19,7 @@ import Link from "next/link";
 import SupportCallPanel from "./SupportCallPanel";
 import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import type { SupportCallCategory, SupportCallsSummary } from "@/lib/api/services/supportCalls.service";
+import { WinsModal } from "@/components/features/community/WinsModal";
 
 // ─── Animation variants ───────────────────────────────────────────────────────
 
@@ -190,6 +191,7 @@ function JourneyTile({
   metricColor = "#809ed5",
   note,
   leaderboard,
+  onClick,
 }: {
   label: string;
   rightLabel?: string;
@@ -198,11 +200,19 @@ function JourneyTile({
   metricColor?: string;
   note?: string;
   leaderboard?: boolean;
+  onClick?: () => void;
 }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div
-      className="relative rounded-[10px]"
-      style={{ background: leaderboard ? "#292812" : "#242428", padding: "9px 12px", height: 53 }}
+    <Tag
+      {...(onClick ? { onClick, type: "button" as const } : {})}
+      className="relative rounded-[10px] w-full text-left"
+      style={{
+        background: leaderboard ? "#292812" : "#242428",
+        padding: "9px 12px",
+        height: 53,
+        cursor: onClick ? "pointer" : undefined,
+      }}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 1 }}>
         <span className="truncate" style={{ color: "#d0cfd4", fontSize: 9, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
@@ -217,7 +227,7 @@ function JourneyTile({
           {note}
         </span>
       )}
-    </div>
+    </Tag>
   );
 }
 
@@ -1677,6 +1687,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: revenue } = useMentorshipRevenue();
   const [showRevenueForm, setShowRevenueForm] = useState(false);
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
+  const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
@@ -1839,6 +1850,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} card={cardFor("group_call")}      onClick={() => setOpenCall({ category: "group_call",      label: "👥 Live Group Q&A" })} />
         </div>
         {openCall && <SupportCallPanel category={openCall.category} label={openCall.label} onClose={closeCallPanel} />}
+        <WinsModal open={winsOpen} onClose={() => setWinsOpen(false)} />
       </motion.div>
 
       {/* ── Customer Journey ─────────────────────────────────────────── */}
@@ -1903,6 +1915,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
             value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "#—"}
             metricColor="#35cb76"
             leaderboard
+            onClick={() => setWinsOpen(true)}
           />
         </div>
       </motion.div>
