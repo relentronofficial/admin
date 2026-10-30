@@ -47,7 +47,7 @@ export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
     loginBgMobileUrl: config.loginBgMobileUrl ?? null,
     loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
     taskTimerSeconds: extraRows?.[0]?.task_timer_seconds ?? 300,
-    freeLifelinesPerSession: extraRows?.[0]?.free_lifelines_per_session ?? 3,
+    freeLifelinesPerSession: extraRows?.[0]?.free_lifelines_per_session ?? 5,
     earlyCompletionBonusXp: extraRows?.[0]?.early_completion_bonus_xp ?? 5,
     coursesBannerUrl: extraRows?.[0]?.courses_banner_url ?? null,
   };

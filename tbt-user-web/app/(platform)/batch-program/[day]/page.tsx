@@ -96,7 +96,7 @@ export default function BatchDayPage() {
   const spendCoins = useSpendCoins();
   const { upload: uploadProof } = useUploadTaskProof();
 
-  const MAX_FREE_LIFELINES = 3;
+  const MAX_FREE_LIFELINES = 5;
   const LIFELINE_COIN_COST = 50; // BATCH_LIFELINE_COIN_COST in user-batch/controller.ts
   const { data: coinBalance } = useCoinBalance();
 

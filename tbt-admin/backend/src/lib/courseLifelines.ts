@@ -12,7 +12,7 @@ export interface CourseLifelineState {
 type Db = { $queryRawUnsafe: <T = any>(q: string, ...v: any[]) => Promise<T> };
 type TxDb = Db & { $executeRawUnsafe: (q: string, ...v: any[]) => Promise<number> };
 
-export const FREE_LIFELINES_PER_COURSE = 3;
+export const FREE_LIFELINES_PER_COURSE = 5;
 
 async function loadCoinCost(db: Db): Promise<number> {
   const rows = await db.$queryRawUnsafe<any[]>(

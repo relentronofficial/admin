@@ -33,7 +33,7 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
       navOrder: Array.isArray(navOrderRows[0]?.nav_order) ? (navOrderRows[0].nav_order as string[]) : null,
       taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
+      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 5,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
       earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
       coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
@@ -88,7 +88,7 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
   }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 5, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────

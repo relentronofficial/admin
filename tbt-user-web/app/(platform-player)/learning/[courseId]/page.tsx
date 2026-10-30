@@ -1528,7 +1528,7 @@ export default function CourseDetailPage({
   useEffect(() => { setRightTab("lessons"); }, [selectedLesson?.id]);
 
   // ── Focus-mode gamification (per-lesson timer) ───────────────────────────────
-  const MAX_FREE_LIFELINES = 3;
+  const MAX_FREE_LIFELINES = 5;
   const [focusLockedIds, setFocusLockedIds] = useState<Set<string>>(new Set());
   const [lifelinesLeft, setLifelinesLeft] = useState(MAX_FREE_LIFELINES);
   const [focusDialog, setFocusDialog] = useState<{ lesson: any; duration: number } | null>(null);

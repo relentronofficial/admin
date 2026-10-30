@@ -116,7 +116,7 @@ export default function SiteConfigPage() {
     bgPrimary: "#000000",
     bgSurface: "#111111",
     taskTimerMinutes: 5,
-    freeLifelinesPerSession: 3,
+    freeLifelinesPerSession: 5,
     earlyCompletionBonusXp: 5,
   });
   const [loginBgImages, setLoginBgImages] = useState<string[]>([]);
@@ -132,7 +132,7 @@ export default function SiteConfigPage() {
         ...f,
         ...config,
         taskTimerMinutes: Math.round((config.taskTimerSeconds ?? 300) / 60),
-        freeLifelinesPerSession: config.freeLifelinesPerSession ?? 3,
+        freeLifelinesPerSession: config.freeLifelinesPerSession ?? 5,
         earlyCompletionBonusXp: config.earlyCompletionBonusXp ?? 5,
       }));
       if (Array.isArray(config.loginBgImages)) setLoginBgImages(config.loginBgImages);
@@ -163,7 +163,7 @@ export default function SiteConfigPage() {
         loginBgImages,
         coursesBannerUrl: form.coursesBannerUrl || null,
         taskTimerSeconds: Math.max(60, taskTimerMinutes * 60),
-        freeLifelinesPerSession: Math.max(0, Math.min(20, Number(freeLifelinesPerSession ?? 3))),
+        freeLifelinesPerSession: Math.max(0, Math.min(20, Number(freeLifelinesPerSession ?? 5))),
         earlyCompletionBonusXp: Math.max(0, Math.min(100, Number(earlyCompletionBonusXp ?? 5))),
       });
       toast.success("Site config saved");
