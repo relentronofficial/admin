@@ -868,15 +868,17 @@ export default function SupportCallPanel({
             <>
               {justBooked && <BookingConfirmation booking={justBooked} categoryLabel={label} onDismiss={() => setJustBooked(null)} />}
 
-              {coinPath && coin?.cost != null && (
+              {coinPath && coin?.cost != null ? (
+                // ── Quota exhausted + coin purchase available: show buy flow only.
+                // After BuyExtraCallsBox succeeds the query refetches; quota.remaining
+                // rises above 0, coinPath flips false, and the calendar section below
+                // renders automatically — no manual state change needed.
                 <div className="space-y-3" data-testid="coin-unlock-banner">
-                  {/* Pre-purchase extra calls upfront — coins spent now, book any slot for free */}
                   <BuyExtraCallsBox
                     category={category}
                     coinCostEach={coin.cost}
                     coinBalance={coin.balance}
                   />
-                  {/* If the member doesn't have enough coins, let them buy coins via Razorpay */}
                   {coin.balance < coin.cost && (
                     <div className="rounded-[10px] p-3.5 space-y-2" style={{ background: CARD, border: `1px solid #2a2a2e` }}>
                       <p className="text-[11px] font-semibold" style={{ color: SOFT }}>
@@ -897,96 +899,100 @@ export default function SupportCallPanel({
                     </div>
                   )}
                 </div>
-              )}
-
-              <section className="space-y-2">
-                <div className="grid sm:grid-cols-2 gap-3 items-start">
-                  <div className="space-y-2">
-                    <SectionTitle icon={<CalendarDays size={13} />}>1. Choose a date</SectionTitle>
-                    <BookingCalendar
-                      byDate={byDate}
-                      nowMs={nowMs}
-                      member={member}
-                      selectedKey={selectedDate}
-                      onSelect={(key) => {
-                        pickedRef.current = true;
-                        setSelectedDate(key);
-                        setSelectedSlotId(null);
-                      }}
-                      lastOpenKey={openDates[openDates.length - 1] ?? null}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <SectionTitle icon={<Clock size={13} />}>
-                      2. Choose a time{selectedDate ? ` · ${formatShortDate(`${selectedDate}T12:00:00+05:30`)}` : ""}
-                    </SectionTitle>
-                    {nothingPublished && !member.notIncluded ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots right now. Please check again later.</p>
-                        <p className="text-[11px] mt-1" style={{ color: MUTED }}>
-                          The TBT team publishes {label.replace(/^\S+\s/, "")} slots here. As soon as they do, the dates light up on the calendar and you can book a time.
-                        </p>
-                      </div>
-                    ) : member.notIncluded || !member.canBookMore ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>
-                          {member.notIncluded
-                            ? "This call type isn't included in your plan."
-                            : "You've used all your included calls."}
-                        </p>
-                        <p className="text-[11px] mt-1" style={{ color: MUTED }}>
-                          {member.notIncluded
-                            ? "Your plan doesn't include this call type, so its slots can't be booked."
-                            : "Extra call purchases aren't configured for this category yet. Contact your program manager."}
-                        </p>
-                      </div>
-                    ) : !selectedDate ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs" style={{ color: SOFT }}>All published slots are booked. Please check again later.</p>
-                      </div>
-                    ) : !daySlots.some((s) => slotState(s, nowMs, member) === "available") ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }} role="status">
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots for this date. Please choose another date.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-1 gap-2" role="group" aria-label="Available time slots">
-                        {daySlots.map((s) => (
-                          <SlotButton
-                            key={s.id}
-                            session={s}
-                            state={slotState(s, nowMs, member)}
-                            selected={s.id === selectedSlotId}
-                            onSelect={() => {
-                              setSelectedSlotId(s.id);
-                              setJustBooked(null);
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+              ) : !member.canBookMore && !member.notIncluded ? (
+                // ── Quota exhausted, coin purchases not configured for this category.
+                <div className="rounded-[10px] p-4 space-y-1.5" style={{ background: CARD }}>
+                  <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
+                    <Lock size={13} style={{ color: RED }} /> All included calls used
+                  </p>
+                  <p className="text-[11px]" style={{ color: MUTED }}>
+                    You&apos;ve used your full {label.replace(/^\S+\s/, "")} allocation. Additional call purchases aren&apos;t configured for this category yet — please contact your program manager.
+                  </p>
                 </div>
-              </section>
-
-              {selectedSlot && selectedDate && (
-                <section className="space-y-2">
-                  <SectionTitle icon={<Check size={13} />}>3. Confirm</SectionTitle>
-                  <ConfirmCard
-                    key={selectedSlot.id}
-                    session={selectedSlot}
-                    categoryLabel={label}
-                    dateKey={selectedDate}
-                    coin={coin}
-                    payWithCoins={coinPath}
-                    onConfirmed={(booking) => {
-                      setSelectedSlotId(null);
-                      setShowCoinShop(false);
-                      setJustBooked(booking);
-                      toast.success(booking.paidWithCoins ? `Call booked · ${booking.coinsSpent} TBT coins used` : "Call booked");
-                    }}
-                    onClear={() => setSelectedSlotId(null)}
-                  />
-                </section>
+              ) : (
+                // ── Normal booking flow (calls available or plan doesn't include this type).
+                <>
+                  <section className="space-y-2">
+                    <div className="grid sm:grid-cols-2 gap-3 items-start">
+                      <div className="space-y-2">
+                        <SectionTitle icon={<CalendarDays size={13} />}>1. Choose a date</SectionTitle>
+                        <BookingCalendar
+                          byDate={byDate}
+                          nowMs={nowMs}
+                          member={member}
+                          selectedKey={selectedDate}
+                          onSelect={(key) => {
+                            pickedRef.current = true;
+                            setSelectedDate(key);
+                            setSelectedSlotId(null);
+                          }}
+                          lastOpenKey={openDates[openDates.length - 1] ?? null}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <SectionTitle icon={<Clock size={13} />}>
+                          2. Choose a time{selectedDate ? ` · ${formatShortDate(`${selectedDate}T12:00:00+05:30`)}` : ""}
+                        </SectionTitle>
+                        {member.notIncluded ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>This call type isn&apos;t included in your plan.</p>
+                            <p className="text-[11px] mt-1" style={{ color: MUTED }}>Your plan doesn&apos;t include this call type, so its slots can&apos;t be booked.</p>
+                          </div>
+                        ) : nothingPublished ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots right now. Please check again later.</p>
+                            <p className="text-[11px] mt-1" style={{ color: MUTED }}>
+                              The TBT team publishes {label.replace(/^\S+\s/, "")} slots here. As soon as they do, the dates light up on the calendar and you can book a time.
+                            </p>
+                          </div>
+                        ) : !selectedDate ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs" style={{ color: SOFT }}>All published slots are booked. Please check again later.</p>
+                          </div>
+                        ) : !daySlots.some((s) => slotState(s, nowMs, member) === "available") ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }} role="status">
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots for this date. Please choose another date.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-1 gap-2" role="group" aria-label="Available time slots">
+                            {daySlots.map((s) => (
+                              <SlotButton
+                                key={s.id}
+                                session={s}
+                                state={slotState(s, nowMs, member)}
+                                selected={s.id === selectedSlotId}
+                                onSelect={() => {
+                                  setSelectedSlotId(s.id);
+                                  setJustBooked(null);
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                  {selectedSlot && selectedDate && (
+                    <section className="space-y-2">
+                      <SectionTitle icon={<Check size={13} />}>3. Confirm</SectionTitle>
+                      <ConfirmCard
+                        key={selectedSlot.id}
+                        session={selectedSlot}
+                        categoryLabel={label}
+                        dateKey={selectedDate}
+                        coin={coin}
+                        payWithCoins={false}
+                        onConfirmed={(booking) => {
+                          setSelectedSlotId(null);
+                          setShowCoinShop(false);
+                          setJustBooked(booking);
+                          toast.success("Call booked");
+                        }}
+                        onClear={() => setSelectedSlotId(null)}
+                      />
+                    </section>
+                  )}
+                </>
               )}
 
               <section className="space-y-2">

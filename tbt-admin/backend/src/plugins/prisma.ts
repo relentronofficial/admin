@@ -2419,26 +2419,31 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       )
     `).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_business_matrix_cell ON psy_business_matrix(row_type_id, col_type_id)`).catch(() => {});
-    await prisma.$executeRawUnsafe(`
-      CREATE TABLE IF NOT EXISTS psy_candidates (
-        id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        member_id         UUID REFERENCES members(id) ON DELETE SET NULL,
-        source            VARCHAR(20) NOT NULL DEFAULT 'tbt',
-        name              VARCHAR(200) NOT NULL,
-        email             TEXT,
-        phone             TEXT,
-        candidate_code    TEXT,
-        batch             TEXT,
-        access_code_id    TEXT REFERENCES psy_access_codes(id) ON DELETE SET NULL,
-        access_code       TEXT,
-        has_completed     BOOLEAN NOT NULL DEFAULT FALSE,
-        is_verified       BOOLEAN NOT NULL DEFAULT TRUE,
-        access_expiry     TIMESTAMPTZ,
-        restricted_access BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `).catch(() => {});
+    // References members: creating the FK locks that busy table, so the wait is capped
+    // (a missed create is retried on the next start) instead of stalling startup.
+    await prisma.$transaction([
+      prisma.$executeRawUnsafe(`SET LOCAL lock_timeout = '5s'`),
+      prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS psy_candidates (
+          id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          member_id         UUID REFERENCES members(id) ON DELETE SET NULL,
+          source            VARCHAR(20) NOT NULL DEFAULT 'tbt',
+          name              VARCHAR(200) NOT NULL,
+          email             TEXT,
+          phone             TEXT,
+          candidate_code    TEXT,
+          batch             TEXT,
+          access_code_id    TEXT REFERENCES psy_access_codes(id) ON DELETE SET NULL,
+          access_code       TEXT,
+          has_completed     BOOLEAN NOT NULL DEFAULT FALSE,
+          is_verified       BOOLEAN NOT NULL DEFAULT TRUE,
+          access_expiry     TIMESTAMPTZ,
+          restricted_access BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `),
+    ]).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_candidates_member ON psy_candidates(member_id) WHERE member_id IS NOT NULL`).catch(() => {});
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_candidates_code ON psy_candidates(candidate_code) WHERE candidate_code IS NOT NULL`).catch(() => {});
     await prisma.$executeRawUnsafe(`
