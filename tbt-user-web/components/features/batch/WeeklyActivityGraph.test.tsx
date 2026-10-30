@@ -283,15 +283,60 @@ describe("WeeklyActivityGraph", () => {
       expect(dots(container)[3][1]).toBe(labelY(container, "₹5 Lakhs"));
     });
 
-    it("no revenue row with a threshold: no line (an amount can't be placed), stage axis unchanged", async () => {
+    it("revenue rows without a threshold use the amount their label names (same positions as with thresholds)", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const first = renderGraph();
+      await chart();
+      const withThresholds = dots(first.container);
+      cleanup();
       const data = weeksData();
       data.config.milestones = data.config.milestones.map((m: any) => ({ ...m, threshold: null }));
       get.mockResolvedValue(ok(data));
       const { container } = renderGraph();
       await chart();
+      expect(dots(container)).toEqual(withThresholds);
+      expect(line(container)).not.toBeNull();
+    });
+
+    it("revenue rows that neither have a threshold nor name an amount: no line (nothing assumed), stage axis unchanged", async () => {
+      const data = weeksData();
+      data.config.milestones = [ms("m-ads", "Ads", "activity"), ms("m-big", "First big month", "revenue")];
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
       expect(line(container)).toBeNull();
       expect(dots(container)).toEqual([]);
-      expect(texts(container, "milestone-label")).toEqual(["Ads", "Website", "Funnels", "₹1 Lakh", "₹5 Lakhs"]);
+      expect(texts(container, "milestone-label")).toEqual(["Ads", "First big month"]);
+    });
+
+    it("built-in default rows (no thresholds) and only W5 reported at ₹1,00,00,000: one red point on the '1 crore' row, drawn on top", async () => {
+      // Exactly what the backend sends for a program with no saved graph config.
+      const data: any = graphData();
+      data.currentDay = 31; data.currentWeek = 5;
+      data.config = {
+        source: "default",
+        milestones: [
+          ms(null as any, "Ads", "activity"), ms(null as any, "Website", "activity"), ms(null as any, "Funnels", "activity"),
+          ms(null as any, "1 lakh", "revenue"), ms(null as any, "5 Lakhs", "revenue"),
+          ms(null as any, "1 crore", "revenue", { reached: true, reachedBy: "revenue", reachedWeek: 5 }),
+        ],
+      };
+      data.weeks = [1, 2, 3, 4].map((n) => week(n)).concat([week(5, { isCurrent: true, revenue: 10000000, cumulativeRevenue: 10000000,
+        activities: [activity("t5", "Scale ads", 30, "completed", null)], total: 1, completed: 1 })]);
+      data.revenue = { source: "self_reported", totalToDate: 10000000 };
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(texts(container, "milestone-label")).toEqual(["Ads", "Website", "Funnels", "1 lakh", "5 Lakhs", "1 crore"]);
+      const d = dots(container);
+      expect(d).toEqual([[weekX("W5"), labelY(container, "1 crore")]]); // visible even as the only week
+      expect(line(container)).toBeNull(); // nothing to connect yet
+      // Drawn after every marker and the reached-milestone diamond at the same spot, so nothing covers it.
+      const point = container.querySelector('[data-testid="progress-point"]')!;
+      for (const el of container.querySelectorAll('[data-testid="activity-marker"], [data-testid="revenue-marker"]')) {
+        expect(el.compareDocumentPosition(point) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      expect(container.querySelectorAll('[data-testid="revenue-marker"]')).toHaveLength(1);
     });
 
     it("no reported revenue: no line and no points (nothing fabricated); stage labels and markers unchanged", async () => {
@@ -306,7 +351,7 @@ describe("WeeklyActivityGraph", () => {
       expect(screen.getAllByTestId("activity-marker")).toHaveLength(5);
     });
 
-    it("is drawn red and under the markers, so marker borders stay visible", async () => {
+    it("is drawn red on top of the markers (never hidden by them), without blocking their clicks", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
@@ -315,8 +360,11 @@ describe("WeeklyActivityGraph", () => {
       expect(Number(l.getAttribute("stroke-width"))).toBe(2);
       expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( L [\d.]+,[\d.]+)+$/); // straight segments, no curves
       for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("2.5");
-      const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
-      expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const lastMarker = [...container.querySelectorAll('[data-testid="activity-marker"]')].at(-1)!;
+      expect(lastMarker.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(l.getAttribute("pointer-events")).toBe("none");
+      await userEvent.setup().click(screen.getByRole("button", { name: "W2, Funnels, Funnels W2, Completed" }));
+      expect(screen.getByRole("dialog", { name: "Activity details" })).toBeTruthy();
     });
 
     it("keeps the status legend, and names the red line", async () => {
