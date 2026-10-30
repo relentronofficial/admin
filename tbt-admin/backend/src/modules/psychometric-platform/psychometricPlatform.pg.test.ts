@@ -5,6 +5,7 @@ import { PrismaClient } from '@prisma/client';
 import * as content from './content.controller.js';
 import * as results from './results.controller.js';
 import * as voice from './voice.controller.js';
+import * as member from './candidate.controller.js';
 
 // Opt-in and LOCAL ONLY: set PSY_PG_TEST_URL to a throwaway local database
 // (e.g. `docker run --rm -e POSTGRES_PASSWORD=pg -p 55432:5432 postgres:16-alpine`
@@ -46,8 +47,8 @@ suite('psychometric platform (real Postgres)', () => {
     prisma = new PrismaClient({ datasources: { db: { url: RAW_URL } } });
     await prisma.$executeRawUnsafe(`DROP SCHEMA public CASCADE`);
     await prisma.$executeRawUnsafe(`CREATE SCHEMA public`);
-    // psy_candidates.member_id references members(id); a minimal stand-in is enough here.
-    await prisma.$executeRawUnsafe(`CREATE TABLE members (id UUID PRIMARY KEY)`);
+    // psy_candidates.member_id references members(id); a stand-in with the columns the handlers read.
+    await prisma.$executeRawUnsafe(`CREATE TABLE members (id UUID PRIMARY KEY, member_id TEXT, first_name TEXT, last_name TEXT, email TEXT, phone TEXT)`);
     for (const sql of psyDdl()) await prisma.$executeRawUnsafe(sql);
   }, 60_000);
   afterAll(async () => { await prisma?.$disconnect(); });
@@ -337,5 +338,165 @@ suite('psychometric platform (real Postgres)', () => {
     await call(voice.deleteQuestionAudio, { params: { id: q1._id } });
     expect((await call(voice.previewQuestionAudio, { params: { id: q1._id } })).status).toBe(404);
     expect((await call(voice.generateExplanationAudio, { params: { id: q2._id } })).status).toBe(400);
+  });
+
+  // ── phase 3: members taking the assessment ──────────────────────────────
+  const M1 = '11111111-1111-4111-8111-111111111111';
+  const M2 = '22222222-2222-4222-8222-222222222222';
+
+  async function callMember(handler: any, memberId: string, opts: { params?: any; body?: any } = {}) {
+    const sent: { status: number; body: any; headers: Record<string, string> } = { status: 200, body: undefined, headers: {} };
+    const reply: any = {
+      code(c: number) { sent.status = c; return reply; },
+      header(k: string, v: string) { sent.headers[k.toLowerCase()] = v; return reply; },
+      send(b: any) { sent.body = b; return reply; },
+    };
+    const req: any = { memberId, ip: '127.0.0.1', headers: { 'user-agent': 'vitest' }, params: opts.params ?? {}, body: opts.body, server: { prisma }, log: { error() {}, info() {} } };
+    await handler(req, reply);
+    return sent;
+  }
+
+  /** Two Likert questions (Leadership) + one ranking question, in a set assigned to the members' code. */
+  async function setUpMembersAssessment(duration = 20) {
+    await prisma.$executeRawUnsafe(`INSERT INTO members (id, member_id, first_name, last_name, email, phone) VALUES
+      ($1::uuid, 'TBT0001', 'Ravi', 'Kumar', 'ravi@tbt.test', '+919800000001'),
+      ($2::uuid, 'TBT0002', 'Priya', NULL, 'priya@tbt.test', '+919800000002')`, M1, M2);
+    const lead = await makeType('Leadership', 1);
+    const comm = await makeType('Communication', 2);
+    const q1 = await makeQuestion(lead._id, 1);
+    const q2 = await makeQuestion(lead._id, 2);
+    const q3 = await makeQuestion(comm._id, 3, { questionType: 'RANKING', dimension: 'Communication', marks: 3,
+      options: [{ optionText: 'first', score: 0 }, { optionText: 'second', score: 0 }, { optionText: 'third', score: 0 }] });
+    const set = await call(content.createQuestionSet, { body: { name: 'Members', durationMinutes: duration, questionIds: [q3._id, q1._id, q2._id] } });
+    const code = await call(content.createAccessCode, { body: { code: 'TBTMEMBERS', label: 'TBT Members', questionSetId: set.body.data._id } });
+    await call(content.updateSettings, { body: { members_access_code_id: code.body.data._id } });
+    return { q1, q2, q3, codeId: code.body.data._id };
+  }
+
+  const fullAnswers = (q1: any, q2: any, q3: any, rankingCorrect = true) => [
+    { questionId: q1._id, answerOptionId: q1.options[4]._id, timeTakenSeconds: 5 },
+    { questionId: q2._id, answerOptionId: q2.options[2]._id },
+    { questionId: q3._id, orderedOptionIds: rankingCorrect ? q3.options.map((o: any) => o._id) : [...q3.options].reverse().map((o: any) => o._id) },
+  ];
+
+  it('member flow: unavailable until configured', async () => {
+    await prisma.$executeRawUnsafe(`INSERT INTO members (id) VALUES ($1::uuid)`, M1);
+    expect((await callMember(member.getQuestions, M1)).body.message).toMatch(/not available/);
+    expect((await callMember(member.startSession, M1)).status).toBe(403);
+    expect((await callMember(member.getAssessmentSettings, M1)).body.data.assessment_duration_minutes).toBe(30);
+    expect((await callMember(member.getResult, M1)).status).toBe(404);
+  });
+
+  it('member flow: questions are sectioned in set order without scoring secrets; ranking is shuffled', async () => {
+    const { q3 } = await setUpMembersAssessment();
+    const r = await callMember(member.getQuestions, M1);
+    expect(r.status).toBe(200);
+    expect(r.body.remainingSeconds).toBe(20 * 60);
+    expect(r.body.data.map((s: any) => s.typeName)).toEqual(['Communication', 'Leadership']);
+    const flat = JSON.stringify(r.body.data);
+    for (const secret of ['"score"', 'isCorrect', 'correctOptionId', 'idealOrder', 'dimensionScores', 'scoringMode']) expect(flat).not.toContain(secret);
+    const rankingOpts = r.body.data[0].questions[0].options.map((o: any) => o._id).sort();
+    expect(rankingOpts).toEqual(q3.options.map((o: any) => o._id).sort());
+    expect((await callMember(member.getAssessmentSettings, M1)).body.data.assessment_duration_minutes).toBe(20);
+    expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_candidates`)).toHaveLength(0); // looking doesn't create a candidate
+  });
+
+  it('member flow: start creates the candidate, resumes the live attempt, scores the submission', async () => {
+    const { q1, q2, q3, codeId } = await setUpMembersAssessment();
+    const start = await callMember(member.startSession, M1);
+    expect(start.status).toBe(201);
+    expect(start.body.attemptNumber).toBe(1);
+    const [cand] = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM psy_candidates`);
+    expect(cand).toMatchObject({ member_id: M1, source: 'tbt', name: 'Ravi Kumar', email: 'ravi@tbt.test', candidate_code: 'TBT-M-TBT0001', access_code_id: codeId, access_code: 'TBTMEMBERS' });
+    const again = await callMember(member.startSession, M1);
+    expect(again.status).toBe(409);
+    expect(again.body.sessionId).toBe(start.body.sessionId);
+
+    const sid = start.body.sessionId;
+    expect((await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3).slice(0, 2) } })).body.message)
+      .toBe('All 3 questions must be answered or explicitly timed out.');
+    expect((await callMember(member.submitAssessment, M2, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3) } })).status).toBe(403);
+
+    const sub = await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3) } });
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    const res = await callMember(member.getResult, M1);
+    // Likert 5 + 3 of 10 (Leadership), ranking 3/3 (Communication): 11/13 = 84.6%.
+    expect(res.body.data).toMatchObject({ totalMarks: 11, maxScore: 13, percentage: 84.6, level: 'Excellent', categoryScores: { Leadership: 8, Communication: 3 } });
+    expect(res.body.data.userId).toMatchObject({ name: 'Ravi Kumar', sharedCode: 'TBTMEMBERS', sharedUserID: { label: 'TBT Members' } });
+    expect(res.body.retest).toEqual({ status: 'none', canRequest: true });
+    const answers = await prisma.$queryRawUnsafe<any[]>(`SELECT status, score FROM psy_answers ORDER BY question_order`);
+    expect(answers.map((a) => [a.status, a.score])).toEqual([['answered', 5], ['answered', 3], ['answered', 3]]);
+    expect((await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3) } })).body.message).toBe('Session already submitted or expired.');
+    const notes = await prisma.$queryRawUnsafe<any[]>(`SELECT type, message FROM psy_notifications`);
+    expect(notes).toEqual([{ type: 'ASSESSMENT_SUBMITTED', message: 'Ravi Kumar completed the assessment with a score of 85%.' }]);
+  });
+
+  it('member flow: concurrent starts make one session; concurrent submits score once', async () => {
+    const { q1, q2, q3 } = await setUpMembersAssessment();
+    const starts = await Promise.all([1, 2, 3].map(() => callMember(member.startSession, M1)));
+    expect(starts.map((s) => s.status).sort()).toEqual([201, 409, 409]);
+    expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_sessions`)).toHaveLength(1);
+    expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_candidates`)).toHaveLength(1);
+    const sid = starts.find((s) => s.status === 201)!.body.sessionId;
+    const subs = await Promise.all([1, 2].map(() => callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3) } })));
+    expect(subs.filter((s) => s.status === 200)).toHaveLength(1);
+    expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_results`)).toHaveLength(1);
+    expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_answers`)).toHaveLength(3);
+  });
+
+  it('member flow: timing — late submits rejected, grace-window submits are auto and may be partial', async () => {
+    const { q1, q2, q3 } = await setUpMembersAssessment();
+    const sid = (await callMember(member.startSession, M1)).body.sessionId;
+    await prisma.$executeRawUnsafe(`UPDATE psy_sessions SET expires_at = NOW() - INTERVAL '30 seconds'`);
+    const sub = await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3).slice(0, 1) } });
+    expect(sub.status).toBe(200);
+    const [s] = await prisma.$queryRawUnsafe<any[]>(`SELECT auto_submitted, total_answered FROM psy_sessions`);
+    expect(s).toEqual({ auto_submitted: true, total_answered: 1 });
+    const [r] = await prisma.$queryRawUnsafe<any[]>(`SELECT skipped_count FROM psy_results`);
+    expect(r.skipped_count).toBe(2);
+
+    await prisma.$executeRawUnsafe(`INSERT INTO psy_retest_requests (candidate_id, status) SELECT id, 'approved' FROM psy_candidates`);
+    const sid2 = (await callMember(member.startSession, M1)).body.sessionId;
+    await prisma.$executeRawUnsafe(`UPDATE psy_sessions SET expires_at = NOW() - INTERVAL '2 minutes' WHERE id = $1`, sid2);
+    expect((await callMember(member.submitAssessment, M1, { body: { sessionId: sid2, answers: fullAnswers(q1, q2, q3) } })).body.message).toBe('Assessment time has expired.');
+  });
+
+  it('member flow: retest — request, approve, retake as attempt 2, history', async () => {
+    const { q1, q2, q3 } = await setUpMembersAssessment();
+    expect((await callMember(member.requestRetest, M1, { body: {} })).status).toBe(400);
+    const sid = (await callMember(member.startSession, M1)).body.sessionId;
+    await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3, false) } });
+    expect((await callMember(member.startSession, M1)).body.message).toBe('You have already completed this assessment.');
+
+    const req1 = await callMember(member.requestRetest, M1, { body: { reason: 'I rushed it' } });
+    expect(req1.body.message).toBe('Retest request sent to the administrator for approval.');
+    expect((await callMember(member.requestRetest, M1, { body: {} })).status).toBe(409);
+    const mine = await callMember(member.getMyRetest, M1);
+    expect(mine.body.data).toMatchObject({ status: 'pending', reason: 'I rushed it', attemptNumber: 2, userName: 'Ravi Kumar' });
+    expect(mine.body.retest).toEqual({ status: 'pending', canRequest: false });
+
+    expect((await call(results.approveRetest, { params: { id: mine.body.data._id } })).status).toBe(200);
+    const s2 = await callMember(member.startSession, M1);
+    expect(s2.status).toBe(201);
+    expect(s2.body.attemptNumber).toBe(2);
+    expect((await callMember(member.getMyRetest, M1)).body.data.status).toBe('used');
+    await callMember(member.submitAssessment, M1, { body: { sessionId: s2.body.sessionId, answers: fullAnswers(q1, q2, q3) } });
+    const res = await callMember(member.getResult, M1);
+    expect(res.body.attemptNumber).toBe(2);
+    expect(res.body.history.map((h: any) => h.attemptNumber)).toEqual([2, 1]);
+    expect(res.body.retest.canRequest).toBe(true);
+    const notes = await prisma.$queryRawUnsafe<any[]>(`SELECT type FROM psy_notifications ORDER BY created_at`);
+    expect(notes.map((n) => n.type)).toEqual(['ASSESSMENT_SUBMITTED', 'RETEST_REQUEST_CREATED', 'ASSESSMENT_SUBMITTED']);
+  });
+
+  it('member flow: cached audio with the old cache headers', async () => {
+    const { q1 } = await setUpMembersAssessment();
+    await prisma.$executeRawUnsafe(`INSERT INTO psy_question_audio (question_id, kind, text_hash, voice, lang, audio) VALUES
+      ($1, 'question', 'h1', 'en-US-AriaNeural', 'en-US', $2), ($1, 'explanation', 'h2', 'ta-IN-PallaviNeural', 'ta-IN', $2)`, q1._id, Buffer.from([7, 7]));
+    const a = await callMember(member.getQuestionAudio, M1, { params: { id: q1._id } });
+    expect(a.headers).toMatchObject({ 'content-type': 'audio/mpeg', 'cache-control': 'private, max-age=86400', etag: '"h1"' });
+    const e = await callMember(member.getExplanationAudio, M1, { params: { id: q1._id } });
+    expect(e.headers).toMatchObject({ 'cache-control': 'no-store', etag: '"h2-ta-IN-PallaviNeural"' });
+    expect((await callMember(member.getQuestionAudio, M1, { params: { id: 'none' } })).status).toBe(404);
   });
 });
