@@ -20,7 +20,6 @@ import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import SupportCallPanel from "./SupportCallPanel";
 import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import type { SupportCallCategory, SupportCallsSummary } from "@/lib/api/services/supportCalls.service";
@@ -1820,26 +1819,14 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
   const [showRevenueForm, setShowRevenueForm] = useState(false);
-  const router = useRouter();
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
   const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
   const handleCallTileClick = useCallback(
     (category: SupportCallCategory, label: string) => {
-      const card = callSummary?.categories.find((c) => c.category === category);
-      const fullyLocked = card?.action === "locked" && card?.lockedReason === "not_included";
-      const quotaExhausted =
-        card !== undefined &&
-        card.action !== "book" &&
-        card.action !== "unlock_with_coins" &&
-        !fullyLocked;
-      if (quotaExhausted) {
-        router.push("/profile");
-      } else {
-        setOpenCall({ category, label });
-      }
+      setOpenCall({ category, label });
     },
-    [callSummary, router],
+    [],
   );
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
