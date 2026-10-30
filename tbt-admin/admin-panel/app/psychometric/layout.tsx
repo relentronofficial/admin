@@ -6,10 +6,10 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import ToastProvider from "@/components/psychometric/ToastProvider";
 import { api, type ApiEnvelope } from "@/lib/psychometric/api";
 
-// Psychometric Admin, ported from the standalone Psychometric platform. Pages
-// reach its API through the TBT backend bridge with the admin's TBT (Clerk)
-// session — no separate Psychometric sign-in. The bridge enforces Admin /
-// Super Admin on every request; this check only picks the screen to show.
+// Psychometric Admin, ported from the former standalone Psychometric platform
+// and now served by the TBT backend with the admin's TBT (Clerk) session — no
+// separate sign-in. The backend enforces Admin / Super Admin on every request;
+// this check only picks the screen to show.
 type Access = "checking" | "allowed" | "denied" | "not-connected" | "error";
 
 export default function PsychometricLayout({ children }: { children: React.ReactNode }) {

@@ -1,9 +1,8 @@
-// Psychometric Admin talks to the standalone Psychometric platform through the
-// TBT backend's bridge (/api/psychometric-bridge), authenticated with the
-// admin's TBT (Clerk) session — no second login. The bridge signs each call
-// server-side with a key shared with the Psychometric server and only allows
-// Admin / Super Admin. Paths passed in are the Psychometric ones ("/admin/...").
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/psychometric-bridge`;
+// Psychometric Admin is served by the TBT backend (/api/psychometric-platform,
+// data in TBT's own database), authenticated with the admin's TBT (Clerk)
+// session — no second login; the backend allows Admin / Super Admin only.
+// Paths keep the former standalone API's shape ("/admin/...").
+const API_BASE = `${process.env.NEXT_PUBLIC_API_URL || ""}/api/psychometric-platform`;
 
 // Standard response envelope returned by (almost) every backend endpoint.
 // Some endpoints add top-level fields (list endpoints: total/pages/stats) or

@@ -22,8 +22,8 @@ export default function SettingsPage() {
   }, [token]);
 
   // The standalone app's "Admin Profile" and "Change Password" cards are not
-  // here: Psychometric is reached with the TBT Admin session (signed requests
-  // from the TBT backend), so there is no Psychometric account to manage.
+  // here: Psychometric runs inside TBT with the TBT Admin session, so there is
+  // no Psychometric account to manage.
 
   async function saveSettings() {
     if (!duration || isNaN(Number(duration)) || Number(duration) <= 0) {
