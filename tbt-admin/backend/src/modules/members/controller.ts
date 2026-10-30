@@ -20,6 +20,7 @@ import {
 import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
 import { buildSkillRatingsQuery, mergeSkillRatings, profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
 import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
+import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
 // GET /api/members/:id/daily-activity?days=30  (Clerk admin auth via route hook)
@@ -2095,5 +2096,8 @@ export async function upsertMemberRevenueAdminHandler(request: FastifyRequest, r
   );
 
   const r = rows[0];
+  // Same refresh the member's own revenue save sends: their open dashboard refetches
+  // the graph and the revenue figures (socket batch:graph_updated to user:<id>).
+  void notifyWeeklyGraphChanged(request.server, { memberIds: [id] }, 'revenue_updated');
   return reply.send({ success: true, data: mapAdminRevenueRow(r, weekNumber, year), error: null });
 }

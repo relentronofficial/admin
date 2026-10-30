@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
+import { useQueryClient } from "@tanstack/react-query";
+import type { Socket } from "socket.io-client";
+import { useMyWeeklyGraph, weeklyGraphQueryKey } from "@/lib/hooks/useBatchProgram";
+import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, smoothLinePath } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -18,11 +22,13 @@ import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, smoothLi
 //    never means "achieved" — its fill shows the activity's own status;
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
-//  • a red line through each week's reported revenue (week.revenue — the
-//    "Revenue Generated" figures placed on that program week), placed on this
-//    same axis: ₹0 at Start, each revenue milestone's threshold on its row,
-//    proportional in between (revenueLevelOnAxis). A week with nothing reported
-//    has no point (never ₹0) and the line joins the reported weeks.
+//  • ONE red line: task progress, from Start through each started week's
+//    progress (week.progressLevel), rising and falling (weeklyGraphProgression.ts);
+//  • a red-ring / white-centre point for each week with saved revenue
+//    (week.revenue), at its actual amount on this same axis — not a line
+//    (revenueLevelOnAxis). A week with nothing saved has no point (never ₹0).
+// The graph refreshes live when the admin changes tasks, progress or revenue
+// (socket batch:graph_updated / batch:day_approved / batch:day_rejected).
 // Every marker is a keyboard-focusable button that opens a popup with the
 // Week, Milestone and Activity.
 
@@ -38,6 +44,9 @@ const BOX_PAD = 12;  // the chart box's p-3 padding
 
 /** Admin can hide the graph (Settings → Navigation → Platform Sections → "weekly_graph"). */
 export const WEEKLY_GRAPH_MENU_KEY = "weekly_graph";
+
+/** Backend events to this member's room that mean the graph or revenue changed. */
+export const GRAPH_REFRESH_EVENTS = ["batch:graph_updated", "batch:day_approved", "batch:day_rejected"] as const;
 
 export default function WeeklyActivityGraph() {
   const { hiddenMenuKeys } = useSiteConfig();
@@ -56,6 +65,29 @@ function WeeklyActivityGraphContent() {
   const { data: graph, isLoading, isError } = useMyWeeklyGraph();
   const { uiStrings } = useSiteConfig();
   const s = uiStrings as any;
+  const queryClient = useQueryClient();
+
+  // Live sync with the admin: when an admin approves/rejects a day, edits tasks or
+  // progress, or saves this member's revenue, the backend tells the member's own
+  // socket room. Refetch the graph and the revenue figures from the same APIs —
+  // nothing is computed or stored here.
+  useEffect(() => {
+    let alive = true;
+    let sock: Socket | null = null;
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: weeklyGraphQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["user", "mentorship-revenue"] });
+    };
+    getSocket().then((s) => {
+      if (!alive) return;
+      sock = s;
+      for (const e of GRAPH_REFRESH_EVENTS) s.on(e, refresh);
+    }).catch(() => { /* no socket: the next page load is still correct */ });
+    return () => {
+      alive = false;
+      if (sock) for (const e of GRAPH_REFRESH_EVENTS) sock.off(e, refresh);
+    };
+  }, [queryClient]);
 
   // Lay out in real pixels from the container width so labels stay a constant,
   // readable size on every screen.
@@ -185,23 +217,30 @@ function WeeklyActivityGraphContent() {
     revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
   });
 
-  // Revenue line: one point per week at its reported revenue, on this axis —
-  // ₹0 at Start, each revenue milestone's amount on its own row, proportional
-  // in between. A row's amount is its admin threshold, or, when none is set
-  // (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the amount its
-  // label names. The line starts on the Start baseline at the chart's left edge
-  // and runs as one smooth curve (monotone: no overshoot) through every reported
-  // week, so even a single week shows a line rising to its point. Task stages
-  // never move it. Recomputed every render.
+  // The ONE red line: task progress. One point per started week at its measured
+  // progress (week.progressLevel from the API — approved work, milestone links,
+  // admin records), and the line runs from Start through each started week's
+  // highest visible dot, rising and falling week to week (weeklyGraphProgression.ts).
+  // Recomputed on every render, so it follows refreshed data and configuration.
+  const progression = weekProgressionPoints(weeks, colX, yFor);
+  const linePts = weekLinePoints(weeks, colX, yFor);
+  const linePoints = linePts.length > 0
+    ? [`M ${LEFT},${yFor(0)}`, ...linePts.map((p) => `L ${p.x},${p.y}`)].join(" ")
+    : null;
+  const progressTitle = (w: WeeklyGraphWeek) =>
+    `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
+
+  // Revenue points (not a line): one per week with saved revenue, at its actual
+  // amount on this axis — ₹0 at Start, each revenue milestone's amount on its own
+  // row, proportional in between. A row's amount is its admin threshold, or, when
+  // none is set (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the
+  // amount its label names. A week with nothing saved has no point.
   const thresholds = milestones.map((m) =>
     m.kind === "revenue" ? (typeof m.threshold === "number" && m.threshold > 0 ? m.threshold : amountFromRevenueLabel(m.label)) : null);
-  const progression = revenueLevelOnAxis(0, thresholds) === null
+  const revenuePoints = revenueLevelOnAxis(0, thresholds) === null
     ? [] // no revenue row with an amount: nothing to read an amount against
     : revenueLinePoints(weeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
-  const linePoints = progression.length > 0
-    ? smoothLinePath([{ x: LEFT, y: yFor(0) }, ...progression])
-    : null;
-  const progressTitle = (w: WeeklyGraphWeek, revenue: number) =>
+  const revenueTitle = (w: WeeklyGraphWeek, revenue: number) =>
     `${weekLabel(w)}: ${inr(revenue)} ${s?.batchGraphRevenueGenerated ?? "revenue generated"}`;
 
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
@@ -311,6 +350,20 @@ function WeeklyActivityGraphContent() {
             </text>
           ))}
 
+          {/* The one red line (task progress) + one dot per week's progress point — drawn
+              before the task markers (as originally) so the markers keep their exact look
+              on top of the line; it ignores the pointer. */}
+          {linePoints && (
+            <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
+              strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
+          )}
+          {progression.map((p) => (
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
+              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5} pointerEvents="none">
+              <title>{progressTitle(weeks[p.weekIndex])}</title>
+            </circle>
+          ))}
+
           {/* Activity markers */}
           {markers.map((m) => {
             const st = markerStyle(m.activity);
@@ -366,19 +419,12 @@ function WeeklyActivityGraphContent() {
             );
           })}
 
-          {/* Revenue line + one dot per week's revenue — drawn last so a marker or a
-              reached-milestone diamond on the same spot can never hide them. The
-              line ignores the pointer, so the markers under it stay clickable. */}
-          {linePoints && (
-            <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
-              strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
-          )}
-          {/* Revenue point: white centre with a solid red ring, so it can't be mistaken for a
-              task-status marker (filled, dashed or grey ring) */}
-          {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={4.5}
+          {/* Revenue points (no line): white centre with a solid red ring, so they can't be
+              mistaken for task-status markers (filled, dashed or grey ring) */}
+          {revenuePoints.map((p) => (
+            <circle key={`rp-${p.weekNumber}`} data-testid="revenue-point" cx={p.x} cy={p.y} r={4.5}
               fill="#ffffff" stroke="var(--color-accent, #dc2626)" strokeWidth={2.5}>
-              <title>{progressTitle(weeks[p.weekIndex], p.revenue)}</title>
+              <title>{revenueTitle(weeks[p.weekIndex], p.revenue)}</title>
             </circle>
           ))}
         </svg>
@@ -389,7 +435,7 @@ function WeeklyActivityGraphContent() {
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-accent)" }} />{statusLabel.completed}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2 border-dashed" style={{ borderColor: "var(--color-accent)" }} />{statusLabel.submitted}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-text-subtle)" }} />{statusLabel.not_started}</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: "var(--color-accent, #dc2626)" }} />{s?.batchGraphRevenueLineLegend ?? "Weekly revenue"}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-accent, #dc2626)", background: "#ffffff" }} />{s?.batchGraphRevenueLineLegend ?? "Weekly revenue"}</span>
         {revenueMarkers.length > 0 && (
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rotate-45" style={{ background: "var(--color-success, #22c55e)" }} />
