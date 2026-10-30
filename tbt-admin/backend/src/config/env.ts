@@ -69,11 +69,10 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
   // Psychometric bridge (modules/psychometric-bridge): the standalone Psychometric
-  // API and the dedicated service account the TBT backend signs in with. The
-  // bridge answers 503 until both credentials are set.
+  // API, and the HS256 key shared with it (its TBT_BRIDGE_SECRET) that signs each
+  // forwarded request. No Psychometric account is used. 503 until the key is set.
   PSYCHOMETRIC_API_URL: z.string().url().default('https://backend-three-peach-48.vercel.app/api/v1'),
-  PSYCHOMETRIC_ADMIN_EMAIL: z.string().optional().or(z.literal('')),
-  PSYCHOMETRIC_ADMIN_PASSWORD: z.string().optional().or(z.literal('')),
+  PSYCHOMETRIC_BRIDGE_SECRET: z.string().optional().or(z.literal('')),
   // Mentorship dashboard demo mode (lib/mentorshipDemo.ts) — overlays demo
   // values on the mentorship revenue/social/stats, navbar streak and weekly
   // activity graph endpoints for ONE member, matched by BOTH their members.id

@@ -1,46 +1,17 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { getActingAdmin } from '../../lib/adminRole.js';
-import {
-  canUsePsychometric,
-  createPsychometricSession,
-  resolveUpstreamPath,
-  type PsychometricSession,
-} from '../../lib/psychometricBridge.js';
+import { ADMIN_AUDIENCE, canUsePsychometric, resolveUpstreamPath, signBridgeToken } from '../../lib/psychometricBridge.js';
 
-// See lib/psychometricBridge.ts for why this bridge exists and how the shared
-// Psychometric session works.
+// See lib/psychometricBridge.ts: every forwarded call is signed with the key
+// shared with the Psychometric server — no Psychometric account or login.
 
 const UPSTREAM_TIMEOUT_MS = 60_000;
 const DENIED = 'Psychometric Admin is available to Admin and Super Admin only.';
-const NOT_CONNECTED = 'Psychometric Admin is not connected yet. Ask a Super Admin to configure the Psychometric service account.';
+const NOT_CONNECTED = 'Psychometric Admin is not connected yet. Ask a Super Admin to set the Psychometric bridge key.';
 
-const apiBase = () => (env.PSYCHOMETRIC_API_URL || '').replace(/\/$/, '');
-const isConfigured = () => !!(apiBase() && env.PSYCHOMETRIC_ADMIN_EMAIL && env.PSYCHOMETRIC_ADMIN_PASSWORD);
-
-async function loginToPsychometric(): Promise<string> {
-  const res = await fetch(`${apiBase()}/admin/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: env.PSYCHOMETRIC_ADMIN_EMAIL, password: env.PSYCHOMETRIC_ADMIN_PASSWORD }),
-    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-  });
-  const data = (await res.json().catch(() => null)) as { token?: string } | null;
-  // Never log the response or the credentials — only the status.
-  if (!res.ok || !data?.token) throw new Error(`Psychometric service-account sign-in failed (HTTP ${res.status})`);
-  return data.token;
-}
-
-let session: PsychometricSession | null = null;
-function getSession(req: FastifyRequest): PsychometricSession {
-  if (!session) session = createPsychometricSession({ store: req.server.redis ?? null, login: loginToPsychometric });
-  return session;
-}
-
-/** Test hook: forget the cached session between test cases. */
-export function resetPsychometricSessionForTests() {
-  session = null;
-}
+export const apiBase = () => (env.PSYCHOMETRIC_API_URL || '').replace(/\/$/, '');
+export const isConfigured = () => !!(apiBase() && env.PSYCHOMETRIC_BRIDGE_SECRET);
 
 /** Only Admin / Super Admin, checked on every request (server-side). */
 async function authorise(req: FastifyRequest, reply: FastifyReply) {
@@ -59,7 +30,7 @@ export async function accessHandler(req: FastifyRequest, reply: FastifyReply) {
   return reply.send({ success: true, data: { allowed: true, configured: isConfigured() } });
 }
 
-const PASS_HEADERS = ['content-type', 'content-disposition', 'cache-control'];
+export const PASS_HEADERS = ['content-type', 'content-disposition', 'cache-control'];
 
 /** /api/psychometric-bridge/admin/* — forwards an allow-listed Psychometric admin call. */
 export async function proxyHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -68,45 +39,36 @@ export async function proxyHandler(req: FastifyRequest, reply: FastifyReply) {
   if (!isConfigured()) return reply.code(503).send({ success: false, message: NOT_CONNECTED });
 
   // The route is /admin/*; the wildcard holds the rest of the path.
-  const rawPath = `/admin/${(req.params as { '*'?: string })['*'] ?? ''}`;
-  const path = resolveUpstreamPath(rawPath);
+  const path = resolveUpstreamPath(`/admin/${(req.params as { '*'?: string })['*'] ?? ''}`);
   if (!path) return reply.code(404).send({ success: false, message: 'Not found.' });
 
   const qIndex = req.url.indexOf('?');
   const query = qIndex >= 0 ? req.url.slice(qIndex) : '';
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && req.body !== undefined;
+  const token = signBridgeToken(env.PSYCHOMETRIC_BRIDGE_SECRET!, ADMIN_AUDIENCE, { sub: admin.id, name: admin.fullName });
 
-  const call = (token: string) =>
-    fetch(`${apiBase()}${path}${query}`, {
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${apiBase()}${path}${query}`, {
       method: req.method,
       headers: { Authorization: `Bearer ${token}`, ...(hasBody ? { 'Content-Type': 'application/json' } : {}) },
       body: hasBody ? JSON.stringify(req.body) : undefined,
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
-
-  const s = getSession(req);
-  let upstream: Response;
-  try {
-    let token = await s.getToken();
-    upstream = await call(token);
-    if (upstream.status === 401) {
-      // Token expired or replaced (e.g. someone signed in as the service account): get a fresh one once.
-      token = await s.refresh(token);
-      upstream = await call(token);
-    }
   } catch (err) {
     req.log.error({ err, path }, 'psychometric bridge request failed');
     return reply.code(502).send({ success: false, message: 'Could not reach the Psychometric service. Please try again.' });
   }
 
   if (upstream.status === 401) {
-    // Not the TBT session's fault — don't send 401 (the admin panel would treat it as a TBT sign-out).
-    req.log.error({ path }, 'psychometric bridge: service account rejected after re-login');
-    return reply.code(502).send({ success: false, message: 'The Psychometric service account could not sign in.' });
+    // The Psychometric server rejected our signature (key mismatch, or its bridge
+    // is off). Not a TBT sign-out, so never pass the 401 on.
+    req.log.error({ path }, 'psychometric bridge: signed request rejected — check PSYCHOMETRIC_BRIDGE_SECRET / TBT_BRIDGE_SECRET');
+    return reply.code(502).send({ success: false, message: 'The Psychometric service did not accept the TBT connection.' });
   }
 
   if (req.method !== 'GET') {
-    // In Psychometric every bridged change is attributed to the service account; record who really made it.
+    // In Psychometric these changes are attributed to the TBT actor record; record who really made them.
     req.log.info({ psychometricAction: `${req.method} ${path}`, adminId: admin.id, status: upstream.status }, 'psychometric bridge write');
   }
 
