@@ -81,7 +81,7 @@ import { createAdminNotification } from './lib/adminNotifications.js';
 async function bootstrap() {
   const fastify = Fastify({
     trustProxy: true,   // read real client IP from X-Forwarded-For (GCP load balancer)
-    pluginTimeout: 120000, // 120s — startup migrations run 70+ SQL statements; allow time after schema resets
+    pluginTimeout: 210000, // 210s — startup DDL already took ~2 min in production; stays under Cloud Run's 240s startup probe
     logger: {
       level: 'info',
       transport: env.NODE_ENV === 'development' ? {
