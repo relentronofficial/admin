@@ -128,6 +128,22 @@ describe('buildImportPlan', () => {
     ]);
   });
 
+  it("deleted questions' -Date.now() orders become TBT's -1, -2, … sentinels, earliest deletion first", () => {
+    const q = snapshot().questions[0];
+    const plan = buildImportPlan(snapshot({ questions: [
+      q,
+      { ...q, _id: oid(60), order: -1782000000000, isActive: false },
+      { ...q, _id: oid(61), order: -1781000000000, isActive: false },
+    ] }));
+    expect(plan.rows.psy_questions.map((r) => [r.id, r.sort_order])).toEqual([[oid(3), 1], [oid(60), -2], [oid(61), -1]]);
+    expect(plan.issues.filter((i) => i.level === 'blocker')).toEqual([]);
+  });
+
+  it('a value too big for an INT column blocks instead of failing mid-write', () => {
+    const plan = buildImportPlan(snapshot({ questionSets: [{ ...snapshot().questionSets[0], durationMinutes: 3e9 }] }));
+    expect(plan.issues).toContainEqual(expect.objectContaining({ level: 'blocker', table: 'psy_question_sets', message: '"durationMinutes" 3000000000 does not fit a whole-number column' }));
+  });
+
   it('a deleted admin or access code is reported, never fatal', () => {
     const plan = buildImportPlan(snapshot({ admins: [], accessCodes: [] }));
     expect(plan.rows.psy_question_sets[0]).toMatchObject({ created_by: oid(1), created_by_email: null });

@@ -201,6 +201,7 @@ export function buildImportPlan(src: Snapshot): ImportPlan {
   /** Same for an INT column; a fractional value is rounded and reported. */
   const int = (table: string, d: Doc, field: string, def: number | typeof OPTIONAL | undefined = undefined): number | null => {
     const n = num(table, d, field, def);
+    if (n !== null && Math.abs(n) > 2147483647) { add('blocker', table, id(d), `"${field}" ${n} does not fit a whole-number column`); return null; }
     if (n === null || Number.isInteger(n)) return n;
     add('warning', table, id(d), `"${field}" ${n} rounded to ${Math.round(n)}`);
     return Math.round(n);
@@ -248,10 +249,18 @@ export function buildImportPlan(src: Snapshot): ImportPlan {
     });
   }
 
-  // Questions
+  // Questions. A deleted question vacated its order with -Date.now(), which doesn't
+  // fit INT; TBT vacates with -1, -2, … (deleteQuestion), so deleted ones get those,
+  // earliest deletion first (closest to zero = deleted first).
   const questionIds = new Set<string>();
   dupCheck('psy_questions', src.questions, 'order');
-  for (const d of src.questions) {
+  const vacated = new Map(src.questions
+    .filter((q) => typeof q.order === 'number' && q.order < 0)
+    .sort((a, b) => b.order - a.order || id(a).localeCompare(id(b)))
+    .map((q, i) => [id(q), -(i + 1)]));
+  for (const raw of src.questions) {
+    const d = vacated.has(id(raw)) ? { ...raw, order: vacated.get(id(raw)) } : raw;
+    if (d !== raw) add('info', 'psy_questions', id(d), 'deleted question: vacated order renumbered to a TBT sentinel');
     const typeId = sOrNull(d.typeId);
     if (!typeId || !typeIds.has(typeId)) { skip('psy_questions', id(d), `question type ${typeId} does not exist; question left out`); continue; }
     required('psy_questions', d, 'text', d.text);

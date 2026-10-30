@@ -214,7 +214,7 @@ suite('psychometric platform (real Postgres)', () => {
       `INSERT INTO psy_sessions (candidate_id, started_at, expires_at, status) VALUES ($1, NOW(), NOW(), 'submitted') RETURNING id`, c.id);
     const [r] = await prisma.$queryRawUnsafe<any[]>(
       `INSERT INTO psy_results (candidate_id, session_id, total_marks, max_score, percentage, level, recommended_business, category_scores, created_at)
-       VALUES ($1, $2, $3, 100, $3, $4, $5::jsonb, '{"Leadership": 10}'::jsonb, $6) RETURNING id`,
+       VALUES ($1, $2, $3, 100, $3, $4, $5::jsonb, '{"Leadership": 10}'::jsonb, $6::timestamptz) RETURNING id`,
       c.id, s.id, pct, opts.level ?? 'Good', JSON.stringify(opts.business ?? ['Consulting']), opts.at ?? new Date().toISOString());
     return { candidateId: c.id, resultId: r.id };
   }
@@ -380,7 +380,7 @@ suite('psychometric platform (real Postgres)', () => {
   ];
 
   it('member flow: unavailable until configured', async () => {
-    await prisma.$executeRawUnsafe(`INSERT INTO members (id) VALUES ($1::uuid)`, M1);
+    await prisma.$executeRawUnsafe(`INSERT INTO members (id, member_id, first_name, email, phone) VALUES ($1::uuid, 'TBT0001', 'Ravi', 'ravi@tbt.test', '+919800000001')`, M1);
     expect((await callMember(member.getQuestions, M1)).body.message).toMatch(/not available/);
     expect((await callMember(member.startSession, M1)).status).toBe(403);
     expect((await callMember(member.getAssessmentSettings, M1)).body.data.assessment_duration_minutes).toBe(30);

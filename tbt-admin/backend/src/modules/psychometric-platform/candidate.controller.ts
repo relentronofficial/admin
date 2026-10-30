@@ -36,13 +36,13 @@ async function findCandidate(d: Db, memberId: string) {
 }
 
 /** The member's candidate record, created on first use from their member profile. */
-async function ensureCandidate(t: Db, req: FastifyRequest, memberId: string) {
+async function ensureCandidate(t: Db, memberId: string) {
   const existing = await findCandidate(t, memberId);
   if (existing) return existing;
-  const m = await req.server.prisma.member.findUnique({
-    where: { id: memberId },
-    select: { memberId: true, firstName: true, lastName: true, email: true, phone: true },
-  });
+  // Read through the transaction: a query on the outer client here would wait
+  // for a second pool connection while this transaction holds one.
+  const [m] = await rows(t,
+    `SELECT member_id AS "memberId", first_name AS "firstName", last_name AS "lastName", email, phone FROM members WHERE id = $1::uuid`, memberId);
   if (!m) return null;
   const name = [m.firstName, m.lastName].filter(Boolean).join(' ').trim() || 'TBT Member';
   // ON CONFLICT DO NOTHING covers a concurrent first start and an (unlikely) candidate-code clash.
@@ -151,7 +151,7 @@ export async function startSession(req: Req, reply: FastifyReply) {
   const out = await tx(req, async (t) => {
     // One start at a time per member (no duplicate in-progress sessions).
     await t.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `psy-start:${memberId}`);
-    const cand = await ensureCandidate(t, req, memberId);
+    const cand = await ensureCandidate(t, memberId);
     if (!cand) return { status: 404, body: { success: false, message: 'Member not found.' } };
 
     // A completed candidate starts again only with an admin-approved retest (consumed below).

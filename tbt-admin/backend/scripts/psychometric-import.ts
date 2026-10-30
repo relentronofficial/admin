@@ -146,11 +146,13 @@ async function main() {
   // ── apply ──────────────────────────────────────────────────────────────────
   const started = Date.now();
   await prisma!.$transaction(async (tx) => {
-    // Orders may have been swapped since an earlier run; park this import's rows
-    // on negative orders so each upsert can't collide with a not-yet-updated one.
+    // Orders may have been swapped since an earlier run; park this import's live
+    // rows far above any real order (negative orders are deleted-question
+    // sentinels) so each upsert can't collide with a not-yet-updated row.
     for (const table of ['psy_question_types', 'psy_questions']) {
       if (tables.some((t) => t.table === table)) {
-        await tx.$executeRawUnsafe(`UPDATE ${table} SET sort_order = -sort_order - 1 WHERE id = ANY($1::text[]) AND sort_order > 0`, plan.rows[table].map((r) => String(r.id)));
+        await tx.$executeRawUnsafe(`UPDATE ${table} SET sort_order = sort_order + 1000000000 WHERE id = ANY($1::text[]) AND sort_order BETWEEN 1 AND 999999999`,
+          plan.rows[table].map((r) => String(r.id)));
       }
     }
     for (const t of tables) {
