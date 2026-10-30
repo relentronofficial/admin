@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+
+describe("amountFromRevenueLabel (amount a revenue row's label names)", () => {
+  it("reads lakh / crore / thousand labels, with or without ₹, case and plural", () => {
+    expect(["1 lakh", "5 Lakhs", "1 crore", "₹1 Lakh", "₹5 Lakhs", "₹1 Crore", "2.5 crores", "50L", "1 Cr", "10 lac", "10k", "₹1,00,000", "250000"]
+      .map(amountFromRevenueLabel))
+      .toEqual([1_00_000, 5_00_000, 1_00_00_000, 1_00_000, 5_00_000, 1_00_00_000, 2_50_00_000, 50_00_000, 1_00_00_000, 10_00_000, 10_000, 1_00_000, 2_50_000]);
+  });
+
+  it("labels that name no amount give null (nothing is assumed)", () => {
+    expect(["Ads", "First big month", "", null, undefined, "0 lakh", "lakh"].map(amountFromRevenueLabel)).toEqual([null, null, null, null, null, null, null]);
+  });
+});
 
 describe("revenueLevelOnAxis (revenue on the milestone axis)", () => {
   // Rows: Ads(1) Website(2) Funnels(3) 1 Lakh(4, ₹1,00,000) 5 Lakhs(5, ₹5,00,000) 1 Crore(6, ₹1,00,00,000)

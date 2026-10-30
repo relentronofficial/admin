@@ -7,6 +7,26 @@
 // smallest axis step that covers the highest week.
 
 /**
+ * The ₹ amount a revenue row's own label names — "1 lakh", "5 Lakhs", "₹1 Crore",
+ * "2.5 crores", "50L", "1 Cr", "₹1,00,000", "10k" — or null when the label names
+ * no amount. Used only when the admin set no threshold for that row (the built-in
+ * default rows carry none), so the row still marks the amount it is labelled with.
+ */
+export function amountFromRevenueLabel(label: string | null | undefined): number | null {
+  const s = String(label ?? "").toLowerCase().replace(/₹|rs\.?|inr/g, "").replace(/,/g, "").trim();
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|l|thousand|k)?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2] ?? "";
+  const mult = unit.startsWith("cr") ? 1_00_00_000
+    : unit.startsWith("la") || unit === "l" ? 1_00_000
+    : unit === "k" || unit === "thousand" ? 1_000
+    : 1;
+  const v = Math.round(n * mult);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/**
  * Position of a revenue amount on the graph's own milestone axis (level 0 =
  * Start; level i+1 = the row of milestone i). Anchors are ₹0 at Start and each
  * revenue milestone's admin-set threshold at its row; amounts in between are

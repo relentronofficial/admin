@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -186,12 +186,15 @@ function WeeklyActivityGraphContent() {
   });
 
   // Revenue line: one point per week at its reported revenue, on this axis —
-  // ₹0 at Start, each revenue milestone's admin threshold on its own row,
-  // proportional in between. The reported weeks are joined in one continuous
-  // line; task stages never move it. Recomputed every render.
-  const thresholds = milestones.map((m) => (m.kind === "revenue" ? m.threshold : null));
+  // ₹0 at Start, each revenue milestone's amount on its own row, proportional
+  // in between. A row's amount is its admin threshold, or, when none is set
+  // (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the amount its
+  // label names. The reported weeks are joined in one continuous line; task
+  // stages never move it. Recomputed every render.
+  const thresholds = milestones.map((m) =>
+    m.kind === "revenue" ? (typeof m.threshold === "number" && m.threshold > 0 ? m.threshold : amountFromRevenueLabel(m.label)) : null);
   const progression = revenueLevelOnAxis(0, thresholds) === null
-    ? [] // no revenue row with a threshold: nothing to read an amount against
+    ? [] // no revenue row with an amount: nothing to read an amount against
     : revenueLinePoints(weeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
   const linePoints = progression.length > 1
     ? progression.map((p, k) => `${k === 0 ? "M" : "L"} ${p.x},${p.y}`).join(" ")
@@ -306,19 +309,6 @@ function WeeklyActivityGraphContent() {
             </text>
           ))}
 
-          {/* Progression line + one dot per week's progress point (drawn before
-              the activity markers so those stay on top) */}
-          {linePoints && (
-            <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
-              strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" />
-          )}
-          {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
-              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
-              <title>{progressTitle(weeks[p.weekIndex], p.revenue)}</title>
-            </circle>
-          ))}
-
           {/* Activity markers */}
           {markers.map((m) => {
             const st = markerStyle(m.activity);
@@ -373,6 +363,20 @@ function WeeklyActivityGraphContent() {
               </g>
             );
           })}
+
+          {/* Revenue line + one dot per week's revenue — drawn last so a marker or a
+              reached-milestone diamond on the same spot can never hide them. The
+              line ignores the pointer, so the markers under it stay clickable. */}
+          {linePoints && (
+            <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
+              strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
+          )}
+          {progression.map((p) => (
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
+              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
+              <title>{progressTitle(weeks[p.weekIndex], p.revenue)}</title>
+            </circle>
+          ))}
         </svg>
       </div>
 
