@@ -373,9 +373,11 @@ function WeeklyActivityGraphContent() {
             <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
               strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
           )}
+          {/* Revenue point: white centre with a solid red ring, so it can't be mistaken for a
+              task-status marker (filled, dashed or grey ring) */}
           {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={4}
-              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={4.5}
+              fill="#ffffff" stroke="var(--color-accent, #dc2626)" strokeWidth={2.5}>
               <title>{progressTitle(weeks[p.weekIndex], p.revenue)}</title>
             </circle>
           ))}
