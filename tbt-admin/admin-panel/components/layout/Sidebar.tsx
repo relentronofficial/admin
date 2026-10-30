@@ -160,6 +160,7 @@ const navGroups: NavGroup[] = [
   },
   {
     label: "Analytics",
+    collapsible: true,
     items: [
       { name: "Analytics", href: "/analytics", icon: BarChart2 },
       { name: "Challenges", href: "/analytics/challenges", icon: Target },
@@ -183,6 +184,11 @@ const navGroups: NavGroup[] = [
 
 const isItemActive = (pathname: string | null, href: string) =>
   !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+
+// The highlighted item of a group: its most specific match, so a parent route
+// (/analytics) isn't lit alongside its child (/analytics/challenges).
+const activeHrefIn = (pathname: string | null, group: NavGroup) =>
+  group.items.filter((i) => isItemActive(pathname, i.href)).sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
 const isGroupActive = (pathname: string | null, group: NavGroup) =>
   (!!group.basePath && isItemActive(pathname, group.basePath)) ||
@@ -307,7 +313,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                 <div id={panelId} hidden={!isOpen}>
                   {group.items.map((item) => {
                     const Icon = item.icon;
-                    const isActive = isItemActive(pathname, item.href);
+                    const isActive = item.href === activeHrefIn(pathname, group);
                     return (
                       <Link
                         key={item.name}
