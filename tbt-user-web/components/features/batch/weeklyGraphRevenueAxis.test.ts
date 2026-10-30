@@ -1,5 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { amountFromRevenueLabel, revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints, smoothLinePath } from "./weeklyGraphRevenueAxis";
+
+describe("smoothLinePath (monotone smooth curve)", () => {
+  // Evaluate the drawn cubic segments to check where the curve actually goes.
+  const sample = (d: string) => {
+    const nums = d.replace(/[MC]/g, " ").trim().split(/[\s,]+/).map(Number);
+    const out: Array<[number, number]> = [];
+    let [x0, y0] = [nums[0], nums[1]];
+    for (let i = 2; i + 5 < nums.length + 1; i += 6) {
+      const [c1x, c1y, c2x, c2y, x1, y1] = nums.slice(i, i + 6);
+      for (let k = 0; k <= 20; k++) {
+        const t = k / 20, u = 1 - t;
+        out.push([u ** 3 * x0 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t ** 3 * x1, u ** 3 * y0 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t ** 3 * y1]);
+      }
+      [x0, y0] = [x1, y1];
+    }
+    return out;
+  };
+  const pts = [{ x: 0, y: 200 }, { x: 50, y: 120 }, { x: 100, y: 40 }, { x: 150, y: 90 }, { x: 200, y: 90 }, { x: 250, y: 10 }];
+
+  it("passes through every point, as one smooth cubic curve", () => {
+    const d = smoothLinePath(pts)!;
+    expect(d).toMatch(/^M 0,200( C [\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+){5}$/);
+    const ends = d.split(/ (?=[MC] )/).map((s) => s.split(" ").at(-1));
+    expect(ends).toEqual(["0,200", "50,120", "100,40", "150,90", "200,90", "250,10"]);
+  });
+
+  it("never overshoots: each segment stays between its two points (no revenue that wasn't reported)", () => {
+    const s = sample(smoothLinePath(pts)!);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const lo = Math.min(pts[i].y, pts[i + 1].y) - 1e-6, hi = Math.max(pts[i].y, pts[i + 1].y) + 1e-6;
+      for (const [x, y] of s.filter(([x]) => x >= pts[i].x && x <= pts[i + 1].x)) expect(y >= lo && y <= hi).toBe(true);
+    }
+  });
+
+  it("a flat stretch stays flat; fewer than two points → null", () => {
+    const flat = sample(smoothLinePath([{ x: 0, y: 50 }, { x: 10, y: 50 }, { x: 20, y: 50 }])!);
+    expect(flat.every(([, y]) => Math.abs(y - 50) < 1e-9)).toBe(true);
+    expect(smoothLinePath([{ x: 0, y: 1 }])).toBeNull();
+    expect(smoothLinePath([])).toBeNull();
+  });
+});
 
 describe("amountFromRevenueLabel (amount a revenue row's label names)", () => {
   it("reads lakh / crore / thousand labels, with or without ₹, case and plural", () => {

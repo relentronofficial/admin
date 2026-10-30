@@ -111,6 +111,36 @@ export function revenueLinePoints(
   return out;
 }
 
+/**
+ * SVG path data for a smooth line through points ordered by x: a monotone cubic
+ * (Fritsch–Carlson), so the curve bends through every point but never rises
+ * above or dips below the points on either side of a segment — it can't show a
+ * revenue amount that wasn't reported. Fewer than two points → null.
+ */
+export function smoothLinePath(pts: Array<{ x: number; y: number }>): string | null {
+  const n = pts.length;
+  if (n < 2) return null;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  const dx: number[] = [], slope: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(pts[i + 1].x - pts[i].x);
+    slope.push(dx[i] > 0 ? (pts[i + 1].y - pts[i].y) / dx[i] : 0);
+  }
+  const t: number[] = pts.map((_, i) =>
+    i === 0 ? slope[0] : i === n - 1 ? slope[n - 2] : slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2);
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) { t[i] = 0; t[i + 1] = 0; continue; }
+    const a = t[i] / slope[i], b = t[i + 1] / slope[i], s = a * a + b * b;
+    if (s > 9) { const k = 3 / Math.sqrt(s); t[i] = k * a * slope[i]; t[i + 1] = k * b * slope[i]; }
+  }
+  const parts = [`M ${r(pts[0].x)},${r(pts[0].y)}`];
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    parts.push(`C ${r(pts[i].x + h)},${r(pts[i].y + t[i] * h)} ${r(pts[i + 1].x - h)},${r(pts[i + 1].y - t[i + 1] * h)} ${r(pts[i + 1].x)},${r(pts[i + 1].y)}`);
+  }
+  return parts.join(" ");
+}
+
 /** SVG path data for the red line: consecutive reported weeks are joined; a week with no report breaks it. */
 export function revenueLinePath(points: RevenuePoint[]): string | null {
   const parts: string[] = [];

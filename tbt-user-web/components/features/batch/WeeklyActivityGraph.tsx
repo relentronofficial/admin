@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, smoothLinePath } from "./weeklyGraphRevenueAxis";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -189,15 +189,17 @@ function WeeklyActivityGraphContent() {
   // ₹0 at Start, each revenue milestone's amount on its own row, proportional
   // in between. A row's amount is its admin threshold, or, when none is set
   // (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the amount its
-  // label names. The reported weeks are joined in one continuous line; task
-  // stages never move it. Recomputed every render.
+  // label names. The line starts on the Start baseline at the chart's left edge
+  // and runs as one smooth curve (monotone: no overshoot) through every reported
+  // week, so even a single week shows a line rising to its point. Task stages
+  // never move it. Recomputed every render.
   const thresholds = milestones.map((m) =>
     m.kind === "revenue" ? (typeof m.threshold === "number" && m.threshold > 0 ? m.threshold : amountFromRevenueLabel(m.label)) : null);
   const progression = revenueLevelOnAxis(0, thresholds) === null
     ? [] // no revenue row with an amount: nothing to read an amount against
     : revenueLinePoints(weeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
-  const linePoints = progression.length > 1
-    ? progression.map((p, k) => `${k === 0 ? "M" : "L"} ${p.x},${p.y}`).join(" ")
+  const linePoints = progression.length > 0
+    ? smoothLinePath([{ x: LEFT, y: yFor(0) }, ...progression])
     : null;
   const progressTitle = (w: WeeklyGraphWeek, revenue: number) =>
     `${weekLabel(w)}: ${inr(revenue)} ${s?.batchGraphRevenueGenerated ?? "revenue generated"}`;
@@ -369,10 +371,10 @@ function WeeklyActivityGraphContent() {
               line ignores the pointer, so the markers under it stay clickable. */}
           {linePoints && (
             <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
-              strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
+              strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
           )}
           {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
+            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={4}
               fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
               <title>{progressTitle(weeks[p.weekIndex], p.revenue)}</title>
             </circle>
