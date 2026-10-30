@@ -2301,6 +2301,287 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // Optional thumbnail image per FAQ (R2 public URL, uploaded from the admin Modules FAQ page).
     await prisma.$executeRawUnsafe(`ALTER TABLE module_faqs ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`).catch(() => {});
 
+    // ── Psychometric (2026-10-30) ─────────────────────────────────────────────
+    // The former standalone Psychometric platform, rebuilt inside TBT (modules/
+    // psychometric-platform). Admins are TBT admins, candidates are TBT members
+    // (psy_candidates.member_id) or candidates migrated from the old platform
+    // (source='standalone'). Ids are TEXT so migrated MongoDB ObjectIds keep their
+    // values; the API returns them as `_id`. Order matters: referenced tables first.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_question_types (
+        id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        name        VARCHAR(60) NOT NULL,
+        description VARCHAR(300) NOT NULL,
+        icon        TEXT NOT NULL DEFAULT '',
+        color       VARCHAR(30) NOT NULL DEFAULT '#2563EB',
+        sort_order  INT NOT NULL,
+        is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_question_types_name ON psy_question_types(name)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_question_types_order ON psy_question_types(sort_order)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_questions (
+        id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        type_id                 TEXT NOT NULL REFERENCES psy_question_types(id),
+        text                    VARCHAR(500) NOT NULL,
+        sort_order              INT NOT NULL,
+        is_active               BOOLEAN NOT NULL DEFAULT TRUE,
+        question_type           VARCHAR(30) NOT NULL DEFAULT 'LIKERT_SCALE',
+        language                VARCHAR(2) NOT NULL DEFAULT 'en',
+        dimension               VARCHAR(60) NOT NULL,
+        sub_dimension           VARCHAR(100) NOT NULL DEFAULT '',
+        difficulty              VARCHAR(10) NOT NULL DEFAULT 'medium',
+        marks                   DOUBLE PRECISION NOT NULL DEFAULT 5,
+        time_limit_seconds      INT,
+        has_audio               BOOLEAN NOT NULL DEFAULT FALSE,
+        audio_url               TEXT NOT NULL DEFAULT '',
+        image_url               TEXT NOT NULL DEFAULT '',
+        instruction_text        VARCHAR(500) NOT NULL DEFAULT '',
+        is_reverse_scored       BOOLEAN NOT NULL DEFAULT FALSE,
+        explanation_audio_text  VARCHAR(1000) NOT NULL DEFAULT '',
+        explanation_is_tanglish BOOLEAN NOT NULL DEFAULT FALSE,
+        correct_option_id       TEXT,
+        explanation             VARCHAR(1000) NOT NULL DEFAULT '',
+        ideal_order             JSONB,
+        correct_option_ids      JSONB,
+        scoring_mode            VARCHAR(10),
+        created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_questions_order ON psy_questions(sort_order)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_questions_type_active ON psy_questions(type_id, is_active)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_answer_options (
+        id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        question_id      TEXT NOT NULL REFERENCES psy_questions(id) ON DELETE CASCADE,
+        option_text      VARCHAR(200) NOT NULL,
+        option_image_url TEXT NOT NULL DEFAULT '',
+        score            DOUBLE PRECISION NOT NULL,
+        is_correct       BOOLEAN NOT NULL DEFAULT FALSE,
+        dimension_scores JSONB,
+        sort_order       INT NOT NULL,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_answer_options_question ON psy_answer_options(question_id, sort_order)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_question_sets (
+        id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        name             VARCHAR(100) NOT NULL,
+        description      VARCHAR(500) NOT NULL DEFAULT '',
+        duration_minutes INT NOT NULL,
+        question_ids     JSONB NOT NULL DEFAULT '[]',
+        is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by       TEXT,
+        created_by_email TEXT,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_question_sets_name ON psy_question_sets(name)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_access_codes (
+        id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        code             VARCHAR(20) NOT NULL,
+        label            VARCHAR(100) NOT NULL,
+        is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+        created_by       TEXT,
+        created_by_email TEXT,
+        usage_count      INT NOT NULL DEFAULT 0,
+        question_set_id  TEXT REFERENCES psy_question_sets(id) ON DELETE SET NULL,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_access_codes_code ON psy_access_codes(code)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_settings (
+        key        TEXT PRIMARY KEY,
+        value      JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_business_matrix (
+        id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        row_type_id   TEXT NOT NULL REFERENCES psy_question_types(id) ON DELETE CASCADE,
+        col_type_id   TEXT NOT NULL REFERENCES psy_question_types(id) ON DELETE CASCADE,
+        business_name VARCHAR(80) NOT NULL,
+        rating        INT NOT NULL DEFAULT 3,
+        is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_business_matrix_cell ON psy_business_matrix(row_type_id, col_type_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_candidates (
+        id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        member_id         UUID REFERENCES members(id) ON DELETE SET NULL,
+        source            VARCHAR(20) NOT NULL DEFAULT 'tbt',
+        name              VARCHAR(200) NOT NULL,
+        email             TEXT,
+        phone             TEXT,
+        candidate_code    TEXT,
+        batch             TEXT,
+        access_code_id    TEXT REFERENCES psy_access_codes(id) ON DELETE SET NULL,
+        access_code       TEXT,
+        has_completed     BOOLEAN NOT NULL DEFAULT FALSE,
+        is_verified       BOOLEAN NOT NULL DEFAULT TRUE,
+        access_expiry     TIMESTAMPTZ,
+        restricted_access BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_candidates_member ON psy_candidates(member_id) WHERE member_id IS NOT NULL`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_candidates_code ON psy_candidates(candidate_code) WHERE candidate_code IS NOT NULL`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_sessions (
+        id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        candidate_id     TEXT NOT NULL REFERENCES psy_candidates(id) ON DELETE CASCADE,
+        started_at       TIMESTAMPTZ NOT NULL,
+        submitted_at     TIMESTAMPTZ,
+        expires_at       TIMESTAMPTZ NOT NULL,
+        status           VARCHAR(20) NOT NULL DEFAULT 'in-progress',
+        auto_submitted   BOOLEAN NOT NULL DEFAULT FALSE,
+        attempt_number   INT NOT NULL DEFAULT 1,
+        total_answered   INT NOT NULL DEFAULT 0,
+        ip_address       TEXT,
+        question_set_id  TEXT,
+        question_ids     JSONB NOT NULL DEFAULT '[]',
+        duration_minutes INT,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_sessions_candidate_status ON psy_sessions(candidate_id, status)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_answers (
+        id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        session_id          TEXT NOT NULL REFERENCES psy_sessions(id) ON DELETE CASCADE,
+        candidate_id        TEXT NOT NULL,
+        question_id         TEXT NOT NULL,
+        answer_option_id    TEXT,
+        selected_option_ids JSONB,
+        ranking_order       JSONB,
+        score               DOUBLE PRECISION NOT NULL,
+        max_score           DOUBLE PRECISION NOT NULL,
+        is_correct          BOOLEAN,
+        dimension           VARCHAR(60) NOT NULL,
+        dimension_scores    JSONB,
+        question_order      INT NOT NULL,
+        answered_at         TIMESTAMPTZ NOT NULL,
+        time_taken_seconds  DOUBLE PRECISION,
+        status              VARCHAR(10) NOT NULL DEFAULT 'answered'
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_answers_session ON psy_answers(session_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_answers_candidate ON psy_answers(candidate_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_results (
+        id                         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        -- Kept (candidate NULL) when the candidate is deleted, for audit — as on the old platform.
+        candidate_id               TEXT REFERENCES psy_candidates(id) ON DELETE SET NULL,
+        session_id                 TEXT NOT NULL,
+        attempt_number             INT NOT NULL DEFAULT 1,
+        total_marks                DOUBLE PRECISION NOT NULL,
+        max_score                  DOUBLE PRECISION NOT NULL,
+        percentage                 DOUBLE PRECISION NOT NULL,
+        level                      VARCHAR(30) NOT NULL,
+        category_scores            JSONB NOT NULL DEFAULT '{}',
+        category_percentages       JSONB NOT NULL DEFAULT '{}',
+        highest_category           JSONB NOT NULL DEFAULT '[]',
+        recommended_business       JSONB NOT NULL DEFAULT '[]',
+        explanation                TEXT NOT NULL DEFAULT '',
+        improvement_areas          JSONB NOT NULL DEFAULT '[]',
+        dimension_scores           JSONB,
+        dimension_percentages      JSONB,
+        correct_count              INT,
+        wrong_count                INT,
+        skipped_count              INT,
+        business_readiness_percent DOUBLE PRECISION,
+        recommendations            JSONB,
+        strong_dimensions          JSONB,
+        weak_dimensions            JSONB,
+        aptitude_score             DOUBLE PRECISION,
+        personality_score          DOUBLE PRECISION,
+        business_mindset_score     DOUBLE PRECISION,
+        financial_awareness_score  DOUBLE PRECISION,
+        created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_results_session ON psy_results(session_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_results_candidate ON psy_results(candidate_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_results_created ON psy_results(created_at)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_retest_requests (
+        id                 TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        candidate_id       TEXT REFERENCES psy_candidates(id) ON DELETE SET NULL,
+        user_name          TEXT,
+        user_email         TEXT,
+        shared_code        TEXT,
+        question_set_id    TEXT,
+        attempt_number     INT,
+        current_result_id  TEXT,
+        current_percentage DOUBLE PRECISION,
+        current_level      TEXT,
+        status             VARCHAR(10) NOT NULL DEFAULT 'pending',
+        reason             TEXT,
+        rejection_note     TEXT,
+        requested_by_user  BOOLEAN NOT NULL DEFAULT TRUE,
+        ip_address         TEXT,
+        user_agent         TEXT,
+        decided_by         TEXT,
+        decided_by_email   TEXT,
+        decided_at         TIMESTAMPTZ,
+        used_at            TIMESTAMPTZ,
+        created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_retest_candidate_status ON psy_retest_requests(candidate_id, status)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_retest_status_created ON psy_retest_requests(status, created_at DESC)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_notifications (
+        id                 TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        recipient_admin_id TEXT,
+        type               VARCHAR(40) NOT NULL,
+        title              TEXT NOT NULL,
+        message            TEXT NOT NULL,
+        entity_type        VARCHAR(20) NOT NULL,
+        entity_id          TEXT NOT NULL,
+        candidate_id       TEXT,
+        metadata           JSONB NOT NULL DEFAULT '{}',
+        is_read            BOOLEAN NOT NULL DEFAULT FALSE,
+        read_at            TIMESTAMPTZ,
+        created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_notifications_entity ON psy_notifications(type, entity_id)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS idx_psy_notifications_read_created ON psy_notifications(is_read, created_at DESC)`).catch(() => {});
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS psy_question_audio (
+        id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        question_id  TEXT NOT NULL,
+        kind         VARCHAR(12) NOT NULL DEFAULT 'question',
+        text_hash    TEXT NOT NULL,
+        voice        TEXT NOT NULL,
+        lang         TEXT NOT NULL,
+        content_type TEXT NOT NULL DEFAULT 'audio/mpeg',
+        audio        BYTEA NOT NULL,
+        created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS uq_psy_question_audio ON psy_question_audio(question_id, kind)`).catch(() => {});
+
     // ── Support calls unlocked with TBT coins (2026-10-20) ──────────────────
     // coin_cost on a booking = the coins it was paid with (NULL = free quota).
     // A paid booking adds one call to that category's allocation while it is

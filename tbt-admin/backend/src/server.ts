@@ -28,6 +28,8 @@ import { weeklyGraphRoutes } from './modules/weekly-graph/routes.js';
 import { moduleFaqsRoutes } from './modules/module-faqs/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
 import { psychometricRoutes } from './modules/psychometric/routes.js';
+import { psychometricPlatformAdminRoutes } from './modules/psychometric-platform/routes.js';
+import { psychometricMemberRoutes } from './modules/psychometric-platform/memberRoutes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
 import { devopsRoutes } from './modules/devops/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
@@ -224,6 +226,8 @@ async function bootstrap() {
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
     await fastify.register(paymentRoutes, { prefix: '/api/payments' });
     await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
+    await fastify.register(psychometricPlatformAdminRoutes, { prefix: '/api/psychometric-platform' });
+    await fastify.register(psychometricMemberRoutes, { prefix: '/api/user/psychometric-assessment' });
     await fastify.register(devopsRoutes, { prefix: '/api/devops' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)

@@ -11,6 +11,7 @@ import {
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, ChevronRight, Clock,
   Brain, ChevronLeft, RotateCcw, Flame,
 } from "lucide-react";
+import { ProfileAssessmentCard } from "@/components/features/psychometric/ProfileAssessmentCard";
 import { useMe, useUpdateProfile, useUploadAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, usePsychometricQuestions, useMyPsychometricResult, useSubmitPsychometric, type CreditPricingItem, type PsychometricQuestion, type PsychometricCategoryResult } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
@@ -1230,6 +1231,9 @@ export default function ProfilePage() {
         <h3 className="text-sm font-bold text-foreground">Your Mentorship Benefits</h3>
         <MentorshipBenefitsSection />
       </div>
+
+      {/* Full Psychometric assessment (timed; /psychometric) */}
+      <ProfileAssessmentCard />
 
       {/* Psychometric Assessment */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">

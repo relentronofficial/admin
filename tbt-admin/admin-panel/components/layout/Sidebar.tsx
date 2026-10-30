@@ -60,7 +60,7 @@ type NavItem = { name: string; href: string; icon: any };
 // `collapsible` groups render as a dropdown: the label toggles the items open
 // and closed. Groups without it keep the plain label + always-visible items.
 // `basePath` marks pages that belong to the group without a menu item of their
-// own (e.g. /psychometric/login), so the group still opens and highlights there.
+// own (e.g. the /psychometric index), so the group still opens and highlights there.
 type NavGroup = { label: string | null; collapsible?: boolean; basePath?: string; items: NavItem[] };
 
 const navGroups: NavGroup[] = [

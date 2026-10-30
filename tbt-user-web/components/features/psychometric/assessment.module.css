@@ -1,0 +1,141 @@
+/* Psychometric assessment — the former standalone candidate layout, on TBT's
+   theme tokens (light + dark) with the brand accent instead of fixed red. */
+.root {
+  --r: var(--color-accent, #cb1417);
+  --r-light: color-mix(in srgb, var(--r) 9%, transparent);
+  --r-soft: color-mix(in srgb, var(--r) 16%, transparent);
+  --ink: var(--color-text-primary);
+  --ink2: var(--color-text-strong);
+  --muted: var(--color-text-subtle);
+  --line: var(--color-border-subtle);
+  --line2: var(--color-border-medium);
+  --card: var(--color-surface-raised);
+  --track: var(--color-progress-track);
+  min-height: 100vh;
+  background: var(--color-bg-primary);
+  color: var(--ink2);
+}
+.wrapText { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+
+/* header */
+.head { position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--line); }
+.headIn { max-width: 1200px; margin: 0 auto; min-height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.brandT { font-size: 18px; font-weight: 800; color: var(--ink); line-height: 1.1; letter-spacing: -0.02em; }
+.brandT span { color: var(--r); }
+.brandS { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.hMid { display: flex; align-items: center; gap: 14px; flex: 1; justify-content: center; }
+.hCount { text-align: center; white-space: nowrap; }
+.hCount b { font-size: 16px; font-weight: 800; color: var(--ink); }
+.hCount .m { color: var(--muted); font-weight: 800; }
+.hCount small { display: block; font-size: 11px; color: var(--muted); margin-top: 1px; }
+.bar { width: 180px; height: 7px; background: var(--track); border-radius: 999px; overflow: hidden; }
+.bar > i, .sideBar > i { display: block; height: 100%; background: var(--r); border-radius: 999px; transition: width 0.4s ease; }
+.hTimer { display: flex; align-items: center; gap: 8px; padding-left: 16px; border-left: 1px solid var(--line); white-space: nowrap; }
+.tv { font-size: 16px; font-weight: 800; color: var(--r); font-variant-numeric: tabular-nums; }
+.tvWarning { color: #f59e0b; }
+.tvDanger { color: #dc2626; }
+.tl { font-size: 11px; color: var(--muted); }
+
+/* body */
+.body { max-width: 1200px; margin: 0 auto; padding: 20px 24px 120px; display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 24px; align-items: start; }
+
+/* sidebar */
+.side { position: sticky; top: 84px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; max-height: calc(100vh - 104px); overflow-y: auto; }
+.sideH { font-size: 14.5px; font-weight: 800; color: var(--ink); }
+.sideBar { height: 6px; background: var(--track); border-radius: 999px; overflow: hidden; margin: 8px 0 5px; }
+.sideSub { font-size: 11.5px; color: var(--muted); }
+.sideDiv { height: 1px; background: var(--line); margin: 10px 0; }
+.sideCap { font-size: 11.5px; font-weight: 800; color: var(--ink); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.03em; }
+.sideCur { display: flex; align-items: center; gap: 10px; background: var(--r); color: #fff; border-radius: 12px; padding: 9px 12px; margin-bottom: 10px; }
+.sideCur .t { font-weight: 800; font-size: 13.5px; line-height: 1.2; }
+.sideCur .s { font-size: 11px; opacity: 0.95; margin-top: 2px; }
+.dim { width: 100%; text-align: left; display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: 999px; cursor: pointer; background: transparent; border: none; margin-bottom: 2px; color: inherit; }
+.dim:hover { background: var(--color-surface-overlay); }
+.dimActive { background: var(--r-light); }
+.dimN { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; background: var(--color-surface-overlay-lg); color: var(--muted); flex-shrink: 0; }
+.dimActive .dimN { background: var(--r); color: #fff; }
+.dimDone .dimN { background: var(--ink); color: var(--card); }
+.dimName { font-size: 13px; font-weight: 500; }
+.dimActive .dimName { color: var(--r); font-weight: 700; }
+.sideToggle { display: none; }
+
+/* question card */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 24px 28px; }
+.cHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+.cHeadL { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.num { width: 38px; height: 38px; border-radius: 11px; background: var(--r); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px; flex-shrink: 0; }
+.cat { font-size: 18px; font-weight: 800; color: var(--ink); line-height: 1.25; }
+.range { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.bm { border: none; background: transparent; cursor: pointer; color: var(--muted); padding: 6px; border-radius: 8px; flex-shrink: 0; }
+.bm:hover { background: var(--r-light); }
+.bmOn { color: var(--r); }
+.instr { font-size: 13px; font-style: italic; color: var(--muted); margin-bottom: 10px; line-height: 1.45; }
+.img { max-width: 100%; border-radius: 12px; margin-bottom: 16px; border: 1px solid var(--line); }
+.text { font-size: 17.5px; font-weight: 700; color: var(--ink2); line-height: 1.5; margin-bottom: 16px; }
+.hint { font-size: 12px; color: var(--muted); margin: -8px 0 12px; }
+.qTimer { text-align: right; color: var(--r); font-weight: 700; font-size: 12px; margin: -8px 0 12px; }
+
+/* audio */
+.audio { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.abtn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 16px; border-radius: 9px; font-size: 13px; font-weight: 700; cursor: pointer; background: var(--card); }
+.abtnPlay { border: 1.5px solid var(--r); color: var(--r); min-width: 9rem; }
+.abtnPlay:hover { background: var(--r-light); }
+.abtnStop { border: 1.5px solid var(--line2); color: var(--muted); }
+.aError { flex-basis: 100%; font-size: 12px; color: var(--r); }
+
+/* options */
+.opt { display: block; margin-bottom: 10px; position: relative; }
+.opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.opt label { display: flex; align-items: center; gap: 13px; padding: 13px 18px; border: 1.5px solid var(--line2); border-radius: 12px; cursor: pointer; background: var(--card); color: var(--ink2); font-size: 14.5px; font-weight: 500; line-height: 1.45; transition: border-color 0.15s, background 0.15s; }
+.opt label:hover { border-color: var(--r-soft); background: var(--r-light); }
+.ind { width: 20px; height: 20px; border: 2px solid var(--line2); flex-shrink: 0; position: relative; border-radius: 50%; }
+.indSq { border-radius: 6px; }
+.opt input:checked + label { border-color: var(--r); background: var(--r-light); color: var(--ink); font-weight: 600; }
+.opt input:checked + label .ind { border-color: var(--r); }
+.opt input:checked + label .ind::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--r); }
+.opt input:checked + label .indSq::after { border-radius: 2px; }
+.opt input:focus-visible + label { outline: 2px solid var(--r); outline-offset: 2px; }
+.opt input:disabled + label { opacity: 0.55; cursor: not-allowed; }
+
+/* ranking */
+.rk { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border: 1.5px solid var(--line2); border-radius: 12px; margin-bottom: 10px; background: var(--card); }
+.rkN { width: 26px; height: 26px; border-radius: 50%; background: var(--r); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12.5px; font-weight: 700; flex-shrink: 0; }
+.rkBtn { width: 32px; height: 28px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line2); border-radius: 7px; background: var(--card); cursor: pointer; font-size: 12px; color: inherit; }
+.rkBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+.rkBtn:not(:disabled):hover { border-color: var(--r); color: var(--r); background: var(--r-light); }
+
+/* footer */
+.foot { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; background: var(--card); border-top: 1px solid var(--line); }
+.footIn { max-width: 1200px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.fbtn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 42px; padding: 0 20px; border-radius: 9px; font-size: 13.5px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; }
+.fbtnPrev { background: var(--card); border-color: var(--line2); color: var(--ink2); }
+.fbtnPrev:disabled { opacity: 0.4; cursor: not-allowed; }
+.fbtnReview { background: var(--r-light); color: var(--r); }
+.fbtnReviewOn { background: var(--r); color: #fff; }
+.fbtnNext { background: var(--r); color: #fff; min-width: 190px; font-weight: 700; }
+.fbtnNext:disabled { opacity: 0.65; cursor: not-allowed; }
+.unanswered { font-size: 12.5px; font-weight: 600; color: var(--r); text-align: center; padding: 6px 24px 0; }
+
+.center { text-align: center; padding: 80px 16px; }
+
+@media (max-width: 1024px) {
+  .body { grid-template-columns: 1fr; padding: 16px 16px 120px; gap: 16px; }
+  .side { position: static; max-height: none; }
+  .sideCollapsed { display: none; }
+  .sideToggle { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 13px 16px; font-weight: 800; color: var(--ink); font-size: 14px; cursor: pointer; }
+}
+@media (max-width: 760px) {
+  .headIn { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
+  .brandS { display: none; }
+  .hMid { order: 3; width: 100%; justify-content: space-between; }
+  .bar { width: auto; flex: 1; }
+  .tl { display: none; }
+  .card { padding: 18px 16px; border-radius: 16px; }
+  .text { font-size: 16px; }
+  .cat { font-size: 16px; }
+  .opt label { padding: 12px 14px; font-size: 14px; gap: 10px; }
+  .footIn { padding: 8px 14px; gap: 8px; }
+  .fbtn { padding: 0 12px; font-size: 12.5px; flex: 1; height: 40px; }
+  .fbtnNext { min-width: 0; }
+  .hideSm { display: none; }
+}
