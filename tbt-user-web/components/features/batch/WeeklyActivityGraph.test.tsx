@@ -248,12 +248,18 @@ describe("WeeklyActivityGraph", () => {
       expect(container.querySelectorAll('[data-testid="progress-point"] title')[1].textContent).toBe("W2: ₹3,00,000 revenue generated");
     });
 
-    it("one continuous red line through the reported weeks (no false ₹0 dip for a week with nothing reported)", async () => {
+    it("one smooth continuous red line from Start through every reported week (no false ₹0 dip for a week with nothing reported)", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const d = dots(container);
-      expect(line(container)!.getAttribute("d")).toBe(d.map(([x, y], k) => `${k === 0 ? "M" : "L"} ${x},${y}`).join(" "));
+      const path = line(container)!.getAttribute("d")!;
+      expect(path).toMatch(/^M [\d.]+,[\d.]+( C [\d.]+,[\d.]+ [\d.]+,[\d.]+ [\d.]+,[\d.]+)+$/); // smooth cubic curve
+      // The curve passes through: the Start baseline at the left edge, then each reported week's point.
+      const ends = path.split(/ (?=[MC] )/).map((seg) => seg.trim().split(" ").at(-1)!.split(",").map(Number));
+      expect(ends[0][1]).toBe(labelY(container, "Ads") + 36); // Start baseline
+      expect(ends[0][0]).toBeLessThan(weekX("W1"));
+      expect(ends.slice(1)).toEqual(d.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]));
     });
 
     it("task stages and statuses never move the line — only revenue does; markers stay on their stage rows", async () => {
@@ -330,7 +336,10 @@ describe("WeeklyActivityGraph", () => {
       expect(texts(container, "milestone-label")).toEqual(["Ads", "Website", "Funnels", "1 lakh", "5 Lakhs", "1 crore"]);
       const d = dots(container);
       expect(d).toEqual([[weekX("W5"), labelY(container, "1 crore")]]); // visible even as the only week
-      expect(line(container)).toBeNull(); // nothing to connect yet
+      // Even as the only week, a red line rises from the Start baseline to the point.
+      const path = line(container)!.getAttribute("d")!;
+      expect(path.startsWith(`M 76,${labelY(container, "Ads") + 36} C `)).toBe(true);
+      expect(path.endsWith(` ${weekX("W5")},${labelY(container, "1 crore")}`)).toBe(true);
       // Drawn after every marker and the reached-milestone diamond at the same spot, so nothing covers it.
       const point = container.querySelector('[data-testid="progress-point"]')!;
       for (const el of container.querySelectorAll('[data-testid="activity-marker"], [data-testid="revenue-marker"]')) {
@@ -357,9 +366,9 @@ describe("WeeklyActivityGraph", () => {
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
-      expect(Number(l.getAttribute("stroke-width"))).toBe(2);
-      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( L [\d.]+,[\d.]+)+$/); // straight segments, no curves
-      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("2.5");
+      expect(Number(l.getAttribute("stroke-width"))).toBe(3);
+      expect(l.getAttribute("stroke-linecap")).toBe("round");
+      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("4");
       const lastMarker = [...container.querySelectorAll('[data-testid="activity-marker"]')].at(-1)!;
       expect(lastMarker.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(l.getAttribute("pointer-events")).toBe("none");
