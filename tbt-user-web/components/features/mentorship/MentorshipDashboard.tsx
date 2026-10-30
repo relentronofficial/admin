@@ -20,6 +20,7 @@ import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import SupportCallPanel from "./SupportCallPanel";
 import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import type { SupportCallCategory, SupportCallsSummary } from "@/lib/api/services/supportCalls.service";
@@ -1819,9 +1820,27 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
   const [showRevenueForm, setShowRevenueForm] = useState(false);
+  const router = useRouter();
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
   const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
+  const handleCallTileClick = useCallback(
+    (category: SupportCallCategory, label: string) => {
+      const card = callSummary?.categories.find((c) => c.category === category);
+      const fullyLocked = card?.action === "locked" && card?.lockedReason === "not_included";
+      const quotaExhausted =
+        card !== undefined &&
+        card.action !== "book" &&
+        card.action !== "unlock_with_coins" &&
+        !fullyLocked;
+      if (quotaExhausted) {
+        router.push("/profile");
+      } else {
+        setOpenCall({ category, label });
+      }
+    },
+    [callSummary, router],
+  );
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
@@ -1965,12 +1984,12 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} card={cardFor("sales_support")}   onClick={() => setOpenCall({ category: "sales_support",   label: "☎ Sales Calls" })} />
-          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} card={cardFor("tech_support")}    onClick={() => setOpenCall({ category: "tech_support",    label: "⚙ Tech Calls" })} />
-          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} card={cardFor("content_support")} onClick={() => setOpenCall({ category: "content_support", label: "▶ Content Calls" })} />
-          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} card={cardFor("ad_support")}      onClick={() => setOpenCall({ category: "ad_support",      label: "📢 Marketing Calls" })} />
-          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} card={cardFor("one_to_one")}    onClick={() => setOpenCall({ category: "one_to_one",      label: "♟ Mentor 1-On-1" })} />
-          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} card={cardFor("group_call")}      onClick={() => setOpenCall({ category: "group_call",      label: "👥 Live Group Q&A" })} />
+          <SupportCallTile label="☎ Sales Calls"     used={quota.salesSupport.used}   total={quota.salesSupport.allocated} card={cardFor("sales_support")}   onClick={() => handleCallTileClick("sales_support",   "☎ Sales Calls")} />
+          <SupportCallTile label="⚙ Tech Calls"      used={quota.techSupport.used}    total={quota.techSupport.allocated} card={cardFor("tech_support")}    onClick={() => handleCallTileClick("tech_support",    "⚙ Tech Calls")} />
+          <SupportCallTile label="▶ Content Calls"   used={quota.contentSupport.used} total={quota.contentSupport.allocated} card={cardFor("content_support")} onClick={() => handleCallTileClick("content_support", "▶ Content Calls")} />
+          <SupportCallTile label="📢 Marketing Calls" used={quota.adSupport.used}      total={quota.adSupport.allocated} card={cardFor("ad_support")}      onClick={() => handleCallTileClick("ad_support",      "📢 Marketing Calls")} />
+          <SupportCallTile label="♟ Mentor 1-On-1"   used={quota.callCredits.used}    total={quota.callCredits.allocated} card={cardFor("one_to_one")}    onClick={() => handleCallTileClick("one_to_one",      "♟ Mentor 1-On-1")} />
+          <SupportCallTile label="👥 Live Group Q&A"  used={quota.groupCall.used}      total={quota.groupCall.allocated} card={cardFor("group_call")}      onClick={() => handleCallTileClick("group_call",      "👥 Live Group Q&A")} />
         </div>
         {openCall && <SupportCallPanel category={openCall.category} label={openCall.label} onClose={closeCallPanel} />}
         <WinsModal open={winsOpen} onClose={() => setWinsOpen(false)} />
