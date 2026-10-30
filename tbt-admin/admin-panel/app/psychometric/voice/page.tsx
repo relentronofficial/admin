@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, getToken, API_BASE_URL } from "@/lib/psychometric/api";
+import { api, getToken, API_BASE_URL, authHeaders } from "@/lib/psychometric/api";
 import { useToast } from "@/components/psychometric/ToastProvider";
 import PageHeader from "@/components/psychometric/PageHeader";
 
@@ -97,7 +97,7 @@ export default function VoicePage() {
   async function preview(id: string) {
     try {
       if (previewAudio.current) { previewAudio.current.pause(); previewAudio.current = null; }
-      const res = await fetch(`${API_BASE_URL}/admin/tts/questions/${id}/preview`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(`${API_BASE_URL}/admin/tts/questions/${id}/preview`, { headers: await authHeaders() });
       if (!res.ok) return showToast("No audio to preview — generate it first.", "error");
       const url = URL.createObjectURL(await res.blob());
       const audio = new Audio(url);
@@ -160,7 +160,7 @@ export default function VoicePage() {
   async function previewExplanation(id: string) {
     try {
       if (previewAudio.current) { previewAudio.current.pause(); previewAudio.current = null; }
-      const res = await fetch(`${API_BASE_URL}/admin/tts/questions/${id}/preview-explanation`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const res = await fetch(`${API_BASE_URL}/admin/tts/questions/${id}/preview-explanation`, { headers: await authHeaders() });
       if (!res.ok) return showToast("No explanation audio to preview — generate it first.", "error");
       const url = URL.createObjectURL(await res.blob());
       const audio = new Audio(url);
