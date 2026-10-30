@@ -73,8 +73,8 @@ const renderGraph = () => {
 const chart = () => screen.findByRole("group", { name: "Weekly Activity Graph" });
 const texts = (c: HTMLElement, testId: string) => [...c.querySelectorAll(`[data-testid="${testId}"]`)].map((t) => t.textContent);
 const markerY = (el: Element) => Number(el.querySelector("circle:not([fill='transparent'])")!.getAttribute("cy"));
-const labelY = (c: HTMLElement, label: string) =>
-  Number([...c.querySelectorAll('[data-testid="milestone-label"]')].find((t) => t.textContent === label)!.getAttribute("y")) - 4;
+const axisY = (c: HTMLElement, label: string) =>
+  Number([...c.querySelectorAll('[data-testid="revenue-axis-label"]')].find((t) => t.textContent === label)!.getAttribute("y")) - 4;
 
 beforeEach(() => {
   get.mockReset();
@@ -90,28 +90,36 @@ describe("WeeklyActivityGraph", () => {
     expect(get).toHaveBeenCalledWith("/api/user-batch/weekly-graph");
   });
 
-  it("draws exactly the configured milestones (bottom → top) and weeks", async () => {
-    get.mockResolvedValue(ok(graphData()));
+  it("the Y axis is Revenue Generated (₹): ₹0 and Indian-unit steps, no task-stage labels; weeks unchanged", async () => {
+    get.mockResolvedValue(ok(graphData())); // best week ₹60,000 → scale up to ₹1 Lakh
     const { container } = renderGraph();
     await chart();
-    const labels = ["Ads", "Website", "Funnels", "₹1 Lakh", "₹5 Lakhs"];
-    expect(texts(container, "milestone-label")).toEqual(labels);
-    const ys = labels.map((l) => labelY(container, l));
-    expect([...ys].sort((a, b) => b - a)).toEqual(ys); // Ads lowest, ₹5 Lakhs highest
+    expect(texts(container, "revenue-axis-label")).toEqual(["₹1 Lakh", "₹0"]);
+    expect(axisY(container, "₹1 Lakh")).toBeLessThan(axisY(container, "₹0"));
+    expect(texts(container, "milestone-label")).toEqual([]);
+    const axisText = texts(container, "revenue-axis-label").join(" ");
+    for (const stage of ["Start", "Ads", "Website", "Funnels"]) expect(axisText).not.toContain(stage);
     expect(texts(container, "week-label")).toEqual(["W1", "W2", "W3"]);
   });
 
-  it("hardcodes no milestone labels: an older response without config draws none", async () => {
+  it("the scale follows the data: a ₹12 Lakhs week puts the top at ₹25 Lakhs; a ₹1.5 Crores week at ₹2 Crores", async () => {
     const data: any = graphData();
-    delete data.config;
+    data.weeks[1].revenue = 1200000;
     get.mockResolvedValue(ok(data));
     const { container } = renderGraph();
     await chart();
-    expect(texts(container, "milestone-label")).toEqual([]);
-    expect(container.textContent).not.toMatch(/lakh|crore/i);
+    expect(texts(container, "revenue-axis-label")).toEqual(["₹5 Lakhs", "₹10 Lakhs", "₹25 Lakhs", "₹0"]);
+    cleanup();
+
+    const big: any = graphData();
+    big.weeks[1].revenue = 15000000;
+    get.mockResolvedValue(ok(big));
+    const r = renderGraph();
+    await chart();
+    expect(texts(r.container, "revenue-axis-label")).toEqual(["₹25 Lakhs", "₹50 Lakhs", "₹1 Crore", "₹2 Crores", "₹0"]);
   });
 
-  it("puts one focusable marker per activity on its week and milestone row; several in one week stay separate", async () => {
+  it("puts one focusable marker per activity in its week, in a row on the ₹0 baseline; several in one week stay separate", async () => {
     get.mockResolvedValue(ok(graphData()));
     const { container } = renderGraph();
     await chart();
@@ -124,13 +132,10 @@ describe("WeeklyActivityGraph", () => {
       "W3, Funnels, Funnels W3, Upcoming",
     ]);
     expect(markers.every((m) => m.getAttribute("tabindex") === "0")).toBe(true);
-    // On their milestone rows (unlinked on the baseline, below Ads).
-    expect(markerY(markers[0])).toBe(labelY(container, "Ads"));
-    expect(markerY(markers[3])).toBe(labelY(container, "Website"));
-    expect(markerY(markers[2])).toBeGreaterThan(labelY(container, "Ads"));
-    // The two W1 Ads markers do not overlap.
-    const xs = markers.slice(0, 2).map((m) => Number(m.querySelector("circle:not([fill='transparent'])")!.getAttribute("cx")));
-    expect(Math.abs(xs[0] - xs[1])).toBeGreaterThanOrEqual(12);
+    expect(markers.every((m) => markerY(m) === axisY(container, "₹0"))).toBe(true);
+    // The three W1 markers do not overlap.
+    const xs = markers.slice(0, 3).map((m) => Number(m.querySelector("circle:not([fill='transparent'])")!.getAttribute("cx")));
+    expect(Math.min(xs[1] - xs[0], xs[2] - xs[1])).toBeGreaterThanOrEqual(12);
   });
 
   it("clicking a marker opens a popup with Week, Milestone and Activity; Escape closes it and returns focus", async () => {
@@ -165,18 +170,12 @@ describe("WeeklyActivityGraph", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("marks a reached revenue milestone with a diamond whose popup shows the target and the reported revenue", async () => {
+  it("draws no revenue-milestone diamonds; the reported revenue total is still shown", async () => {
     get.mockResolvedValue(ok(graphData()));
     renderGraph();
     await chart();
-    const diamonds = screen.getAllByRole("button").filter((b) => b.getAttribute("data-testid") === "revenue-marker");
-    expect(diamonds.map((m) => m.getAttribute("aria-label"))).toEqual(["W2, ₹1 Lakh, revenue milestone reached"]);
-    await userEvent.setup().click(diamonds[0]);
-    const d = within(screen.getByRole("dialog"));
-    expect(d.getByText("Milestone").nextSibling!.textContent).toBe("₹1 Lakh");
-    expect(d.getByText("Target").nextSibling!.textContent).toBe("₹1,00,000");
-    expect(d.getByText("Revenue by then").nextSibling!.textContent).toBe("₹1,10,000 (self-reported)");
-    expect(d.getByText("Reached").nextSibling!.textContent).toBe("From your reported revenue");
+    expect(screen.queryAllByTestId("revenue-marker")).toHaveLength(0);
+    expect(screen.queryByText("Revenue milestone reached")).toBeNull();
     expect(screen.getByTestId("revenue-total").textContent).toBe("Reported revenue to date: ₹1,10,000");
   });
 
@@ -194,168 +193,97 @@ describe("WeeklyActivityGraph", () => {
     expect(screen.getByRole("button", { name: "W1, ₹1 Lakh, Close first ₹1 Lakh month, Completed" })).toBeTruthy();
   });
 
-  describe("progression line", () => {
+  describe("revenue line", () => {
     /**
-     * Admin-configured program, member on W4:
-     *  W1 1/1 approved (Ads)           → level 1
-     *  W2 2/2 approved incl. Funnels   → level 3   (up)
-     *  W3 0/2 — one awaiting approval, one missed → level 0 (down: nothing approved)
-     *  W4 current, 1/2 approved        → level 1.5 (up again)
-     *  W5 not started                  → no point
+     * Reported revenue per program week (week.revenue from the API):
+     *  W1 ₹1,00,000 · W2 ₹3,00,000 (up) · W3 ₹2,00,000 (down) · W4 nothing reported · W5 ₹4,00,000
+     *  → scale up to ₹5 Lakhs.
      */
     const weeksData = () => {
       const data: any = graphData();
-      data.currentDay = 24;
-      data.currentWeek = 4;
+      data.currentDay = 31;
+      data.currentWeek = 5;
       data.weeks = [
-        week(1, { activities: [activity("t1", "Ads W1", 2, "completed", ["m-ads", "Ads", 1])], total: 1, completed: 1, progressLevel: 1 }),
-        week(2, {
-          activities: [
-            activity("t2", "Funnels W2", 9, "completed", ["m-fun", "Funnels", 3]),
-            activity("t2b", "Post daily W2", 10, "completed", null),
-          ],
-          total: 2, completed: 2, progressLevel: 3,
-        }),
-        week(3, {
-          activities: [
-            activity("t3", "Website W3", 16, "submitted", ["m-web", "Website", 2]),
-            activity("t3b", "Missed W3", 17, "not_started", null),
-          ],
-          total: 2, completed: 0, progressLevel: 0,
-        }),
-        week(4, {
-          isCurrent: true,
-          activities: [
-            activity("t4", "Reel W4", 23, "completed", null),
-            activity("t4b", "Draft W4", 24, "in_progress", null),
-          ],
-          total: 2, completed: 1, progressLevel: 1.5,
-        }),
-        week(5, { activities: [activity("t5", "Later W5", 30, "upcoming", null)], total: 1 }),
+        week(1, { activities: [activity("t1", "Ads W1", 2, "completed", ["m-ads", "Ads", 1])], total: 1, completed: 1, progressLevel: 1, revenue: 100000 }),
+        week(2, { activities: [activity("t2", "Funnels W2", 9, "completed", ["m-fun", "Funnels", 3])], total: 1, completed: 1, progressLevel: 3, revenue: 300000 }),
+        week(3, { activities: [activity("t3", "Website W3", 16, "submitted", ["m-web", "Website", 2])], total: 1, progressLevel: 0, revenue: 200000 }),
+        week(4, { activities: [activity("t4", "Reel W4", 23, "completed", null)], total: 1, completed: 1, progressLevel: 0.5, revenue: null }),
+        week(5, { isCurrent: true, activities: [activity("t5", "Draft W5", 30, "in_progress", null)], total: 1, revenue: 400000 }),
       ];
       return data;
     };
     const line = (container: HTMLElement) => container.querySelector('[data-testid="progress-line"]');
-    // The line is a <path d="M origin L p1 L p2 …"> of straight segments: it starts at the
-    // chart origin, then passes through each weekly point — the end point of every segment.
-    const onCurve = (container: HTMLElement) => {
-      const d = line(container)!.getAttribute("d")!;
-      const segs = d.trim().split(/(?=[MLC])/).map((x) => x.trim());
-      return segs.map((seg) => {
-        const nums = seg.slice(1).trim().split(/[\s,]+/).map(Number);
-        return nums.slice(-2); // M x,y | L x,y | C c1x,c1y c2x,c2y x,y → the point it reaches
-      });
-    };
-    const origin = (container: HTMLElement) => onCurve(container)[0];
-    const pts = (container: HTMLElement) => onCurve(container).slice(1);
     const dots = (container: HTMLElement) =>
       [...container.querySelectorAll('[data-testid="progress-point"]')].map((c) => [Number(c.getAttribute("cx")), Number(c.getAttribute("cy"))]);
-    const weekX = (label: string) => {
-      const t = screen.getAllByTestId("week-label").find((el) => el.textContent === label)!;
-      return Number(t.getAttribute("x"));
-    };
-    const rowY = (label: string) => {
-      const t = screen.getAllByTestId("milestone-label").find((el) => el.textContent === label)!;
-      return Number(t.getAttribute("y")) - 4;
+    const weekX = (label: string) => Number(screen.getAllByTestId("week-label").find((el) => el.textContent === label)!.getAttribute("x"));
+    // ₹ → y on the drawn scale, from the ₹0 and top labels (linear)
+    const yOf = (container: HTMLElement, v: number, top = 500000, topLabel = "₹5 Lakhs") => {
+      const y0 = axisY(container, "₹0");
+      return y0 - (v / top) * (y0 - axisY(container, topLabel));
     };
 
-    it("runs through each started week's highest visible dot (or its progress when higher), never along the baseline", async () => {
+    it("one point per week at its actual revenue, proportional to the amount; up and down week to week", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      const p = pts(container);
-      // W5 has not started: no point. W3's awaiting-approval Website dot is on the line.
-      expect(p.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4"].map(weekX));
-      expect(p[0][1]).toBe(rowY("Ads"));
-      expect(p[1][1]).toBe(rowY("Funnels"));
-      expect(p[2][1]).toBe(rowY("Website"));
-      const ys = p.map(([, y]) => y);
-      expect(ys[1]).toBeLessThan(ys[0]); // up
-      expect(ys[2]).toBeGreaterThan(ys[1]); // down
-      expect(ys[3]).toBeGreaterThan(rowY("Website")); // W4 progress 1.5 sits between Ads and Website
-      expect(ys[3]).toBeLessThan(rowY("Ads"));
-      // Nothing on the baseline: no segment duplicates the X axis.
-      expect(ys.every((y) => y <= rowY("Ads"))).toBe(true);
-      // The approved-progress dots keep their places, each one on the line.
-      expect(dots(container)).toEqual([p[0], p[1], p[3]]);
+      expect(texts(container, "revenue-axis-label")).toEqual(["₹1 Lakh", "₹5 Lakhs", "₹0"]);
+      const d = dots(container);
+      expect(d.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W5"].map(weekX)); // W4: nothing reported → no point
+      [100000, 300000, 200000, 400000].forEach((v, i) => expect(d[i][1]).toBeCloseTo(yOf(container, v), 6));
+      expect(d[0][1]).toBeCloseTo(axisY(container, "₹1 Lakh"), 6); // ₹1,00,000 sits on the ₹1 Lakh gridline
+      expect(d[1][1]).toBeLessThan(d[0][1]); // up
+      expect(d[2][1]).toBeGreaterThan(d[1][1]); // down
     });
 
-    it("the line passes through an awaiting-approval dot; the progress dot still counts approved work only", async () => {
+    it("joins consecutive weeks with the red line and breaks it at a week with nothing reported (never ₹0)", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
-      const marker = screen.getByRole("button", { name: "W3, Website, Website W3, Awaiting approval" }).querySelector("circle")!;
-      expect(Number(marker.getAttribute("cy"))).toBe(rowY("Website"));
-      expect(pts(container)).toContainEqual([weekX("W3"), rowY("Website")]);
-      expect(dots(container).map(([x]) => x)).not.toContain(weekX("W3"));
-    });
-
-    it("shows revenue progression through the ₹1 lakh, ₹5 lakhs and ₹1 crore rows from reported revenue", async () => {
-      const data = weeksData();
-      data.config.milestones = [
-        ms("m-ads", "Ads", "activity"), ms("m-web", "Website", "activity"), ms("m-fun", "Funnels", "activity"),
-        ms("m-1l", "₹1 lakh", "revenue", { threshold: 100000, reached: true, reachedBy: "revenue", reachedWeek: 2 }),
-        ms("m-5l", "₹5 lakhs", "revenue", { threshold: 500000 }),
-        ms("m-1c", "₹1 crore", "revenue", { threshold: 10000000 }),
-      ];
-      // Backend levels: W1 Funnels (3), W2 ₹1 lakh reached (4), W3 ₹3 lakhs (4.5), W4 ₹1 crore (6).
-      data.weeks[0].progressLevel = 3;
-      data.weeks[1].progressLevel = 4;
-      data.weeks[2].progressLevel = 4.5;
-      data.weeks[3].progressLevel = 6;
-      get.mockResolvedValue(ok(data));
-      const { container } = renderGraph();
-      await chart();
-      const ys = pts(container).map(([, y]) => y);
-      expect(ys).toHaveLength(4);
-      expect(ys[0]).toBe(rowY("Funnels"));
-      expect(ys[1]).toBe(rowY("₹1 lakh"));
-      expect(ys[2]).toBeLessThan(rowY("₹1 lakh"));
-      expect(ys[2]).toBeGreaterThan(rowY("₹5 lakhs"));
-      expect(ys[3]).toBe(rowY("₹1 crore"));
-    });
-
-    it("an activity approved later adds its week's progress dot, on the line", async () => {
-      get.mockResolvedValue(ok(weeksData()));
-      const { container } = renderGraph();
-      await chart();
-      expect(dots(container).map(([x]) => x)).not.toContain(weekX("W3"));
-      const later = weeksData();
-      later.weeks[2].activities[0] = activity("t3", "Website W3", 16, "completed", ["m-web", "Website", 2]);
-      later.weeks[2].completed = 1;
-      later.weeks[2].progressLevel = 2; // backend: Website link approved
-      lastQc.setQueryData(["my-batch", "weekly-graph"], later);
-      await waitFor(() => expect(dots(container)).toContainEqual([weekX("W3"), rowY("Website")]));
-      expect(pts(container)[2]).toEqual([weekX("W3"), rowY("Website")]);
-    });
-
-    it("a week with nothing assigned is skipped, never a false dip to the baseline", async () => {
-      const data = weeksData();
-      data.weeks[2] = week(3, { total: 0, completed: 0, progressLevel: 0 });
-      get.mockResolvedValue(ok(data));
-      const { container } = renderGraph();
-      await chart();
-      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W4"].map(weekX));
-    });
-
-    it("extends to a newly added week's dot (W6), then to W7 when its data arrives", async () => {
-      // W4 is the current week; W5 has not started and has only a baseline dot.
-      const data = weeksData();
-      data.weeks.push(week(6, { activities: [activity("t6", "Website W6", 38, "upcoming", ["m-web", "Website", 2])], total: 1 }));
-      get.mockResolvedValue(ok(data));
-      const { container } = renderGraph();
-      await chart();
-      expect(pts(container).at(-1)).toEqual([weekX("W6"), rowY("Website")]);
-      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4", "W6"].map(weekX));
-
-      const later = weeksData();
-      later.weeks.push(
-        week(6, { activities: [activity("t6", "Website W6", 38, "upcoming", ["m-web", "Website", 2])], total: 1 }),
-        week(7, { activities: [activity("t7", "Funnels W7", 45, "upcoming", ["m-fun", "Funnels", 3])], total: 1 }),
+      const d = dots(container);
+      expect(line(container)!.getAttribute("d")).toBe(
+        `M ${d[0][0]},${d[0][1]} L ${d[1][0]},${d[1][1]} L ${d[2][0]},${d[2][1]} M ${d[3][0]},${d[3][1]}`,
       );
+      expect(container.querySelectorAll('[data-testid="progress-point"] title')[1].textContent).toBe("W2: ₹3,00,000 revenue generated");
+    });
+
+    it("task stages and statuses never move the line — only revenue does", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const { container } = renderGraph();
+      await chart();
+      const before = dots(container);
+      const other = weeksData();
+      other.weeks = other.weeks.map((w: any) => ({
+        ...w, progressLevel: 6, completed: 0,
+        activities: w.activities.map((a: any) => ({ ...a, status: "not_started", completed: false })),
+      }));
+      lastQc.setQueryData(["my-batch", "weekly-graph"], other);
+      await waitFor(() => expect(screen.getByRole("button", { name: "W1, Ads, Ads W1, Not started" })).toBeTruthy());
+      expect(dots(container)).toEqual(before);
+    });
+
+    it("follows refreshed revenue: a newly reported week appears and the scale grows", async () => {
+      get.mockResolvedValue(ok(weeksData()));
+      const { container } = renderGraph();
+      await chart();
+      const later = weeksData();
+      later.weeks[3].revenue = 800000; // W4 now reported → top ₹10 Lakhs
       lastQc.setQueryData(["my-batch", "weekly-graph"], later);
-      await waitFor(() => expect(pts(container).at(-1)).toEqual([weekX("W7"), rowY("Funnels")]));
-      expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4", "W6", "W7"].map(weekX));
+      await waitFor(() => expect(dots(container)).toHaveLength(5));
+      expect(texts(container, "revenue-axis-label")).toEqual(["₹1 Lakh", "₹5 Lakhs", "₹10 Lakhs", "₹0"]);
+      expect(dots(container)[3][1]).toBeCloseTo(yOf(container, 800000, 1000000, "₹10 Lakhs"), 6);
+      expect(line(container)!.getAttribute("d")!.match(/M /g)).toHaveLength(1); // no gap any more
+    });
+
+    it("no reported revenue: no line and no points (nothing fabricated); the axis still shows ₹0 – ₹1 Lakh", async () => {
+      const data = weeksData();
+      data.weeks = data.weeks.map((w: any) => ({ ...w, revenue: null }));
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(line(container)).toBeNull();
+      expect(dots(container)).toEqual([]);
+      expect(texts(container, "revenue-axis-label")).toEqual(["₹1 Lakh", "₹0"]);
+      expect(screen.getAllByTestId("activity-marker")).toHaveLength(5);
     });
 
     it("is drawn red and under the markers, so marker borders stay visible", async () => {
@@ -364,47 +292,11 @@ describe("WeeklyActivityGraph", () => {
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
-      expect(Number(l.getAttribute("stroke-width"))).toBe(2); // like the admin Members revenue chart line
-      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( L [\d.]+,[\d.]+)+$/); // straight segments, no curves
+      expect(Number(l.getAttribute("stroke-width"))).toBe(2);
+      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( [ML] [\d.]+,[\d.]+)+$/); // straight segments, no curves
       for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("2.5");
       const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    });
-
-    it("one week with a dot: a line from the chart origin to it; nothing above the baseline: no line", async () => {
-      const data = weeksData();
-      data.weeks = [data.weeks[0], ...data.weeks.slice(1).map((w: any) => ({
-        ...w, progressLevel: null,
-        activities: w.activities.map((a: any) => ({ ...a, milestoneId: null, milestoneLabel: null, level: 0 })),
-      }))];
-      get.mockResolvedValue(ok(data));
-      const { container } = renderGraph();
-      await chart();
-      expect(pts(container)).toEqual([[weekX("W1"), rowY("Ads")]]);
-      expect(dots(container)).toEqual(pts(container));
-      expect(screen.getAllByTestId("activity-marker")).toHaveLength(8);
-      cleanup();
-
-      const none = weeksData();
-      none.weeks = none.weeks.map((w: any) => ({
-        ...w,
-        progressLevel: w.progressLevel === null ? null : 0,
-        activities: w.activities.map((a: any) => ({ ...a, milestoneId: null, milestoneLabel: null, level: 0 })),
-      }));
-      get.mockResolvedValue(ok(none));
-      const r = renderGraph();
-      await chart();
-      expect(line(r.container)).toBeNull(); // nothing fabricated
-      expect(r.container.querySelectorAll('[data-testid="progress-point"]')).toHaveLength(0);
-    });
-
-    it("the line starts at the chart origin (Start, on the baseline left of W1)", async () => {
-      get.mockResolvedValue(ok(weeksData()));
-      const { container } = renderGraph();
-      await chart();
-      const [ox, oy] = origin(container);
-      expect(ox).toBeLessThan(weekX("W1"));
-      expect(oy).toBeGreaterThan(rowY("Ads")); // the baseline is below the first milestone row
     });
 
     it("keeps the status legend unchanged", async () => {

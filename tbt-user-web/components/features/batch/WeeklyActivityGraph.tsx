@@ -4,30 +4,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
+import type { WeeklyGraphActivity, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
+import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
 
-// Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
-// from the API (GET /api/user-batch/weekly-graph): the program's admin
-// configuration (weeks, milestone labels and order, activities) and this
-// member's real data (task statuses, reported revenue). Nothing is hardcoded:
-// no milestone labels, no revenue thresholds.
+// Revenue graph: weeks along X, Revenue Generated (₹) up Y. Everything comes
+// from the API (GET /api/user-batch/weekly-graph): the program's weeks and
+// activities and this member's real data (task statuses, reported revenue).
 //
-//  • one marker per activity, on its week and on the row of the milestone it is
-//    linked to (unlinked activities sit on the baseline). A marker's position
-//    never means "achieved" — its fill shows the activity's own status;
-//  • a diamond where a revenue milestone was reached (from reported revenue
-//    against the admin threshold, or an admin record);
-//  • a red progression line through each started week's actual progress
-//    (week.progressLevel: approved work, milestone links, reported revenue,
-//    admin records), rising and falling week to week (weeklyGraphProgression.ts).
+//  • a red line through each week's reported revenue (week.revenue — the
+//    "Revenue Generated" figures placed on that program week), on a linear ₹
+//    scale, rising and falling week to week; a week with nothing reported is a
+//    gap, never ₹0 (weeklyGraphRevenueAxis.ts);
+//  • one marker per activity in its week, in a row on the ₹0 baseline; its fill
+//    shows the activity's own status.
 // Every marker is a keyboard-focusable button that opens a popup with the
 // Week, Milestone and Activity.
 
-const LEFT = 76;     // room for the milestone labels
+const LEFT = 76;     // room for the ₹ axis labels
 const RIGHT = 16;
 const TOP = 16;
 const LEVEL_GAP = 36;
+const PLOT_LEVELS = 6; // plot height in LEVEL_GAP units
 const BOTTOM = 28;   // room for the week labels
 const MIN_COL = 64;  // below this the chart scrolls horizontally instead of squeezing
 const R = 6;         // marker radius
@@ -44,9 +41,7 @@ export default function WeeklyActivityGraph() {
   return <WeeklyActivityGraphContent />;
 }
 
-type Selection =
-  | { kind: "activity"; key: string; week: WeeklyGraphWeek; activity: WeeklyGraphActivity; x: number; y: number }
-  | { kind: "revenue"; key: string; week: WeeklyGraphWeek; milestone: WeeklyGraphMilestone; x: number; y: number };
+type Selection = { kind: "activity"; key: string; week: WeeklyGraphWeek; activity: WeeklyGraphActivity; x: number; y: number };
 
 const inr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
@@ -122,12 +117,13 @@ function WeeklyActivityGraphContent() {
 
   const weekPrefix = s?.batchGraphWeekPrefix ?? "W";
   const weekLabel = (w: WeeklyGraphWeek) => w.label || `${weekPrefix}${w.weekNumber}`;
-  // The Y axis is exactly the configured milestones (bottom → top); nothing is filled in here.
-  const milestones: WeeklyGraphMilestone[] = Array.isArray(graph!.config?.milestones) ? graph!.config!.milestones : [];
-  const levels = Math.max(milestones.length, 1);
-
-  const PLOT_H = LEVEL_GAP * levels;
-  const yFor = (level: number) => TOP + PLOT_H - Math.min(Math.max(level, 0), levels) * LEVEL_GAP;
+  // The Y axis is Revenue Generated (₹), linear from ₹0 to the smallest axis
+  // step covering the best week; it is recomputed from the API data every render.
+  const PLOT_H = LEVEL_GAP * PLOT_LEVELS;
+  const revTop = revenueAxisTop(weeks.map((w) => w.revenue));
+  const yRev = (v: number) => TOP + PLOT_H - (Math.min(Math.max(v, 0), revTop) / revTop) * PLOT_H;
+  const baseY = yRev(0);
+  const ticks = revenueAxisTicks(revTop, PLOT_H);
   const col = Math.max(MIN_COL, (boxWidth - LEFT - RIGHT) / weeks.length || 0);
   const width = LEFT + weeks.length * col + RIGHT;
   const height = TOP + PLOT_H + BOTTOM;
@@ -143,59 +139,24 @@ function WeeklyActivityGraphContent() {
   };
   const noMilestone = s?.batchGraphNoMilestone ?? "No milestone";
 
-  // Activity markers: grouped by (week, level) and spread across the column so
-  // several activities in one week stay individually reachable.
-  type Marker = {
-    key: string; x: number; y: number; week: WeeklyGraphWeek; activity: WeeklyGraphActivity;
-    weekIndex: number; order: number; level: number;
-  };
+  // Activity markers: each week's activities in a row on the ₹0 baseline, spread
+  // across the column so several in one week stay individually reachable.
+  type Marker = { key: string; x: number; y: number; week: WeeklyGraphWeek; activity: WeeklyGraphActivity };
   const markers: Marker[] = [];
   weeks.forEach((w, i) => {
-    const byLevel = new Map<number, Array<{ a: WeeklyGraphActivity; order: number }>>();
-    (w.activities ?? []).forEach((a, order) => {
-      const level = typeof a.level === "number" ? a.level : 0;
-      byLevel.set(level, [...(byLevel.get(level) ?? []), { a, order }]);
-    });
-    byLevel.forEach((acts, level) => {
-      const step = Math.min(2 * R + 4, (col - 2 * R - 8) / Math.max(acts.length - 1, 1));
-      acts.forEach(({ a, order }, k) => {
-        markers.push({
-          key: `a:${w.weekNumber}:${a.taskId}`,
-          x: colX(i) + (k - (acts.length - 1) / 2) * step,
-          y: yFor(level),
-          week: w,
-          activity: a,
-          weekIndex: i,
-          order,
-          level,
-        });
-      });
+    const acts = w.activities ?? [];
+    const step = Math.min(2 * R + 4, (col - 2 * R - 8) / Math.max(acts.length - 1, 1));
+    acts.forEach((a, k) => {
+      markers.push({ key: `a:${w.weekNumber}:${a.taskId}`, x: colX(i) + (k - (acts.length - 1) / 2) * step, y: baseY, week: w, activity: a });
     });
   });
 
-  // Revenue milestone markers: where a revenue milestone was reached, on its row.
-  type RevenueMarker = { key: string; x: number; y: number; week: WeeklyGraphWeek; milestone: WeeklyGraphMilestone };
-  const revenueMarkers: RevenueMarker[] = [];
-  milestones.forEach((m, idx) => {
-    if (m.kind !== "revenue" || !m.reached || !m.reachedWeek) return;
-    const wi = weeks.findIndex((w) => w.weekNumber === m.reachedWeek);
-    if (wi < 0) return;
-    revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
-  });
-
-  // Progression line: one point per started week at that week's measured
-  // progress (week.progressLevel from the API), so it rises with approved work
-  // and falls when a later week is missed (rules in weeklyGraphProgression.ts).
-  // Recomputed on every render, so it follows refreshed data and configuration.
-  const progression = weekProgressionPoints(weeks, colX, yFor);
-  // The red line itself runs through each started week's highest visible dot (weekLinePoints),
-  // from Start in straight segments — styled like the admin Members revenue chart line.
-  const linePts = weekLinePoints(weeks, colX, yFor);
-  const linePoints = linePts.length > 0
-    ? [`M ${LEFT},${yFor(0)}`, ...linePts.map((p) => `L ${p.x},${p.y}`)].join(" ")
-    : null;
-  const progressTitle = (w: WeeklyGraphWeek) =>
-    `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
+  // Red line: one point per week at its reported revenue, joined week to week;
+  // a week with nothing reported breaks the line (weeklyGraphRevenueAxis.ts).
+  const revenuePts = revenueLinePoints(weeks, colX, yRev);
+  const linePoints = revenueLinePath(revenuePts);
+  const revenueTitle = (w: WeeklyGraphWeek, v: number) =>
+    `${weekLabel(w)}: ${inr(v)} ${s?.batchGraphRevenueGenerated ?? "revenue generated"}`;
 
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
   const revenueTotal = graph!.revenue?.totalToDate ?? null;
@@ -273,46 +234,45 @@ function WeeklyActivityGraphContent() {
             ) : null,
           )}
 
-          {/* Milestone gridlines: always subtle and dashed, so the red progress line is the
-              only red line on the chart. A reached milestone shows through its accent label. */}
-          {milestones.map((m, i) => (
-            <g key={m.id ?? `m${i}`} aria-hidden="true">
-              <line x1={LEFT} x2={width - RIGHT} y1={yFor(i + 1)} y2={yFor(i + 1)}
+          {/* ₹ gridlines: always subtle and dashed, so the red revenue line is the
+              only red line on the chart. */}
+          {ticks.filter((v) => v > 0).map((v) => (
+            <g key={`t${v}`} aria-hidden="true">
+              <line x1={LEFT} x2={width - RIGHT} y1={yRev(v)} y2={yRev(v)}
                 stroke="var(--color-border-subtle)" strokeWidth={1} strokeDasharray="3,3" opacity={0.9} />
-              <text data-testid="milestone-label" x={LEFT - 8} y={yFor(i + 1) + 4} textAnchor="end" fontSize="11"
-                fill={m.reached ? "var(--color-accent)" : "var(--color-text-secondary)"} fontWeight={m.reached ? "600" : "400"}>
-                {m.label}
+              <text data-testid="revenue-axis-label" x={LEFT - 8} y={yRev(v) + 4} textAnchor="end" fontSize="11" fill="var(--color-text-secondary)">
+                {revenueAxisLabel(v)}
               </text>
             </g>
           ))}
 
-          {/* Axes + baseline label */}
+          {/* Axes + ₹0 baseline label */}
           <g aria-hidden="true">
-            <line x1={LEFT} x2={LEFT} y1={TOP - 6} y2={yFor(0)} stroke="var(--color-text-subtle)" />
-            <line x1={LEFT} x2={width - RIGHT} y1={yFor(0)} y2={yFor(0)} stroke="var(--color-text-subtle)" />
-            <text x={LEFT - 8} y={yFor(0) + 4} textAnchor="end" fontSize="11" fill="var(--color-text-subtle)">
-              {s?.batchGraphStartLabel ?? "Start"}
+            <line x1={LEFT} x2={LEFT} y1={TOP - 6} y2={baseY} stroke="var(--color-text-subtle)" />
+            <line x1={LEFT} x2={width - RIGHT} y1={baseY} y2={baseY} stroke="var(--color-text-subtle)" />
+            <text data-testid="revenue-axis-label" x={LEFT - 8} y={baseY + 4} textAnchor="end" fontSize="11" fill="var(--color-text-subtle)">
+              {revenueAxisLabel(0)}
             </text>
           </g>
 
           {/* Week labels — current week in accent + bold */}
           {weeks.map((w, i) => (
-            <text key={`wl-${w.weekNumber}`} data-testid="week-label" x={colX(i)} y={yFor(0) + 18} textAnchor="middle" fontSize="11"
+            <text key={`wl-${w.weekNumber}`} data-testid="week-label" x={colX(i)} y={baseY + 18} textAnchor="middle" fontSize="11"
               aria-hidden="true" fill={w.isCurrent ? "var(--color-accent)" : "var(--color-text-secondary)"} fontWeight={w.isCurrent ? "700" : "400"}>
               {weekLabel(w)}
             </text>
           ))}
 
-          {/* Progression line + one dot per week's progress point (drawn before
+          {/* Revenue line + one dot per week's reported revenue (drawn before
               the activity markers so those stay on top) */}
           {linePoints && (
             <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
               strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" />
           )}
-          {progression.map((p) => (
+          {revenuePts.map((p) => (
             <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
               fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5}>
-              <title>{progressTitle(weeks[p.weekIndex])}</title>
+              <title>{revenueTitle(weeks[p.weekIndex], p.revenue)}</title>
             </circle>
           ))}
 
@@ -343,33 +303,6 @@ function WeeklyActivityGraphContent() {
               </g>
             );
           })}
-
-          {/* Revenue milestone markers (diamond) */}
-          {revenueMarkers.map((m) => {
-            const sel: Selection = { kind: "revenue", key: m.key, week: m.week, milestone: m.milestone, x: m.x, y: m.y };
-            const d = R + 2;
-            return (
-              <g
-                key={m.key}
-                role="button"
-                tabIndex={0}
-                aria-label={`${weekLabel(m.week)}, ${m.milestone.label}, ${s?.batchGraphRevenueReached ?? "revenue milestone reached"}`}
-                aria-haspopup="dialog"
-                aria-expanded={selected?.key === m.key}
-                data-testid="revenue-marker"
-                className="cursor-pointer outline-none"
-                onClick={(e) => open(sel, e.currentTarget)}
-                onKeyDown={(e) => keyOpen(e, sel)}
-                onFocus={() => setFocusedKey(m.key)}
-                onBlur={() => setFocusedKey((k) => (k === m.key ? null : k))}
-              >
-                {focusRing(m.key, m.x, m.y, d)}
-                <path d={`M ${m.x} ${m.y - d} L ${m.x + d} ${m.y} L ${m.x} ${m.y + d} L ${m.x - d} ${m.y} Z`}
-                  fill="var(--color-success, #22c55e)" stroke="var(--color-bg-surface)" strokeWidth={1.5} />
-                <circle cx={m.x} cy={m.y} r={d + 6} fill="transparent" />
-              </g>
-            );
-          })}
         </svg>
       </div>
 
@@ -378,12 +311,6 @@ function WeeklyActivityGraphContent() {
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-accent)" }} />{statusLabel.completed}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2 border-dashed" style={{ borderColor: "var(--color-accent)" }} />{statusLabel.submitted}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-text-subtle)" }} />{statusLabel.not_started}</span>
-        {revenueMarkers.length > 0 && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rotate-45" style={{ background: "var(--color-success, #22c55e)" }} />
-            {s?.batchGraphRevenueReachedLegend ?? "Revenue milestone reached"}
-          </span>
-        )}
       </div>
 
       {/* Popup: Week, Milestone, Activity */}
@@ -415,43 +342,13 @@ function WeeklyActivityGraphContent() {
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphWeekField ?? "Week"}</dt>
             <dd className="font-semibold">{weekLabel(selected.week)}</dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphMilestoneField ?? "Milestone"}</dt>
-            <dd className="font-semibold">
-              {selected.kind === "activity" ? selected.activity.milestoneLabel ?? noMilestone : selected.milestone.label}
-            </dd>
-            {selected.kind === "activity" ? (
-              <>
-                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphActivityField ?? "Activity"}</dt>
-                <dd className="font-semibold break-words">{selected.activity.title}</dd>
-                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphStatusField ?? "Status"}</dt>
-                <dd>{statusLabel[selected.activity.status] ?? selected.activity.status}</dd>
-                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphDayField ?? "Day"}</dt>
-                <dd>{selected.activity.dayNumber}</dd>
-              </>
-            ) : (
-              <>
-                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphReachedField ?? "Reached"}</dt>
-                <dd>
-                  {selected.milestone.reachedBy === "record"
-                    ? s?.batchGraphReachedByRecord ?? "Recorded by your mentor"
-                    : s?.batchGraphReachedByRevenue ?? "From your reported revenue"}
-                </dd>
-                {selected.milestone.threshold != null && (
-                  <>
-                    <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphThresholdField ?? "Target"}</dt>
-                    <dd>{inr(selected.milestone.threshold)}</dd>
-                  </>
-                )}
-                {selected.week.cumulativeRevenue != null && (
-                  <>
-                    <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphRevenueField ?? "Revenue by then"}</dt>
-                    <dd>
-                      {inr(selected.week.cumulativeRevenue)}{" "}
-                      <span style={{ color: "var(--color-text-subtle)" }}>({s?.batchGraphSelfReported ?? "self-reported"})</span>
-                    </dd>
-                  </>
-                )}
-              </>
-            )}
+            <dd className="font-semibold">{selected.activity.milestoneLabel ?? noMilestone}</dd>
+            <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphActivityField ?? "Activity"}</dt>
+            <dd className="font-semibold break-words">{selected.activity.title}</dd>
+            <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphStatusField ?? "Status"}</dt>
+            <dd>{statusLabel[selected.activity.status] ?? selected.activity.status}</dd>
+            <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphDayField ?? "Day"}</dt>
+            <dd>{selected.activity.dayNumber}</dd>
           </dl>
         </div>
       )}
