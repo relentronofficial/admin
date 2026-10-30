@@ -6,6 +6,29 @@
 // The scale is linear (heights are proportional to the amounts); its top is the
 // smallest axis step that covers the highest week.
 
+/**
+ * Position of a revenue amount on the graph's own milestone axis (level 0 =
+ * Start; level i+1 = the row of milestone i). Anchors are ₹0 at Start and each
+ * revenue milestone's admin-set threshold at its row; amounts in between are
+ * placed proportionally (piecewise linear), so ₹1,00,000 sits exactly on a
+ * "1 Lakh" row whose threshold is ₹1,00,000. Above the highest threshold the
+ * point stays on that row (the axis has nothing higher). No revenue milestone
+ * with a threshold → null: there is nothing to read an amount against.
+ */
+export function revenueLevelOnAxis(amount: number, thresholds: Array<number | null | undefined>): number | null {
+  const anchors: Array<{ v: number; level: number }> = [{ v: 0, level: 0 }];
+  thresholds.forEach((t, i) => {
+    if (typeof t === "number" && t > anchors[anchors.length - 1].v) anchors.push({ v: t, level: i + 1 });
+  });
+  if (anchors.length === 1 || !Number.isFinite(amount)) return null;
+  const v = Math.max(0, amount);
+  for (let k = 1; k < anchors.length; k++) {
+    const a = anchors[k - 1], b = anchors[k];
+    if (v <= b.v) return a.level + ((v - a.v) / (b.v - a.v)) * (b.level - a.level);
+  }
+  return anchors[anchors.length - 1].level;
+}
+
 /** Axis steps above ₹0: ₹1 Lakh, ₹5 Lakhs, ₹10 Lakhs, ₹25 Lakhs, ₹50 Lakhs, ₹1 Crore. */
 export const REVENUE_AXIS_STEPS = [1_00_000, 5_00_000, 10_00_000, 25_00_000, 50_00_000, 1_00_00_000];
 const CRORE = 1_00_00_000;

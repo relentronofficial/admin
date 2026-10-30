@@ -1,5 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+
+describe("revenueLevelOnAxis (revenue on the milestone axis)", () => {
+  // Rows: Ads(1) Website(2) Funnels(3) 1 Lakh(4, ₹1,00,000) 5 Lakhs(5, ₹5,00,000) 1 Crore(6, ₹1,00,00,000)
+  const th = [null, null, null, 1_00_000, 5_00_000, 1_00_00_000];
+
+  it("₹0 is Start, each threshold sits exactly on its row", () => {
+    expect(revenueLevelOnAxis(0, th)).toBe(0);
+    expect(revenueLevelOnAxis(1_00_000, th)).toBe(4);
+    expect(revenueLevelOnAxis(5_00_000, th)).toBe(5);
+    expect(revenueLevelOnAxis(1_00_00_000, th)).toBe(6);
+  });
+
+  it("amounts in between are proportional between the neighbouring anchors", () => {
+    expect(revenueLevelOnAxis(50_000, th)).toBe(2);   // halfway from Start to the 1 Lakh row
+    expect(revenueLevelOnAxis(3_00_000, th)).toBe(4.5); // halfway from ₹1L to ₹5L
+    expect(revenueLevelOnAxis(52_50_000, th)).toBe(5.5);
+  });
+
+  it("above the highest threshold stays on the top row; negative counts as ₹0", () => {
+    expect(revenueLevelOnAxis(3_00_00_000, th)).toBe(6);
+    expect(revenueLevelOnAxis(-5, th)).toBe(0);
+  });
+
+  it("no revenue milestone with a threshold: no position (nothing to read the amount against)", () => {
+    expect(revenueLevelOnAxis(1_00_000, [null, null, null])).toBeNull();
+    expect(revenueLevelOnAxis(1_00_000, [])).toBeNull();
+  });
+
+  it("ignores thresholds that are not increasing (an out-of-order row is not an anchor)", () => {
+    expect(revenueLevelOnAxis(1_00_000, [5_00_000, 1_00_000])).toBe(0.2); // only the ₹5L row (level 1) anchors
+  });
+});
 
 describe("revenue axis", () => {
   it("top is the smallest step covering the highest week (₹1 Lakh with no revenue)", () => {

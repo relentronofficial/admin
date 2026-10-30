@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { useMyWeeklyGraph } from "@/lib/hooks/useBatchProgram";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -19,14 +19,15 @@ import { revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLinePoints }
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
 //  • a red line through each week's reported revenue (week.revenue — the
-//    "Revenue Generated" figures placed on that program week), read against the
-//    ₹ scale on the right; a week with nothing reported has no point (never ₹0)
-//    and the line joins the reported weeks (weeklyGraphRevenueAxis.ts).
+//    "Revenue Generated" figures placed on that program week), placed on this
+//    same axis: ₹0 at Start, each revenue milestone's threshold on its row,
+//    proportional in between (revenueLevelOnAxis). A week with nothing reported
+//    has no point (never ₹0) and the line joins the reported weeks.
 // Every marker is a keyboard-focusable button that opens a popup with the
 // Week, Milestone and Activity.
 
 const LEFT = 76;     // room for the milestone labels
-const RIGHT = 76;    // room for the ₹ revenue scale
+const RIGHT = 16;
 const TOP = 16;
 const LEVEL_GAP = 36;
 const BOTTOM = 28;   // room for the week labels
@@ -184,14 +185,14 @@ function WeeklyActivityGraphContent() {
     revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
   });
 
-  // Revenue line: one point per week at its reported revenue on the ₹ scale
-  // (right axis, linear over the same plot height, from ₹0 on the baseline to
-  // the smallest step covering the best week). The reported weeks are joined in
-  // one continuous line; task stages never move it. Recomputed every render.
-  const revTop = revenueAxisTop(weeks.map((w) => w.revenue));
-  const yRev = (v: number) => TOP + PLOT_H - (Math.min(Math.max(v, 0), revTop) / revTop) * PLOT_H;
-  const revTicks = revenueAxisTicks(revTop, PLOT_H);
-  const progression = revenueLinePoints(weeks, colX, yRev);
+  // Revenue line: one point per week at its reported revenue, on this axis —
+  // ₹0 at Start, each revenue milestone's admin threshold on its own row,
+  // proportional in between. The reported weeks are joined in one continuous
+  // line; task stages never move it. Recomputed every render.
+  const thresholds = milestones.map((m) => (m.kind === "revenue" ? m.threshold : null));
+  const progression = revenueLevelOnAxis(0, thresholds) === null
+    ? [] // no revenue row with a threshold: nothing to read an amount against
+    : revenueLinePoints(weeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
   const linePoints = progression.length > 1
     ? progression.map((p, k) => `${k === 0 ? "M" : "L"} ${p.x},${p.y}`).join(" ")
     : null;
@@ -296,19 +297,6 @@ function WeeklyActivityGraphContent() {
             </text>
           </g>
 
-          {/* ₹ revenue scale for the red line (right axis) */}
-          <g aria-hidden="true">
-            <line x1={width - RIGHT} x2={width - RIGHT} y1={TOP - 6} y2={yFor(0)} stroke="var(--color-text-subtle)" />
-            {revTicks.map((v) => (
-              <g key={`rt${v}`}>
-                <line x1={width - RIGHT} x2={width - RIGHT + 4} y1={yRev(v)} y2={yRev(v)} stroke="var(--color-text-subtle)" />
-                <text data-testid="revenue-axis-label" x={width - RIGHT + 8} y={yRev(v) + 4} textAnchor="start" fontSize="11"
-                  fill="var(--color-text-secondary)">
-                  {revenueAxisLabel(v)}
-                </text>
-              </g>
-            ))}
-          </g>
 
           {/* Week labels — current week in accent + bold */}
           {weeks.map((w, i) => (
@@ -393,7 +381,7 @@ function WeeklyActivityGraphContent() {
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-accent)" }} />{statusLabel.completed}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2 border-dashed" style={{ borderColor: "var(--color-accent)" }} />{statusLabel.submitted}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-text-subtle)" }} />{statusLabel.not_started}</span>
-        <span className="inline-flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: "var(--color-accent, #dc2626)" }} />{s?.batchGraphRevenueLineLegend ?? "Weekly revenue (₹, right scale)"}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ background: "var(--color-accent, #dc2626)" }} />{s?.batchGraphRevenueLineLegend ?? "Weekly revenue"}</span>
         {revenueMarkers.length > 0 && (
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rotate-45" style={{ background: "var(--color-success, #22c55e)" }} />

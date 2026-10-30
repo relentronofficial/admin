@@ -195,12 +195,12 @@ describe("WeeklyActivityGraph", () => {
     expect(screen.getByRole("button", { name: "W1, ₹1 Lakh, Close first ₹1 Lakh month, Completed" })).toBeTruthy();
   });
 
-  describe("revenue line (right ₹ scale) alongside the task-stage axis", () => {
+  describe("revenue line on the task-stage axis", () => {
     /**
-     * Admin-configured program (Ads, Website, Funnels, ₹1 Lakh, ₹5 Lakhs rows) and the member's
-     * reported revenue per program week (week.revenue from the API):
-     *  W1 ₹1,00,000 · W2 ₹3,00,000 (up) · W3 ₹2,00,000 (down) · W4 nothing reported · W5 ₹4,00,000
-     *  → ₹ scale up to ₹5 Lakhs.
+     * Admin-configured program (Ads, Website, Funnels, ₹1 Lakh [₹1,00,000], ₹5 Lakhs [₹5,00,000] rows)
+     * and the member's reported revenue per program week (week.revenue from the API):
+     *  W1 ₹1,00,000 · W2 ₹3,00,000 (up) · W3 ₹2,00,000 (down) · W4 nothing reported · W5 ₹4,00,000.
+     * On the axis: ₹0 = Start, ₹1,00,000 = the ₹1 Lakh row, ₹5,00,000 = the ₹5 Lakhs row, proportional between.
      */
     const weeksData = () => {
       const data: any = graphData();
@@ -219,35 +219,30 @@ describe("WeeklyActivityGraph", () => {
     const dots = (container: HTMLElement) =>
       [...container.querySelectorAll('[data-testid="progress-point"]')].map((c) => [Number(c.getAttribute("cx")), Number(c.getAttribute("cy"))]);
     const weekX = (label: string) => Number(screen.getAllByTestId("week-label").find((el) => el.textContent === label)!.getAttribute("x"));
-    const scaleY = (container: HTMLElement, label: string) =>
-      Number([...container.querySelectorAll('[data-testid="revenue-axis-label"]')].find((t) => t.textContent === label)!.getAttribute("y")) - 4;
-    // ₹ → y on the drawn right scale (linear from ₹0 to the top label)
-    const yOf = (container: HTMLElement, v: number, top = 500000, topLabel = "₹5 Lakhs") => {
-      const y0 = scaleY(container, "₹0");
-      return y0 - (v / top) * (y0 - scaleY(container, topLabel));
+    // ₹ → y on the left axis: Start (₹0), the ₹1 Lakh row (₹1,00,000), the ₹5 Lakhs row (₹5,00,000), linear between.
+    const yOf = (container: HTMLElement, v: number) => {
+      const start = labelY(container, "Ads") + 36, l1 = labelY(container, "₹1 Lakh"), l5 = labelY(container, "₹5 Lakhs");
+      return v <= 100000 ? start + (v / 100000) * (l1 - start) : l1 + Math.min((v - 100000) / 400000, 1) * (l5 - l1);
     };
 
-    it("keeps the task-stage labels on the left and adds the ₹ revenue scale on the right", async () => {
+    it("only the left task-stage axis: no right-side ₹ scale", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       expect(texts(container, "milestone-label")).toEqual(["Ads", "Website", "Funnels", "₹1 Lakh", "₹5 Lakhs"]);
       expect(container.textContent).toContain("Start");
-      expect(texts(container, "revenue-axis-label")).toEqual(["₹0", "₹1 Lakh", "₹5 Lakhs"]);
-      const leftX = Number(container.querySelector('[data-testid="milestone-label"]')!.getAttribute("x"));
-      const rightX = Number(container.querySelector('[data-testid="revenue-axis-label"]')!.getAttribute("x"));
-      expect(rightX).toBeGreaterThan(weekX("W5")); // right of the last week
-      expect(leftX).toBeLessThan(weekX("W1"));
-      expect(scaleY(container, "₹0")).toBe(labelY(container, "Ads") + 36); // ₹0 shares the Start baseline
+      expect(container.querySelectorAll('[data-testid="revenue-axis-label"]')).toHaveLength(0);
+      expect(container.textContent).not.toMatch(/₹0|₹10 Lakhs|₹25 Lakhs|₹50 Lakhs|₹1 Crore/);
     });
 
-    it("one point per week at its actual revenue, proportional on the ₹ scale; up and down week to week", async () => {
+    it("one point per week at its actual revenue on the stage axis (₹1,00,000 on the ₹1 Lakh row); up and down week to week", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const d = dots(container);
       expect(d.map(([x]) => x)).toEqual(["W1", "W2", "W3", "W5"].map(weekX)); // W4: nothing reported → no point
       [100000, 300000, 200000, 400000].forEach((v, i) => expect(d[i][1]).toBeCloseTo(yOf(container, v), 6));
+      expect(d[0][1]).toBe(labelY(container, "₹1 Lakh"));
       expect(d[1][1]).toBeLessThan(d[0][1]); // up
       expect(d[2][1]).toBeGreaterThan(d[1][1]); // down
       expect(container.querySelectorAll('[data-testid="progress-point"] title')[1].textContent).toBe("W2: ₹3,00,000 revenue generated");
@@ -277,16 +272,26 @@ describe("WeeklyActivityGraph", () => {
       expect(dots(container)).toEqual(before);
     });
 
-    it("follows refreshed revenue: a newly reported week joins the line and the scale grows", async () => {
+    it("follows refreshed revenue: a newly reported week joins the line (above the top threshold it stays on the top row)", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const later = weeksData();
-      later.weeks[3].revenue = 800000; // W4 now reported → top ₹10 Lakhs
+      later.weeks[3].revenue = 800000; // W4 now reported, above ₹5 Lakhs (the highest threshold)
       lastQc.setQueryData(["my-batch", "weekly-graph"], later);
       await waitFor(() => expect(dots(container)).toHaveLength(5));
-      expect(texts(container, "revenue-axis-label")).toEqual(["₹0", "₹1 Lakh", "₹5 Lakhs", "₹10 Lakhs"]);
-      expect(dots(container)[3][1]).toBeCloseTo(yOf(container, 800000, 1000000, "₹10 Lakhs"), 6);
+      expect(dots(container)[3][1]).toBe(labelY(container, "₹5 Lakhs"));
+    });
+
+    it("no revenue row with a threshold: no line (an amount can't be placed), stage axis unchanged", async () => {
+      const data = weeksData();
+      data.config.milestones = data.config.milestones.map((m: any) => ({ ...m, threshold: null }));
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(line(container)).toBeNull();
+      expect(dots(container)).toEqual([]);
+      expect(texts(container, "milestone-label")).toEqual(["Ads", "Website", "Funnels", "₹1 Lakh", "₹5 Lakhs"]);
     });
 
     it("no reported revenue: no line and no points (nothing fabricated); stage labels and markers unchanged", async () => {
@@ -319,7 +324,7 @@ describe("WeeklyActivityGraph", () => {
       renderGraph();
       await chart();
       for (const label of ["Completed", "Awaiting approval", "Not started"]) expect(screen.getAllByText(label).length).toBeGreaterThan(0);
-      expect(screen.getByText("Weekly revenue (₹, right scale)")).toBeTruthy();
+      expect(screen.getByText("Weekly revenue")).toBeTruthy();
     });
   });
 
