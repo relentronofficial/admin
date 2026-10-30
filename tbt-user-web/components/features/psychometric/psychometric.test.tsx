@@ -18,6 +18,7 @@ vi.mock("@/lib/api/services/psychometric.service", () => ({ psychometricService:
 import toast from "react-hot-toast";
 import { AssessmentRunner } from "./AssessmentRunner";
 import { ResultView } from "./ResultView";
+import { ProfileAssessmentCard } from "./ProfileAssessmentCard";
 
 const opts = (id: string, n: number) => Array.from({ length: n }, (_, i) => ({ _id: `${id}o${i}`, optionText: `${id} option ${i + 1}`, order: i + 1 }));
 const Q = (id: string, questionType: string, n = 3, extra: object = {}) => ({
@@ -174,5 +175,35 @@ describe("ResultView", () => {
     expect(screen.getByRole("button", { name: "Request Again" })).toBeTruthy();
     rerender(<QueryClientProvider client={qc}><ResultView data={withRetest({ status: "approved", canRequest: false })} /></QueryClientProvider>);
     expect(screen.getByRole("link", { name: "Start Retest" }).getAttribute("href")).toBe("/psychometric/assessment");
+  });
+});
+
+describe("ProfileAssessmentCard", () => {
+  const result = (retest: object) => ({
+    success: true, attemptNumber: 1, history: [], retest,
+    data: { _id: "r1", percentage: 72.5, level: "Good", attemptNumber: 1, createdAt: "2026-10-30" },
+  });
+
+  it("not taken yet: links to the start page with the set's time limit", async () => {
+    svc.settings.mockResolvedValue({ success: true, data: { assessment_duration_minutes: 25 } });
+    svc.result.mockRejectedValue(new Error("No result found."));
+    wrap(<ProfileAssessmentCard />);
+    expect((await screen.findByRole("link", { name: "Take the assessment" })).getAttribute("href")).toBe("/psychometric");
+    expect(await screen.findByText(/25-minute assessment/)).toBeTruthy();
+  });
+
+  it("completed: score, level and a link to the result; an approved retest adds Start retest", async () => {
+    svc.settings.mockResolvedValue({ success: true, data: { assessment_duration_minutes: 30 } });
+    svc.result.mockResolvedValue(result({ status: "none", canRequest: true }));
+    wrap(<ProfileAssessmentCard />);
+    expect(await screen.findByText("72.5%")).toBeTruthy();
+    expect(screen.getByText(/Good · Attempt 1/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View results" }).getAttribute("href")).toBe("/psychometric/result");
+    expect(screen.queryByRole("link", { name: "Start retest" })).toBeNull();
+
+    cleanup();
+    svc.result.mockResolvedValue(result({ status: "approved", canRequest: false }));
+    wrap(<ProfileAssessmentCard />);
+    expect((await screen.findByRole("link", { name: "Start retest" })).getAttribute("href")).toBe("/psychometric");
   });
 });
