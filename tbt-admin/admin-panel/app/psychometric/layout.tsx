@@ -48,7 +48,7 @@ function AccessScreen({ access }: { access: Access }) {
   }
   const text = {
     denied: ["No access", "Psychometric Admin is available to Admin and Super Admin only."],
-    "not-connected": ["Not connected yet", "Psychometric Admin hasn't been connected to the Psychometric service yet. Ask a Super Admin to set up the service account."],
+    "not-connected": ["Not connected yet", "Psychometric Admin hasn't been connected to the Psychometric service yet. Ask a Super Admin to set the Psychometric bridge key."],
     error: ["Couldn't load Psychometric Admin", "Please check your connection and reload the page."],
   }[access as Exclude<Access, "checking" | "allowed">];
   return (

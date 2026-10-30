@@ -1,17 +1,17 @@
+import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Real bridge handlers against a fake Psychometric API (global fetch) that
-// behaves like the real one: POST /admin/login issues a token and invalidates
-// the previous one (single active session); admin routes need the current token.
+// accepts a request only with a valid HS256 bridge token for the admin
+// audience, signed with ITS copy of the shared key — like utils/tbtBridge.js.
 
 const env = vi.hoisted(() => ({
   PSYCHOMETRIC_API_URL: 'https://psy.example/api/v1',
-  PSYCHOMETRIC_ADMIN_EMAIL: 'bridge@example.com',
-  PSYCHOMETRIC_ADMIN_PASSWORD: 'pw-not-real',
+  PSYCHOMETRIC_BRIDGE_SECRET: 'shared-key',
 }));
 vi.mock('../../config/env.js', () => ({ env }));
 
-const { accessHandler, proxyHandler, resetPsychometricSessionForTests } = await import('./controller.js');
+const { accessHandler, proxyHandler } = await import('./controller.js');
 
 const ADMINS: Record<string, { id: string; fullName: string; role: string }> = {
   clerk_admin: { id: 'a-1', fullName: 'Admin', role: 'admin' },
@@ -20,36 +20,28 @@ const ADMINS: Record<string, { id: string; fullName: string; role: string }> = {
   clerk_mod: { id: 'a-4', fullName: 'Mod', role: 'moderator' },
 };
 
-let redisData: Map<string, string>;
-const redis = {
-  async get(k: string) { return redisData.get(k) ?? null; },
-  async set(k: string, v: string, ...args: unknown[]) {
-    if (args.includes('NX') && redisData.has(k)) return null;
-    redisData.set(k, v);
-    return 'OK';
-  },
-  async del(k: string) { return redisData.delete(k) ? 1 : 0; },
-};
-
 // ── fake Psychometric API ────────────────────────────────────────────────
-let activeToken: string | null;
-let logins: number;
-let upstreamCalls: { method: string; url: string; auth: string | null; body: string | undefined }[];
+let psychometricKey: string;
+let seenClaims: any[];
+let upstreamCalls: { method: string; url: string; body: string | undefined }[];
+
+function verify(auth: string | undefined) {
+  const t = (auth ?? '').replace('Bearer ', '');
+  const [h, p, s] = t.split('.');
+  if (!h || !p || !s) return null;
+  if (createHmac('sha256', psychometricKey).update(`${h}.${p}`).digest('base64url') !== s) return null;
+  const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+  if (claims.iss !== 'tbt-backend' || claims.aud !== 'psychometric-admin' || claims.exp <= Date.now() / 1000) return null;
+  return claims;
+}
+
 const fakeFetch = vi.fn(async (url: string, init: RequestInit = {}) => {
   const u = new URL(url);
   const method = init.method ?? 'GET';
-  const auth = (init.headers as Record<string, string> | undefined)?.Authorization ?? null;
-  if (u.pathname === '/api/v1/admin/login') {
-    const body = JSON.parse(String(init.body));
-    // The account as it exists on the Psychometric side (independent of what TBT's env says).
-    if (body.email !== 'bridge@example.com' || body.password !== 'pw-not-real') {
-      return new Response(JSON.stringify({ success: false, message: 'Invalid credentials.' }), { status: 401 });
-    }
-    activeToken = `tok-${++logins}`;
-    return new Response(JSON.stringify({ success: true, token: activeToken }), { status: 200 });
-  }
-  upstreamCalls.push({ method, url: u.pathname + u.search, auth, body: init.body as string | undefined });
-  if (auth !== `Bearer ${activeToken}`) return new Response(JSON.stringify({ success: false, message: 'Session expired.' }), { status: 401 });
+  const claims = verify((init.headers as Record<string, string> | undefined)?.Authorization);
+  upstreamCalls.push({ method, url: u.pathname + u.search, body: init.body as string | undefined });
+  if (!claims) return new Response(JSON.stringify({ success: false, message: 'Invalid or expired token.' }), { status: 401 });
+  seenClaims.push(claims);
   if (u.pathname === '/api/v1/admin/export/pdf') {
     return new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
       status: 200, headers: { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="r.pdf"' },
@@ -61,14 +53,12 @@ const fakeFetch = vi.fn(async (url: string, init: RequestInit = {}) => {
 });
 
 beforeEach(() => {
-  redisData = new Map();
-  activeToken = null;
-  logins = 0;
+  psychometricKey = 'shared-key';
+  seenClaims = [];
   upstreamCalls = [];
   fakeFetch.mockClear();
   vi.stubGlobal('fetch', fakeFetch);
-  resetPsychometricSessionForTests();
-  Object.assign(env, { PSYCHOMETRIC_ADMIN_EMAIL: 'bridge@example.com', PSYCHOMETRIC_ADMIN_PASSWORD: 'pw-not-real' });
+  env.PSYCHOMETRIC_BRIDGE_SECRET = 'shared-key';
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -87,10 +77,7 @@ async function call(handler: any, opts: { clerk?: string; method?: string; path?
     url: `/api/psychometric-bridge/admin/${path}${opts.query ?? ''}`,
     params: { '*': path },
     body: opts.body,
-    server: {
-      redis,
-      prisma: { admin: { findUnique: async ({ where }: any) => ADMINS[where.clerkId] ?? null } },
-    },
+    server: { prisma: { admin: { findUnique: async ({ where }: any) => ADMINS[where.clerkId] ?? null } } },
     log: { error: (...a: any[]) => logs.push(['error', ...a]), info: (...a: any[]) => logs.push(['info', ...a]) },
   };
   await handler(req, reply);
@@ -114,8 +101,8 @@ describe('access control', () => {
     expect(fakeFetch).not.toHaveBeenCalled();
   });
 
-  it('reports "not connected" (503) until the service account is configured', async () => {
-    env.PSYCHOMETRIC_ADMIN_PASSWORD = '';
+  it('reports "not connected" (503) until the shared key is set', async () => {
+    env.PSYCHOMETRIC_BRIDGE_SECRET = '';
     expect((await call(accessHandler, { clerk: 'clerk_admin' })).body.data.configured).toBe(false);
     const r = await call(proxyHandler, { clerk: 'clerk_admin' });
     expect(r.status).toBe(503);
@@ -124,15 +111,14 @@ describe('access control', () => {
 });
 
 describe('forwarding', () => {
-  it('signs in server-side once and forwards GETs with query string', async () => {
+  it('signs every call (no login) as the acting TBT admin, and keeps the query string', async () => {
     const a = await call(proxyHandler, { clerk: 'clerk_admin', path: 'results', query: '?page=2&search=ravi' });
     const b = await call(proxyHandler, { clerk: 'clerk_super', path: 'dashboard' });
     expect(a.status).toBe(200);
     expect(a.json.data.echo).toBe('/api/v1/admin/results?page=2&search=ravi');
     expect(b.status).toBe(200);
-    expect(logins).toBe(1);
-    expect(upstreamCalls.every((c) => c.auth === 'Bearer tok-1')).toBe(true);
-    expect(redisData.get('psychometric:bridge:token')).toBe('tok-1');
+    expect(seenClaims.map((c) => [c.sub, c.name])).toEqual([['a-1', 'Admin'], ['a-2', 'Super']]);
+    expect(upstreamCalls.some((c) => c.url.includes('/login'))).toBe(false);
   });
 
   it('forwards JSON bodies and status for writes, and logs which TBT admin made them', async () => {
@@ -151,19 +137,11 @@ describe('forwarding', () => {
     expect([...r.body]).toEqual([0x25, 0x50, 0x44, 0x46]);
   });
 
-  it('re-signs in once when the token was replaced (single-session), then succeeds', async () => {
-    await call(proxyHandler, { clerk: 'clerk_admin' });
-    activeToken = 'someone-else-logged-in';
-    const r = await call(proxyHandler, { clerk: 'clerk_admin' });
-    expect(r.status).toBe(200);
-    expect(logins).toBe(2);
-  });
-
-  it('never returns 401 for a Psychometric-side auth failure (it is not a TBT sign-out)', async () => {
-    env.PSYCHOMETRIC_ADMIN_PASSWORD = 'wrong';
+  it('a key mismatch is a 502 (never a 401, which the panel would treat as a TBT sign-out)', async () => {
+    psychometricKey = 'different-key';
     const r = await call(proxyHandler, { clerk: 'clerk_admin' });
     expect(r.status).toBe(502);
-    expect(JSON.stringify(r.body)).not.toContain('wrong');
+    expect(JSON.stringify(r.body)).not.toContain('shared-key');
   });
 
   it.each(['login', 'logout', 'change-password', 'profile', 'users/../login', 'unknown'])(
@@ -174,10 +152,10 @@ describe('forwarding', () => {
     },
   );
 
-  it('never sends the service-account credentials or token back to the browser', async () => {
+  it('never sends the key or the signed token back to the browser', async () => {
     const r = await call(proxyHandler, { clerk: 'clerk_admin' });
     const out = JSON.stringify(r.json) + JSON.stringify(r.headers);
-    expect(out).not.toContain('pw-not-real');
-    expect(out).not.toContain('tok-1');
+    expect(out).not.toContain('shared-key');
+    expect(out).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}\./);
   });
 });
