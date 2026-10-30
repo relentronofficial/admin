@@ -2485,7 +2485,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS psy_results (
         id                         TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        candidate_id               TEXT NOT NULL REFERENCES psy_candidates(id) ON DELETE CASCADE,
+        -- Kept (candidate NULL) when the candidate is deleted, for audit — as on the old platform.
+        candidate_id               TEXT REFERENCES psy_candidates(id) ON DELETE SET NULL,
         session_id                 TEXT NOT NULL,
         attempt_number             INT NOT NULL DEFAULT 1,
         total_marks                DOUBLE PRECISION NOT NULL,
@@ -2521,7 +2522,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS psy_retest_requests (
         id                 TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        candidate_id       TEXT NOT NULL REFERENCES psy_candidates(id) ON DELETE CASCADE,
+        candidate_id       TEXT REFERENCES psy_candidates(id) ON DELETE SET NULL,
         user_name          TEXT,
         user_email         TEXT,
         shared_code        TEXT,
@@ -2537,6 +2538,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         ip_address         TEXT,
         user_agent         TEXT,
         decided_by         TEXT,
+        decided_by_email   TEXT,
         decided_at         TIMESTAMPTZ,
         used_at            TIMESTAMPTZ,
         created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),

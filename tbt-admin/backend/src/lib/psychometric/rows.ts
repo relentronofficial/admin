@@ -117,3 +117,77 @@ export const candidateOut = (r: Row) => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
+
+/** Candidate as results populate it (`userId: { _id, name, email, sharedCode }`). Query aliases: cand_*. */
+const candidateRef = (r: Row) => (r.candidate_id ? { _id: r.candidate_id, name: r.cand_name, email: r.cand_email, sharedCode: r.cand_code } : null);
+
+/** `populateUser`: the query joined psy_candidates as cand_name / cand_email / cand_code. */
+export const resultOut = (r: Row, opts: { populateUser?: boolean } = {}) => ({
+  _id: r.id,
+  userId: opts.populateUser ? candidateRef(r) : r.candidate_id,
+  sessionId: r.session_id,
+  attemptNumber: r.attempt_number,
+  totalMarks: r.total_marks,
+  maxScore: r.max_score,
+  percentage: r.percentage,
+  level: r.level,
+  categoryScores: r.category_scores ?? {},
+  categoryPercentages: r.category_percentages ?? {},
+  highestCategory: r.highest_category ?? [],
+  recommendedBusiness: r.recommended_business ?? [],
+  explanation: r.explanation,
+  improvementAreas: r.improvement_areas ?? [],
+  dimensionScores: r.dimension_scores ?? undefined,
+  dimensionPercentages: r.dimension_percentages ?? undefined,
+  correctCount: r.correct_count ?? undefined,
+  wrongCount: r.wrong_count ?? undefined,
+  skippedCount: r.skipped_count ?? undefined,
+  businessReadinessPercent: r.business_readiness_percent ?? undefined,
+  recommendations: r.recommendations ?? [],
+  strongDimensions: r.strong_dimensions ?? [],
+  weakDimensions: r.weak_dimensions ?? [],
+  aptitudeScore: r.aptitude_score ?? undefined,
+  personalityScore: r.personality_score ?? undefined,
+  businessMindsetScore: r.business_mindset_score ?? undefined,
+  financialAwarenessScore: r.financial_awareness_score ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export const retestOut = (r: Row) => ({
+  _id: r.id,
+  userId: r.candidate_id,
+  userName: r.user_name,
+  userEmail: r.user_email,
+  sharedCode: r.shared_code,
+  questionSetId: r.question_set_id,
+  attemptNumber: r.attempt_number,
+  currentResultId: r.current_result_id,
+  currentPercentage: r.current_percentage,
+  currentLevel: r.current_level,
+  status: r.status,
+  reason: r.reason ?? undefined,
+  rejectionNote: r.rejection_note ?? undefined,
+  requestedByUser: r.requested_by_user,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  usedAt: r.used_at,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export const notificationOut = (r: Row) => ({
+  _id: r.id,
+  recipientAdminId: r.recipient_admin_id,
+  type: r.type,
+  title: r.title,
+  message: r.message,
+  entityType: r.entity_type,
+  entityId: r.entity_id,
+  userId: r.candidate_id,
+  metadata: r.metadata ?? {},
+  isRead: r.is_read,
+  readAt: r.read_at,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});

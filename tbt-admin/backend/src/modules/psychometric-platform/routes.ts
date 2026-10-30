@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { canUsePsychometric } from '../../lib/psychometric/access.js';
 import * as content from './content.controller.js';
+import * as results from './results.controller.js';
+import * as voice from './voice.controller.js';
 
 const DENIED = 'Psychometric Admin is available to Admin and Super Admin only.';
 
@@ -62,4 +64,37 @@ export async function psychometricPlatformAdminRoutes(fastify: FastifyInstance) 
 
   fastify.get('/admin/settings', content.getSettings);
   fastify.post('/admin/settings', content.updateSettings);
+
+  // Candidates ("Users"). TBT members are candidates through their member
+  // record, so the old create-login / verify-email endpoints don't exist here.
+  fastify.get('/admin/users', results.listCandidates);
+  fastify.delete('/admin/users/:id', results.deleteCandidate);
+
+  fastify.get('/admin/dashboard', results.getDashboard);
+  fastify.get('/admin/results', results.listResults);
+  fastify.get('/admin/results/user/:userId', results.resultsByCandidate);
+  fastify.get('/admin/results/:id', results.getResult);
+  fastify.delete('/admin/results/:id', results.deleteResult);
+  fastify.get('/admin/export/pdf', results.exportPdf);
+  fastify.get('/admin/export/csv', results.exportCsv);
+
+  fastify.get('/admin/retest-requests', results.listRetestRequests);
+  fastify.get('/admin/retest-requests/:id', results.getRetestRequest);
+  fastify.post('/admin/retest-requests/:id/approve', results.approveRetest);
+  fastify.post('/admin/retest-requests/:id/reject', results.rejectRetest);
+
+  fastify.get('/admin/notifications', results.listNotifications);
+  fastify.get('/admin/notifications/unread-count', results.unreadNotificationCount);
+  fastify.post('/admin/notifications/read-all', results.markAllNotificationsRead);
+  fastify.post('/admin/notifications/:id/read', results.markNotificationRead);
+
+  fastify.get('/admin/tts/settings', voice.getVoiceSettings);
+  fastify.put('/admin/tts/settings', voice.updateVoiceSettings);
+  fastify.get('/admin/tts/status', voice.voiceStatus);
+  fastify.post('/admin/tts/questions/:id/generate', voice.generateQuestionAudio);
+  fastify.get('/admin/tts/questions/:id/preview', voice.previewQuestionAudio);
+  fastify.delete('/admin/tts/questions/:id', voice.deleteQuestionAudio);
+  fastify.post('/admin/tts/questions/:id/generate-explanation', voice.generateExplanationAudio);
+  fastify.get('/admin/tts/questions/:id/preview-explanation', voice.previewExplanationAudio);
+  fastify.delete('/admin/tts/questions/:id/explanation', voice.deleteExplanationAudio);
 }
