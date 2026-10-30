@@ -368,7 +368,16 @@ describe("WeeklyActivityGraph", () => {
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
       expect(Number(l.getAttribute("stroke-width"))).toBe(3);
       expect(l.getAttribute("stroke-linecap")).toBe("round");
-      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("4");
+      // Revenue points: white centre + solid red (accent) ring — unlike any task-status marker.
+      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) {
+        expect(dot.getAttribute("fill")).toBe("#ffffff");
+        expect(dot.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
+        expect(dot.getAttribute("stroke-width")).toBe("2.5");
+        expect(dot.getAttribute("stroke-dasharray")).toBeNull();
+      }
+      const taskStyles = [...container.querySelectorAll('[data-testid="activity-marker"] circle:not([fill="transparent"])')]
+        .map((c) => `${c.getAttribute("fill")}|${c.getAttribute("stroke-dasharray")}`);
+      expect(taskStyles).not.toContain("#ffffff|null"); // no task marker looks like a revenue point
       const lastMarker = [...container.querySelectorAll('[data-testid="activity-marker"]')].at(-1)!;
       expect(lastMarker.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       expect(l.getAttribute("pointer-events")).toBe("none");
