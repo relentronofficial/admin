@@ -140,7 +140,8 @@ export async function getQuestions(req: Req, reply: FastifyReply) {
     ...s,
     questions: s.questions.map(({ typeId: _t, ...q }) => q),
   }));
-  return reply.send({ success: true, data: sections, remainingSeconds });
+  // `session`: the live attempt, if any — the user app resumes it instead of starting a new one.
+  return reply.send({ success: true, data: sections, remainingSeconds, session: session ? { sessionId: session.id, expiresAt: session.expires_at } : null });
 }
 
 // ── POST /start ────────────────────────────────────────────────────────────
@@ -165,7 +166,8 @@ export async function startSession(req: Req, reply: FastifyReply) {
     if (live) {
       const dead = Date.now() > new Date(live.expires_at).getTime() + SUBMIT_GRACE_MS;
       if (!dead && !approvedRetest) {
-        return { status: 409, body: { success: false, sessionId: live.id, expiresAt: live.expires_at, message: 'Assessment already in progress.' } };
+        // The old API answered 409 here; the user app's API client drops error bodies, so resuming is a success.
+        return { status: 200, body: { success: true, resumed: true, sessionId: live.id, startedAt: live.started_at, expiresAt: live.expires_at, attemptNumber: live.attempt_number, message: 'Assessment already in progress.' } };
       }
       await t.$executeRawUnsafe(`UPDATE psy_sessions SET status = 'expired' WHERE id = $1`, live.id);
     }

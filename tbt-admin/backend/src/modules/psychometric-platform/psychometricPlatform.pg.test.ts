@@ -392,6 +392,7 @@ suite('psychometric platform (real Postgres)', () => {
     const r = await callMember(member.getQuestions, M1);
     expect(r.status).toBe(200);
     expect(r.body.remainingSeconds).toBe(20 * 60);
+    expect(r.body.session).toBeNull();
     expect(r.body.data.map((s: any) => s.typeName)).toEqual(['Communication', 'Leadership']);
     const flat = JSON.stringify(r.body.data);
     for (const secret of ['"score"', 'isCorrect', 'correctOptionId', 'idealOrder', 'dimensionScores', 'scoringMode']) expect(flat).not.toContain(secret);
@@ -409,8 +410,9 @@ suite('psychometric platform (real Postgres)', () => {
     const [cand] = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM psy_candidates`);
     expect(cand).toMatchObject({ member_id: M1, source: 'tbt', name: 'Ravi Kumar', email: 'ravi@tbt.test', candidate_code: 'TBT-M-TBT0001', access_code_id: codeId, access_code: 'TBTMEMBERS' });
     const again = await callMember(member.startSession, M1);
-    expect(again.status).toBe(409);
-    expect(again.body.sessionId).toBe(start.body.sessionId);
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ resumed: true, sessionId: start.body.sessionId, attemptNumber: 1 });
+    expect((await callMember(member.getQuestions, M1)).body.session.sessionId).toBe(start.body.sessionId);
 
     const sid = start.body.sessionId;
     expect((await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3).slice(0, 2) } })).body.message)
@@ -434,7 +436,8 @@ suite('psychometric platform (real Postgres)', () => {
   it('member flow: concurrent starts make one session; concurrent submits score once', async () => {
     const { q1, q2, q3 } = await setUpMembersAssessment();
     const starts = await Promise.all([1, 2, 3].map(() => callMember(member.startSession, M1)));
-    expect(starts.map((s) => s.status).sort()).toEqual([201, 409, 409]);
+    expect(starts.map((s) => s.status).sort()).toEqual([200, 200, 201]);
+    expect(starts.filter((s) => s.body.resumed)).toHaveLength(2);
     expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_sessions`)).toHaveLength(1);
     expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_candidates`)).toHaveLength(1);
     const sid = starts.find((s) => s.status === 201)!.body.sessionId;
