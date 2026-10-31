@@ -5,7 +5,7 @@ import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
 import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
-import { backfillNewDefaultMilestones, loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows } from '../../lib/weeklyGraphConfigData.js';
+import { backfillNewDefaultMilestones, loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
 import { revenueEntriesForProgram } from '../../lib/weeklyGraphRevenue.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
@@ -308,6 +308,10 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     loadMemberGraphRecords(prisma, memberId),
     loadMemberRevenueRows(prisma, memberId),
   ]);
+  // Program never configured: default weeks over the same span the admin page shows.
+  const defaultSpanDays = !graphConfig.weeks && batch.programId
+    ? await loadProgramWeekSpanDays(prisma, batch.programId)
+    : undefined;
 
   const baseDays = batch.snapshotDays ?? batch.program?.durationDays ?? 90;
   const totalDays = baseDays + (settings[0]?.extended_days ?? 0);
@@ -330,6 +334,7 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     records: graphRecords,
     // This member's own reported revenue (Your Revenue Stats), for revenue milestones.
     revenue: revenueEntriesForProgram(revenueRows, new Date(batch.startsAt)),
+    defaultSpanDays,
   });
 
   return reply.send({ success: true, data: graph, error: null });

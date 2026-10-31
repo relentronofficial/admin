@@ -36,6 +36,9 @@ interface Store {
   members: Array<{ id: string; firstName: string; lastName: string; batchId: string | null }>;
   /** member_revenue_reports: the member's own weekly figure ("Your Revenue Stats"), per IST ISO week. */
   revenues: Array<{ memberId: string; isoYear: number; isoWeek: number; revenue: number | null }>;
+  /** The test batch (of PROGRAM): batches.snapshot_days (null = the program's length) and the member's member_batch_settings.extended_days. */
+  batchSnapshotDays: number | null;
+  extendedDays: number;
 }
 let db: Store;
 const unhandled: string[] = [];
@@ -182,9 +185,16 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('SELECT milestone_id::text AS "milestoneId", week_id::text AS "weekId" FROM member_graph_milestone_records')) {
     return db.records.filter((r) => r.memberId === a[0]).map((r) => ({ milestoneId: r.milestoneId, weekId: r.weekId }));
   }
-  if (q.startsWith('SELECT extended_days FROM member_batch_settings')) return [];
-  if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue FROM member_revenue_reports')) {
-    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue }));
+  if (q.startsWith('SELECT extended_days FROM member_batch_settings')) return db.extendedDays ? [{ extended_days: db.extendedDays }] : [];
+  if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue, created_at AS "reportedAt" FROM member_revenue_reports')) {
+    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue, reportedAt: null }));
+  }
+  if (q.startsWith('SELECT GREATEST( COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0)')) {
+    // loadProgramWeekSpanDays: program length, the batch's length (snapshot null → program's) + extra days, latest active activity day.
+    const p = db.programs.find((x) => x.id === a[0]);
+    const batchDays = a[0] === PROGRAM ? (db.batchSnapshotDays ?? p!.durationDays) + db.extendedDays : 0;
+    const taskDays = db.tasks.filter((t) => t.isActive && t.programId === a[0]).map((t) => t.dayNumber);
+    return [{ days: Math.max(p?.durationDays ?? 0, batchDays, ...taskDays, 0) }];
   }
   if (q.startsWith('SELECT id::text, title, day_number, sort_order, is_required')) {
     const [batchId, programId, memberId] = a;
@@ -237,7 +247,7 @@ function server() {
         }),
         findMany: vi.fn(async () => []),
       },
-      batch: { findUnique: vi.fn(async () => ({ programId: PROGRAM, snapshotDays: null, startsAt: new Date(Date.now() - 19 * DAY), program: { durationDays: 28 } })) },
+      batch: { findUnique: vi.fn(async () => ({ programId: PROGRAM, snapshotDays: db.batchSnapshotDays, startsAt: new Date(Date.now() - 19 * DAY), program: { durationDays: db.programs[0].durationDays } })) },
       memberDayProgress: { findMany: vi.fn(async () => []) },
     },
   };
@@ -285,6 +295,8 @@ beforeEach(() => {
       { id: OTHER_MEMBER, firstName: 'Ravi', lastName: 'S', batchId: BATCH },
     ],
     revenues: [],
+    batchSnapshotDays: null,
+    extendedDays: 0,
   };
 });
 
@@ -301,6 +313,33 @@ describe('before any configuration (backward compatibility)', () => {
     expect(g.config.source).toBe('default');
     expect(g.weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
     expect(g.weeks[0].progressLevel).toBe(3); // approved "Ads" milestone, 1 of 1 → Funnels cap
+  });
+
+  it('28-day program, 35-day batch: admin defaults and the member graph both list W1–W5; saving the defaults keeps W5', async () => {
+    db.batchSnapshotDays = 35;
+    const span = [['W1', 1, 7], ['W2', 8, 14], ['W3', 15, 21], ['W4', 22, 28], ['W5', 29, 35]];
+    expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
+    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
+    await call(graph.initializeHandler, { params: P });
+    expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+  });
+
+  it("a member's extra days count too: 28-day program + 7 extra days → W1–W5 on both sides", async () => {
+    db.extendedDays = 7;
+    expect((await config()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect((await memberGraph(OTHER_MEMBER)).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+  });
+
+  it('saved custom weeks are kept exactly, whatever the batch length', async () => {
+    await call(graph.initializeHandler, { params: P }); // 28 days → W1–W4 saved
+    const w4 = (await config()).weeks[3];
+    await call(graph.updateWeekHandler, { params: { ...P, id: w4.id }, body: { label: 'Final stretch', endDay: 30 } });
+    db.batchSnapshotDays = 42; // the batch now runs longer — saved weeks are never regenerated
+    const saved = [['W1', 1, 7], ['W2', 8, 14], ['W3', 15, 21], ['Final stretch', 22, 30]];
+    expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(saved);
+    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(saved);
   });
 });
 

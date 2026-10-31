@@ -69,6 +69,38 @@ export function defaultWeeks(totalDays: number): Array<{ label: string; startDay
   return out;
 }
 
+/**
+ * The ₹ amount a revenue row's own label names — "1 lakh", "5 Lakhs", "₹1 Crore",
+ * "2.5 crores", "50L", "1 Cr", "₹1,00,000", "10k" — or null when the label names
+ * no amount. Same rule as the website's amountFromRevenueLabel
+ * (tbt-user-web/components/features/batch/weeklyGraphRevenueAxis.ts); keep the two identical.
+ */
+export function amountFromRevenueLabel(label: string | null | undefined): number | null {
+  const s = String(label ?? '').toLowerCase().replace(/₹|rs\.?|inr/g, '').replace(/,/g, '').trim();
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(crores?|cr|lakhs?|lacs?|l|thousand|k)?$/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  const unit = m[2] ?? '';
+  const mult = unit.startsWith('cr') ? 1_00_00_000
+    : unit.startsWith('la') || unit === 'l' ? 1_00_000
+    : unit === 'k' || unit === 'thousand' ? 1_000
+    : 1;
+  const v = Math.round(n * mult);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+/**
+ * The amount a revenue milestone stands for — the one rule the graph uses for the
+ * revenue points, the reached milestones (diamonds) and the line: the admin-set
+ * threshold, or, when none is set, the amount the milestone's label names. null
+ * for activity milestones and for a revenue row whose label names no amount.
+ */
+export function effectiveRevenueThreshold(m: { kind: MilestoneKind; label: string; threshold?: number | null }): number | null {
+  if (m.kind !== 'revenue') return null;
+  if (typeof m.threshold === 'number' && m.threshold > 0) return m.threshold;
+  return amountFromRevenueLabel(m.label);
+}
+
 /** Turn stored rows into the graph config (active items only, in admin order). */
 export function resolveGraphConfig(rows: { weeks: GraphWeekRow[]; milestones: GraphMilestoneRow[] }): GraphConfig {
   const byOrder = <T extends { sortOrder: number; label: string }>(a: T, b: T) => a.sortOrder - b.sortOrder || a.label.localeCompare(b.label);

@@ -17,7 +17,7 @@ import {
   type GraphMilestoneRow,
   type GraphWeekRow,
 } from '../../lib/weeklyGraphConfig.js';
-import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows } from '../../lib/weeklyGraphConfigData.js';
+import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 
 type P = { programId: string };
@@ -75,11 +75,14 @@ export async function getConfigHandler(req: FastifyRequest<{ Params: P }>, reply
   await backfillNewDefaultMilestones(prisma, program.id).catch(() => {});
   const [rows, activities] = await Promise.all([loadProgramGraphRows(prisma, program.id), listActivities(prisma, program.id)]);
   const saved = rows.weeks.length > 0 || rows.milestones.length > 0;
+  // Default weeks span the longest any member of the program runs — the same span
+  // the member graph uses (loadProgramWeekSpanDays), not just the program's length.
+  const spanDays = rows.weeks.length ? 0 : Math.max(program.durationDays, await loadProgramWeekSpanDays(prisma, program.id));
   return ok(reply, {
     program,
     saved,
     // Until the first edit, show what members currently see (built-in defaults, no ids yet).
-    weeks: rows.weeks.length ? rows.weeks : defaultWeeks(program.durationDays).map((w, i) => ({ id: null, ...w, sortOrder: i, isActive: true })),
+    weeks: rows.weeks.length ? rows.weeks : defaultWeeks(spanDays).map((w, i) => ({ id: null, ...w, sortOrder: i, isActive: true })),
     milestones: rows.milestones.length ? rows.milestones : DEFAULT_GRAPH_MILESTONES.map((m, i) => ({ id: null, ...m, sortOrder: i, isActive: true })),
     activities,
   });
