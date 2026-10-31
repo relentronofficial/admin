@@ -41,14 +41,16 @@ export interface ModuleAccessInput {
 
 /**
  * Modules the required onboarding "Business Type" answer
- * (members.product_service_type: Product-based / Service-based / Both / Other)
- * points to. Matching ignores case, spaces and hyphens. Anything else → [].
+ * (members.product_service_type: Product-based / Service-based / Coaching; older
+ * rows may still hold Both / Other) points to. Matching ignores case, spaces
+ * and hyphens. Anything else → [].
  */
 export function modulesForProductServiceType(value: string | null | undefined): string[] {
   const key = (value ?? '').toLowerCase().replace(/[^a-z]/g, '');
   switch (key) {
     case 'productbased': return ['Product'];
     case 'servicebased': return ['Service', 'Coaching'];
+    case 'coaching': return ['Coaching'];
     case 'both': return ['Product', 'Service', 'Coaching'];
     default: return [];
   }

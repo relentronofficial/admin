@@ -45,4 +45,20 @@ describe("SignupScreen", () => {
     await waitFor(() => expect(api.post).toHaveBeenLastCalledWith("/api/user-auth/verify-otp", { phone: "+447400123456", otp: "123456" }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/onboarding"));
   });
+
+  it("the Business Type dropdown offers exactly Product-based, Service-based, Coaching", () => {
+    render(<SignupScreen />);
+    const select = screen.getByDisplayValue("Business Type (optional)") as HTMLSelectElement;
+    const choices = Array.from(select.options).filter(o => !o.disabled).map(o => o.value);
+    expect(choices).toEqual(["Product-based", "Service-based", "Coaching"]);
+  });
+
+  it.each(["Product-based", "Service-based", "Coaching"])("selecting %s sends it with the signup", async (type) => {
+    api.post.mockResolvedValueOnce({ success: true, data: { step: "otp_required", phone: "+919812345678" } });
+    render(<SignupScreen />);
+    fireEvent.change(screen.getByDisplayValue("Business Type (optional)"), { target: { value: type } });
+    fill("+919812345678");
+    await waitFor(() => expect(api.post).toHaveBeenCalledTimes(1));
+    expect(api.post).toHaveBeenCalledWith("/api/user-auth/signup", expect.objectContaining({ productServiceType: type }));
+  });
 });

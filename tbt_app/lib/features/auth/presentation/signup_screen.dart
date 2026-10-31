@@ -13,8 +13,7 @@ import '../../../shared/theme/theme_tokens.dart';
 const _kBusinessTypes = [
   'Product-based',
   'Service-based',
-  'Both',
-  'Other',
+  'Coaching',
 ];
 
 class SignupScreen extends ConsumerStatefulWidget {

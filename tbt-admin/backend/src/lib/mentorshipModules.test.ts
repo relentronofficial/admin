@@ -184,6 +184,9 @@ describe('modulesForProductServiceType (onboarding "Business Type")', () => {
     expect(modulesForProductServiceType('product based')).toEqual(['Product']);
     expect(modulesForProductServiceType('Service-based')).toEqual(['Service', 'Coaching']);
     expect(modulesForProductServiceType('SERVICE-BASED')).toEqual(['Service', 'Coaching']);
+    expect(modulesForProductServiceType('Coaching')).toEqual(['Coaching']);
+    expect(modulesForProductServiceType('coaching')).toEqual(['Coaching']);
+    // Legacy values from before signup dropped Both/Other keep their mapping.
     expect(modulesForProductServiceType('Both')).toEqual(['Product', 'Service', 'Coaching']);
     expect(modulesForProductServiceType('Other')).toEqual([]);
     expect(modulesForProductServiceType(null)).toEqual([]);
