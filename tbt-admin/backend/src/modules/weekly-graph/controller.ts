@@ -151,7 +151,10 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
   const prisma = req.server.prisma;
   const week = (await weekRows(prisma, program.id)).find((w) => w.id === req.params.id);
   if (!week) return fail(reply, 404, 'Week not found in this program');
-  // Never orphan history: a week that activities or member records use can only be disabled.
+  // Never orphan history: graph_week_id / week_id are ON DELETE SET NULL, so a plain
+  // delete would drop the week's activities (whose days no other week covers) and its
+  // member records off the graph. A week in use is only deleted together with an
+  // explicit target week (?moveTo=<weekId>) that takes over its activities and records.
   const [use] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT
        (SELECT COUNT(*)::int FROM tasks WHERE graph_week_id = $2::uuid) AS linked,
@@ -160,8 +163,31 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
        (SELECT COUNT(*)::int FROM member_graph_milestone_records WHERE week_id = $2::uuid) AS records`,
     program.id, week.id, week.startDay, week.endDay,
   );
-  if (use.linked + use.by_day + use.records > 0) {
-    return fail(reply, 409, `"${week.label}" has ${use.linked + use.by_day} activities and ${use.records} member records. Disable it instead of deleting.`);
+  const activities = use.linked + use.by_day;
+  const moveTo = (req.query as any)?.moveTo;
+  if (activities + use.records > 0 && !moveTo) {
+    return fail(reply, 409, `"${week.label}" has ${activities} activities and ${use.records} member records. Choose a week to move them to before deleting.`);
+  }
+  if (activities + use.records > 0) {
+    const target = (await weekRows(prisma, program.id)).find((w) => w.id === moveTo);
+    if (!target || target.id === week.id) return fail(reply, 400, 'Choose another week of this program to move the activities and member records to');
+    // One transaction: the activities and records get the target week (their days are
+    // unchanged, so members' checklists are untouched), then the now-unused week goes.
+    await prisma.$transaction(async (tx: any) => {
+      await tx.$executeRawUnsafe(
+        `UPDATE tasks SET graph_week_id = $3::uuid
+         WHERE graph_week_id = $2::uuid
+            OR (program_id = $1::uuid AND batch_id IS NULL AND graph_week_id IS NULL AND day_number BETWEEN $4 AND $5)`,
+        program.id, week.id, target.id, week.startDay, week.endDay,
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE member_graph_milestone_records SET week_id = $2::uuid WHERE week_id = $1::uuid`,
+        week.id, target.id,
+      );
+      await tx.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
+    });
+    changed(req, program.id, 'graph_week_deleted');
+    return ok(reply, { deleted: week.id, movedTo: target.id, activities, records: use.records });
   }
   await prisma.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
   changed(req, program.id, 'graph_week_deleted');
