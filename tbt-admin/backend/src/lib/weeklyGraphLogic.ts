@@ -10,6 +10,7 @@
 import { getWeekNumber } from './weekChecklistLogic.js';
 import {
   defaultWeeks,
+  effectiveRevenueThreshold,
   milestoneIndexForLabel,
   resolveGraphConfig,
   taskProgressCap,
@@ -127,12 +128,13 @@ export interface WeeklyGraph {
  *   • an admin-approved task linked to this activity milestone
  *     (tasks.graph_milestone_id, or the legacy is_milestone + milestone_label),
  *     within the same task cap the graph uses (tasks never prove revenue); or
- *   • the member's reported revenue: a revenue milestone with an admin-set
- *     threshold is reached once the running total of reported revenue is at
- *     or above it (never from tasks, never from a threshold alone); or
+ *   • the member's reported revenue: a revenue milestone is reached once the
+ *     running total of reported revenue is at or above its amount — the
+ *     admin-set threshold, or the amount its label names when none is set
+ *     (effectiveRevenueThreshold; never from tasks); or
  *   • an admin/mentor-recorded achievement (member_graph_milestone_records).
- * A built-in default milestone (id null — program settings never saved) has no
- * threshold and can have no recorded achievement, so it is never reached.
+ * A built-in default milestone (id null — program settings never saved) can have
+ * no recorded achievement, so only reported revenue can reach it.
  */
 export interface GraphMilestoneStatus {
   id: string | null;
@@ -282,6 +284,12 @@ export function buildWeeklyGraph(params: {
   records?: GraphRecordInput[];
   /** This member's reported revenue placed on program days (weeklyGraphRevenue.ts). Omitted/null → no revenue data. */
   revenue?: RevenueEntry[] | null;
+  /**
+   * Program never configured: the day span its default weeks cover — the same
+   * span the admin Weekly Graph page shows (loadProgramWeekSpanDays), so both
+   * list the same weeks. Omitted → this member's own days only.
+   */
+  defaultSpanDays?: number;
 }): WeeklyGraph {
   const { memberId, submissions, dayProgress, totalDays, currentDay } = params;
   const config = params.config ?? resolveGraphConfig({ weeks: [], milestones: [] });
@@ -318,7 +326,7 @@ export function buildWeeklyGraph(params: {
   if (config.weeks) {
     slots = config.weeks.map((w) => ({ ...w }));
   } else {
-    slots = defaultWeeks(lastDay).map((w) => ({ id: null, ...w }));
+    slots = defaultWeeks(Math.max(lastDay, params.defaultSpanDays ?? 0)).map((w) => ({ id: null, ...w }));
   }
 
   const today = Math.min(Math.max(currentDay, 1), Math.max(lastDay, 1));
@@ -412,13 +420,16 @@ export function buildWeeklyGraph(params: {
 
   // Reported revenue (the "Your Revenue Stats" figure). A week's point reaches a
   // revenue milestone once the running total up to that week's end is at or
-  // above the milestone's admin-set threshold. No data → no revenue level and
-  // no revenue milestone reached; a milestone without a threshold is never
-  // reached from revenue.
+  // above the milestone's amount: its admin-set threshold, or, when none is set,
+  // the amount its label names (effectiveRevenueThreshold — the same rule the
+  // website uses to place the revenue points). No data → no revenue level and
+  // no revenue milestone reached; a row with neither is never reached from revenue.
   const revenue = (params.revenue ?? []).filter((e) => Number.isFinite(e.amount));
   const hasRevenue = revenue.length > 0;
   const revenueLevelByWeek = new Array<number>(weeks.length).fill(0);
-  const thresholds = milestones.map((m) =>
+  const thresholds = milestones.map((m) => effectiveRevenueThreshold(m));
+  // What the response reports as `threshold`: only what the admin set (unchanged).
+  const configuredThresholds = milestones.map((m) =>
     m.kind === 'revenue' && typeof m.threshold === 'number' && m.threshold > 0 ? m.threshold : null,
   );
   const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -494,7 +505,7 @@ export function buildWeeklyGraph(params: {
         kind: m.kind,
         reached: milestoneReached[i],
         dayNumber: m.kind === 'activity' ? milestoneDay[i] : null,
-        threshold: thresholds[i],
+        threshold: configuredThresholds[i],
         reachedBy: reachedBy[i],
         reachedWeek: reachedWeekIdx[i] >= 0 ? reachedWeekIdx[i] + 1 : null,
       })),

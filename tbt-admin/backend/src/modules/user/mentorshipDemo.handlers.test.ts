@@ -26,10 +26,15 @@ const REAL_SOCIAL_ROW = { total_followers: 50, updated_at: null };
 const REAL_TASK = { id: 'real-task-1', title: 'Real task', day_number: 2, sort_order: 0, is_required: true, member_id: null, is_milestone: false, milestone_label: null };
 const EMAILS: Record<string, string> = { [TARGET_ID]: TARGET_EMAIL, [OTHER_ID]: 'other@example.com' };
 
-function harness(memberId: string, opts: { emails?: Record<string, string>; batch?: boolean; body?: any; query?: any; headers?: any } = {}) {
+function harness(memberId: string, opts: {
+  emails?: Record<string, string>; batch?: boolean; body?: any; query?: any; headers?: any;
+  /** The batch's program (null = none) and its default-week span (loadProgramWeekSpanDays). */
+  programId?: string | null; spanDays?: number;
+} = {}) {
   const emails = opts.emails ?? EMAILS;
   const inBatch = opts.batch ?? true;
   const queryRaw = vi.fn(async (sql: string) => {
+    if (sql.includes('SELECT GREATEST(')) return [{ days: opts.spanDays ?? 0 }];
     if (sql.includes('member_revenue_reports')) return [REAL_REVENUE_ROW];
     if (sql.includes('member_social_reports')) return [REAL_SOCIAL_ROW];
     if (sql.includes('FROM tasks')) return [REAL_TASK];
@@ -54,7 +59,7 @@ function harness(memberId: string, opts: { emails?: Record<string, string>; batc
         member: { findUnique },
         batch: {
           findUnique: vi.fn(async () => ({
-            startsAt: STARTS_AT, snapshotDays: null, name: 'Batch', programId: null, program: { name: 'TBT – eComm Mastery', durationDays: 90 },
+            startsAt: STARTS_AT, snapshotDays: null, name: 'Batch', programId: opts.programId ?? null, program: { name: 'TBT – eComm Mastery', durationDays: 90 },
           })),
         },
         courseStreak: { findUnique: vi.fn(async () => ({ currentStreak: 3 })) },
@@ -146,6 +151,22 @@ describe('Weekly Activity Graph overlay (GET /api/user-batch/weekly-graph)', () 
     expect(h.sent.headers['x-tbt-demo']).toBeUndefined();
     const ids = h.sent.body.data.weeks.flatMap((w: any) => w.activities.map((a: any) => a.taskId));
     expect(ids).toEqual(['real-task-1']);
+  });
+
+  it('program with no saved weeks: the demo graph uses the same week span as the real graph and the admin page', async () => {
+    // 90-day batch, but the program's span is 98 days (e.g. another batch or a member runs longer) → 14 weeks.
+    const opts = { programId: '70000000-0000-4000-8000-000000000001', spanDays: 98 };
+    const demo = (await call(userBatch.getMyWeeklyGraphHandler, TARGET_ID, opts)).sent;
+    const real = (await call(userBatch.getMyWeeklyGraphHandler, OTHER_ID, opts)).sent;
+    expect(demo.headers['x-tbt-demo']).toBe('mentorship');
+    const weeks = (g: any) => g.weeks.map((w: any) => [w.label, w.startDay, w.endDay]);
+    expect(weeks(demo.body.data)).toHaveLength(14);
+    expect(weeks(demo.body.data)).toEqual(weeks(real.body.data));
+    expect(weeks(demo.body.data).at(-1)).toEqual(['W14', 92, 98]);
+    // No program: no span lookup, the demo's own 90 days (13 weeks) as before.
+    const none = await call(userBatch.getMyWeeklyGraphHandler, TARGET_ID);
+    expect(none.sent.body.data.weeks).toHaveLength(13);
+    expect(none.queryRaw.mock.calls.some(([sql]) => String(sql).includes('SELECT GREATEST('))).toBe(false);
   });
 
   it('demo member without a batch: no graph, same as the real endpoint', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveGraphConfig, validateMilestoneInput, type GraphMilestoneRow, type GraphWeekRow } from './weeklyGraphConfig.js';
+import { amountFromRevenueLabel, resolveGraphConfig, validateMilestoneInput, type GraphMilestoneRow, type GraphWeekRow } from './weeklyGraphConfig.js';
 import { buildWeeklyGraph, revenueProgressLevel, type GraphTaskInput } from './weeklyGraphLogic.js';
 import { isoWeekStartIst, revenueEntriesForProgram } from './weeklyGraphRevenue.js';
 
@@ -33,21 +33,48 @@ describe('revenueEntriesForProgram', () => {
   // Batch starts Wednesday 21 Oct 2026, 00:00 IST.
   const start = new Date('2026-10-20T18:30:00.000Z');
 
-  it('places each reported week on its program day; a mid-week start takes that week on day 1', () => {
+  it('no report date: each week goes on its Thursday (the program week holding most of its days)', () => {
     const e = revenueEntriesForProgram(
       [{ isoYear: 2026, isoWeek: 45, revenue: 3000 }, { isoYear: 2026, isoWeek: 43, revenue: 1000 }, { isoYear: 2026, isoWeek: 44, revenue: 2000 }],
       start,
     );
-    // W43 Mon 19 Oct (before the start) → day 1; W44 Mon 26 Oct → day 6; W45 Mon 2 Nov → day 13.
-    expect(e.map((x) => [x.isoWeek, x.dayNumber, x.amount])).toEqual([[43, 1, 1000], [44, 6, 2000], [45, 13, 3000]]);
+    // W43 Thu 22 Oct → day 2; W44 Thu 29 Oct → day 9; W45 Thu 5 Nov → day 16.
+    expect(e.map((x) => [x.isoWeek, x.dayNumber, x.amount])).toEqual([[43, 2, 1000], [44, 9, 2000], [45, 16, 3000]]);
+  });
+
+  it('a week goes on the program day the member reported it (created_at), Wednesday start', () => {
+    const at = (iso: string) => new Date(iso);
+    const e = revenueEntriesForProgram([
+      // Reported Fri 23 Oct (W43) → day 3, program week 1.
+      { isoYear: 2026, isoWeek: 43, revenue: 1000, reportedAt: at('2026-10-23T06:00:00.000Z') },
+      // Reported Tue 27 Oct 23:50 IST (W44, but still program week 1: days 1–7 = 21–27 Oct) → day 7.
+      { isoYear: 2026, isoWeek: 44, revenue: 2000, reportedAt: at('2026-10-27T18:20:00.000Z') },
+      // Reported Wed 4 Nov (W45) → day 15, program week 3.
+      { isoYear: 2026, isoWeek: 45, revenue: 3000, reportedAt: at('2026-11-04T05:00:00.000Z') },
+    ], start);
+    expect(e.map((x) => [x.isoWeek, x.dayNumber])).toEqual([[43, 3], [44, 7], [45, 15]]);
+  });
+
+  it('a report date outside its week (e.g. entered later by an admin) falls back to the Thursday', () => {
+    const e = revenueEntriesForProgram([{ isoYear: 2026, isoWeek: 44, revenue: 2000, reportedAt: new Date('2026-12-01T05:00:00.000Z') }], start);
+    expect(e.map((x) => x.dayNumber)).toEqual([9]);
+  });
+
+  it('a week reported before the batch started still counts on day 1', () => {
+    // Reported Mon 19 Oct (W43), two days before the Wednesday start.
+    const e = revenueEntriesForProgram([{ isoYear: 2026, isoWeek: 43, revenue: 1000, reportedAt: new Date('2026-10-19T05:00:00.000Z') }], start);
+    expect(e.map((x) => x.dayNumber)).toEqual([1]);
   });
 
   it("places by IST calendar date, whatever the batch start's time of day", () => {
     // Batch starts Monday 19 Oct 2026: once at 05:30 IST (stored as midnight UTC), once at 18:30 IST.
     for (const startsAt of [new Date('2026-10-19T00:00:00.000Z'), new Date('2026-10-19T13:00:00.000Z')]) {
-      const e = revenueEntriesForProgram([{ isoYear: 2026, isoWeek: 43, revenue: 1 }, { isoYear: 2026, isoWeek: 44, revenue: 2 }], startsAt);
-      // Mon 19 Oct = day 1, Mon 26 Oct = day 8: the first day of program week 2, never day 7.
-      expect(e.map((x) => x.dayNumber)).toEqual([1, 8]);
+      const e = revenueEntriesForProgram([
+        { isoYear: 2026, isoWeek: 43, revenue: 1 },
+        // Reported Mon 26 Oct 00:10 IST (Sun 25 Oct 18:40 UTC) → day 8, the first day of program week 2, never day 7.
+        { isoYear: 2026, isoWeek: 44, revenue: 2, reportedAt: new Date('2026-10-25T18:40:00.000Z') },
+      ], startsAt);
+      expect(e.map((x) => x.dayNumber)).toEqual([4, 8]);
     }
   });
 
@@ -122,14 +149,31 @@ describe('revenue milestones from reported revenue', () => {
     expect(g.revenue.totalToDate).toBeNull();
   });
 
-  it('a revenue milestone without a threshold is never reached from revenue', () => {
-    const noThreshold = REV_MS.map((m) => (m.id === 'm-1l' ? { ...m, threshold: null } : m));
-    const g = build({ config: resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: noThreshold }), revenue: [rev(3, 9_000_000)] });
-    expect(ms(g, 'm-1l')).toMatchObject({ reached: false, threshold: null });
-    expect(ms(g, 'm-5l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 1 });
-    // The built-in defaults have no thresholds at all.
-    const d = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 9, revenue: [rev(1, 9_000_000)] });
-    expect(d.config.milestones.some((m) => m.reached)).toBe(false);
+  it('no threshold set: the amount the label names is used (same rule as the website); a label naming none is never reached', () => {
+    const noThreshold = [
+      ...REV_MS.map((m) => (m.id === 'm-1l' ? { ...m, threshold: null } : m)),
+      milestone('m-big', 'Big revenue', 'revenue', 5),
+    ];
+    const g = build({ config: resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: noThreshold }), revenue: [rev(3, 60_000), rev(10, 50_000)] });
+    // "₹1 Lakh" → ₹1,00,000: reached in W2 (running ₹1,10,000); the response still reports no admin threshold.
+    expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2, threshold: null });
+    expect(ms(g, 'm-5l')).toMatchObject({ reached: false });
+    expect(ms(g, 'm-big')).toMatchObject({ reached: false, threshold: null });
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03, null]); // identical to the ₹1,00,000 threshold case
+    // The built-in default rows ("1 lakh", "5 Lakhs", "1 crore") work the same way.
+    const d = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 9, revenue: [rev(1, 9_00_000)] });
+    expect(d.config.milestones.filter((m) => m.reached).map((m) => m.label)).toEqual(['1 lakh', '5 Lakhs']);
+    expect(d.config.milestones.every((m) => m.threshold === null)).toBe(true);
+  });
+
+  it('the label rule matches the website parser', () => {
+    // Same cases as tbt-user-web weeklyGraphRevenueAxis amountFromRevenueLabel.
+    const cases: Array<[string, number | null]> = [
+      ['1 lakh', 1_00_000], ['5 Lakhs', 5_00_000], ['1 crore', 1_00_00_000], ['₹1 Crore', 1_00_00_000], ['2.5 crores', 2_50_00_000],
+      ['50L', 50_00_000], ['1 Cr', 1_00_00_000], ['₹1,00,000', 1_00_000], ['10k', 10_000], ['Rs. 25 lacs', 25_00_000],
+      ['Ads', null], ['Big revenue', null], ['', null], ['0 lakh', null],
+    ];
+    for (const [label, amount] of cases) expect([label, amountFromRevenueLabel(label)]).toEqual([label, amount]);
   });
 
   it('adding or completing an activity linked to a revenue milestone never reaches it', () => {

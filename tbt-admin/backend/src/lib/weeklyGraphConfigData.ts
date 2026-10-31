@@ -55,7 +55,7 @@ export async function loadMemberGraphRecords(prisma: Prisma, memberId: string): 
  */
 export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): Promise<RevenueWeekRow[]> {
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue
+    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue, created_at AS "reportedAt"
      FROM member_revenue_reports WHERE member_id = $1::uuid`,
     memberId,
   ).catch(() => []);
@@ -63,7 +63,35 @@ export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): P
     isoYear: Number(r.isoYear),
     isoWeek: Number(r.isoWeek),
     revenue: r.revenue === null || r.revenue === undefined ? null : Number(r.revenue),
+    reportedAt: r.reportedAt ? new Date(r.reportedAt) : null,
   }));
+}
+
+/**
+ * The day span a never-configured program's default weeks cover — the longest
+ * any member of it runs: the program's length, each of its batches' own length
+ * (snapshot_days, else the program's, as the member graph uses) plus any
+ * member's extra days, and the latest active activity day. The admin Weekly
+ * Graph page, "save the defaults", and the member graph all use this one span,
+ * so they list the same weeks. A failed read yields 0 (callers keep their own span).
+ */
+export async function loadProgramWeekSpanDays(prisma: Prisma, programId: string): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT GREATEST(
+       COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0),
+       COALESCE((SELECT MAX(COALESCE(b.snapshot_days, p.duration_days, 90) + COALESCE(s.extended_days, 0))
+                 FROM batches b JOIN programs p ON p.id = b.program_id
+                 LEFT JOIN member_batch_settings s ON s.batch_id = b.id
+                 WHERE b.program_id = $1::uuid), 0),
+       COALESCE((SELECT MAX(t.day_number) FROM tasks t
+                 WHERE t.is_active = true
+                   AND ((t.program_id = $1::uuid AND t.batch_id IS NULL)
+                        OR t.batch_id IN (SELECT id FROM batches WHERE program_id = $1::uuid))), 0)
+     )::int AS "days"`,
+    programId,
+  ).catch(() => []);
+  const days = Number((rows as any[])[0]?.days ?? 0);
+  return Number.isFinite(days) && days > 0 ? days : 0;
 }
 
 /**
@@ -126,7 +154,8 @@ export async function ensureProgramGraphConfig(prisma: Prisma, programId: string
   // Backfill any new default milestones added after this program was first initialized.
   await backfillNewDefaultMilestones(prisma, programId);
 
-  const weeks = defaultWeeks(durationDays);
+  // Same span the admin page shows and members see before the first save (Bug C).
+  const weeks = defaultWeeks(Math.max(durationDays, await loadProgramWeekSpanDays(prisma, programId)));
   if (weeks.length > 0) {
     const wValues = weeks.map((_, i) => `($${i * 4 + 2}, $${i * 4 + 3}::int, $${i * 4 + 4}::int, $${i * 4 + 5}::int)`).join(', ');
     await prisma.$executeRawUnsafe(

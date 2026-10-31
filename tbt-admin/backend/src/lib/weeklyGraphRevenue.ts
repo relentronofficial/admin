@@ -9,9 +9,17 @@
 // (row missing or revenue_generated NULL) contributes nothing — missing is
 // never read as ₹0, and nothing is estimated.
 //
-// Placement is by IST calendar date (Monday's date minus the batch start's
-// date), not by the batch start's time of day: a batch whose startsAt is, say,
-// 05:30 IST must still put a Monday's revenue on that Monday's program day.
+// A calendar week (Mon–Sun) straddles two program weeks whenever the batch did
+// not start on a Monday, so a week's figure is placed on the program day the
+// member reported it (the row's created_at — the member can only save the
+// current week, so that day lies inside the week). That is the program week
+// they were in when they reported it. A row whose report date is missing or
+// outside its week (e.g. entered later by an admin) goes on the week's Thursday:
+// the program week holding most (4 of 7) of its days.
+//
+// Placement is by IST calendar date, not by the batch start's time of day: a
+// batch whose startsAt is, say, 05:30 IST must still put a report made that
+// day on that day's program day.
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 330 * 60_000;
@@ -29,13 +37,15 @@ export interface RevenueWeekRow {
   isoWeek: number;
   /** revenue_generated; null when the member left it blank */
   revenue: number | null;
+  /** created_at — when the member first reported this week. Omitted/null → placed on the week's Thursday. */
+  reportedAt?: Date | null;
 }
 
 /** One reported week, placed on the program-day axis. */
 export interface RevenueEntry {
   isoYear: number;
   isoWeek: number;
-  /** Program day the week's revenue counts from (its Monday, or day 1 if the batch started mid-week). */
+  /** Program day the week's revenue counts on (the day it was reported in that week, else its Thursday; at least day 1). */
   dayNumber: number;
   amount: number;
 }
@@ -61,9 +71,13 @@ export function revenueEntriesForProgram(rows: RevenueWeekRow[], batchStartsAt: 
     const amount = Number(r.revenue);
     if (!Number.isFinite(amount)) continue;
     if (!Number.isInteger(r.isoYear) || !Number.isInteger(r.isoWeek) || r.isoWeek < 1 || r.isoWeek > 53) continue;
-    const mondayDay = programDayOfIstDate(batchStartsAt, isoWeekStartIst(r.isoYear, r.isoWeek));
+    const monday = isoWeekStartIst(r.isoYear, r.isoWeek);
+    const mondayDay = programDayOfIstDate(batchStartsAt, monday);
     if (mondayDay + 6 < 1) continue; // the whole week (Mon–Sun) is before the batch's first day
-    out.push({ isoYear: r.isoYear, isoWeek: r.isoWeek, dayNumber: Math.max(1, mondayDay), amount });
+    const reported = r.reportedAt instanceof Date && Number.isFinite(r.reportedAt.getTime()) ? r.reportedAt : null;
+    const reportedOffset = reported ? istDayIndex(reported) - istDayIndex(monday) : -1; // 0 = Monday … 6 = Sunday
+    const day = reportedOffset >= 0 && reportedOffset <= 6 ? mondayDay + reportedOffset : mondayDay + 3;
+    out.push({ isoYear: r.isoYear, isoWeek: r.isoWeek, dayNumber: Math.max(1, day), amount });
   }
   return out.sort((a, b) => a.dayNumber - b.dayNumber);
 }
