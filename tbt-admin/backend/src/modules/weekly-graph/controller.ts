@@ -71,6 +71,8 @@ export async function getConfigHandler(req: FastifyRequest<{ Params: P }>, reply
   const program = await loadProgram(req, reply);
   if (!program) return;
   const prisma = req.server.prisma;
+  // Backfill any default milestones added after this program was first initialized.
+  await ensureProgramGraphConfig(prisma, program.id).catch(() => {});
   const [rows, activities] = await Promise.all([loadProgramGraphRows(prisma, program.id), listActivities(prisma, program.id)]);
   const saved = rows.weeks.length > 0 || rows.milestones.length > 0;
   return ok(reply, {
