@@ -168,7 +168,16 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
   const activities = use.linked + use.by_day;
   const moveTo = (req.query as any)?.moveTo;
   if (activities + use.records > 0 && !moveTo) {
-    return fail(reply, 409, `"${week.label}" has ${activities} activities and ${use.records} member records. Choose a week to move them to before deleting.`);
+    // The destinations come from the server (this program's saved weeks, fresh from
+    // the database) so the admin's choice never depends on a stale page copy.
+    const targets = (await weekRows(prisma, program.id))
+      .filter((w) => w.id !== week.id)
+      .map((w) => ({ id: w.id, label: w.label, startDay: w.startDay, endDay: w.endDay, isActive: w.isActive }));
+    return reply.status(409).send({
+      success: false,
+      data: { activities, records: use.records, targets },
+      error: `"${week.label}" has ${activities} activities and ${use.records} member records. Choose a week to move them to before deleting.`,
+    });
   }
   if (activities + use.records > 0) {
     const target = (await weekRows(prisma, program.id)).find((w) => w.id === moveTo);

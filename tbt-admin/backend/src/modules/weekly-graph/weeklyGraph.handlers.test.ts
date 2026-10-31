@@ -339,6 +339,46 @@ describe('weeks: create, edit, reorder, enable/disable, delete', () => {
     expect((await config()).weeks).toHaveLength(3);
   });
 
+  it('the 409 carries the counts and every other saved week (active or disabled) as a destination', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const [w1, w2, w3, w4] = (await config()).weeks;
+    await call(graph.updateWeekHandler, { params: { ...P, id: w3.id }, body: { isActive: false } });
+    const r = await call(graph.deleteWeekHandler, { params: { ...P, id: w1.id } });
+    expect(r.status).toBe(409);
+    expect(r.body.data.activities).toBe(1);
+    expect(r.body.data.records).toBe(0);
+    expect(r.body.data.targets.map((t: any) => [t.id, t.label, t.isActive])).toEqual([
+      [w2.id, 'W2', true], [w3.id, 'W3', false], [w4.id, 'W4', true], // never the week being deleted
+    ]);
+  });
+
+  it('W5 (days 29–35) with 4 activities: move to W4, W5 is deleted, all 4 activities kept with their days', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const w5 = (await call(graph.createWeekHandler, { params: P, body: { label: 'W5', startDay: 29, endDay: 35 } })).body.data;
+    const ids = [29, 30, 31, 33].map((day, i) => {
+      const id = `4000000${i}-0000-4000-8000-0000000005${i}0`;
+      db.tasks.push({ id, programId: PROGRAM, batchId: null, title: `W5 task ${i + 1}`, dayNumber: day, sortOrder: i, isRequired: true,
+        isActive: true, memberId: null, weekId: null, milestoneId: null, isMilestone: false, milestoneLabel: null });
+      return id;
+    });
+    const before = db.tasks.length;
+    const blocked = await call(graph.deleteWeekHandler, { params: { ...P, id: w5.id } });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.data.activities).toBe(4);
+    const w4 = blocked.body.data.targets.find((t: any) => t.label === 'W4');
+    const res = await call(graph.deleteWeekHandler, { params: { ...P, id: w5.id }, query: { moveTo: w4.id } });
+    expect(res.status).toBe(200);
+    expect((await config()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']); // W5 removed
+    expect(db.tasks).toHaveLength(before); // nothing lost
+    for (const [i, id] of ids.entries()) {
+      const t = db.tasks.find((x) => x.id === id)!;
+      expect(t.weekId).toBe(w4.id);
+      expect(t.dayNumber).toBe([29, 30, 31, 33][i]);
+      expect(t.title).toBe(`W5 task ${i + 1}`);
+    }
+    expect(db.records).toEqual([]); // no member records touched
+  });
+
   it('deleting a week in use with ?moveTo moves its activities and member records to that week, then deletes it', async () => {
     await call(graph.initializeHandler, { params: P });
     const [w1, w2] = (await config()).weeks;
