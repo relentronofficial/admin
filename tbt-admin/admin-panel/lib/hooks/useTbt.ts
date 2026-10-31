@@ -2871,8 +2871,10 @@ export const useSaveGraphWeek = (programId: string) =>
   useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; startDay?: number; endDay?: number; isActive?: boolean }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/weeks/${id}`, body) : await apiClient.post(`${wgBase(programId)}/weeks`, body)) as any).data);
 
+// moveTo: for a week in use — the week that takes over its activities and member records.
 export const useDeleteGraphWeek = (programId: string) =>
-  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/weeks/${id}`) as any).data);
+  useWeeklyGraphMutation(programId, async ({ id, moveTo }: { id: string; moveTo?: string }) =>
+    (await apiClient.delete(`${wgBase(programId)}/weeks/${id}`, moveTo ? { params: { moveTo } } : undefined) as any).data);
 
 export const useReorderGraphWeeks = (programId: string) =>
   useWeeklyGraphMutation(programId, async (ids: string[]) => (await apiClient.put(`${wgBase(programId)}/weeks/reorder`, { ids }) as any).data);
