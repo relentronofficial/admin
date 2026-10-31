@@ -11,7 +11,7 @@ import { DEFAULT_PHONE, PhoneInput, formatPhoneInternational, phoneStatus, phone
 type Step = "form" | "otp";
 type FocusedField = "firstName" | "lastName" | "phone" | "email" | "password" | "businessName" | "city" | "state" | "otp" | null;
 
-const BUSINESS_TYPES = ["Product-based", "Service-based", "Both", "Other"] as const;
+const BUSINESS_TYPES = ["Product-based", "Service-based", "Coaching"] as const;
 
 export function SignupScreen() {
   const router = useRouter();

@@ -388,3 +388,14 @@ describe('exact unique values (deleted accounts included) and generated member I
     expect(warnings).toHaveLength(0);
   });
 });
+
+describe('business type', () => {
+  it.each(['Product-based', 'Service-based', 'Coaching'])('"%s" chosen at signup is saved on the account', async (type) => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678', productServiceType: type });
+    expect(r.status).toBe(201);
+    const v = await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(v.status).toBe(200);
+    expect(members).toHaveLength(1);
+    expect(members[0].productServiceType).toBe(type);
+  });
+});
