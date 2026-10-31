@@ -1107,7 +1107,7 @@ class _ProfileStep extends StatelessWidget {
             onChanged: onChanged,
             key: 'productServiceType',
             label: 'Business Type *',
-            options: const ['Product-based', 'Service-based', 'Both', 'Other'],
+            options: const ['Product-based', 'Service-based', 'Coaching'],
           ),
           Row(children: [
             Expanded(child: _field(profile, onChanged, 'businessStartedFrom', 'Business Started From')),

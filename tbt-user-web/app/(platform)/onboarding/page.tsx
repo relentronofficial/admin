@@ -1049,8 +1049,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     <option value="" disabled>Select…</option>
                     <option value="Product-based">Product-based</option>
                     <option value="Service-based">Service-based</option>
-                    <option value="Both">Both</option>
-                    <option value="Other">Other</option>
+                    <option value="Coaching">Coaching</option>
                   </select>
                   <FieldError error={errors.productServiceType} />
                 </div>
