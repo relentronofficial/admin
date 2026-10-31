@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { useEffect, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -132,8 +133,55 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
 ];
 
+// Every page renders its own <DashboardLayout>, so the Sidebar remounts on each
+// navigation and a fresh <nav> starts at scrollTop 0. Keep the position outside
+// the component (module scope survives client navigation; sessionStorage
+// survives a reload) and restore it before paint.
+const SCROLL_KEY = "tbt_admin_sidebar_scroll";
+let savedScrollTop: number | null = null;
+
+function readSavedScrollTop(): number {
+  if (savedScrollTop !== null) return savedScrollTop;
+  try {
+    savedScrollTop = Number(sessionStorage.getItem(SCROLL_KEY)) || 0;
+  } catch {
+    savedScrollTop = 0;
+  }
+  return savedScrollTop;
+}
+
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 export function Sidebar() {
   const pathname = usePathname();
+  const navRef = useRef<HTMLElement>(null);
+
+  useIsomorphicLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.scrollTop = readSavedScrollTop();
+
+    // Only move if the active item is out of view (e.g. a deep link or reload).
+    const active = nav.querySelector<HTMLElement>("[data-active='true']");
+    if (active) {
+      const top = active.offsetTop - nav.offsetTop;
+      const bottom = top + active.offsetHeight;
+      if (top < nav.scrollTop) nav.scrollTop = top;
+      else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight;
+    }
+    savedScrollTop = nav.scrollTop;
+  }, [pathname]);
+
+  const handleNavScroll = () => {
+    const nav = navRef.current;
+    if (!nav) return;
+    savedScrollTop = nav.scrollTop;
+    try {
+      sessionStorage.setItem(SCROLL_KEY, String(nav.scrollTop));
+    } catch {
+      // storage unavailable — module-scope value still covers client navigation
+    }
+  };
   const { data: me } = useMe();
   const displayName = me?.fullName || "Admin";
   const initial = displayName.charAt(0).toUpperCase();
@@ -148,7 +196,7 @@ export function Sidebar() {
         <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-9 w-auto object-contain" />
       </div>
 
-      <nav className="flex-1 py-3 overflow-y-auto">
+      <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 py-3 overflow-y-auto">
         {navGroups.map((group, gi) => (
           <div key={gi} className="mb-1">
             {group.label && (
@@ -163,6 +211,7 @@ export function Sidebar() {
                 <Link
                   key={item.name}
                   href={item.href}
+                  data-active={isActive}
                   className={cn(
                     "flex items-center gap-2.5 px-5 py-2 text-[13px] font-normal transition-all border-l-2",
                     isActive
