@@ -7,12 +7,13 @@ import {
   Instagram, RefreshCw, Unlink,
 } from "lucide-react";
 import {
-  useMentorshipStats, useMentorshipRevenue, useUpsertMentorshipRevenue, useMentorshipRevenueHistory,
-  useMentorshipSocial, useUpsertMentorshipSocial,
+  useMentorshipStats, useMentorshipRevenue, useMentorshipRevenueHistory,
+  useMentorshipSocial,
   useInstagramStatus, useInstagramConnect, useInstagramDisconnect, useInstagramSync,
 } from "@/lib/hooks/useMentorship";
 import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
-import { useCourseLifelines } from "@/lib/hooks/useCourses";
+import { useCourseLifelines, useCourse } from "@/lib/hooks/useCourses";
+import { sumLessonDurations, formatSeconds, formatMinutes } from "@/lib/utils/courseDurations";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota } from "@/lib/hooks/useUser";
@@ -158,18 +159,22 @@ function KpiCard({
   value,
   metricColor = "#f5f5f7",
   note,
+  onClick,
 }: {
   label: string;
   rightLabel?: string;
   value: string;
   metricColor?: string;
   note?: string;
+  onClick?: () => void;
 }) {
+  const isEmpty = value === "—";
   return (
     <motion.div
       variants={fadeUp}
       className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
-      style={{ background: "#242428", padding: 12, height: 63 }}
+      style={{ background: "#242428", padding: 12, height: 63, cursor: onClick ? "pointer" : undefined }}
+      onClick={onClick}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
         <span className="truncate" style={{ color: "#d0cfd4", fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
@@ -178,9 +183,14 @@ function KpiCard({
       <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.35, letterSpacing: "-0.5px", color: metricColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {value}
       </div>
-      {note && (
+      {note && !isEmpty && (
         <span className="absolute" style={{ right: 10, bottom: 8, fontSize: 7, color: "#20d6a1", fontWeight: 500 }}>
           {note}
+        </span>
+      )}
+      {onClick && isEmpty && (
+        <span className="absolute" style={{ left: 12, bottom: 8, fontSize: 7, color: "#818cf8", fontWeight: 600 }}>
+          Tap to add →
         </span>
       )}
     </motion.div>
@@ -311,416 +321,6 @@ function SkeletonCard({ className }: { className?: string }) {
     <div className={`rounded-2xl animate-pulse ${className ?? ""}`} style={{ background: "rgba(255,255,255,0.05)", minHeight: 90 }} />
   );
 }
-
-// ─── Revenue Stats inline calculator ─────────────────────────────────────────
-
-type RevenueFormState = {
-  revenueGenerated: string;
-  revenuePrev: string;
-  numberOfOrders: string;
-  ordersPrev: string;
-  adBudgetSpent: string;
-  roas: string;
-  customerAcqCost: string;
-  organicLeads: string;
-  leadsPrev: string;
-  avgOrderValue: string;
-  rtoReturnsPercent: string;
-  conversionRate: string;
-  platformBadge: string;
-  dailyRevenue: string[];
-  dailyOrders: string[];
-};
-
-const EMPTY_FORM: RevenueFormState = {
-  revenueGenerated: "", revenuePrev: "",
-  numberOfOrders: "", ordersPrev: "",
-  adBudgetSpent: "", roas: "",
-  customerAcqCost: "", organicLeads: "",
-  leadsPrev: "", avgOrderValue: "",
-  rtoReturnsPercent: "", conversionRate: "", platformBadge: "",
-  dailyRevenue: ["", "", "", "", "", "", ""],
-  dailyOrders:  ["", "", "", "", "", "", ""],
-};
-
-function RevenueStatsSection() {
-  const upsert = useUpsertMentorshipRevenue();
-  const { data: revenue } = useMentorshipRevenue();
-
-  const [form, setForm] = useState<RevenueFormState>(EMPTY_FORM);
-  const [isDirty, setIsDirty] = useState(false);
-
-  useEffect(() => {
-    if (!revenue) return;
-    setForm({
-      revenueGenerated: revenue.revenueGenerated?.toString() ?? "",
-      revenuePrev: revenue.revenuePrev?.toString() ?? "",
-      numberOfOrders: revenue.numberOfOrders?.toString() ?? "",
-      ordersPrev: revenue.ordersPrev?.toString() ?? "",
-      adBudgetSpent: revenue.adBudgetSpent?.toString() ?? "",
-      roas: revenue.roas?.toString() ?? "",
-      customerAcqCost: revenue.customerAcqCost?.toString() ?? "",
-      organicLeads: revenue.organicLeads?.toString() ?? "",
-      leadsPrev: revenue.leadsPrev?.toString() ?? "",
-      avgOrderValue: revenue.avgOrderValue?.toString() ?? "",
-      rtoReturnsPercent: revenue.rtoReturnsPercent?.toString() ?? "",
-      conversionRate: revenue.conversionRate?.toString() ?? "",
-      platformBadge: revenue.platformBadge ?? "",
-      dailyRevenue: revenue.dailyRevenue?.map((v: number | null) => (v == null ? "" : String(v))) ?? ["", "", "", "", "", "", ""],
-      dailyOrders:  revenue.dailyOrders?.map((v: number | null) => (v == null ? "" : String(v)))  ?? ["", "", "", "", "", "", ""],
-    });
-    setIsDirty(false);
-  }, [revenue?.weekNumber]);
-
-  const set = (key: keyof RevenueFormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((f) => ({ ...f, [key]: e.target.value }));
-    setIsDirty(true);
-  };
-  const setDailyRev = (i: number, v: string) => {
-    setForm(f => { const arr = [...f.dailyRevenue]; arr[i] = v; return { ...f, dailyRevenue: arr }; });
-    setIsDirty(true);
-  };
-  const setDailyOrd = (i: number, v: string) => {
-    setForm(f => { const arr = [...f.dailyOrders]; arr[i] = v; return { ...f, dailyOrders: arr }; });
-    setIsDirty(true);
-  };
-
-  // Live calculations
-  const n = (v: string): number | null => (v === "" ? null : Number(v));
-  const rev = n(form.revenueGenerated);
-  const revPrev = n(form.revenuePrev);
-  const orders = n(form.numberOfOrders);
-  const ordersPrev = n(form.ordersPrev);
-  const adSpend = n(form.adBudgetSpent);
-  const roas = n(form.roas);
-  const cac = n(form.customerAcqCost);
-  const leads = n(form.organicLeads);
-  const leadsPrevVal = n(form.leadsPrev);
-  const aov = n(form.avgOrderValue);
-
-  const revGrowth = growthPct(rev, revPrev);
-  const ordersGrowth = growthPct(orders, ordersPrev);
-  const leadsGrowth = growthPct(leads, leadsPrevVal);
-  const autoAov = rev != null && orders != null && orders > 0 ? Math.round(rev / orders) : null;
-  const effectiveAov = aov ?? autoAov;
-  const btoRatio = adSpend != null && rev != null && rev > 0
-    ? Math.round((adSpend / rev) * 1000) / 10
-    : null;
-  const roasLabel = roas != null
-    ? (roas >= 3 ? "Highly Profitable" : roas >= 1.5 ? "Moderate" : "Watch Out")
-    : null;
-  const roasColor = roas != null
-    ? (roas >= 3 ? { bg: "rgba(34,197,94,0.15)", text: "#22c55e" }
-      : roas >= 1.5 ? { bg: "rgba(251,146,60,0.15)", text: "#fb923c" }
-      : { bg: "rgba(239,68,68,0.15)", text: "#ef4444" })
-    : null;
-  const btoRisk = btoRatio != null
-    ? (btoRatio < 5 ? "Low Risk" : btoRatio < 20 ? "Moderate" : "High Risk")
-    : null;
-  const btoColor = btoRatio != null
-    ? (btoRatio < 5 ? { bg: "rgba(34,197,94,0.15)", text: "#22c55e" }
-      : btoRatio < 20 ? { bg: "rgba(251,146,60,0.15)", text: "#fb923c" }
-      : { bg: "rgba(239,68,68,0.15)", text: "#ef4444" })
-    : null;
-
-  const handleSave = async () => {
-    try {
-      await upsert.mutateAsync({
-        revenueGenerated: rev,
-        revenuePrev: revPrev,
-        numberOfOrders: orders != null ? Math.round(orders) : null,
-        ordersPrev: ordersPrev != null ? Math.round(ordersPrev) : null,
-        adBudgetSpent: adSpend,
-        roas,
-        customerAcqCost: cac,
-        organicLeads: leads != null ? Math.round(leads) : null,
-        leadsPrev: leadsPrevVal != null ? Math.round(leadsPrevVal) : null,
-        avgOrderValue: aov,
-        rtoReturnsPercent: n(form.rtoReturnsPercent),
-        conversionRate: n(form.conversionRate),
-        platformBadge: form.platformBadge || null,
-        dailyRevenue: form.dailyRevenue.map(v => n(v)),
-        dailyOrders:  form.dailyOrders.map(v => n(v) != null ? Math.round(n(v)!) : null),
-      });
-      setIsDirty(false);
-      toast.success("Revenue stats saved!");
-    } catch {
-      toast.error("Failed to save.");
-    }
-  };
-
-  // Input field renderer
-  const inp = (
-    key: keyof RevenueFormState,
-    placeholder: string,
-    opts?: { prefix?: string; isAuto?: boolean; autoVal?: number | null },
-  ) => {
-    const hasAuto = opts?.isAuto && opts.autoVal != null && form[key] === "";
-    return (
-      <div className="relative">
-        {opts?.prefix && (
-          <span
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-xs pointer-events-none select-none"
-            style={{ color: "var(--color-text-subtle)" }}
-          >
-            {opts.prefix}
-          </span>
-        )}
-        <input
-          type="number"
-          min={0}
-          step="any"
-          placeholder={hasAuto ? opts!.autoVal!.toLocaleString("en-IN") : placeholder}
-          value={form[key]}
-          onChange={set(key)}
-          className="w-full rounded-xl py-2.5 text-sm text-white outline-none transition-colors"
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            border: "1px solid rgba(255,255,255,0.08)",
-            paddingLeft: opts?.prefix ? "1.6rem" : "0.75rem",
-            paddingRight: "0.75rem",
-          }}
-          onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-accent)"; e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
-          onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
-        />
-        {hasAuto && (
-          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: "rgba(255,255,255,0.06)", color: "var(--color-text-subtle)" }}>
-            auto
-          </span>
-        )}
-      </div>
-    );
-  };
-
-  // Calculated result row
-  const resultRow = (children: React.ReactNode) => (
-    <div className="flex items-center gap-2 flex-wrap pt-1.5 min-h-[22px]">{children}</div>
-  );
-
-  const badge = (label: string, colors: { bg: string; text: string }) => (
-    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: colors.bg, color: colors.text }}>
-      {label}
-    </span>
-  );
-
-  const divider = () => (
-    <div className="w-full h-px my-1" style={{ background: "rgba(255,255,255,0.06)" }} />
-  );
-
-  const groupLabel = (text: string) => (
-    <p className="text-[9px] font-bold uppercase tracking-widest mb-2.5" style={{ color: "var(--color-text-subtle)" }}>{text}</p>
-  );
-
-  const textInp = (key: keyof RevenueFormState, placeholder: string) => (
-    <input
-      type="text"
-      placeholder={placeholder}
-      value={form[key] as string}
-      onChange={(e) => { setForm(f => ({ ...f, [key]: e.target.value })); setIsDirty(true); }}
-      className="w-full rounded-xl py-2.5 px-3 text-sm text-white outline-none transition-colors"
-      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--color-accent)"; e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
-      onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; e.currentTarget.style.background = "rgba(255,255,255,0.05)"; }}
-    />
-  );
-
-  return (
-    <div className="space-y-4">
-
-      {/* ── Platform Badge ───────────────────────────────────────────── */}
-      <div>
-        {groupLabel("Platform Badge (optional)")}
-        {textInp("platformBadge", "e.g. Platinum Seller, Top Merchant…")}
-      </div>
-
-      {divider()}
-
-      {/* ── Revenue Performance ─────────────────────────────────────── */}
-      <div>
-        {groupLabel("Revenue Performance")}
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>This Week</p>
-            {inp("revenueGenerated", "0", { prefix: "₹" })}
-          </div>
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Last Week</p>
-            {inp("revenuePrev", "0", { prefix: "₹" })}
-          </div>
-        </div>
-        {resultRow(
-          <>
-            {rev != null && (
-              <span className="text-sm font-extrabold text-white">
-                ₹{rev.toLocaleString("en-IN")}
-              </span>
-            )}
-            {revGrowth != null && <GrowthBadge value={revGrowth} />}
-            {rev != null && revPrev != null && (
-              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
-                vs ₹{revPrev.toLocaleString("en-IN")} last week
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {divider()}
-
-      {/* ── Order Metrics ────────────────────────────────────────────── */}
-      <div>
-        {groupLabel("Order Metrics")}
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Orders This Week</p>
-            {inp("numberOfOrders", "0")}
-          </div>
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Orders Last Week</p>
-            {inp("ordersPrev", "0")}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Avg Order Value</p>
-            {inp("avgOrderValue", "0", { prefix: "₹", isAuto: true, autoVal: autoAov })}
-          </div>
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>RTO / Returns %</p>
-            {inp("rtoReturnsPercent", "0")}
-          </div>
-        </div>
-        {resultRow(
-          <>
-            {orders != null && (
-              <span className="text-sm font-extrabold text-white">{orders.toLocaleString("en-IN")} orders</span>
-            )}
-            {ordersGrowth != null && <GrowthBadge value={ordersGrowth} />}
-            {effectiveAov != null && (
-              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
-                Avg ₹{effectiveAov.toLocaleString("en-IN")}/order
-                {autoAov != null && aov == null && (
-                  <span className="ml-1 text-[9px]" style={{ color: "var(--color-text-subtle)" }}>(calculated)</span>
-                )}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {divider()}
-
-      {/* ── Ad Performance ───────────────────────────────────────────── */}
-      <div>
-        {groupLabel("Ad Performance")}
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Ad Budget Spent</p>
-            {inp("adBudgetSpent", "0", { prefix: "₹" })}
-          </div>
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>ROAS</p>
-            {inp("roas", "0")}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Customer Acq. Cost</p>
-            {inp("customerAcqCost", "0", { prefix: "₹" })}
-          </div>
-          {/* Revenue from ads = roas × ad spend */}
-          {roas != null && adSpend != null && (
-            <div className="flex flex-col justify-end pb-0.5">
-              <p className="text-[9px] mb-1" style={{ color: "var(--color-text-secondary)" }}>Revenue from Ads</p>
-              <p className="text-sm font-extrabold text-white">
-                ₹{Math.round(roas * adSpend).toLocaleString("en-IN")}
-              </p>
-            </div>
-          )}
-        </div>
-        {resultRow(
-          <>
-            {btoRatio != null && btoColor && (
-              <>
-                <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
-                  BTO {btoRatio}%
-                </span>
-                {badge(btoRisk!, btoColor)}
-              </>
-            )}
-            {roasLabel && roasColor && badge(roasLabel, roasColor)}
-            {cac != null && (
-              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
-                CAC ₹{cac.toLocaleString("en-IN")}
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {divider()}
-
-      {/* ── Organic Growth ───────────────────────────────────────────── */}
-      <div>
-        {groupLabel("Organic Growth")}
-        <div className="grid grid-cols-2 gap-2 mb-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads This Week</p>
-            {inp("organicLeads", "0")}
-          </div>
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Leads Last Week</p>
-            {inp("leadsPrev", "0")}
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <p className="text-[9px] mb-1.5" style={{ color: "var(--color-text-secondary)" }}>Conversion Rate %</p>
-            {inp("conversionRate", "0")}
-          </div>
-        </div>
-        {resultRow(
-          <>
-            {leads != null && (
-              <span className="text-sm font-extrabold text-white">{leads.toLocaleString("en-IN")} leads</span>
-            )}
-            {leadsGrowth != null && <GrowthBadge value={leadsGrowth} />}
-            {leads != null && effectiveAov != null && (
-              <span className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>
-                Est. ₹{Math.round(leads * effectiveAov).toLocaleString("en-IN")} organic revenue
-              </span>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* ── Weekly Chart ─────────────────────────────────────────────── */}
-      <DailyInputsGrid form={form} weekDays={weekDaysFor(revenue)} setDailyRev={setDailyRev} setDailyOrd={setDailyOrd} />
-
-      {/* ── Save button ───────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {isDirty && (
-          <motion.div
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            className="flex justify-end pt-1"
-          >
-            <button
-              onClick={handleSave}
-              disabled={upsert.isPending}
-              className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
-              style={{ background: "var(--color-accent)" }}
-            >
-              {upsert.isPending ? "Saving…" : "Save Stats"}
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getWeekDays(): { label: string; day: number }[] {
@@ -1215,69 +815,6 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
   );
 }
 
-function DailyInputsGrid({
-  form,
-  weekDays,
-  setDailyRev,
-  setDailyOrd,
-}: {
-  form: RevenueFormState;
-  weekDays: { label: string; day: number }[];
-  setDailyRev: (i: number, v: string) => void;
-  setDailyOrd: (i: number, v: string) => void;
-}) {
-  return (
-    <div>
-      {/* Daily data inputs */}
-      <div>
-        <p className="text-[9px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>Daily Inputs</p>
-        <div className="overflow-x-auto -mx-1 px-1">
-        <div className="grid grid-cols-7 gap-1.5 min-w-[320px]">
-          {weekDays.map((d, i) => (
-            <div key={i} className="flex flex-col gap-1">
-              <p className="text-[8px] font-bold text-center uppercase" style={{ color: "var(--color-text-subtle)" }}>
-                {d.label}
-              </p>
-              <input
-                type="number"
-                min={0}
-                step="any"
-                placeholder="Rev"
-                value={form.dailyRevenue[i]}
-                onChange={e => setDailyRev(i, e.target.value)}
-                className="w-full rounded-lg py-1.5 px-1.5 text-[10px] text-white outline-none text-center transition-colors"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}
-                onFocus={e => { e.currentTarget.style.borderColor = "var(--color-accent)"; }}
-                onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
-              />
-              <input
-                type="number"
-                min={0}
-                step="1"
-                placeholder="Ord"
-                value={form.dailyOrders[i]}
-                onChange={e => setDailyOrd(i, e.target.value)}
-                className="w-full rounded-lg py-1.5 px-1.5 text-[10px] text-white outline-none text-center transition-colors"
-                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-                onFocus={e => { e.currentTarget.style.borderColor = "#eab308"; }}
-                onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
-              />
-            </div>
-          ))}
-        </div>
-        </div>
-        <div className="flex items-center gap-4 mt-1.5">
-          <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-            <span className="inline-block w-3 h-0.5 rounded" style={{ background: "var(--color-accent)" }} /> Top row = Revenue (₹)
-          </span>
-          <span className="flex items-center gap-1 text-[9px]" style={{ color: "rgba(255,255,255,0.3)" }}>
-            <span className="inline-block w-3 border-t border-dashed border-yellow-400" /> Bottom row = Orders
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ─── Process status helper (shared by NowLearning + SocialGrowth) ───────────
 
@@ -1295,40 +832,13 @@ function calcProcessStatus(proc: any, programTasks: any[], mySubmissions: any[])
 
 // ─── Part 2 — Social Media Organic Growth ────────────────────────────────────
 
-type SocialFormState = {
-  totalFollowers: string;
-  followersPrev: string;
-  videoViews: string;
-  videoViewsPrev: string;
-  contentUploads: string;
-  contentUploadTarget: string;
-  interactions: string;
-  interactionsPrev: string;
-  dmLeads: string;
-  bioLinkClicks: string;
-  bioLinkClicksPrev: string;
-};
-
-const EMPTY_SOCIAL: SocialFormState = {
-  totalFollowers: "", followersPrev: "",
-  videoViews: "", videoViewsPrev: "",
-  contentUploads: "", contentUploadTarget: "7",
-  interactions: "", interactionsPrev: "",
-  dmLeads: "",
-  bioLinkClicks: "", bioLinkClicksPrev: "",
-};
 
 function SocialGrowthSection() {
-  const upsert = useUpsertMentorshipSocial();
   const { data: social } = useMentorshipSocial();
   const { data: igStatus } = useInstagramStatus();
   const igConnect = useInstagramConnect();
   const igDisconnect = useInstagramDisconnect();
   const igSync = useInstagramSync();
-
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<SocialFormState>(EMPTY_SOCIAL);
-  const [isDirty, setIsDirty] = useState(false);
 
   // Show toast when redirected back after connecting/error
   useEffect(() => {
@@ -1348,30 +858,8 @@ function SocialGrowthSection() {
     window.history.replaceState({}, "", newUrl);
   }, []);
 
-  useEffect(() => {
-    if (!social) return;
-    setForm({
-      totalFollowers:       social.totalFollowers?.toString() ?? "",
-      followersPrev:        social.followersPrev?.toString() ?? "",
-      videoViews:           social.videoViews?.toString() ?? "",
-      videoViewsPrev:       social.videoViewsPrev?.toString() ?? "",
-      contentUploads:       social.contentUploads?.toString() ?? "",
-      contentUploadTarget:  social.contentUploadTarget?.toString() ?? "7",
-      interactions:         social.interactions?.toString() ?? "",
-      interactionsPrev:     social.interactionsPrev?.toString() ?? "",
-      dmLeads:              social.dmLeads?.toString() ?? "",
-      bioLinkClicks:        social.bioLinkClicks?.toString() ?? "",
-      bioLinkClicksPrev:    social.bioLinkClicksPrev?.toString() ?? "",
-    });
-    setIsDirty(false);
-  }, [social?.weekNumber]);
 
-  const set = (key: keyof SocialFormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm(f => ({ ...f, [key]: e.target.value }));
-    setIsDirty(true);
-  };
 
-  const n = (v: string): number | null => (v === "" ? null : Number(v));
 
   // ── Display values from saved social data ───────────────────────────────────
   const followers      = social?.totalFollowers ?? null;
@@ -1393,46 +881,8 @@ function SocialGrowthSection() {
   const contentPct         = contentUploads != null && contentTarget > 0 ? Math.round((contentUploads / contentTarget) * 100) : null;
   const targetPace         = contentPct ?? 0;
 
-  // ── Form-state derived values (used inside the edit form) ───────────────────
-  const fFollowers      = n(form.totalFollowers);
-  const fFollowersPrev  = n(form.followersPrev);
-  const fVideoViews     = n(form.videoViews);
-  const fVideoViewsPrev = n(form.videoViewsPrev);
-  const fContentUploads = n(form.contentUploads);
-  const fContentTarget  = n(form.contentUploadTarget) ?? 7;
-  const fInteractions   = n(form.interactions);
-  const fInteractionsPrev = n(form.interactionsPrev);
-  const fDmLeads        = n(form.dmLeads);
-  const fBioClicks      = n(form.bioLinkClicks);
-  const fBioClicksPrev  = n(form.bioLinkClicksPrev);
 
-  const fFollowersGrowth    = growthPct(fFollowers, fFollowersPrev);
-  const fVideoGrowth        = growthPct(fVideoViews, fVideoViewsPrev);
-  const fInteractionsGrowth = growthPct(fInteractions, fInteractionsPrev);
-  const fBioGrowth          = growthPct(fBioClicks, fBioClicksPrev);
-  const fContentPct         = fContentUploads != null && fContentTarget > 0 ? Math.round((fContentUploads / fContentTarget) * 100) : null;
 
-  const handleSave = async () => {
-    try {
-      await upsert.mutateAsync({
-        totalFollowers:      fFollowers != null ? Math.round(fFollowers) : null,
-        followersPrev:       fFollowersPrev != null ? Math.round(fFollowersPrev) : null,
-        videoViews:          fVideoViews != null ? Math.round(fVideoViews) : null,
-        videoViewsPrev:      fVideoViewsPrev != null ? Math.round(fVideoViewsPrev) : null,
-        contentUploads:      fContentUploads != null ? Math.round(fContentUploads) : null,
-        contentUploadTarget: Math.round(fContentTarget),
-        interactions:        fInteractions != null ? Math.round(fInteractions) : null,
-        interactionsPrev:    fInteractionsPrev != null ? Math.round(fInteractionsPrev) : null,
-        dmLeads:             fDmLeads != null ? Math.round(fDmLeads) : null,
-        bioLinkClicks:       fBioClicks != null ? Math.round(fBioClicks) : null,
-        bioLinkClicksPrev:   fBioClicksPrev != null ? Math.round(fBioClicksPrev) : null,
-      });
-      setIsDirty(false);
-      toast.success("Social stats saved!");
-    } catch {
-      toast.error("Failed to save.");
-    }
-  };
 
   // ── Read-only display card ───────────────────────────────────────────────────
   const displayCard = (label: string, value: string, sub: React.ReactNode) => (
@@ -1449,63 +899,6 @@ function SocialGrowthSection() {
   const staticBadge = (text: string) => (
     <span className="text-[10px] font-semibold" style={{ color: "var(--color-text-subtle)" }}>{text}</span>
   );
-
-  // ── Edit form input tile ─────────────────────────────────────────────────────
-  const tile = (
-    label: string,
-    currKey: keyof SocialFormState,
-    prevKey: keyof SocialFormState | null,
-    growth: number | null,
-    badge: string,
-    opts?: { isQuota?: boolean; noGrowth?: boolean },
-  ) => {
-    const currVal = n(form[currKey]);
-    const displayVal = currVal != null ? fmtK(currVal) : "—";
-
-    return (
-      <div
-        className="rounded-xl p-3 flex flex-col gap-2"
-        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-      >
-        <p className="text-[8px] font-bold uppercase tracking-widest" style={{ color: "var(--color-text-subtle)" }}>{label}</p>
-        <div className="text-base font-extrabold text-white leading-none">{displayVal}</div>
-        <div className="flex gap-1">
-          <input
-            type="number" min={0}
-            placeholder={opts?.isQuota ? "Uploaded" : "This wk"}
-            value={form[currKey]}
-            onChange={set(currKey)}
-            className="min-w-0 flex-1 rounded-lg py-1 px-2 text-[10px] text-white outline-none"
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
-            onFocus={e => { e.currentTarget.style.borderColor = "var(--color-accent)"; }}
-            onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
-          />
-          {prevKey && (
-            <input
-              type="number" min={0}
-              placeholder={opts?.isQuota ? "Target" : "Last wk"}
-              value={form[prevKey]}
-              onChange={set(prevKey)}
-              className="min-w-0 flex-1 rounded-lg py-1 px-2 text-[10px] text-white outline-none"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}
-              onFocus={e => { e.currentTarget.style.borderColor = "#818cf8"; }}
-              onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)"; }}
-            />
-          )}
-        </div>
-        {!opts?.noGrowth && growth != null ? (
-          <GrowthBadge value={growth} />
-        ) : (
-          <span className="text-[10px] font-semibold" style={{ color: "var(--color-text-subtle)" }}>{badge}</span>
-        )}
-        {opts?.isQuota && fContentPct != null && (
-          <div className="w-full h-1 rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
-            <div className="h-1 rounded-full" style={{ width: `${Math.min(100, fContentPct)}%`, background: fContentPct >= 100 ? "#22c55e" : "var(--color-accent)", transition: "width 0.8s ease" }} />
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <motion.div variants={fadeUp} className="space-y-4">
@@ -1601,7 +994,7 @@ function SocialGrowthSection() {
         ) : null}
 
         {/* Read-only metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {displayCard("Total Followers",   followers  != null ? fmtK(followers)          : "—", <GrowthBadge value={followersGrowth} />)}
           {displayCard("Video Views",       videoViews != null ? fmtK(videoViews)         : "—", <GrowthBadge value={videoGrowth} />)}
           {displayCard("Content Uploads",   contentUploads != null ? `${contentUploads}/${contentTarget}` : "—", staticBadge("Weekly Quota"))}
@@ -1609,61 +1002,6 @@ function SocialGrowthSection() {
           {displayCard("Inbound DM Leads",  dmLeads    != null ? String(dmLeads)          : "—", staticBadge("Organic"))}
           {displayCard("Bio Link Clicks",   bioClicks  != null ? String(bioClicks)        : "—", <GrowthBadge value={bioGrowth} />)}
         </div>
-
-        {/* Toggle to show/hide the update form */}
-        <div className="flex justify-end mt-1">
-          <button
-            onClick={() => setShowForm(v => !v)}
-            className="w-full sm:w-auto text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
-            style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
-          >
-            {showForm ? "Close" : "Update social stats"}
-          </button>
-        </div>
-
-        {/* Collapsible edit form */}
-        <AnimatePresence>
-          {showForm && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <div
-                className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4 pt-4"
-                style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
-              >
-                {tile("Total Followers",   "totalFollowers",  "followersPrev",   fFollowersGrowth,    "+6.8% new fans")}
-                {tile("Video Views",       "videoViews",      "videoViewsPrev",  fVideoGrowth,        "+12.8% this wk")}
-                {tile("Content Uploads",   "contentUploads",  "contentUploadTarget", null,            "Weekly Quota", { isQuota: true, noGrowth: true })}
-                {tile("Interactions",      "interactions",    "interactionsPrev", fInteractionsGrowth, "+0.5% Increase")}
-                {tile("Inbound DM Leads",  "dmLeads",         null,              null,                "Organic", { noGrowth: true })}
-                {tile("Bio Link Clicks",   "bioLinkClicks",   "bioLinkClicksPrev", fBioGrowth,        "+16.4% CTR")}
-              </div>
-              <AnimatePresence>
-                {isDirty && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
-                    className="flex justify-end pt-4"
-                  >
-                    <button
-                      onClick={handleSave}
-                      disabled={upsert.isPending}
-                      className="px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-60"
-                      style={{ background: "var(--color-accent)" }}
-                    >
-                      {upsert.isPending ? "Saving…" : "Save Social Stats"}
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
     </motion.div>
@@ -1677,6 +1015,21 @@ function NowLearningSection() {
   const { data: batchData } = useMyBatchProgram();
 
   const item = (items as any[] | undefined)?.find((i: any) => !i.isCompleted) ?? (items as any[] | undefined)?.[0] ?? null;
+
+  // Fetch full course detail to compute durations when the server returns null
+  const { data: courseDetail } = useCourse(item?.type === "course" ? ((item as any).id as string ?? "") : "");
+  const durationDisplay: string | null = (() => {
+    if ((item as any)?.durationDisplay) return (item as any).durationDisplay as string;
+    if (!courseDetail?.lessons) return null;
+    const { videoSeconds } = sumLessonDurations(courseDetail.lessons);
+    return formatSeconds(videoSeconds);
+  })();
+  const taskDurationDisplay: string | null = (() => {
+    if ((item as any)?.taskDurationDisplay) return (item as any).taskDurationDisplay as string;
+    if (!courseDetail?.lessons) return null;
+    const { taskMinutes } = sumLessonDurations(courseDetail.lessons);
+    return formatMinutes(taskMinutes);
+  })();
 
   const processes: any[]     = batchData?.processes ?? [];
   const programTasks: any[]  = batchData?.programTasks ?? [];
@@ -1774,8 +1127,8 @@ function NowLearningSection() {
                 {item.lastLessonTitle ?? item.title}
               </div>
               <div className="flex flex-wrap gap-[13px]" style={{ marginBottom: 17, color: "#85858e", fontSize: 13 }}>
-                <span>Module Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).durationDisplay ?? "—"}</strong></span>
-                <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).taskDurationDisplay ?? "—"}</strong></span>
+                <span>Module Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{durationDisplay ?? "—"}</strong></span>
+                <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{taskDurationDisplay ?? "—"}</strong></span>
               </div>
               <div style={{ marginBottom: 17 }}>
                 <div style={{ width: "100%", height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
@@ -1826,7 +1179,6 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: callSummary } = useSupportCallsSummary();
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
-  const [showRevenueForm, setShowRevenueForm] = useState(false);
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
   const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
@@ -2049,7 +1401,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           />
           <JourneyTile
             label="Leaderboard"
-            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "#—"}
+            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "Unranked"}
             metricColor="#35cb76"
             leaderboard
             onClick={() => setWinsOpen(true)}
@@ -2075,23 +1427,6 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
       {/* ── H. Now Learning ──────────────────────────────────────────────── */}
       <NowLearningSection />
-
-      {/* ── Data entry: the member's own weekly numbers feed E and F ────── */}
-      <motion.div variants={fadeUp} className="flex flex-col gap-3">
-        <button
-          onClick={() => setShowRevenueForm((v) => !v)}
-          className="self-end text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
-          style={{ background: "rgba(255,255,255,0.05)", color: "var(--color-text-secondary)", border: "1px solid rgba(255,255,255,0.08)" }}
-        >
-          {showRevenueForm ? "Close" : "Update this week\u2019s numbers"}
-        </button>
-        {showRevenueForm && (
-          <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            <RevenueStatsSection />
-          </div>
-        )}
-      </motion.div>
-
       {showBackLink && (
         <motion.div variants={fadeUp}>
           <Link

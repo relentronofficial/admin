@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -210,6 +210,35 @@ function saveOpenGroups(groups: string[]) {
   }
 }
 
+// The nav's scroll position is lost on the same remount, which jumped the
+// sidebar back to the top after clicking an item low in the list. Module scope
+// survives client navigation; sessionStorage survives a reload.
+const SCROLL_KEY = "tbt_admin_sidebar_scroll";
+let savedScrollTop: number | null = null;
+
+function readSavedScrollTop(): number {
+  if (savedScrollTop !== null) return savedScrollTop;
+  try {
+    savedScrollTop = Number(sessionStorage.getItem(SCROLL_KEY)) || 0;
+  } catch {
+    savedScrollTop = 0;
+  }
+  return savedScrollTop;
+}
+
+function saveScrollTop(top: number) {
+  savedScrollTop = top;
+  try {
+    sessionStorage.setItem(SCROLL_KEY, String(top));
+  } catch {
+    /* storage unavailable — module scope still covers client navigation */
+  }
+}
+
+// Runs before paint on the client, so the restored dropdowns and scroll
+// position never flash in at their defaults first.
+const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+
 interface SidebarProps {
   /** Mobile only: whether the off-canvas sidebar is open. Ignored from md up. */
   mobileOpen?: boolean;
@@ -222,10 +251,31 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   // Server render and first client render use only the active group, so they
   // match; saved groups are merged in after mount.
   const [openGroups, setOpenGroups] = useState<string[]>(activeGroup ? [activeGroup] : []);
+  const [groupsRestored, setGroupsRestored] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     setOpenGroups((prev) => Array.from(new Set([...prev, ...readSavedOpenGroups()])));
+    setGroupsRestored(true);
   }, []);
+
+  // Restore scroll only once the saved dropdowns are open again — before that
+  // the list is shorter and the browser would clamp the position. Then bring
+  // the active item into view only if it sits outside the visible area.
+  useIsomorphicLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!groupsRestored || !nav) return;
+    nav.scrollTop = readSavedScrollTop();
+
+    const active = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (active && active.offsetParent !== null) {
+      const navRect = nav.getBoundingClientRect();
+      const itemRect = active.getBoundingClientRect();
+      if (itemRect.top < navRect.top) nav.scrollTop -= navRect.top - itemRect.top;
+      else if (itemRect.bottom > navRect.bottom) nav.scrollTop += itemRect.bottom - navRect.bottom;
+    }
+    saveScrollTop(nav.scrollTop);
+  }, [groupsRestored, pathname]);
 
   // Navigating to a child page always opens its parent group.
   useEffect(() => {
@@ -274,7 +324,11 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
           </button>
         </div>
 
-        <nav className="flex-1 py-3 overflow-y-auto">
+        <nav
+          ref={navRef}
+          onScroll={(e) => saveScrollTop(e.currentTarget.scrollTop)}
+          className="flex-1 py-3 overflow-y-auto"
+        >
           {navGroups.map((group, gi) => {
             const isOpen = !group.collapsible || (!!group.label && openGroups.includes(group.label));
             const panelId = `sidebar-group-${gi}`;
