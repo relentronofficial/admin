@@ -1126,7 +1126,8 @@ function WeeklyLineChart({
 const PEAK_KIND: Record<ChartPeriod, string> = { daily: "DAY", weekly: "WEEK", monthly: "MONTH", yearly: "YEAR", overall: "WEEK" };
 
 function WeeklyChartSection({ revenue }: { revenue: any }) {
-  const [period, setPeriod] = useState<ChartPeriod>("daily");
+  const [period, setPeriod] = useState<ChartPeriod>("overall");
+  const [showPeriodHint, setShowPeriodHint] = useState(false);
   const weekDays = weekDaysFor(revenue);
   // Longer periods read every saved week; Daily keeps using this week's saved days.
   const history = useMentorshipRevenueHistory(period !== "daily");
@@ -1171,17 +1172,24 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
               <span className="inline-block w-5 border-t border-dashed border-yellow-400" /> Order Velocity
             </span>
           </div>
-          <select
-            aria-label="Chart period"
-            value={period}
-            onChange={e => setPeriod(e.target.value as ChartPeriod)}
-            className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all outline-none cursor-pointer"
-            style={{ background: "var(--color-accent)", color: "white" }}
-          >
-            {CHART_PERIODS.map(p => (
-              <option key={p.value} value={p.value} style={{ background: "var(--color-bg-surface, #141414)", color: "var(--color-text-normal)" }}>{p.label}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              aria-label="Chart period"
+              value={period}
+              onChange={e => { setPeriod(e.target.value as ChartPeriod); setShowPeriodHint(true); }}
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-all outline-none cursor-pointer"
+              style={{ background: "var(--color-accent)", color: "white" }}
+            >
+              {CHART_PERIODS.map(p => (
+                <option key={p.value} value={p.value} style={{ background: "var(--color-bg-surface, #141414)", color: "var(--color-text-normal)" }}>{p.label}</option>
+              ))}
+            </select>
+            {showPeriodHint && period !== "overall" && (
+              <p className="absolute right-0 top-full mt-1 text-[9px] whitespace-nowrap" style={{ color: "var(--color-text-subtle)" }}>
+                Switch back to Overall anytime
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

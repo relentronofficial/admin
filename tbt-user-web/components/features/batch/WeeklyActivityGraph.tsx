@@ -8,7 +8,7 @@ import { useMyWeeklyGraph, weeklyGraphQueryKey } from "@/lib/hooks/useBatchProgr
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, revenueLinePath } from "./weeklyGraphRevenueAxis";
 import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
@@ -419,7 +419,18 @@ function WeeklyActivityGraphContent() {
             );
           })}
 
-          {/* Revenue points (no line): white centre with a solid red ring, so they can't be
+          {/* Revenue line: connects consecutive reported weeks with a dashed line */}
+          {(() => {
+            const path = revenueLinePath(revenuePoints);
+            return path ? (
+              <path data-testid="revenue-line" d={path} fill="none"
+                stroke="var(--color-accent, #dc2626)" strokeWidth={1.5}
+                strokeDasharray="5,3" strokeLinejoin="round" strokeLinecap="round"
+                opacity={0.55} aria-hidden="true" pointerEvents="none" />
+            ) : null;
+          })()}
+
+          {/* Revenue points: white centre with a solid red ring, so they can't be
               mistaken for task-status markers (filled, dashed or grey ring) */}
           {revenuePoints.map((p) => (
             <circle key={`rp-${p.weekNumber}`} data-testid="revenue-point" cx={p.x} cy={p.y} r={4.5}
