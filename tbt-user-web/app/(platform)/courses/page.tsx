@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Lock, Play, BookOpen, Bookmark, BookmarkCheck } from "lucide-react";
 import { useCourses, useCourse, useMyEnrollments } from "@/lib/hooks/useCourses";
-import { useSavedVideos, useSaveVideo, useUnsaveVideo } from "@/lib/hooks/useDashboard";
+import { useSavedVideos, useSaveVideo, useUnsaveVideo, useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
@@ -1397,6 +1397,7 @@ export default function CoursesPage() {
 
   const { data: enrollments } = useMyEnrollments();
   const { data: savedVideosData } = useSavedVideos({ limit: 3 });
+  const { data: continueLearning } = useContinueLearning();
   const unsaveVideo = useUnsaveVideo();
 
   const { data: catalogData, isLoading: catalogLoading, isError: catalogError, refetch: refetchCatalog } = useCourses({
@@ -1460,21 +1461,21 @@ export default function CoursesPage() {
   // module display name (e.g. "Product Mastery"). This surfaces the real course
   // name ("90-Day Product Business Program") for the member's business category.
   const primaryCourseTitle = useMemo(() => {
-    if (allowedModules.length !== 1) return null;
+    if (personalizationState !== "program" || filteredCourses.length === 0) return null;
     const accessible = filteredCourses.filter(c => c.hasAccess || enrolledMap.has(c.id));
     if (accessible.length >= 1) return accessible[0].title as string;
-    if (filteredCourses.length >= 1) return filteredCourses[0].title as string;
-    return null;
-  }, [allowedModules, filteredCourses, enrolledMap]);
+    return filteredCourses[0].title as string;
+  }, [personalizationState, filteredCourses, enrolledMap]);
 
-  // Primary course ID for section-card breakdown (single-module program view only)
+  // Primary course ID for section/module-card breakdown — works for single and multi-module program views.
+  // Re-derives when activeTab changes so the progress bar stays accurate per tab.
   const primaryCourseId = useMemo(() => {
-    if (allowedModules.length !== 1 || filteredCourses.length === 0) return null;
+    if (personalizationState !== "program" || filteredCourses.length === 0) return null;
     const accessible = filteredCourses.filter((c: any) => c.hasAccess || enrolledMap.has(c.id));
     return (accessible.length >= 1 ? accessible[0].id : filteredCourses[0].id) as string;
-  }, [allowedModules, filteredCourses, enrolledMap]);
+  }, [personalizationState, filteredCourses, enrolledMap]);
 
-  const shouldFetchSections = personalizationState === "program" && allowedModules.length === 1 && !!primaryCourseId;
+  const shouldFetchSections = personalizationState === "program" && !!primaryCourseId;
   const { data: primaryCourseDetail, isLoading: courseDetailLoading } = useCourse(
     shouldFetchSections ? (primaryCourseId ?? "") : ""
   );
@@ -1541,17 +1542,22 @@ export default function CoursesPage() {
     });
   }, [primaryCourseDetail]);
 
-  // Learning Roadmap course: the most recently watched enrolled course that isn't
-  // finished, else the latest unfinished enrollment. None → no roadmap.
+  // Learning Roadmap course: the most recently watched in-progress course, scoped to
+  // the active tab's courses so the roadmap always matches what's on screen (#3 + #4).
+  // Uses continue-learning data (full watch history) rather than the 3-item saved list.
   const roadmapCourseId: string | null = useMemo(() => {
-    const unfinished = (id?: string | null) => !!id && !!enrolledMap.get(id) && !enrolledMap.get(id).completedAt;
-    const watched = savedVideos.find((v: any) => v?.type === "course" && unfinished(v.courseId));
-    if (watched) return watched.courseId;
+    const pool = new Set((filteredCourses.length > 0 ? filteredCourses : allCourses).map((c: any) => c.id as string));
+    // Priority 1: most recently watched in-progress course from continue-learning
+    const clItem = (continueLearning ?? [])
+      .filter((i: any) => i.type === "course" && !i.isCompleted && pool.has(i.id))
+      .sort((a: any, b: any) => b.updatedAt - a.updatedAt)[0];
+    if (clItem) return clItem.id as string;
+    // Priority 2: latest unfinished enrollment scoped to visible courses
     const latest = myEnrollments
-      .filter((e: any) => !e.completedAt)
+      .filter((e: any) => !e.completedAt && pool.has(e.courseId))
       .sort((a: any, b: any) => String(b.enrolledAt ?? "").localeCompare(String(a.enrolledAt ?? "")))[0];
     return latest?.courseId ?? null;
-  }, [savedVideos, myEnrollments, enrolledMap]);
+  }, [continueLearning, myEnrollments, filteredCourses, allCourses]);
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -1605,7 +1611,7 @@ export default function CoursesPage() {
           <ModuleHero
             cfg={singleModuleCfg ?? { moduleName: allowedModules[0], displayName: allowedModules[0], tagline: null, description: null, bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: 0 }}
             programName={programName}
-            courseCount={sectionCards ? sectionCards.length : filteredCourses.length}
+            courseCount={filteredCourses.length}
             memberBusinessType={memberBusinessType}
             primaryCourseTitle={primaryCourseTitle}
           />
@@ -1761,7 +1767,12 @@ export default function CoursesPage() {
             );
           })()}
 
-          <ModuleProgressBar courses={filteredCourses} enrolledMap={enrolledMap} />
+          <ModuleProgressBar
+            courses={filteredCourses}
+            enrolledMap={enrolledMap}
+            courseModuleCards={courseModuleCards}
+            sectionCards={sectionCards}
+          />
 
           <CourseGrid
             courses={filteredCourses}
