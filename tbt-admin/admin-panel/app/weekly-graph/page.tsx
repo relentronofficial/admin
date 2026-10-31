@@ -232,7 +232,8 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
   };
   // A week in use (activities / member records) is deleted only after choosing the week
   // that takes them over — the server moves them, then deletes the week, in one step.
-  const [moving, setMoving] = useState<{ week: GraphWeekItem; activities: number; records: number } | null>(null);
+  type MoveTarget = { id: string; label: string; startDay: number; endDay: number; isActive: boolean };
+  const [moving, setMoving] = useState<{ week: GraphWeekItem; activities: number; records: number; targets: MoveTarget[] } | null>(null);
   const [moveTo, setMoveTo] = useState("");
   const [moveError, setMoveError] = useState<string | null>(null);
   const remove = async (w: GraphWeekItem) => {
@@ -240,14 +241,17 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
     try { await del.mutateAsync({ id: w.id! }); toast.success("Week deleted"); }
     catch (e: any) {
       if (e?.response?.status === 409) {
-        const m = String(e?.message ?? "").match(/has (\d+) activities and (\d+) member records/);
-        const others = local.filter((x) => x.id && x.id !== w.id);
-        const idx = local.findIndex((x) => x.id === w.id);
-        // Default: the week just before it, else the one after.
-        const preferred = [...local.slice(0, idx)].reverse().find((x) => x.id) ?? local.slice(idx + 1).find((x) => x.id) ?? others[0];
-        setMoveTo(preferred?.id ?? "");
+        // The server sends the counts and the valid destination weeks (this program's
+        // other saved weeks, read fresh from the database).
+        const info = e?.response?.data?.data ?? {};
+        const targets: MoveTarget[] = Array.isArray(info.targets) ? info.targets : [];
+        // Default: the nearest active week before it, else the nearest after, else any.
+        const active = targets.filter((t) => t.isActive);
+        const before = active.filter((t) => t.startDay < w.startDay).sort((a, b) => b.startDay - a.startDay)[0];
+        const after = active.filter((t) => t.startDay > w.startDay).sort((a, b) => a.startDay - b.startDay)[0];
+        setMoveTo((before ?? after ?? targets[0])?.id ?? "");
         setMoveError(null);
-        setMoving({ week: w, activities: Number(m?.[1] ?? 0), records: Number(m?.[2] ?? 0) });
+        setMoving({ week: w, activities: Number(info.activities ?? 0), records: Number(info.records ?? 0), targets });
       } else {
         toast.error(errMsg(e, "Could not delete the week"));
       }
@@ -258,7 +262,7 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
     setMoveError(null);
     try {
       await del.mutateAsync({ id: moving.week.id!, moveTo });
-      const target = local.find((x) => x.id === moveTo)?.label ?? "the chosen week";
+      const target = moving.targets.find((x) => x.id === moveTo)?.label ?? "the chosen week";
       toast.success(`Week deleted — its activities and member records now belong to ${target}`);
       setMoving(null);
     } catch (e) { setMoveError(errMsg(e, "Could not delete the week")); }
@@ -317,14 +321,20 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
               {moving.records} member milestone {moving.records === 1 ? "record is" : "records are"} kept and moved to the chosen week — they will show in that week on those members&apos; graphs.
             </p>
           )}
-          <label className="block">
-            <span className={LABEL}>Move to week</span>
-            <select className={cn(INPUT, "mt-1")} value={moveTo} onChange={(e) => setMoveTo(e.target.value)} disabled={del.isPending}>
-              {local.filter((x) => x.id && x.id !== moving.week.id).map((x) => (
-                <option key={x.id!} value={x.id!}>{x.label} · day {x.startDay}–{x.endDay}{x.isActive ? "" : " (disabled)"}</option>
-              ))}
-            </select>
-          </label>
+          {moving.targets.length > 0 ? (
+            <label className="block">
+              <span className={LABEL}>Move to week</span>
+              <select className={cn(INPUT, "mt-1")} value={moveTo} onChange={(e) => setMoveTo(e.target.value)} disabled={del.isPending}>
+                {moving.targets.map((x) => (
+                  <option key={x.id} value={x.id} className="bg-[#1a1a1a] text-white">{x.label} · day {x.startDay}–{x.endDay}{x.isActive ? "" : " (disabled)"}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="text-[13px] text-[#ef4444]">
+              There is no other week in this program to move them to. Add a week first, then delete {moving.week.label}.
+            </p>
+          )}
           {moveError && <p className="text-[13px] text-[#ef4444]">{moveError}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" className={BTN_GHOST} onClick={() => setMoving(null)} disabled={del.isPending}>Cancel</button>
