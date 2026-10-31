@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { amountFromRevenueLabel, revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints, smoothLinePath } from "./weeklyGraphRevenueAxis";
+import { amountFromRevenueLabel, revenueAxisLabel, revenueAxisTicks, revenueAxisTop, revenueLevelOnAxis, revenueLinePath, revenueLinePoints, revenueWeeksUpToCurrent, smoothLinePath } from "./weeklyGraphRevenueAxis";
+
+describe("revenueWeeksUpToCurrent (weeks the revenue line covers)", () => {
+  it("W1 … current week: saved amounts kept, unsaved → ₹0 (saved: false); later weeks → null", () => {
+    const out = revenueWeeksUpToCurrent([
+      { weekNumber: 1, revenue: 50_000 }, { weekNumber: 2, revenue: null }, { weekNumber: 3, revenue: 1_00_000, isCurrent: true }, { weekNumber: 4, revenue: null },
+    ]);
+    expect(out.map((w) => [w.revenue, w.saved])).toEqual([[50_000, true], [0, false], [1_00_000, true], [null, false]]);
+  });
+
+  it("without an isCurrent week, the last started week (progressLevel not null) is the end", () => {
+    const out = revenueWeeksUpToCurrent([
+      { weekNumber: 1, revenue: null, progressLevel: 0 }, { weekNumber: 2, revenue: 10, progressLevel: 1 }, { weekNumber: 3, revenue: null, progressLevel: null },
+    ]);
+    expect(out.map((w) => w.revenue)).toEqual([0, 10, null]);
+  });
+
+  it("no current and no started week: nothing is plotted", () => {
+    expect(revenueWeeksUpToCurrent([{ weekNumber: 1, revenue: null }]).map((w) => w.revenue)).toEqual([null]);
+  });
+});
 
 describe("smoothLinePath (monotone smooth curve)", () => {
   // Evaluate the drawn cubic segments to check where the curve actually goes.

@@ -29,8 +29,50 @@ export interface ProgressionWeek {
   progressLevel: number | null | undefined;
   total?: number;
   completed?: number;
-  /** The week's activity markers; only their axis level is used here. */
-  activities?: Array<{ level?: number | null }>;
+  /** The week's activity markers; their axis level (and, for task progress, status) is used here. */
+  activities?: Array<{ level?: number | null; status?: string | null }>;
+}
+
+const markerLevel = (a: { level?: number | null } | null | undefined) =>
+  typeof a?.level === "number" && Number.isFinite(a.level) ? a.level : 0;
+
+/**
+ * Task-only red line: one point per week at its highest activity marker (the
+ * dots the member sees, whatever their status). Revenue and admin-recorded
+ * milestones are NOT included — they are shown by the revenue line/points. Weeks
+ * with no marker above the baseline get no point (the line never runs along the
+ * X axis).
+ */
+export function taskLinePoints(
+  weeks: ProgressionWeek[],
+  colX: (weekIndex: number) => number,
+  yFor: (level: number) => number,
+): ProgressionPoint[] {
+  const points: ProgressionPoint[] = [];
+  weeks.forEach((w, i) => {
+    const level = (w.activities ?? []).reduce((top, a) => Math.max(top, markerLevel(a)), 0);
+    if (level <= 0) return;
+    points.push({ weekNumber: w.weekNumber, weekIndex: i, level, x: colX(i), y: yFor(level) });
+  });
+  return points;
+}
+
+/**
+ * Task-only progress dots: one per week at its highest APPROVED (completed)
+ * activity — approved work only, no revenue or records.
+ */
+export function taskProgressPoints(
+  weeks: ProgressionWeek[],
+  colX: (weekIndex: number) => number,
+  yFor: (level: number) => number,
+): ProgressionPoint[] {
+  const points: ProgressionPoint[] = [];
+  weeks.forEach((w, i) => {
+    const level = (w.activities ?? []).filter((a) => a?.status === "completed").reduce((top, a) => Math.max(top, markerLevel(a)), 0);
+    if (level <= 0) return;
+    points.push({ weekNumber: w.weekNumber, weekIndex: i, level, x: colX(i), y: yFor(level) });
+  });
+  return points;
 }
 
 export interface ProgressionPoint {

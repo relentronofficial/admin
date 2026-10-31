@@ -117,6 +117,25 @@ export function revenueLinePoints(
  * above or dips below the points on either side of a segment — it can't show a
  * revenue amount that wasn't reported. Fewer than two points → null.
  */
+/**
+ * Weeks for the revenue line: every week from W1 up to the current week, so the
+ * line runs W1 → W2 → … → current without skipping. A week in that range with no
+ * saved revenue is plotted at ₹0 (`saved: false` marks it). Weeks after the
+ * current week (not reached yet) get no value. The current week is the one the
+ * API marks isCurrent; without one, the last week that has started
+ * (progressLevel not null).
+ */
+export function revenueWeeksUpToCurrent<W extends RevenueWeek & { isCurrent?: boolean; progressLevel?: number | null }>(
+  weeks: W[],
+): Array<W & { revenue: number | null; saved: boolean }> {
+  let lastIdx = weeks.findIndex((w) => w.isCurrent);
+  if (lastIdx < 0) weeks.forEach((w, i) => { if (w.progressLevel !== null && w.progressLevel !== undefined) lastIdx = i; });
+  return weeks.map((w, i) => {
+    const saved = typeof w.revenue === "number" && Number.isFinite(w.revenue);
+    return { ...w, saved, revenue: i <= lastIdx ? (saved ? (w.revenue as number) : 0) : null };
+  });
+}
+
 export function smoothLinePath(pts: Array<{ x: number; y: number }>): string | null {
   const n = pts.length;
   if (n < 2) return null;

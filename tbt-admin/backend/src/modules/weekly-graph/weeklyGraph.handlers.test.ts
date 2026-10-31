@@ -39,6 +39,8 @@ interface Store {
 }
 let db: Store;
 const unhandled: string[] = [];
+/** Makes the member-records move fail, to check the week delete is all-or-nothing. */
+let failRecordMove = false;
 
 const norm = (s: string | null) => (s ?? '').trim().toLowerCase().replace(/s$/, '');
 const weekOut = (w: Store['weeks'][number]) => ({ id: w.id, label: w.label, startDay: w.startDay, endDay: w.endDay, sortOrder: w.sortOrder, isActive: w.isActive });
@@ -88,6 +90,20 @@ async function sql(text: string, ...a: any[]): Promise<any> {
       by_day: db.tasks.filter((t) => t.programId === pid && !t.batchId && !t.weekId && t.dayNumber >= s && t.dayNumber <= e).length,
       records: db.records.filter((r) => r.weekId === wid).length,
     }];
+  }
+  if (q.startsWith('UPDATE tasks SET graph_week_id = $3::uuid WHERE graph_week_id = $2::uuid OR')) {
+    const [pid, wid, target, s, e] = a;
+    let n = 0;
+    for (const t of db.tasks) {
+      if (t.weekId === wid || (t.programId === pid && !t.batchId && !t.weekId && t.dayNumber >= s && t.dayNumber <= e)) { t.weekId = target; n++; }
+    }
+    return n;
+  }
+  if (q.startsWith('UPDATE member_graph_milestone_records SET week_id = $2::uuid WHERE week_id = $1::uuid')) {
+    if (failRecordMove) throw new Error('connection lost');
+    let n = 0;
+    for (const r of db.records) if (r.weekId === a[0]) { r.weekId = a[1]; n++; }
+    return n;
   }
   if (q.startsWith('DELETE FROM graph_weeks')) { db.weeks = db.weeks.filter((w) => !(w.id === a[1] && w.programId === a[0])); return 1; }
   if (q.startsWith('INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active, threshold_amount) VALUES')) {
@@ -194,6 +210,11 @@ function server() {
     prisma: {
       $queryRawUnsafe: vi.fn(sql),
       $executeRawUnsafe: vi.fn(sql),
+      // All-or-nothing like a real transaction: restore the store if anything inside throws.
+      $transaction: vi.fn(async (fn: (tx: any) => Promise<unknown>) => {
+        const snapshot = structuredClone(db);
+        try { return await fn({ $queryRawUnsafe: sql, $executeRawUnsafe: sql }); } catch (e) { db = snapshot; throw e; }
+      }),
       admin: { findUnique: vi.fn(async ({ where }: any) => db.admins[where.clerkId] ?? null) },
       member: {
         findUnique: vi.fn(async ({ where }: any) => {
@@ -306,15 +327,65 @@ describe('weeks: create, edit, reorder, enable/disable, delete', () => {
     expect(g.weeks[0].activities[0]).toMatchObject({ taskId: TASK_ADS, completed: true });
   });
 
-  it('a week in use cannot be deleted (disable instead); an unused one can', async () => {
+  it('a week in use is not deleted without a target week (409 with the counts); an unused one is', async () => {
     await call(graph.initializeHandler, { params: P });
     const weeks = (await config()).weeks;
     const inUse = await call(graph.deleteWeekHandler, { params: { ...P, id: weeks[0].id } });
     expect(inUse.status).toBe(409);
-    expect(inUse.body.error).toMatch(/Disable it instead/);
+    expect(inUse.body.error).toMatch(/"W1" has 1 activities and 0 member records\. Choose a week to move them to/);
+    expect((await config()).weeks).toHaveLength(4); // nothing changed
     const unused = await call(graph.deleteWeekHandler, { params: { ...P, id: weeks[3].id } });
     expect(unused.status).toBe(200);
     expect((await config()).weeks).toHaveLength(3);
+  });
+
+  it('deleting a week in use with ?moveTo moves its activities and member records to that week, then deletes it', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const [w1, w2] = (await config()).weeks;
+    db.records.push({ id: uuid(), memberId: MEMBER, milestoneId: db.milestones[0].id, weekId: w1.id, note: null, recordedBy: 'Asha', recordedAt: new Date() });
+    const res = await call(graph.deleteWeekHandler, { params: { ...P, id: w1.id }, query: { moveTo: w2.id } });
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ deleted: w1.id, movedTo: w2.id, activities: 1, records: 1 });
+    expect((await config()).weeks.map((w: any) => w.label)).toEqual(['W2', 'W3', 'W4']);
+    const ads = db.tasks.find((t) => t.id === TASK_ADS)!;
+    expect(ads.weekId).toBe(w2.id);   // reassigned to W2 …
+    expect(ads.dayNumber).toBe(2);     // … its day (members' checklist) unchanged
+    expect(db.records[0].weekId).toBe(w2.id);
+    expect(db.submissions).toHaveLength(1); // no data lost
+    // Not orphaned: the member graph still shows the activity, now under W2.
+    const g = await memberGraph();
+    expect(g.weeks.find((w: any) => w.label === 'W2').activities.map((x: any) => x.taskId)).toContain(TASK_ADS);
+    expect(unhandled).toEqual([]);
+  });
+
+  it('rejects a missing or same target week, and changes nothing', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const [w1] = (await config()).weeks;
+    for (const moveTo of [w1.id, '00000000-0000-4000-8000-0000000000ff']) {
+      const r = await call(graph.deleteWeekHandler, { params: { ...P, id: w1.id }, query: { moveTo } });
+      expect(r.status).toBe(400);
+    }
+    expect((await config()).weeks).toHaveLength(4);
+    expect(db.tasks.find((t) => t.id === TASK_ADS)!.weekId).toBeNull();
+  });
+
+  it('is all-or-nothing: if moving the member records fails, the week and its activities are untouched', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const [w1, w2] = (await config()).weeks;
+    failRecordMove = true;
+    try {
+      await expect(call(graph.deleteWeekHandler, { params: { ...P, id: w1.id }, query: { moveTo: w2.id } })).rejects.toThrow('connection lost');
+    } finally { failRecordMove = false; }
+    expect((await config()).weeks).toHaveLength(4);
+    expect(db.tasks.find((t) => t.id === TASK_ADS)!.weekId).toBeNull();
+  });
+
+  it('only Admin / Super Admin can delete or move a week', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const [w1, w2] = (await config()).weeks;
+    expect((await call(graph.deleteWeekHandler, { clerk: 'clerk_mentor', params: { ...P, id: w1.id }, query: { moveTo: w2.id } })).status).toBe(403);
+    const bySuper = await call(graph.deleteWeekHandler, { clerk: 'clerk_super', params: { ...P, id: w1.id }, query: { moveTo: w2.id } });
+    expect(bySuper.status).toBe(200);
   });
 
   it('rejects invalid, duplicate and overlapping weeks', async () => {
