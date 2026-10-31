@@ -97,7 +97,7 @@ export default function WeeklyGraphPage() {
                 <div>
                   <p className="text-[#f0f0f0] font-semibold flex items-center gap-2"><Sparkles size={16} className="text-[#f59e0b]" /> Using the built-in defaults</p>
                   <p className="text-[13px] text-[#a0a0a0] mt-1">
-                    Members of {config.program.name} currently see 7-day weeks and the five default milestones below. Start customizing to save them as editable items.
+                    Members of {config.program.name} currently see 7-day weeks and the default milestones below. Start customizing to save them as editable items.
                   </p>
                 </div>
                 <button
@@ -402,7 +402,7 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
         <p className="mx-5 mb-3 text-[12px] text-[#f59e0b]">An activity milestone sits above a revenue milestone — tasks can&apos;t reach it (only an admin record can). Drag it below the revenue milestones if that isn&apos;t intended.</p>
       )}
       {local.length === 0 ? (
-        <p className="px-5 pb-5 text-[13px] text-[#606060]">No milestones — members will see the five defaults until you add one.</p>
+        <p className="px-5 pb-5 text-[13px] text-[#606060]">No milestones — members will see the defaults until you add one.</p>
       ) : (
         <table className="w-full text-[13px]">
           <thead><tr className="border-y border-[#2a2a2a] bg-[#1a1a1a]">

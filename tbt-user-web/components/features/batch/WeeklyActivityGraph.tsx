@@ -8,8 +8,8 @@ import { useMyWeeklyGraph, weeklyGraphQueryKey } from "@/lib/hooks/useBatchProgr
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
-import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, revenueLinePath, revenueWeeksUpToCurrent } from "./weeklyGraphRevenueAxis";
-import { taskLinePoints, taskProgressPoints } from "./weeklyGraphProgression";
+import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, revenueLinePath } from "./weeklyGraphRevenueAxis";
+import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -22,13 +22,11 @@ import { taskLinePoints, taskProgressPoints } from "./weeklyGraphProgression";
 //    never means "achieved" — its fill shows the activity's own status;
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
-//  • a solid red line: TASK progress only, from Start through each week's highest
-//    task marker (weeklyGraphProgression.ts) — revenue doesn't lift it;
-//  • a red-ring / white-centre point for every week from W1 up to the current
-//    week at its saved revenue (week.revenue; ₹0 when nothing is saved), on this
-//    same axis (revenueLevelOnAxis), joined W1 → … → current by the dashed revenue
-//    line. The current-week highlight (isCurrent) comes from the API: the batch's
-//    start date (admin) against the program's weeks (Admin → Weekly Graph).
+//  • ONE red line: task progress, from Start through each started week's
+//    progress (week.progressLevel), rising and falling (weeklyGraphProgression.ts);
+//  • a red-ring / white-centre point for each week with saved revenue
+//    (week.revenue), at its actual amount on this same axis — not a line
+//    (revenueLevelOnAxis). A week with nothing saved has no point (never ₹0).
 // The graph refreshes live when the admin changes tasks, progress or revenue
 // (socket batch:graph_updated / batch:day_approved / batch:day_rejected).
 // Every marker is a keyboard-focusable button that opens a popup with the
@@ -219,36 +217,31 @@ function WeeklyActivityGraphContent() {
     revenueMarkers.push({ key: `r:${m.id ?? idx}`, x: colX(wi), y: yFor(idx + 1), week: weeks[wi], milestone: m });
   });
 
-  // The solid red line: TASK progress only. The line runs from Start through each
-  // week's highest task marker; the small dots mark each week's highest approved
-  // task. Revenue and admin-recorded milestones don't lift it — revenue has its
-  // own line and points below (weeklyGraphProgression.ts). Recomputed on every
-  // render, so it follows refreshed data and configuration.
-  const progression = taskProgressPoints(weeks, colX, yFor);
-  const linePts = taskLinePoints(weeks, colX, yFor);
+  // The ONE red line: task progress. One point per started week at its measured
+  // progress (week.progressLevel from the API — approved work, milestone links,
+  // admin records), and the line runs from Start through each started week's
+  // highest visible dot, rising and falling week to week (weeklyGraphProgression.ts).
+  // Recomputed on every render, so it follows refreshed data and configuration.
+  const progression = weekProgressionPoints(weeks, colX, yFor);
+  const linePts = weekLinePoints(weeks, colX, yFor);
   const linePoints = linePts.length > 0
     ? [`M ${LEFT},${yFor(0)}`, ...linePts.map((p) => `L ${p.x},${p.y}`)].join(" ")
     : null;
   const progressTitle = (w: WeeklyGraphWeek) =>
     `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
 
-  // Revenue points + line: every week from W1 up to the current week, each at its
-  // saved revenue (week.revenue) on this axis — ₹0 at Start, each revenue
-  // milestone's amount on its own row, proportional in between. A week in that
-  // range with no saved revenue sits at ₹0, so the line runs W1 → W2 → … → current
-  // without skipping. A row's amount is its admin threshold, or, when none is set
-  // (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the amount its
-  // label names.
+  // Revenue points (not a line): one per week with saved revenue, at its actual
+  // amount on this axis — ₹0 at Start, each revenue milestone's amount on its own
+  // row, proportional in between. A row's amount is its admin threshold, or, when
+  // none is set (e.g. the built-in "1 lakh" / "5 Lakhs" / "1 crore" rows), the
+  // amount its label names. A week with nothing saved has no point.
   const thresholds = milestones.map((m) =>
     m.kind === "revenue" ? (typeof m.threshold === "number" && m.threshold > 0 ? m.threshold : amountFromRevenueLabel(m.label)) : null);
-  const revenueWeeks = revenueWeeksUpToCurrent(weeks);
   const revenuePoints = revenueLevelOnAxis(0, thresholds) === null
     ? [] // no revenue row with an amount: nothing to read an amount against
-    : revenueLinePoints(revenueWeeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
+    : revenueLinePoints(weeks, colX, (v) => yFor(revenueLevelOnAxis(v, thresholds)!));
   const revenueTitle = (w: WeeklyGraphWeek, revenue: number) =>
-    revenueWeeks[weeks.indexOf(w)]?.saved
-      ? `${weekLabel(w)}: ${inr(revenue)} ${s?.batchGraphRevenueGenerated ?? "revenue generated"}`
-      : `${weekLabel(w)}: ${s?.batchGraphNoRevenueSaved ?? "no revenue saved"} (${inr(0)})`;
+    `${weekLabel(w)}: ${inr(revenue)} ${s?.batchGraphRevenueGenerated ?? "revenue generated"}`;
 
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
   const revenueTotal = graph!.revenue?.totalToDate ?? null;

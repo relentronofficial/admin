@@ -5,7 +5,7 @@ import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
 import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
-import { loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows } from '../../lib/weeklyGraphConfigData.js';
+import { backfillNewDefaultMilestones, loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows } from '../../lib/weeklyGraphConfigData.js';
 import { revenueEntriesForProgram } from '../../lib/weeklyGraphRevenue.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
@@ -300,6 +300,8 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
       select: { dayNumber: true, status: true, completedTaskIds: true },
     }),
   ]);
+
+  if (batch.programId) await backfillNewDefaultMilestones(prisma, batch.programId).catch(() => {});
 
   const [graphConfig, graphRecords, revenueRows] = await Promise.all([
     loadGraphConfig(prisma, batch.programId ?? null),

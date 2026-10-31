@@ -54,6 +54,20 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.startsWith('SELECT duration_days AS "durationDays" FROM programs')) return db.programs.filter((p) => p.id === a[0]);
   if (q.startsWith('SELECT') && q.includes('FROM graph_weeks WHERE program_id')) return sorted(db.weeks.filter((w) => w.programId === a[0])).map(weekOut);
   if (q.startsWith('SELECT') && q.includes('FROM graph_milestones WHERE program_id')) return sorted(db.milestones.filter((m) => m.programId === a[0])).map(msOut);
+  if (q.startsWith('UPDATE graph_milestones SET sort_order = sort_order + 1')) {
+    const lakh = db.milestones.find((m) => m.programId === a[0] && m.label === '1 lakh' && m.kind === 'revenue');
+    const has5 = db.milestones.some((m) => m.programId === a[0] && m.label === '5 Lakhs' && m.kind === 'revenue');
+    if (!lakh || has5) return 0;
+    for (const m of db.milestones) { if (m.programId === a[0] && m.sortOrder > lakh.sortOrder) m.sortOrder += 1; }
+    return 1;
+  }
+  if (q.startsWith('INSERT INTO graph_milestones') && q.includes("'5 Lakhs'")) {
+    const lakh = db.milestones.find((m) => m.programId === a[0] && m.label === '1 lakh' && m.kind === 'revenue');
+    const has5 = db.milestones.some((m) => m.programId === a[0] && m.label === '5 Lakhs' && m.kind === 'revenue');
+    if (!lakh || has5) return 0;
+    db.milestones.push({ id: uuid(), programId: a[0], label: '5 Lakhs', kind: 'revenue', sortOrder: lakh.sortOrder + 1, isActive: true });
+    return 1;
+  }
   if (q.startsWith('INSERT INTO graph_milestones (program_id, label, kind, sort_order) SELECT')) {
     if (db.milestones.some((m) => m.programId === a[0])) return 0;
     for (let i = 1; i < a.length; i += 3) db.milestones.push({ id: uuid(), programId: a[0], label: a[i], kind: a[i + 1], sortOrder: a[i + 2], isActive: true });
