@@ -67,6 +67,40 @@ export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): P
 }
 
 /**
+ * Backfills default milestones that were added after a program was first
+ * initialized. Safe to call on read paths (only writes when rows are missing).
+ * Idempotent: each step guards with NOT EXISTS so repeated calls are no-ops.
+ *
+ * Currently handles: '5 Lakhs' revenue milestone (added Oct 2026).
+ */
+export async function backfillNewDefaultMilestones(prisma: Prisma, programId: string): Promise<void> {
+  // Shift milestones above '1 lakh' up by one to make room.
+  await prisma.$executeRawUnsafe(
+    `UPDATE graph_milestones
+     SET sort_order = sort_order + 1
+     WHERE program_id = $1::uuid
+       AND EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
+       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')
+       AND sort_order > (
+         SELECT sort_order FROM graph_milestones
+         WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1
+       )`,
+    programId,
+  ).catch(() => {});
+
+  // Insert '5 Lakhs' between '1 lakh' and '1 crore'.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO graph_milestones (program_id, label, kind, sort_order)
+     SELECT $1::uuid, '5 Lakhs', 'revenue',
+            (SELECT sort_order + 1 FROM graph_milestones
+             WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1)
+     WHERE EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
+       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')`,
+    programId,
+  ).catch(() => {});
+}
+
+/**
  * Before the first admin edit of a program, write its current defaults as real
  * rows so every item gets a stable id. Idempotent (each set is only inserted while
  * the program has none). Also backfills any new default milestones that were added
@@ -89,30 +123,8 @@ export async function ensureProgramGraphConfig(prisma: Prisma, programId: string
     programId, ...ms.flatMap((m, i) => [m.label, m.kind, i]),
   );
 
-  // Backfill: programs initialized before '5 Lakhs' was added to defaults lack it.
-  // Shift milestones above '1 lakh' up by one, then insert '5 Lakhs' between them.
-  await prisma.$executeRawUnsafe(
-    `UPDATE graph_milestones
-     SET sort_order = sort_order + 1
-     WHERE program_id = $1::uuid
-       AND EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
-       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')
-       AND sort_order > (
-         SELECT sort_order FROM graph_milestones
-         WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1
-       )`,
-    programId,
-  ).catch(() => {});
-
-  await prisma.$executeRawUnsafe(
-    `INSERT INTO graph_milestones (program_id, label, kind, sort_order)
-     SELECT $1::uuid, '5 Lakhs', 'revenue',
-            (SELECT sort_order + 1 FROM graph_milestones
-             WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1)
-     WHERE EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
-       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')`,
-    programId,
-  ).catch(() => {});
+  // Backfill any new default milestones added after this program was first initialized.
+  await backfillNewDefaultMilestones(prisma, programId);
 
   const weeks = defaultWeeks(durationDays);
   if (weeks.length > 0) {
