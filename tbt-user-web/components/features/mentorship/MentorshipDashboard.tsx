@@ -12,7 +12,8 @@ import {
   useInstagramStatus, useInstagramConnect, useInstagramDisconnect, useInstagramSync,
 } from "@/lib/hooks/useMentorship";
 import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
-import { useCourseLifelines } from "@/lib/hooks/useCourses";
+import { useCourseLifelines, useCourse } from "@/lib/hooks/useCourses";
+import { sumLessonDurations, formatSeconds, formatMinutes } from "@/lib/utils/courseDurations";
 import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
 import { useUserSupportQuota } from "@/lib/hooks/useUser";
@@ -158,18 +159,22 @@ function KpiCard({
   value,
   metricColor = "#f5f5f7",
   note,
+  onClick,
 }: {
   label: string;
   rightLabel?: string;
   value: string;
   metricColor?: string;
   note?: string;
+  onClick?: () => void;
 }) {
+  const isEmpty = value === "—";
   return (
     <motion.div
       variants={fadeUp}
       className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
-      style={{ background: "#242428", padding: 12, height: 63 }}
+      style={{ background: "#242428", padding: 12, height: 63, cursor: onClick ? "pointer" : undefined }}
+      onClick={onClick}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
         <span className="truncate" style={{ color: "#d0cfd4", fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
@@ -178,9 +183,14 @@ function KpiCard({
       <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.35, letterSpacing: "-0.5px", color: metricColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {value}
       </div>
-      {note && (
+      {note && !isEmpty && (
         <span className="absolute" style={{ right: 10, bottom: 8, fontSize: 7, color: "#20d6a1", fontWeight: 500 }}>
           {note}
+        </span>
+      )}
+      {onClick && isEmpty && (
+        <span className="absolute" style={{ left: 12, bottom: 8, fontSize: 7, color: "#818cf8", fontWeight: 600 }}>
+          Tap to add →
         </span>
       )}
     </motion.div>
@@ -784,7 +794,7 @@ function ordinalSuffix(n: number): string {
 
 // ─── Part 2 — Revenue Summary KPI Cards ──────────────────────────────────────
 
-function RevenueSummarySection({ revenue }: { revenue: any }) {
+function RevenueSummarySection({ revenue, onOpenForm }: { revenue: any; onOpenForm?: () => void }) {
   const n = (v: string | null | undefined): number | null =>
     v == null || v === "" ? null : Number(v);
 
@@ -875,9 +885,20 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
         )}
       </div>
       {!revenue ? (
-        <p className="text-[11px] py-6 text-center" style={{ color: "var(--color-text-subtle)" }}>
-          No revenue numbers saved for this week yet.
-        </p>
+        <div className="py-6 flex flex-col items-center gap-3">
+          <p className="text-[11px] text-center" style={{ color: "var(--color-text-subtle)" }}>
+            No revenue numbers saved for this week yet.
+          </p>
+          {onOpenForm && (
+            <button
+              onClick={onOpenForm}
+              className="text-[11px] font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-80"
+              style={{ background: "rgba(255,230,0,0.12)", color: "#ffe600", border: "1px solid rgba(255,230,0,0.2)" }}
+            >
+              Add this week&apos;s numbers →
+            </button>
+          )}
+        </div>
       ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {card(
@@ -1434,6 +1455,10 @@ function SocialGrowthSection() {
     }
   };
 
+  const allMetricsEmpty =
+    followers == null && videoViews == null && contentUploads == null &&
+    interactions == null && dmLeads == null && bioClicks == null;
+
   // ── Read-only display card ───────────────────────────────────────────────────
   const displayCard = (label: string, value: string, sub: React.ReactNode) => (
     <div
@@ -1601,14 +1626,29 @@ function SocialGrowthSection() {
         ) : null}
 
         {/* Read-only metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-          {displayCard("Total Followers",   followers  != null ? fmtK(followers)          : "—", <GrowthBadge value={followersGrowth} />)}
-          {displayCard("Video Views",       videoViews != null ? fmtK(videoViews)         : "—", <GrowthBadge value={videoGrowth} />)}
-          {displayCard("Content Uploads",   contentUploads != null ? `${contentUploads}/${contentTarget}` : "—", staticBadge("Weekly Quota"))}
-          {displayCard("Interactions",      interactions != null ? fmtK(interactions)     : "—", <GrowthBadge value={interactionsGrowth} />)}
-          {displayCard("Inbound DM Leads",  dmLeads    != null ? String(dmLeads)          : "—", staticBadge("Organic"))}
-          {displayCard("Bio Link Clicks",   bioClicks  != null ? String(bioClicks)        : "—", <GrowthBadge value={bioGrowth} />)}
-        </div>
+        {allMetricsEmpty && !showForm ? (
+          <div className="py-4 flex flex-col items-center gap-3 mb-4">
+            <p className="text-[11px] text-center" style={{ color: "var(--color-text-subtle)" }}>
+              No social stats this week yet.
+            </p>
+            <button
+              onClick={() => setShowForm(true)}
+              className="text-[11px] font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-80"
+              style={{ background: "rgba(129,140,248,0.12)", color: "#818cf8", border: "1px solid rgba(129,140,248,0.2)" }}
+            >
+              Enter social stats →
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            {displayCard("Total Followers",   followers  != null ? fmtK(followers)          : "—", <GrowthBadge value={followersGrowth} />)}
+            {displayCard("Video Views",       videoViews != null ? fmtK(videoViews)         : "—", <GrowthBadge value={videoGrowth} />)}
+            {displayCard("Content Uploads",   contentUploads != null ? `${contentUploads}/${contentTarget}` : "—", staticBadge("Weekly Quota"))}
+            {displayCard("Interactions",      interactions != null ? fmtK(interactions)     : "—", <GrowthBadge value={interactionsGrowth} />)}
+            {displayCard("Inbound DM Leads",  dmLeads    != null ? String(dmLeads)          : "—", staticBadge("Organic"))}
+            {displayCard("Bio Link Clicks",   bioClicks  != null ? String(bioClicks)        : "—", <GrowthBadge value={bioGrowth} />)}
+          </div>
+        )}
 
         {/* Toggle to show/hide the update form */}
         <div className="flex justify-end mt-1">
@@ -1677,6 +1717,21 @@ function NowLearningSection() {
   const { data: batchData } = useMyBatchProgram();
 
   const item = (items as any[] | undefined)?.find((i: any) => !i.isCompleted) ?? (items as any[] | undefined)?.[0] ?? null;
+
+  // Fetch full course detail to compute durations when the server returns null
+  const { data: courseDetail } = useCourse(item?.type === "course" ? ((item as any).id as string ?? "") : "");
+  const durationDisplay: string | null = (() => {
+    if ((item as any)?.durationDisplay) return (item as any).durationDisplay as string;
+    if (!courseDetail?.lessons) return null;
+    const { videoSeconds } = sumLessonDurations(courseDetail.lessons);
+    return formatSeconds(videoSeconds);
+  })();
+  const taskDurationDisplay: string | null = (() => {
+    if ((item as any)?.taskDurationDisplay) return (item as any).taskDurationDisplay as string;
+    if (!courseDetail?.lessons) return null;
+    const { taskMinutes } = sumLessonDurations(courseDetail.lessons);
+    return formatMinutes(taskMinutes);
+  })();
 
   const processes: any[]     = batchData?.processes ?? [];
   const programTasks: any[]  = batchData?.programTasks ?? [];
@@ -1774,8 +1829,8 @@ function NowLearningSection() {
                 {item.lastLessonTitle ?? item.title}
               </div>
               <div className="flex flex-wrap gap-[13px]" style={{ marginBottom: 17, color: "#85858e", fontSize: 13 }}>
-                <span>Module Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).durationDisplay ?? "—"}</strong></span>
-                <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{(item as any).taskDurationDisplay ?? "—"}</strong></span>
+                <span>Module Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{durationDisplay ?? "—"}</strong></span>
+                <span>Task Duration - <strong style={{ color: "#ededf0", fontWeight: 500 }}>{taskDurationDisplay ?? "—"}</strong></span>
               </div>
               <div style={{ marginBottom: 17 }}>
                 <div style={{ width: "100%", height: 18, overflow: "hidden", background: "#39393f", borderRadius: 12 }}>
@@ -1950,12 +2005,14 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
                 ? `${revGrowth >= 0 ? "+" : ""}${revGrowth}% vs prev`
                 : undefined
           }
+          onClick={revenue?.revenueGenerated == null ? () => setShowRevenueForm(true) : undefined}
         />
         <KpiCard
           label="Organic Growth"
           value={leadsGrowthVal != null ? `${leadsGrowthVal >= 0 ? "+" : ""}${leadsGrowthVal}%` : "—"}
           metricColor={leadsGrowthVal != null ? (leadsGrowthVal >= 0 ? "#df72c9" : "#ff313b") : "#df72c9"}
           note={revenue?.leadsPrev != null ? `prev: ${revenue.leadsPrev} leads` : undefined}
+          onClick={leadsGrowthVal == null ? () => setShowRevenueForm(true) : undefined}
         />
       </motion.div>
 
@@ -2049,7 +2106,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           />
           <JourneyTile
             label="Leaderboard"
-            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "#—"}
+            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "Unranked"}
             metricColor="#35cb76"
             leaderboard
             onClick={() => setWinsOpen(true)}
@@ -2065,7 +2122,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
       </motion.div>
 
       {/* ── E. Your Revenue Stats (saved weekly numbers) ───────────────── */}
-      <RevenueSummarySection revenue={revenue} />
+      <RevenueSummarySection revenue={revenue} onOpenForm={() => setShowRevenueForm(true)} />
 
       {/* ── F. Weekly Revenue & Order Trajectory (saved daily numbers) ──── */}
       <WeeklyChartSection revenue={revenue} />
