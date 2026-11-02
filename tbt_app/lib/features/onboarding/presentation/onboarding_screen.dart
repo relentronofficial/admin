@@ -1137,7 +1137,7 @@ class _ProfileStep extends StatelessWidget {
               onChanged: onChanged,
               key: 'annualTurnover',
               label: 'Revenue Until Now',
-              options: const ['Under 10L', '10L - 25L', '25L - 50L', '50L - 1Cr', '1Cr - 5Cr', '5Cr+'],
+              options: const ['No Revenue', 'Under 1 Lakh', 'Under 5 Lakhs', 'Under 10L', '10L - 25L', '25L - 50L', '50L - 1Cr', '1Cr - 5Cr', '5Cr+'],
             )),
             const SizedBox(width: 12),
             Expanded(child: _field(profile, onChanged, 'revenueGoalAfterTbt', 'Revenue Goal After TBT')),
