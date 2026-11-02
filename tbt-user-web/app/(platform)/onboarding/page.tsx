@@ -46,6 +46,7 @@ const DOCUMENT_TYPES = [
 const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
 
 const ANNUAL_TURNOVER_OPTIONS = [
+  "No Revenue", "Under 1 Lakh", "Under 5 Lakhs",
   "Under 10L", "10L - 25L", "25L - 50L", "50L - 1Cr", "1Cr - 5Cr", "5Cr+",
 ];
 
