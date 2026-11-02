@@ -74,6 +74,7 @@ describe('checkOnboardingReadyToSubmit', () => {
     productServiceType: 'Retail',
     city: 'Chennai',
     state: 'Tamil Nadu',
+    profilePhotoUrl: 'https://cdn.example/avatars/priya.webp',
   };
 
   it('is valid when every required field is present and at least one document exists', () => {
@@ -84,7 +85,7 @@ describe('checkOnboardingReadyToSubmit', () => {
   it('lists every missing required field', () => {
     const result = checkOnboardingReadyToSubmit({ firstName: 'Priya' }, 1);
     expect(result.valid).toBe(false);
-    expect(result.missingFields).toEqual(['businessName', 'productServiceType', 'city', 'state']);
+    expect(result.missingFields).toEqual(['businessName', 'productServiceType', 'city', 'state', 'profilePhotoUrl']);
   });
 
   it('treats empty string the same as missing, not as provided', () => {
@@ -120,7 +121,27 @@ describe('checkOnboardingReadyToSubmit', () => {
     expect(result.unwatchedVideoSteps).toEqual(['intro_welcome_video']);
   });
 
+  it('is invalid without a profile photo', () => {
+    const { profilePhotoUrl: _photo, ...noPhoto } = completeProfile;
+    const result = checkOnboardingReadyToSubmit(noPhoto, 1);
+    expect(result.valid).toBe(false);
+    expect(result.missingFields).toEqual(['profilePhotoUrl']);
+  });
+
+  it('treats an empty or null profile photo URL as missing', () => {
+    for (const blank of ['', null]) {
+      const result = checkOnboardingReadyToSubmit({ ...completeProfile, profilePhotoUrl: blank }, 1);
+      expect(result.valid).toBe(false);
+      expect(result.missingFields).toEqual(['profilePhotoUrl']);
+    }
+  });
+
+  it('accepts a previously saved profile photo', () => {
+    const result = checkOnboardingReadyToSubmit(completeProfile, 1);
+    expect(result.valid).toBe(true);
+  });
+
   it('required field list matches the documented minimal set', () => {
-    expect(REQUIRED_ONBOARDING_FIELDS).toEqual(['firstName', 'businessName', 'productServiceType', 'city', 'state']);
+    expect(REQUIRED_ONBOARDING_FIELDS).toEqual(['firstName', 'businessName', 'productServiceType', 'city', 'state', 'profilePhotoUrl']);
   });
 });
