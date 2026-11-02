@@ -780,6 +780,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             title="Welcome to TBT"
             subtitle="Complete your profile in a few steps to unlock full platform access. This takes about 5–10 minutes — your progress is saved automatically."
             onNext={() => setStep(stepOrder[1] ?? "profile")}
+            nextLabel="Now start onboarding"
           >
             <div className="space-y-3">
               {[
@@ -801,7 +802,15 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   >
                     <Icon size={15} style={{ color: "var(--color-accent)" }} />
                   </div>
-                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <div className="flex flex-col">
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      Step {i + 1}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">{label}</span>
+                  </div>
                 </div>
               ))}
             </div>
