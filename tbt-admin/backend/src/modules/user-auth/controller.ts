@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '../../lib/otp.js';
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { sendOtp as sendOtpSms } from '../../lib/msg91.js';
+import { sendOtpEmail } from '../../lib/otpEmail.js';
 import { normalizePhone, phoneLookupVariants } from '../../lib/phoneNumber.js';
 import { decideRegistration, normalizeEmail, type ExistingAccount } from '../../lib/registrationLogic.js';
 import { deletePendingRegistration, findPendingRegistration, savePendingRegistration } from '../../lib/pendingRegistrations.js';
@@ -185,7 +186,7 @@ function activeMemberByPhone(raw: string): any {
  * the client is simply told to enter it — that keeps the existing apps'
  * "signup, then login" sequence working.
  */
-async function sendPendingRegistrationOtp(fastify: FastifyInstance, reply: any, phoneE164: string, status = 200) {
+async function sendPendingRegistrationOtp(fastify: FastifyInstance, reply: any, phoneE164: string, email: string, status = 200) {
   const gate = await checkOtpRateLimit(getRedis(fastify), phoneE164);
   if (!gate.ok) {
     if (gate.reason === 'cooldown') {
@@ -195,9 +196,42 @@ async function sendPendingRegistrationOtp(fastify: FastifyInstance, reply: any, 
   }
   const otp = generateOtp();
   await storeOtp(getRedis(fastify), phoneE164, otp);
-  const sent = await sendOtpWithFallback(phoneE164, otp);
-  fastify.log.info({ phone: phoneE164, sent }, 'OTP generated (pending registration)');
-  return reply.status(status).send({ success: true, data: { step: 'otp_required', phone: phoneE164, ...otpResponseFields(sent, otp) } });
+  const channels = await deliverSignupOtp(phoneE164, email, otp);
+  return signupOtpReply(fastify, reply, status, phoneE164, otp, channels, { step: 'otp_required', phone: phoneE164 });
+}
+
+/**
+ * Sign-up only: one OTP (generated and stored once, so either copy verifies)
+ * sent on both channels at the same time — WhatsApp (SMS fallback) to the
+ * phone and email to the address on the pending registration. Either channel
+ * failing never stops the other.
+ */
+async function deliverSignupOtp(phoneE164: string, email: string, otp: string): Promise<{ phone: boolean; email: boolean }> {
+  const [phone, mail] = await Promise.all([
+    sendOtpWithFallback(phoneE164, otp),
+    email ? sendOtpEmail(email, otp) : Promise.resolve(false),
+  ]);
+  return { phone, email: mail };
+}
+
+export const SIGNUP_OTP_UNDELIVERED =
+  "We couldn't send your OTP by WhatsApp or email right now. Please check your phone number and email, then try again in a minute.";
+
+/**
+ * The reply for a sign-up OTP send: which channels delivered (never the OTP,
+ * except the existing non-production fallback when nothing was delivered).
+ * Nothing delivered in production → 503 with a clear message so the user can retry.
+ */
+function signupOtpReply(
+  fastify: FastifyInstance, reply: any, status: number, phoneE164: string, otp: string,
+  channels: { phone: boolean; email: boolean }, extra: Record<string, unknown> = {},
+) {
+  const sent = channels.phone || channels.email;
+  fastify.log.info({ phone: phoneE164, sent, viaPhone: channels.phone, viaEmail: channels.email }, 'OTP generated (pending registration)');
+  if (!sent && env.NODE_ENV === 'production') {
+    return reply.status(503).send({ success: false, data: null, error: SIGNUP_OTP_UNDELIVERED, channels });
+  }
+  return reply.status(status).send({ success: true, data: { ...extra, channels, ...otpResponseFields(sent, otp) } });
 }
 
 // POST /api/user-auth/login
@@ -217,7 +251,7 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     const check = normalizePhone(phone);
     const pending = check.ok ? await findPendingRegistration(fastify.prisma, check.e164) : null;
     if (pending && password && (await bcrypt.compare(password, pending.payload.passwordHash))) {
-      return sendPendingRegistrationOtp(fastify, reply, pending.phoneE164);
+      return sendPendingRegistrationOtp(fastify, reply, pending.phoneE164, pending.email);
     }
     return reply.status(404).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
   }
@@ -545,9 +579,9 @@ export async function resendOtp(fastify: FastifyInstance, request: any, reply: a
     if (!gate.ok) return otpRateLimitReply(reply, gate);
     const otp = generateOtp();
     await storeOtp(getRedis(fastify), pending.phoneE164, otp);
-    const sent = await sendOtpWithFallback(pending.phoneE164, otp);
-    if (!sent) fastify.log.warn({ phone: pending.phoneE164 }, 'OTP resend failed for pending registration (WhatsApp + SMS both failed)');
-    return reply.send({ success: true, data: otpResponseFields(sent, otp) });
+    const channels = await deliverSignupOtp(pending.phoneE164, pending.email, otp);
+    if (!channels.phone && !channels.email) fastify.log.warn({ phone: pending.phoneE164 }, 'OTP resend failed for pending registration (WhatsApp + SMS + email all failed)');
+    return signupOtpReply(fastify, reply, 200, pending.phoneE164, otp, channels);
   }
 
   const gate = await checkOtpRateLimit(getRedis(fastify), (member as any).phone);
@@ -980,5 +1014,5 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
     },
   });
 
-  return sendPendingRegistrationOtp(fastify, reply, phoneCheck.e164, 201);
+  return sendPendingRegistrationOtp(fastify, reply, phoneCheck.e164, cleanEmail, 201);
 }
