@@ -38,10 +38,7 @@ const _kSupportWhatsAppUrl = 'https://wa.me/919000000000';
 
 // ── Wizard step label helpers ─────────────────────────────────────────────────
 
-String _contentStepLabel(int index, int total) {
-  if (total == 1) return 'Before You Begin';
-  if (index == 0) return 'Before You Begin';
-  if (index == total - 1) return 'How It Works';
+String _contentStepLabel(int index) {
   return 'Step ${index + 1}';
 }
 
@@ -561,7 +558,7 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
       ...activeContent.asMap().entries.map(
         (e) => _ContentStep(
           content: e.value,
-          stepLabel: _contentStepLabel(e.key, activeContent.length),
+          stepLabel: _contentStepLabel(e.key),
         ),
       ),
       _ProfileStep(
