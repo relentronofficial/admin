@@ -34,7 +34,7 @@ type FixedStep = "welcome" | "mentorship" | "profile" | "skills" | "documents" |
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
-const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state"] as const;
+const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state", "profilePhotoUrl"] as const;
 
 const DOCUMENT_TYPES = [
   { value: "business_proof", label: "Business Proof" },
@@ -613,6 +613,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const validateProfileStep = (): boolean => {
     const errs: Record<string, string> = {};
     const str = (k: string) => (profile[k] ?? "").toString().trim();
+    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = "Photo is required";
     if (!str("firstName")) errs.firstName = "First name is required";
     if (!str("city")) errs.city = "City is required";
     if (!str("state")) errs.state = "State is required";
@@ -696,10 +697,14 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const handlePhotoUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file.");
+      return;
+    }
     setPhotoUploading(true);
     try {
       const { data } = await uploadPhoto.mutateAsync(file);
-      setProfileState((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
+      setField("profilePhotoUrl", data.publicUrl);
       toast.success("Photo uploaded");
     } catch (err: any) {
       toast.error(err?.message || "Photo upload failed. Please try again.");
@@ -903,13 +908,13 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {/* ── Personal ── */}
               <SectionHeader icon={Users} title="Personal Info" />
 
-              {/* Profile photo */}
-              <div className="flex flex-col items-center gap-3 py-2">
+              {/* Profile photo (required) */}
+              <div className="flex flex-col items-center gap-3 py-2" data-field-error={errors.profilePhotoUrl ? true : undefined}>
                 <div
                   className="relative w-28 h-28 rounded-full overflow-hidden cursor-pointer group"
                   style={{
                     background: OVERLAY,
-                    border: `2px solid ${profile.profilePhotoUrl ? "var(--color-accent)" : BORDER}`,
+                    border: `2px solid ${profile.profilePhotoUrl ? "var(--color-accent)" : errors.profilePhotoUrl ? "var(--color-alert, #ef4444)" : BORDER}`,
                     boxShadow: profile.profilePhotoUrl ? "0 0 20px color-mix(in srgb, var(--color-accent) 20%, transparent)" : undefined,
                   }}
                   onClick={() => photoInputRef.current?.click()}
@@ -931,8 +936,13 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   </div>
                 </div>
                 <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo (optional)"}
+                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo *"}
                 </p>
+                {!profile.profilePhotoUrl && (
+                  errors.profilePhotoUrl
+                    ? <FieldError error={errors.profilePhotoUrl} />
+                    : <p className="text-xs -mt-2" style={{ color: "var(--color-text-subtle)" }}>Photo is required</p>
+                )}
                 <input
                   ref={photoInputRef as React.RefObject<HTMLInputElement>}
                   type="file" accept="image/*" className="hidden" disabled={photoUploading}
@@ -1653,7 +1663,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
               {!readyToSubmit && missingFields.length > 0 && (
                 <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
-                  Please fill in: {missingFields.join(", ")}
+                  Please fill in: {missingFields.map((f) => (f === "profilePhotoUrl" ? "profile photo" : f)).join(", ")}
                 </p>
               )}
               {mentorshipMissing && (

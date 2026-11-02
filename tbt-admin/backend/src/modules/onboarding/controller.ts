@@ -383,7 +383,7 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
     return reply.status(400).send({
       success: false,
       data: { missingFields: check.missingFields, hasDocument: check.hasDocument, unwatchedVideoSteps: check.unwatchedVideoSteps },
-      error: 'Please complete all required fields, upload at least one document, and watch all required videos before submitting',
+      error: 'Please complete all required fields (including your profile photo), upload at least one document, and watch all required videos before submitting',
     });
   }
 
