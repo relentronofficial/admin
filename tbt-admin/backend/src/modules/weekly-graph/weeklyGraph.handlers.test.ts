@@ -35,7 +35,7 @@ interface Store {
   records: Array<{ id: string; memberId: string; milestoneId: string; weekId: string | null; note: string | null; recordedBy: string; recordedAt: Date }>;
   members: Array<{ id: string; firstName: string; lastName: string; batchId: string | null }>;
   /** member_revenue_reports: the member's own weekly figure ("Your Revenue Stats"), per IST ISO week. */
-  revenues: Array<{ memberId: string; isoYear: number; isoWeek: number; revenue: number | null }>;
+  revenues: Array<{ memberId: string; isoYear: number; isoWeek: number; revenue: number | null; reportedAt?: Date | null }>;
   /** The test batch (of PROGRAM): batches.snapshot_days (null = the program's length) and the member's member_batch_settings.extended_days. */
   batchSnapshotDays: number | null;
   extendedDays: number;
@@ -187,7 +187,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   }
   if (q.startsWith('SELECT extended_days FROM member_batch_settings')) return db.extendedDays ? [{ extended_days: db.extendedDays }] : [];
   if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue, created_at AS "reportedAt" FROM member_revenue_reports')) {
-    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue, reportedAt: null }));
+    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue, reportedAt: r.reportedAt ?? null }));
   }
   if (q.startsWith('SELECT GREATEST( COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0)')) {
     // loadProgramWeekSpanDays: program length, the batch's length (snapshot null → program's) + extra days, latest active activity day.
@@ -611,9 +611,10 @@ describe('revenue milestones and activity markers (admin → API → member grap
     return { isoYear: d.getUTCFullYear(), isoWeek: 1 + Math.round((d.getTime() - jan4.getTime()) / (7 * DAY)) };
   };
   /**
-   * The program day in [startDay, endDay] that is a Monday (IST). A calendar
-   * week's revenue counts from its Monday, so reporting for the week starting on
-   * this day lands in that program week whatever weekday the suite runs on.
+   * The program day in [startDay, endDay] that is a Monday (IST). The member
+   * reports that calendar week on this day (reportedAt), and a week's revenue
+   * counts on the day it was reported (weeklyGraphRevenue.ts), so it lands in
+   * that program week whatever weekday the suite runs on.
    */
   const mondayIn = (startDay: number, endDay: number) => {
     for (let d = startDay; d <= endDay; d++) {
@@ -621,7 +622,8 @@ describe('revenue milestones and activity markers (admin → API → member grap
     }
     throw new Error('no Monday in range');
   };
-  const report = (memberId: string, day: number, revenue: number | null) => db.revenues.push({ memberId, ...isoOfDay(day), revenue });
+  const report = (memberId: string, day: number, revenue: number | null) =>
+    db.revenues.push({ memberId, ...isoOfDay(day), revenue, reportedAt: new Date(BATCH_START() + (day - 1) * DAY) });
   const setRevenue = (memberId: string, day: number, revenue: number | null) => {
     const k = isoOfDay(day);
     db.revenues.find((r) => r.memberId === memberId && r.isoYear === k.isoYear && r.isoWeek === k.isoWeek)!.revenue = revenue;
