@@ -171,7 +171,7 @@ jobs:
   # ── Deploy production backend (main branch) ──────────────────────────────
   deploy-backend-production:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -295,7 +295,7 @@ jobs:
   # .github/scripts/verify-user-web-target.sh.
   deploy-user-web-production:
     needs: [build-user-web, deploy-backend-production]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.deploy-backend-production.result != 'failure' }}
+    if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.deploy-backend-production.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -386,7 +386,7 @@ jobs:
   # ── Deploy production admin panel (main branch) ──────────────────────────
   deploy-admin-production:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     environment: production
     steps:

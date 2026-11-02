@@ -340,11 +340,11 @@ function ContentStepSkeleton() {
 // ─── Step shell ───────────────────────────────────────────────────────────────
 
 function StepShell({
-  title, subtitle, children, onBack, onNext, nextLabel, nextDisabled, saving,
+  title, subtitle, children, onBack, onNext, nextLabel, nextDisabled, saving, hideNext,
 }: {
   title: string; subtitle?: string; children: React.ReactNode;
   onBack?: () => void; onNext: () => void;
-  nextLabel?: string; nextDisabled?: boolean; saving?: boolean;
+  nextLabel?: string; nextDisabled?: boolean; saving?: boolean; hideNext?: boolean;
 }) {
   return (
     <div className="p-6 md:p-8">
@@ -357,31 +357,33 @@ function StepShell({
         )}
         {!subtitle && <div className="mb-6" />}
         <div className="mb-10">{children}</div>
-        <div className="flex justify-between items-center pt-5 border-t" style={{ borderColor: BORDER }}>
-          {onBack ? (
+        {!hideNext && (
+          <div className="flex justify-between items-center pt-5 border-t" style={{ borderColor: BORDER }}>
+            {onBack ? (
+              <button
+                onClick={onBack}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Back
+              </button>
+            ) : <span />}
             <button
-              onClick={onBack}
-              className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
-              style={{ color: "var(--color-text-secondary)" }}
+              onClick={onNext}
+              disabled={nextDisabled || saving}
+              className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40"
+              style={{
+                background: "var(--color-accent)",
+                boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+              }}
             >
-              Back
+              {saving && (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              )}
+              {saving ? "Saving…" : (nextLabel ?? "Continue")}
             </button>
-          ) : <span />}
-          <button
-            onClick={onNext}
-            disabled={nextDisabled || saving}
-            className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40"
-            style={{
-              background: "var(--color-accent)",
-              boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
-            }}
-          >
-            {saving && (
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            )}
-            {saving ? "Saving…" : (nextLabel ?? "Continue")}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -781,7 +783,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             title="Welcome to TBT"
             subtitle="Complete your profile in a few steps to unlock full platform access. This takes about 5–10 minutes — your progress is saved automatically."
             onNext={() => setStep(stepOrder[1] ?? "profile")}
-            nextLabel="Now start onboarding"
+            hideNext={!!(ctaButtons && ctaButtons.length > 0)}
           >
             <div className="space-y-3">
               {[
@@ -828,7 +830,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                       boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
                     }}
                   >
-                    {btn.name}
+                    Now start onboarding
                   </button>
                 ))}
               </div>
