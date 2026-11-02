@@ -8,17 +8,21 @@ function normalizePhone(phone: string): string {
 }
 
 export async function sendOtp(phone: string, otp: string): Promise<boolean> {
+  if (!env.MSG91_AUTH_KEY || !env.MSG91_TEMPLATE_ID || !env.MSG91_SENDER_ID) {
+    console.warn('[MSG91] credentials not configured — skipping');
+    return false;
+  }
   const mobile = normalizePhone(phone);
   try {
     const res = await fetch('https://control.msg91.com/api/v5/flow', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'authkey': env.MSG91_AUTH_KEY ?? '',
+        'authkey': env.MSG91_AUTH_KEY,
       },
       body: JSON.stringify({
-        flow_id: env.MSG91_TEMPLATE_ID ?? '',
-        sender: env.MSG91_SENDER_ID ?? '',
+        flow_id: env.MSG91_TEMPLATE_ID,
+        sender: env.MSG91_SENDER_ID,
         short_url: '0',
         mobiles: mobile,
         VAR1: otp,
