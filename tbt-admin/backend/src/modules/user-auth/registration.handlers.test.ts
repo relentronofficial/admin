@@ -4,13 +4,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // in-memory store and a fake Redis. WhatsApp/SMS senders are stubbed: nothing
 // is sent anywhere; the OTP the handler "sends" is captured here.
 
-vi.mock('../../config/env.js', () => ({ env: { NODE_ENV: 'test', CRON_SECRET: 'x', PROGRAM_TIMEZONE: 'Asia/Kolkata' } }));
+const envMock = vi.hoisted(() => ({ env: { NODE_ENV: 'test', CRON_SECRET: 'x', PROGRAM_TIMEZONE: 'Asia/Kolkata' } as Record<string, any> }));
+vi.mock('../../config/env.js', () => envMock);
 const sent = vi.hoisted(() => [] as Array<{ phone: string; otp: string }>);
+/** Each channel's outcome for the next sends (WhatsApp → SMS fallback on the phone; email). */
+const channel = vi.hoisted(() => ({ whatsapp: true, sms: false, email: true }));
+const emails = vi.hoisted(() => [] as Array<{ to: string; otp: string }>);
 vi.mock('../../lib/whatsapp.js', () => ({
-  sendOtpWhatsapp: vi.fn(async (phone: string, otp: string) => { sent.push({ phone, otp }); return true; }),
+  sendOtpWhatsapp: vi.fn(async (phone: string, otp: string) => { if (!channel.whatsapp) return false; sent.push({ phone, otp }); return true; }),
   sendOtpWhatsappDiagnostic: vi.fn(),
 }));
-vi.mock('../../lib/msg91.js', () => ({ sendOtp: vi.fn(async () => false) }));
+vi.mock('../../lib/msg91.js', () => ({ sendOtp: vi.fn(async (phone: string, otp: string) => { if (!channel.sms) return false; sent.push({ phone, otp }); return true; }) }));
+vi.mock('../../lib/otpEmail.js', () => ({
+  sendOtpEmail: vi.fn(async (to: string, otp: string) => { if (!channel.email) return false; emails.push({ to, otp }); return true; }),
+}));
 vi.mock('../../plugins/jwt.js', () => ({
   setAuthCookies: vi.fn(), clearAuthCookies: vi.fn(), generateRefreshToken: () => 'refresh-token',
   storeRefreshToken: vi.fn(async () => {}), consumeRefreshToken: vi.fn(), revokeRefreshToken: vi.fn(),
@@ -121,10 +128,15 @@ const SIGNUP = { firstName: 'Priya', lastName: 'K', email: 'Priya@Example.com', 
 
 beforeEach(() => {
   members = []; sessions = []; pending = new Map(); sent.length = 0; seq = 0;
-  warnings.length = 0;
+  warnings.length = 0; emails.length = 0; logged.length = 0;
+  Object.assign(channel, { whatsapp: true, sms: false, email: true });
+  envMock.env.NODE_ENV = 'test';
+  const record = (obj: any, msg?: string) => { logged.push(JSON.stringify([obj, msg ?? null])); };
   server = { prisma: prisma(), redis: fakeRedis(), jwt: { sign: vi.fn(async () => 'access-token') },
-    log: { info() {}, warn: (obj: any, msg?: string) => { warnings.push({ obj, msg }); }, error() {} } };
+    log: { info: record, warn: (obj: any, msg?: string) => { record(obj, msg); warnings.push({ obj, msg }); }, error: record } };
 });
+/** Every structured log line the handlers wrote (to check no OTP is ever logged). */
+const logged: string[] = [];
 
 describe('international phone numbers', () => {
   it('a complete UK number registers end to end and is stored in E.164', async () => {
@@ -397,5 +409,132 @@ describe('business type', () => {
     expect(v.status).toBe(200);
     expect(members).toHaveLength(1);
     expect(members[0].productServiceType).toBe(type);
+  });
+});
+
+describe('signup OTP on WhatsApp and email', () => {
+  const PHONE = '+919812345678';
+  const otpIn = (body: unknown, otp: string) => JSON.stringify(body).includes(otp);
+
+  it('both succeed: one OTP, sent to the WhatsApp number and the signup email; either copy verifies', async () => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ step: 'otp_required', phone: PHONE, delivered: true, channels: { phone: true, email: true } });
+    expect(sent).toHaveLength(1);
+    expect(emails).toEqual([{ to: 'priya@example.com', otp: sent[0].otp }]); // the same OTP, to the normalised signup email
+    expect(r.body.data.otp).toBeUndefined();
+    const v = await call(auth.verifyOtp, { phone: PHONE, otp: emails[0].otp });
+    expect(v.status).toBe(200);
+    expect(members).toHaveLength(1);
+  });
+
+  it('WhatsApp (and SMS) fail, email works: signup continues and the emailed OTP verifies', async () => {
+    envMock.env.NODE_ENV = 'production';
+    channel.whatsapp = false;
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ step: 'otp_required', delivered: true, channels: { phone: false, email: true } });
+    expect(sent).toHaveLength(0);
+    expect(otpIn(r.body, emails[0].otp)).toBe(false); // never exposed
+    const v = await call(auth.verifyOtp, { phone: PHONE, otp: emails[0].otp });
+    expect(v.status).toBe(200);
+    expect(members).toHaveLength(1);
+  });
+
+  it('WhatsApp fails but the SMS fallback works: still delivered on the phone channel', async () => {
+    envMock.env.NODE_ENV = 'production';
+    Object.assign(channel, { whatsapp: false, sms: true, email: false });
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ delivered: true, channels: { phone: true, email: false } });
+    expect((await call(auth.verifyOtp, { phone: PHONE, otp: sent[0].otp })).status).toBe(200);
+  });
+
+  it('email fails, WhatsApp works: signup continues and the WhatsApp OTP verifies', async () => {
+    envMock.env.NODE_ENV = 'production';
+    channel.email = false;
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ delivered: true, channels: { phone: true, email: false } });
+    expect(emails).toHaveLength(0);
+    expect((await call(auth.verifyOtp, { phone: PHONE, otp: sent[0].otp })).status).toBe(200);
+  });
+
+  it('both fail in production: 503 with a clear message, no OTP in the reply, no account; resend reports the same', async () => {
+    envMock.env.NODE_ENV = 'production';
+    Object.assign(channel, { whatsapp: false, sms: false, email: false });
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(503);
+    expect(r.body).toMatchObject({ success: false, error: auth.SIGNUP_OTP_UNDELIVERED, channels: { phone: false, email: false } });
+    expect(JSON.stringify(r.body)).not.toMatch(/\b\d{6}\b/);
+    expect(members).toHaveLength(0);
+    server.redis = fakeRedis(); // past the 60 s cooldown
+    const again = await call(auth.resendOtp, { phone: PHONE });
+    expect(again.status).toBe(503);
+    expect(again.body.error).toBe(auth.SIGNUP_OTP_UNDELIVERED);
+  });
+
+  it('both fail outside production: the existing dev behaviour (OTP returned for testing) is kept', async () => {
+    Object.assign(channel, { whatsapp: false, sms: false, email: false });
+    const r = await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({ delivered: false, channels: { phone: false, email: false } });
+    expect(r.body.data.otp).toMatch(/^\d{6}$/);
+  });
+
+  it('resend for a pending signup sends a fresh OTP on both channels; the old one stops working', async () => {
+    await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    const first = emails[0].otp;
+    server.redis = fakeRedis(); // past the cooldown (fresh fake Redis; the OTP store is in-memory too)
+    const r = await call(auth.resendOtp, { phone: PHONE });
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ delivered: true, channels: { phone: true, email: true } });
+    expect(emails).toHaveLength(2);
+    expect(emails[1].otp).toBe(sent[1].otp);
+    if (emails[1].otp !== first) expect((await call(auth.verifyOtp, { phone: PHONE, otp: first })).status).toBe(400);
+    expect((await call(auth.verifyOtp, { phone: PHONE, otp: emails[1].otp })).status).toBe(200);
+  });
+
+  it('a wrong OTP is rejected and creates no account; an expired OTP is rejected', async () => {
+    await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    const wrong = emails[0].otp === '000000' ? '111111' : '000000';
+    const bad = await call(auth.verifyOtp, { phone: PHONE, otp: wrong });
+    expect(bad).toMatchObject({ status: 400, body: { error: 'Invalid OTP. Please try again.' } });
+    expect(members).toHaveLength(0);
+    // 5 minutes later the OTP has expired (Redis key gone, in-memory copy past its expiry).
+    const otp = emails[0].otp;
+    server.redis = fakeRedis();
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 5 * 60_000 + 1);
+    try {
+      const expired = await call(auth.verifyOtp, { phone: PHONE, otp });
+      expect(expired).toMatchObject({ status: 400, body: { error: 'OTP expired. Please request a new one.' } });
+    } finally { spy.mockRestore(); }
+    expect(members).toHaveLength(0);
+  });
+
+  it('no OTP is ever written to the logs', async () => {
+    channel.whatsapp = false;
+    await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    server.redis = fakeRedis();
+    await call(auth.resendOtp, { phone: PHONE });
+    for (const e of emails) expect(logged.some((l) => l.includes(e.otp))).toBe(false);
+    expect(logged.some((l) => l.includes('priya@example.com'))).toBe(false);
+  });
+
+  it('login and forgot-password for an existing member are unchanged: phone only, no email', async () => {
+    await call(auth.signup, { ...SIGNUP, phone: PHONE });
+    await call(auth.verifyOtp, { phone: PHONE, otp: emails[0].otp });
+    emails.length = 0; sent.length = 0; sessions = [];
+    server.redis = fakeRedis();
+    const l = await call(auth.login, { phone: PHONE, password: 'secret123' });
+    expect(l.status).toBe(200);
+    expect(l.body.data.step).toBe('otp_required');
+    expect(l.body.data.channels).toBeUndefined();
+    server.redis = fakeRedis();
+    const f = await call(auth.forgotPassword, { phone: PHONE });
+    expect(f.status).toBe(200);
+    expect(sent).toHaveLength(2);
+    expect(emails).toHaveLength(0);
   });
 });

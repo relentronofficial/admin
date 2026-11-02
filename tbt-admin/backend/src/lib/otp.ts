@@ -4,7 +4,7 @@ import { phoneKey } from './phoneNumber.js';
 // OTP, cooldown and hourly keys use the canonical E.164 form (phoneKey), so
 // "9876543210", "919876543210" and "+919876543210" are the same phone.
 
-const OTP_TTL = 300; // 5 minutes
+export const OTP_TTL = 300; // 5 minutes
 const MAX_ATTEMPTS = 3;
 
 // ── Rate-limit knobs ───────────────────────────────────────────────

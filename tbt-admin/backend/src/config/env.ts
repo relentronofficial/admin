@@ -39,6 +39,8 @@ const envSchema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional().or(z.literal('')),
   FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal('')),
   RESEND_API_KEY: z.string().optional().or(z.literal('')),
+  // Sender for the signup OTP email (lib/otpEmail.ts); its domain must be verified in Resend.
+  OTP_EMAIL_FROM: z.string().optional().or(z.literal('')),
   TWILIO_ACCOUNT_SID: z.string().optional().or(z.literal('')),
   TWILIO_AUTH_TOKEN: z.string().optional().or(z.literal('')),
   TWILIO_PHONE_NUMBER: z.string().optional().or(z.literal('')),
