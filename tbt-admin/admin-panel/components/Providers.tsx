@@ -97,10 +97,15 @@ function AuthInterceptor() {
       // more OTPs can be delivered until the wallet is topped up.
       // Show a persistent error toast (not the default success/info
       // colour) so it's impossible to miss.
-      socket.on('admin:whatsapp_low_balance', () => {
+      // Also fires (reason: 'subscription_expired') when @zacx returns 403
+      // "Subscription is expired".
+      socket.on('admin:whatsapp_low_balance', (payload?: { reason?: string }) => {
         toast.error(
-          'WhatsApp OTP delivery halted — @zacx wallet balance exhausted. '
-          + 'Top up at zacx.com to restore user logins.',
+          payload?.reason === 'subscription_expired'
+            ? 'WhatsApp OTP delivery halted — @zacx subscription expired. '
+              + 'Renew the subscription at zacx.com to restore user logins.'
+            : 'WhatsApp OTP delivery halted — @zacx wallet balance exhausted. '
+              + 'Top up at zacx.com to restore user logins.',
           { duration: 15000 },
         );
         invalidateAdminNotifs();
