@@ -123,25 +123,32 @@ async function bootstrap() {
     //
     // The handler is registered after prisma + socket are both ready
     // so it can safely reference them.
-    registerLowBalanceHandler(async ({ status, body, at }) => {
+    registerLowBalanceHandler(async ({ status, body, at, reason }) => {
+      const expired = reason === 'subscription_expired';
       fastify.log.warn(
-        { status, bodySnippet: body.slice(0, 200) },
-        '[WhatsApp] wallet balance depleted — raising admin alert',
+        { status, reason, bodySnippet: body.slice(0, 200) },
+        expired
+          ? '[WhatsApp] BSP subscription expired — raising admin alert'
+          : '[WhatsApp] wallet balance depleted — raising admin alert',
       );
       // Write the notification row so the bell + list-view show it.
       await createAdminNotification(fastify.prisma, {
         title: 'WhatsApp OTP delivery halted',
-        body: 'The @zacx BSP wallet balance is exhausted. Users cannot '
-            + 'receive OTPs until the account is topped up. '
+        body: (expired
+          ? 'The @zacx BSP subscription has expired. Users cannot '
+            + 'receive WhatsApp OTPs until the subscription is renewed. '
+          : 'The @zacx BSP wallet balance is exhausted. Users cannot '
+            + 'receive OTPs until the account is topped up. ')
             + `First failure detected at ${at.toISOString()}.`,
         type: 'whatsapp_low_balance',
-        metadata: { bspStatus: status, detectedAt: at.toISOString() },
+        metadata: { bspStatus: status, reason, detectedAt: at.toISOString() },
       });
       // Push to any admin panel currently connected so the badge
       // updates without waiting for a refresh.
       try {
         fastify.io?.to('admin').emit('admin:whatsapp_low_balance', {
           bspStatus: status,
+          reason,
           at: at.toISOString(),
         });
       } catch (err) {

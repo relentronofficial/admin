@@ -25,7 +25,12 @@ export type LowBalanceHandler = (details: {
   status: number;
   body: string;
   at: Date;
+  /** Why the BSP refused: an empty wallet, or an expired account subscription. */
+  reason: BspAccountFailure;
 }) => void | Promise<void>;
+
+/** An account-level BSP rejection: no OTP can be delivered until an operator acts. */
+export type BspAccountFailure = 'low_balance' | 'subscription_expired';
 
 let _lowBalanceHandler: LowBalanceHandler | null = null;
 let _lastLowBalanceAlert = 0;
@@ -35,22 +40,33 @@ export function registerLowBalanceHandler(handler: LowBalanceHandler): void {
   _lowBalanceHandler = handler;
 }
 
-/// Inspect a BSP response and, if it indicates the wallet is empty,
-/// dispatch the low-balance alert (subject to the once-per-hour cooldown).
-/// Returns true when the response WAS a low-balance signal, so the caller
-/// can log it explicitly.
+/** Test hook: forget the handler and the cooldown so each test starts clean. */
+export function resetLowBalanceAlertForTests(): void {
+  _lowBalanceHandler = null;
+  _lastLowBalanceAlert = 0;
+}
+
+/**
+ * Classify a BSP response as an account-level failure, or null for anything
+ * else (a bad number, a template error, a network blip — those are per-send).
+ *   * low_balance — HTTP 402, or a body with "INSUFFICIENT_BALANCE" (the @zacx
+ *     shape observed 2026-07-16) / "insufficient balance" (other BSPs' wording)
+ *   * subscription_expired — HTTP 403 with "Subscription is expired" (the @zacx
+ *     shape observed 2026-11-02: {"message":"Subscription is expired","error":"Forbidden","statusCode":403})
+ */
+export function classifyBspAccountFailure(status: number, body: string): BspAccountFailure | null {
+  if (status === 402 || body.includes('INSUFFICIENT_BALANCE') || /insufficient\s+balance/i.test(body)) return 'low_balance';
+  if (status === 403 && /subscription\s+is\s+expired/i.test(body)) return 'subscription_expired';
+  return null;
+}
+
+/// Inspect a BSP response and, if it is an account-level failure (empty
+/// wallet or expired subscription — see [classifyBspAccountFailure]), dispatch
+/// the admin alert (subject to the once-per-hour cooldown). Returns true when
+/// the response WAS such a signal, so the caller can log it explicitly.
 function detectAndAlertLowBalance(status: number, body: string): boolean {
-  // BSPs vary in how they signal this. Cover the common shapes:
-  //   * HTTP 402 (RFC "Payment Required")
-  //   * Any status with body containing "INSUFFICIENT_BALANCE" (the @zacx
-  //     shape observed 2026-07-16)
-  //   * "insufficient balance" case-insensitive (safety net for BSPs that
-  //     use a different code but the same wording)
-  const isLowBalance =
-    status === 402 ||
-    body.includes('INSUFFICIENT_BALANCE') ||
-    /insufficient\s+balance/i.test(body);
-  if (!isLowBalance) return false;
+  const reason = classifyBspAccountFailure(status, body);
+  if (!reason) return false;
 
   const now = Date.now();
   if (now - _lastLowBalanceAlert < _lowBalanceCooldown) return true;
@@ -61,7 +77,7 @@ function detectAndAlertLowBalance(status: number, body: string): boolean {
     // Fire-and-forget — the caller is on the OTP hot path and shouldn't
     // wait on the admin-notif write. Errors are swallowed so a broken
     // handler can't fault the OTP call.
-    Promise.resolve(handler({ status, body, at: new Date() })).catch((err) => {
+    Promise.resolve(handler({ status, body, at: new Date(), reason })).catch((err) => {
       console.warn('[WhatsApp] low-balance handler threw:', err);
     });
   }
