@@ -1199,8 +1199,11 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: courseLifelines } = useCourseLifelines(courseId);
   const lifelinesTotal: number | null =
     courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
+  // Use server-authoritative .remaining (same as video player), not recomputed from parts
   const lifelinesUsed: number | null =
-    courseLifelines != null ? courseLifelines.freeUsed + courseLifelines.purchasedUsed : null;
+    lifelinesTotal != null && courseLifelines != null
+      ? lifelinesTotal - courseLifelines.remaining
+      : null;
 
   const dailyHrs = stats?.dailyTimeSpentHrs ?? 0;
   const dailyGoal: number | null = stats?.dailyTimeGoalHrs ?? null;
