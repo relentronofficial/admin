@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Archive,
   Check,
+  ChevronDown,
   ChevronLeft,
   Copy,
   Edit3,
@@ -1209,14 +1210,14 @@ function DmBubble({
   }
 
   return (
-    <div id={`msg-${message.id}`} className={cn('flex gap-2.5 relative group', isMe && 'flex-row-reverse')}>
+    <div id={`msg-${message.id}`} className={cn('flex gap-2.5', isMe && 'flex-row-reverse')}>
       <Avatar
         avatarUrl={isMe ? (me as any)?.avatarUrl : message.senderAvatarUrl}
         name={isMe ? me?.firstName : message.senderName}
         size={28}
         style={{ background: isMe ? 'var(--color-accent)' : 'hsl(var(--muted-foreground))' }}
       />
-      <div className={cn('max-w-[65%] flex flex-col', isMe && 'items-end')}>
+      <div className={cn('max-w-[65%] flex flex-col relative group', isMe && 'items-end')}>
         <div
           className={cn(
             'rounded-2xl overflow-hidden',
@@ -1362,37 +1363,25 @@ function DmBubble({
             </div>
           </>
         )}
-      </div>
-
-      {/* Hover / persistent action button. Sits on the bubble edge; opens a
-          small menu with Reply, Copy, React, Forward, Edit (own, within 5
-          minutes) and Delete (for me / for everyone on own messages). Hidden
-          on messages deleted for everyone. */}
-      {!deleted && !editing && (
-      <button
-        onClick={() => setMenuOpen((v) => !v)}
-        className={cn(
-          'absolute top-1 w-6 h-6 rounded-full flex items-center justify-center transition-opacity',
-          isMe ? 'left-8 lg:opacity-0 lg:group-hover:opacity-100' : 'right-8 lg:opacity-0 lg:group-hover:opacity-100',
+        {!deleted && !editing && (
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="absolute top-0 right-0 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
+            style={{
+              background: 'var(--color-modal-bg)',
+              border: '1px solid var(--color-border-medium)',
+              color: 'var(--color-text-secondary)',
+            }}
+            aria-label="Message options"
+          >
+            <ChevronDown size={12} />
+          </button>
         )}
-        style={{
-          background: 'var(--color-modal-bg)',
-          border: '1px solid var(--color-border-medium)',
-          color: 'var(--color-text-secondary)',
-        }}
-        aria-label="Message options"
-      >
-        <MoreVertical size={12} />
-      </button>
-      )}
-      {menuOpen && (
+        {menuOpen && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
           <div
-            className={cn(
-              'absolute top-8 z-50 w-40 rounded-xl overflow-hidden py-1',
-              isMe ? 'left-8' : 'right-8',
-            )}
+            className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
             style={{
               background: 'var(--color-modal-bg)',
               border: '1px solid var(--color-border-medium)',
@@ -1492,6 +1481,7 @@ function DmBubble({
           </div>
         </>
       )}
+      </div>
 
       {confirmDelete && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4" onClick={() => !deleteMsg.isPending && setConfirmDelete(null)}>

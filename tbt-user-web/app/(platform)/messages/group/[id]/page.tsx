@@ -1398,11 +1398,7 @@ function MessageBubble({
           {!deleted && (
             <button
               onClick={() => setMenuOpen((v) => !v)}
-              className={cn(
-                "absolute -top-2 w-6 h-6 rounded-full flex items-center justify-center transition-opacity",
-                isMine ? "-right-2" : "-right-2",
-                "opacity-0 group-hover:opacity-100 focus:opacity-100",
-              )}
+              className="absolute top-0 right-0 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
               style={{
                 background: "var(--color-modal-bg)",
                 border: "1px solid var(--color-border-medium)",
