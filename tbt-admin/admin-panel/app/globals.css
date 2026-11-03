@@ -32,6 +32,11 @@ body {
   }
 }
 
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
 /* LiveKit fullscreen — override fixed height so video fills the screen */
 [data-lk-theme]:fullscreen,
 [data-lk-theme]:-webkit-full-screen {

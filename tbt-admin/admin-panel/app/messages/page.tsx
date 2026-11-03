@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   Check,
@@ -54,6 +55,7 @@ function AdminBubble({
   onReply: (msg: any) => void;
 }) {
   const [menuOpen, setMenuOpen]       = useState(false);
+  const [menuPos, setMenuPos]         = useState<{ top: number; left: number } | null>(null);
   const [editing, setEditing]         = useState(false);
   const [editText, setEditText]       = useState("");
   const [confirmDel, setConfirmDel]   = useState(false);
@@ -63,9 +65,42 @@ function AdminBubble({
   const [tkPriority, setTkPriority]   = useState("medium");
   const [tkDeadline, setTkDeadline]   = useState("");
 
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
   const editMsg      = useEditAdminChatMessage();
   const deleteMsg    = useDeleteAdminChatMessage();
   const raiseTicket  = useRaiseTicketFromDm();
+
+  const MENU_W = 176; // w-44 = 11rem
+
+  function openMenu() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const menuH = 200; // conservative estimate
+    let top = r.bottom + 4;
+    let left = r.right - MENU_W;
+    if (top + menuH > window.innerHeight - 8) top = r.top - menuH - 4;
+    left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+    setMenuPos({ top, left });
+    setMenuOpen(true);
+  }
+
+  // Close on any scroll (fixed dropdown doesn't track trigger movement)
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("scroll", close, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", close, true);
+  }, [menuOpen]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
 
   const isAdmin  = message.senderType === "admin";
   const deleted  = !!message.deletedForEveryone;
@@ -191,7 +226,8 @@ function AdminBubble({
         {/* Hover action button — top-right of bubble */}
         {!deleted && !editing && (
           <button
-            onClick={() => setMenuOpen((v) => !v)}
+            ref={triggerRef}
+            onClick={openMenu}
             className="absolute top-0 right-0 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
             style={{
               background: "#141414",
@@ -204,16 +240,19 @@ function AdminBubble({
           </button>
         )}
 
-        {/* Dropdown menu */}
-        {menuOpen && (
+        {/* Dropdown menu — portal to body so overflow-y-auto never clips it */}
+        {menuOpen && menuPos && createPortal(
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+            <div className="fixed inset-0 z-[200]" onClick={() => setMenuOpen(false)} />
             <div
-              className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
+              className="fixed z-[201] w-44 rounded-xl overflow-hidden py-1"
               style={{
+                top: menuPos.top,
+                left: menuPos.left,
                 background: "#141414",
                 border: "1px solid #2a2a2a",
                 boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+                animation: "fadeInScale 0.1s ease",
               }}
             >
               <button
@@ -261,7 +300,8 @@ function AdminBubble({
                 </button>
               )}
             </div>
-          </>
+          </>,
+          document.body,
         )}
 
         {/* Delete confirm dialog */}
