@@ -46,7 +46,8 @@ export const onboardingUpdateSchema = z.object({
   skillAds: z.number().int().min(1).max(10).optional().nullable(),
   skillSales: z.number().int().min(1).max(10).optional().nullable(),
   skillOverallMarketing: z.number().int().min(1).max(10).optional().nullable(),
-  weeklyLearningHours: z.number().int().min(5).max(80).optional().nullable(),
+  // Hours per day (UI: 1–24); up to 80 so per-week values saved before the switch still validate.
+  weeklyLearningHours: z.number().int().min(1).max(80).optional().nullable(),
   teamSize: z.string().optional(),
   businessStartedFrom: z.string().optional(),
   instagramStats: z.string().optional(),
