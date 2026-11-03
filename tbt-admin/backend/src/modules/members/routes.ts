@@ -32,6 +32,7 @@ import {
   getMemberRevenueAdminHandler,
   getMemberRevenueHistoryAdminHandler,
   upsertMemberRevenueAdminHandler,
+  getMemberTbtActivityLogHandler,
 } from './controller.js';
 import { adminRevokeMemberSessions } from '../user-auth/controller.js';
 
@@ -80,4 +81,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
   fastify.get('/:id/mentorship/revenue',         getMemberRevenueAdminHandler);
   fastify.get('/:id/mentorship/revenue/history', getMemberRevenueHistoryAdminHandler);
   fastify.put('/:id/mentorship/revenue',         upsertMemberRevenueAdminHandler);
+
+  // AL-01: Per-member points & activity log viewer
+  fastify.get('/:id/tbt-activity-log', getMemberTbtActivityLogHandler);
 }

@@ -3090,6 +3090,50 @@ export const useDeleteCoinPackage = () => {
   });
 };
 
+// ── AL-02 Member Points & Activity Log (/api/members/:id/tbt-activity-log) ────
+export interface ActivityPeriodRow {
+  periodKey: string;
+  label: string;
+  earned: number;
+  spent: number;
+  net: number;
+  activeLearningEvents: number;
+  topSources: string[];
+}
+export interface ActivitySourceBreakdown {
+  source: string;
+  events: number;
+  points: number;
+  isLearning: boolean;
+}
+export interface ActivityLogSummary {
+  totalPoints: number;
+  totalEarned: number;
+  totalSpent: number;
+  activeDays: number;
+  currentStreak: number;
+  rangeLabel: string;
+}
+export interface MemberTbtActivityLogData {
+  summary: ActivityLogSummary;
+  rows: ActivityPeriodRow[];
+  sources: ActivitySourceBreakdown[];
+}
+
+export const useMemberTbtActivityLog = (
+  memberId: string,
+  params: { view: 'daily' | 'weekly' | 'monthly'; from: string; to: string; sourceGroup: 'all' | 'learning' | 'coins' },
+) =>
+  useQuery({
+    queryKey: ['member-tbt-activity-log', memberId, params],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/members/${memberId}/tbt-activity-log`, { params });
+      return (res?.data ?? null) as MemberTbtActivityLogData | null;
+    },
+    enabled: !!memberId,
+    staleTime: 60_000,
+  });
+
 // ── Episode Form Submissions (admin read) ─────────────────────────────────────
 
 export const useEpisodeFormSubmissions = (episodeId: string, page = 1) =>
