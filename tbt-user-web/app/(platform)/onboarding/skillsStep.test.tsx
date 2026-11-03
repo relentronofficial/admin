@@ -50,6 +50,7 @@ const COMPLETE_PROFILE = {
   instagramLink: "https://instagram.com/asha", annualTurnover: "0-10L", revenueGoalAfterTbt: "50L", goalAfter90Days: "Grow",
   businessStartedFrom: "2020", teamSize: "1-5", instagramStats: "1k", facebookStats: "500", gstNumber: "33ABCDE1234F1Z5",
   preferredSessionMode: "online", hasMarketingTeam: false, hasVideoEditing: false,
+  profilePhotoUrl: "https://cdn.example.com/asha.webp",
 };
 const SKILLS = ["Business Foundation", "Content Creation", "Sales Funnels", "Paid Ads", "Sales & Closing", "Overall Marketing"];
 const KEYS = ["skillBusinessFoundation", "skillContent", "skillFunnels", "skillAds", "skillSales", "skillOverallMarketing"];

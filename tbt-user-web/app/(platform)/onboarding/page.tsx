@@ -617,6 +617,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const validateProfileStep = (): boolean => {
     const errs: Record<string, string> = {};
     const str = (k: string) => (profile[k] ?? "").toString().trim();
+    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = "Please upload a photo";
     if (!str("firstName")) errs.firstName = "First name is required";
     if (!str("city")) errs.city = "City is required";
     if (!str("state")) errs.state = "State is required";
@@ -702,7 +703,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     setPhotoUploading(true);
     try {
       const { data } = await uploadPhoto.mutateAsync(file);
-      setProfileState((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
+      setField("profilePhotoUrl", data.publicUrl);
       toast.success("Photo uploaded");
     } catch (err: any) {
       toast.error(err?.message || "Photo upload failed. Please try again.");
@@ -916,7 +917,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <SectionHeader icon={Users} title="Personal Info" />
 
               {/* Profile photo */}
-              <div className="flex flex-col items-center gap-3 py-2">
+              <div className="flex flex-col items-center gap-3 py-2" data-field-error={errors.profilePhotoUrl ? true : undefined}>
                 <div
                   className="relative w-28 h-28 rounded-full overflow-hidden cursor-pointer group"
                   style={{
@@ -943,8 +944,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   </div>
                 </div>
                 <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo (optional)"}
+                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo"}
                 </p>
+                <FieldError error={errors.profilePhotoUrl} />
                 <input
                   ref={photoInputRef as React.RefObject<HTMLInputElement>}
                   type="file" accept="image/*" className="hidden" disabled={photoUploading}

@@ -383,6 +383,13 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   }
 
   Future<void> _saveAndNext() async {
+    final photoUrl = _profile['profilePhotoUrl'] as String?;
+    if (photoUrl == null || photoUrl.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a photo')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       // Combine challenge fields into currentChallenges array and strip them.
