@@ -307,3 +307,29 @@ export const useCloseConversation = () => {
     },
   });
 };
+
+export const useEditAdminChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId, body }: { conversationId: string; messageId: string; body: string }) => {
+      const res: any = await apiClient.put(`/api/conversations/${conversationId}/messages/${messageId}`, { body });
+      return res.data || res;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'conversations', v.conversationId, 'messages'] });
+    },
+  });
+};
+
+export const useDeleteAdminChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId }: { conversationId: string; messageId: string }) => {
+      const res: any = await apiClient.delete(`/api/conversations/${conversationId}/messages/${messageId}`);
+      return res.data || res;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'conversations', v.conversationId, 'messages'] });
+    },
+  });
+};

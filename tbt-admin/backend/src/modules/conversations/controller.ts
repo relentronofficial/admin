@@ -189,6 +189,55 @@ export async function sendAdminChatMessageHandler(request: FastifyRequest, reply
   return reply.status(201).send({ success: true, data: { id: message.id }, error: null });
 }
 
+// ── PUT /api/conversations/:id/messages/:messageId ───────────────────────────
+export async function editAdminChatMessageHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id, messageId } = request.params as { id: string; messageId: string };
+  const { body } = request.body as { body: string };
+
+  const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+  if (!admin) return reply.status(401).send({ success: false, data: null, error: 'Admin not found' });
+
+  const msg = await request.server.prisma.directMessage.findFirst({ where: { id: messageId, conversationId: id } });
+  if (!msg) return reply.status(404).send({ success: false, data: null, error: 'Message not found' });
+  if (msg.senderType !== 'admin' || msg.senderId !== admin.id)
+    return reply.status(403).send({ success: false, data: null, error: 'Not your message' });
+
+  const updated = await request.server.prisma.directMessage.update({
+    where: { id: messageId },
+    data: { body: body.trim(), editedAt: new Date() },
+  });
+
+  request.server.io.to(`conversation:${id}`).emit('chat:message', {
+    conversationId: id, messageId, action: 'edited', body: updated.body,
+  });
+
+  return reply.send({ success: true, data: { id: messageId }, error: null });
+}
+
+// ── DELETE /api/conversations/:id/messages/:messageId ────────────────────────
+export async function deleteAdminChatMessageHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id, messageId } = request.params as { id: string; messageId: string };
+
+  const admin = await request.server.prisma.admin.findFirst({ where: { clerkId: request.user }, select: { id: true } });
+  if (!admin) return reply.status(401).send({ success: false, data: null, error: 'Admin not found' });
+
+  const msg = await request.server.prisma.directMessage.findFirst({ where: { id: messageId, conversationId: id } });
+  if (!msg) return reply.status(404).send({ success: false, data: null, error: 'Message not found' });
+  if (msg.senderType !== 'admin' || msg.senderId !== admin.id)
+    return reply.status(403).send({ success: false, data: null, error: 'Not your message' });
+
+  await request.server.prisma.directMessage.update({
+    where: { id: messageId },
+    data: { deletedForEveryone: true, deletedAt: new Date() },
+  });
+
+  request.server.io.to(`conversation:${id}`).emit('chat:message', {
+    conversationId: id, messageId, action: 'deleted',
+  });
+
+  return reply.send({ success: true, data: { deleted: true }, error: null });
+}
+
 // ── PATCH /api/conversations/:id/close ────────────────────────────────────────
 export async function closeConversationHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };

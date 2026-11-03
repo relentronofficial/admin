@@ -3,6 +3,8 @@ import {
   listAdminConversationsHandler,
   getAdminConversationMessagesHandler,
   sendAdminChatMessageHandler,
+  editAdminChatMessageHandler,
+  deleteAdminChatMessageHandler,
   closeConversationHandler,
 } from './controller.js';
 export async function conversationsRoutes(fastify: FastifyInstance) {
@@ -10,20 +12,16 @@ export async function conversationsRoutes(fastify: FastifyInstance) {
 
   fastify.get('/',             listAdminConversationsHandler);
   fastify.get('/:id/messages', getAdminConversationMessagesHandler);
-  fastify.post(
-    '/:id/messages',
-    {
-      schema: {
-        body: {
-          type: 'object',
-          required: ['body'],
-          properties: {
-            body: { type: 'string', minLength: 1, maxLength: 5000 },
-          },
-        },
+  fastify.post('/:id/messages', {
+    schema: {
+      body: {
+        type: 'object',
+        required: ['body'],
+        properties: { body: { type: 'string', minLength: 1, maxLength: 5000 } },
       },
     },
-    sendAdminChatMessageHandler
-  );
-  fastify.patch('/:id/close',  closeConversationHandler);
+  }, sendAdminChatMessageHandler);
+  fastify.put('/:id/messages/:messageId',    editAdminChatMessageHandler);
+  fastify.delete('/:id/messages/:messageId', deleteAdminChatMessageHandler);
+  fastify.patch('/:id/close',                closeConversationHandler);
 }

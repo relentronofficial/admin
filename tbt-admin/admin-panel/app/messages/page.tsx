@@ -1,13 +1,28 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MessageSquare, Search, Send, Loader2, X, AlertCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ChevronDown,
+  Copy,
+  Edit3,
+  Loader2,
+  MessageSquare,
+  Reply,
+  Search,
+  Send,
+  Trash2,
+  X,
+} from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useAdminConversations,
   useAdminConversationMessages,
   useSendAdminChatMessage,
   useCloseConversation,
+  useEditAdminChatMessage,
+  useDeleteAdminChatMessage,
 } from "@/lib/hooks/useAdmin";
 import { getAdminSocket } from "@/lib/socket/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,12 +32,264 @@ import toast from "react-hot-toast";
 const TYPING_DEBOUNCE_MS = 2000;
 type FilterTab = "all" | "open" | "closed";
 
+// ── AdminBubble ───────────────────────────────────────────────────────────────
+
+function AdminBubble({
+  message,
+  messages,
+  conversationId,
+  onReply,
+}: {
+  message: any;
+  messages: any[];
+  conversationId: string;
+  onReply: (msg: any) => void;
+}) {
+  const [menuOpen, setMenuOpen]   = useState(false);
+  const [editing, setEditing]     = useState(false);
+  const [editText, setEditText]   = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const editMsg   = useEditAdminChatMessage();
+  const deleteMsg = useDeleteAdminChatMessage();
+
+  const isAdmin  = message.senderType === "admin";
+  const deleted  = !!message.deletedForEveryone;
+
+  const replyTo = message.replyToId
+    ? messages.find((m: any) => m.id === message.replyToId)
+    : null;
+
+  function startEdit() {
+    setMenuOpen(false);
+    setEditText(message.body ?? "");
+    setEditing(true);
+  }
+
+  function saveEdit() {
+    const body = editText.trim();
+    if (!body) { toast.error("Message cannot be empty"); return; }
+    if (body === message.body) { setEditing(false); return; }
+    editMsg.mutate({ conversationId, messageId: message.id, body }, {
+      onSuccess: () => { setEditing(false); toast.success("Message edited"); },
+      onError: () => toast.error("Could not edit message"),
+    });
+  }
+
+  async function handleCopy() {
+    setMenuOpen(false);
+    if (!message.body) { toast("No text to copy", { icon: "ℹ️" }); return; }
+    try {
+      await navigator.clipboard.writeText(message.body);
+      toast.success("Copied");
+    } catch {
+      toast.error("Clipboard blocked by browser");
+    }
+  }
+
+  function doDelete() {
+    deleteMsg.mutate({ conversationId, messageId: message.id }, {
+      onSuccess: () => { setConfirmDel(false); toast.success("Message deleted"); },
+      onError: () => toast.error("Could not delete message"),
+    });
+  }
+
+  return (
+    <div
+      id={`msg-${message.id}`}
+      className={`flex gap-2.5 ${isAdmin ? "flex-row-reverse" : ""}`}
+    >
+      {/* Avatar */}
+      <div
+        className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
+        style={{ background: isAdmin ? "#dc2626" : "#333" }}
+      >
+        {isAdmin ? "A" : (message.senderName?.[0]?.toUpperCase() ?? "M")}
+      </div>
+
+      {/* Bubble wrapper — relative + group for hover button */}
+      <div className={`max-w-[65%] flex flex-col relative group ${isAdmin ? "items-end" : ""}`}>
+        <div
+          className={`rounded-2xl overflow-hidden ${isAdmin ? "rounded-tr-sm" : "rounded-tl-sm"}`}
+          style={{ background: isAdmin ? "rgba(220,38,38,0.15)" : "#1f1f1f" }}
+        >
+          {/* Reply quote */}
+          {replyTo && !deleted && (
+            <div
+              className="mx-1.5 mt-1.5 px-2.5 py-1.5 rounded-md text-[11px]"
+              style={{ background: "rgba(220,38,38,0.08)", borderLeft: "3px solid #dc2626" }}
+            >
+              <div className="font-bold text-[#dc2626]">
+                {replyTo.senderType === "admin" ? "You" : replyTo.senderName}
+              </div>
+              <div className="text-[#888] truncate">
+                {replyTo.deletedForEveryone ? "This message was deleted" : (replyTo.body || "📎 attachment")}
+              </div>
+            </div>
+          )}
+
+          {deleted && (
+            <p className="text-sm italic text-[#666] px-3.5 py-2">This message was deleted</p>
+          )}
+
+          {editing ? (
+            <div className="px-2 pt-2 pb-1 space-y-1.5">
+              <textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                rows={3}
+                maxLength={5000}
+                autoFocus
+                className="w-full min-w-[220px] rounded-lg px-2.5 py-2 text-sm outline-none border text-[#f0f0f0] resize-none bg-[#0f0f0f] border-[#dc2626]/40"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setEditing(false)}
+                  disabled={editMsg.isPending}
+                  className="px-3 h-7 rounded-md text-xs text-[#888] hover:text-[#a0a0a0] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={editMsg.isPending}
+                  className="px-3 h-7 rounded-md text-xs font-semibold text-white bg-[#dc2626] hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {editMsg.isPending && <Loader2 size={11} className="animate-spin" />}
+                  Save
+                </button>
+              </div>
+            </div>
+          ) : (
+            !deleted && message.body && (
+              <p className="text-sm text-[#f0f0f0] leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
+                {message.body}
+              </p>
+            )
+          )}
+
+          <p className="text-[10px] text-[#777] mt-0 px-3.5 pb-1.5 text-right">
+            {message.editedAt && !deleted ? "edited · " : ""}
+            {format(new Date(message.createdAt), "HH:mm")}
+          </p>
+        </div>
+
+        {/* Hover action button — top-right of bubble */}
+        {!deleted && !editing && (
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="absolute top-0 right-0 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
+            style={{
+              background: "#141414",
+              border: "1px solid #2a2a2a",
+              color: "#888",
+            }}
+            aria-label="Message options"
+          >
+            <ChevronDown size={12} />
+          </button>
+        )}
+
+        {/* Dropdown menu */}
+        {menuOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+            <div
+              className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
+              style={{
+                background: "#141414",
+                border: "1px solid #2a2a2a",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+              }}
+            >
+              <button
+                onClick={() => { setMenuOpen(false); onReply(message); }}
+                className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+              >
+                <Reply size={13} /> Reply
+              </button>
+              <button
+                onClick={handleCopy}
+                className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+              >
+                <Copy size={13} /> Copy
+              </button>
+              {isAdmin && (
+                <button
+                  onClick={startEdit}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                >
+                  <Edit3 size={13} /> Edit
+                </button>
+              )}
+              {isAdmin && (
+                <button
+                  onClick={() => { setMenuOpen(false); setConfirmDel(true); }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-white/[0.04]"
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Delete confirm dialog */}
+        {confirmDel && (
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+            onClick={() => !deleteMsg.isPending && setConfirmDel(false)}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+              style={{ background: "#141414", border: "1px solid #2a2a2a" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="font-semibold text-sm text-[#f0f0f0]">Delete this message?</p>
+              <p className="text-xs text-[#888]">This will remove it for you and the member. This cannot be undone.</p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmDel(false)}
+                  disabled={deleteMsg.isPending}
+                  className="px-4 h-9 rounded-lg text-sm text-[#888] hover:text-[#f0f0f0] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={doDelete}
+                  disabled={deleteMsg.isPending}
+                  className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {deleteMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function AdminMessagesPage() {
   const queryClient = useQueryClient();
 
-  const [activeId, setActiveId]   = useState<string | null>(null);
+  const [activeId, setActiveId]     = useState<string | null>(null);
+  const [search, setSearch]         = useState("");
+  const [filter, setFilter]         = useState<FilterTab>("all");
+  const [input, setInput]           = useState("");
+  const [isTyping, setIsTyping]     = useState(false);
+  const [typingName, setTypingName] = useState("");
+  const [replyTo, setReplyTo]       = useState<any | null>(null);
 
-  // Deep-link from notification: ?conversation=<id> → auto-open that conversation
+  const typingTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef       = useRef<HTMLTextAreaElement>(null);
+
+  // Deep-link from notification: ?conversation=<id>
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const convoId = params.get("conversation");
@@ -31,18 +298,11 @@ export default function AdminMessagesPage() {
       window.history.replaceState({}, "", "/messages");
     }
   }, []);
-  const [search, setSearch]       = useState("");
-  const [filter, setFilter]       = useState<FilterTab>("all");
-  const [input, setInput]         = useState("");
-  const [isTyping, setIsTyping]   = useState(false);
-  const [typingName, setTypingName] = useState("");
-  const typingTimer               = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const messagesEndRef            = useRef<HTMLDivElement>(null);
 
   const { data: convoData, isLoading: convoLoading } = useAdminConversations();
-  const { data: msgData }   = useAdminConversationMessages(activeId);
-  const sendMessage         = useSendAdminChatMessage();
-  const closeConvo          = useCloseConversation();
+  const { data: msgData }  = useAdminConversationMessages(activeId);
+  const sendMessage        = useSendAdminChatMessage();
+  const closeConvo         = useCloseConversation();
 
   const allConversations: any[] = (convoData as any)?.data ?? [];
   const messages: any[]         = (msgData as any)?.data ?? [];
@@ -69,7 +329,10 @@ export default function AdminMessagesPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Global socket: new conversation notifications
+  // Clear reply when switching conversation
+  useEffect(() => { setReplyTo(null); }, [activeId]);
+
+  // Global socket
   useEffect(() => {
     let mounted = true;
     getAdminSocket().then((s) => {
@@ -85,7 +348,7 @@ export default function AdminMessagesPage() {
     };
   }, [queryClient]);
 
-  // Per-conversation socket: messages + typing
+  // Per-conversation socket
   useEffect(() => {
     if (!activeId) return;
     let mounted = true;
@@ -140,8 +403,13 @@ export default function AdminMessagesPage() {
     if (!activeId || !input.trim()) return;
     const body = input.trim();
     setInput("");
+    setReplyTo(null);
     try {
-      await sendMessage.mutateAsync({ conversationId: activeId, body });
+      await sendMessage.mutateAsync({
+        conversationId: activeId,
+        body,
+        ...(replyTo ? { replyToId: replyTo.id } : {}),
+      } as any);
       queryClient.invalidateQueries({ queryKey: ["admin", "conversations", activeId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["admin", "conversations"] });
     } catch {
@@ -159,6 +427,11 @@ export default function AdminMessagesPage() {
       toast.error("Failed to close conversation");
     }
   };
+
+  function handleReply(msg: any) {
+    setReplyTo(msg);
+    inputRef.current?.focus();
+  }
 
   const TAB_CLS = (t: FilterTab) =>
     `px-3 py-1 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-colors ${
@@ -189,8 +462,6 @@ export default function AdminMessagesPage() {
 
           {/* ── Left pane ──────────────────────────────────────────────── */}
           <div className="w-72 flex-shrink-0 border-r border-[#2a2a2a] flex flex-col bg-[#141414]">
-
-            {/* Search */}
             <div className="px-3 pt-3 pb-2">
               <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 focus-within:border-[#dc2626] transition-all">
                 <Search size={12} className="text-[#777] shrink-0" />
@@ -208,14 +479,12 @@ export default function AdminMessagesPage() {
               </div>
             </div>
 
-            {/* Filter tabs */}
             <div className="flex gap-1 px-3 pb-2">
               <button className={TAB_CLS("all")}    onClick={() => setFilter("all")}>All</button>
               <button className={TAB_CLS("open")}   onClick={() => setFilter("open")}>Open</button>
               <button className={TAB_CLS("closed")} onClick={() => setFilter("closed")}>Closed</button>
             </div>
 
-            {/* Conversation list */}
             <div className="flex-1 overflow-y-auto divide-y divide-[#222]">
               {convoLoading ? (
                 <div className="flex items-center justify-center py-8">
@@ -286,9 +555,7 @@ export default function AdminMessagesPage() {
                       disabled={closeConvo.isPending}
                       className="flex-shrink-0 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest font-rajdhani text-[#888] hover:text-[#dc2626] disabled:opacity-40 transition-colors"
                     >
-                      {closeConvo.isPending
-                        ? <Loader2 size={12} className="animate-spin" />
-                        : <X size={12} />}
+                      {closeConvo.isPending ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
                       Close Chat
                     </button>
                   )}
@@ -301,31 +568,15 @@ export default function AdminMessagesPage() {
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 bg-[#0f0f0f]">
-                  {messages.map((m: any) => {
-                    const isAdmin = m.senderType === "admin";
-                    return (
-                      <div key={m.id} className={`flex gap-2.5 ${isAdmin ? "flex-row-reverse" : ""}`}>
-                        <div
-                          className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
-                          style={{ background: isAdmin ? "#dc2626" : "#333" }}
-                        >
-                          {isAdmin ? "A" : (m.senderName?.[0]?.toUpperCase() ?? "M")}
-                        </div>
-                        <div
-                          className={`max-w-[65%] rounded-2xl px-3.5 py-2.5 ${isAdmin ? "rounded-tr-sm" : "rounded-tl-sm"}`}
-                          style={{ background: isAdmin ? "rgba(220,38,38,0.15)" : "#1f1f1f" }}
-                        >
-                          <p className="text-[11px] font-semibold mb-1 text-[#a0a0a0]">
-                            {isAdmin ? "You" : m.senderName}
-                          </p>
-                          <p className="text-sm text-[#f0f0f0] leading-relaxed">{m.body}</p>
-                          <p className="text-[10px] text-[#777] mt-1 text-right">
-                            {format(new Date(m.createdAt), "HH:mm")}
-                          </p>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {messages.map((m: any) => (
+                    <AdminBubble
+                      key={m.id}
+                      message={m}
+                      messages={messages}
+                      conversationId={activeId}
+                      onReply={handleReply}
+                    />
+                  ))}
 
                   {isTyping && (
                     <p className="text-xs text-[#888] pl-10 italic animate-pulse">
@@ -343,31 +594,58 @@ export default function AdminMessagesPage() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Input */}
+                {/* Input area */}
                 {activeMeta.status === "open" ? (
-                  <div className="px-4 py-3 border-t border-[#2a2a2a] bg-[#1a1a1a] flex items-end gap-2">
-                    <textarea
-                      value={input}
-                      onChange={(e) => handleInputChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSend();
-                        }
-                      }}
-                      rows={1}
-                      placeholder="Type a reply..."
-                      className="flex-1 resize-none bg-transparent text-sm text-[#f0f0f0] outline-none placeholder:text-[#777] leading-relaxed"
-                    />
-                    <button
-                      onClick={handleSend}
-                      disabled={!input.trim() || sendMessage.isPending}
-                      className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#dc2626] hover:bg-red-700 disabled:opacity-40 transition-colors"
-                    >
-                      {sendMessage.isPending
-                        ? <Loader2 size={13} className="animate-spin text-white" />
-                        : <Send size={13} className="text-white" />}
-                    </button>
+                  <div className="border-t border-[#2a2a2a] bg-[#1a1a1a]">
+                    {/* Reply strip */}
+                    {replyTo && (
+                      <div
+                        className="flex items-center gap-2 px-4 pt-2.5 pb-1"
+                        style={{ borderBottom: "1px solid #2a2a2a" }}
+                      >
+                        <Reply size={12} className="text-[#dc2626] flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[10px] font-bold text-[#dc2626]">
+                            {replyTo.senderType === "admin" ? "You" : replyTo.senderName}
+                          </span>
+                          <span className="text-[10px] text-[#888] truncate block">
+                            {replyTo.body || "📎 attachment"}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => setReplyTo(null)}
+                          className="text-[#666] hover:text-[#a0a0a0] flex-shrink-0"
+                          aria-label="Cancel reply"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    )}
+                    <div className="flex items-end gap-2 px-4 py-3">
+                      <textarea
+                        ref={inputRef}
+                        value={input}
+                        onChange={(e) => handleInputChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSend();
+                          }
+                        }}
+                        rows={1}
+                        placeholder="Type a reply..."
+                        className="flex-1 resize-none bg-transparent text-sm text-[#f0f0f0] outline-none placeholder:text-[#777] leading-relaxed"
+                      />
+                      <button
+                        onClick={handleSend}
+                        disabled={!input.trim() || sendMessage.isPending}
+                        className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-[#dc2626] hover:bg-red-700 disabled:opacity-40 transition-colors"
+                      >
+                        {sendMessage.isPending
+                          ? <Loader2 size={13} className="animate-spin text-white" />
+                          : <Send size={13} className="text-white" />}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="px-4 py-3 border-t border-[#2a2a2a] bg-[#1a1a1a] flex items-center justify-center">
