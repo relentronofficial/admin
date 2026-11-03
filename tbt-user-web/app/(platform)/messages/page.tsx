@@ -37,6 +37,8 @@ import {
 } from '@/lib/hooks/useDashboard';
 import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
 import { useMe } from '@/lib/hooks/useUser';
+import { useMyEnrollments } from '@/lib/hooks/useCourses';
+import { useSubmitWeeklyReport } from '@/lib/hooks/useCourseReports';
 import { getSocket } from '@/lib/socket/client';
 import { getServerNow } from '@/lib/api/client';
 import { copyMessageText, noTextToCopyMessage } from '@/lib/utils/copyMessageText';
@@ -137,6 +139,7 @@ export default function MessagesPage() {
   const [newBody, setNewBody]         = useState('');
   const [mobileView, setMobileView]   = useState<'list' | 'chat'>('list');
   const [topMenuOpen, setTopMenuOpen] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{
     file: File;
@@ -459,6 +462,13 @@ export default function MessagesPage() {
         >
           <h2 className="font-bold text-sm text-foreground">{uiStrings?.chatPageTitle}</h2>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowReportModal(true)}
+              className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded"
+              style={{ color: 'var(--color-accent)' }}
+            >
+              <FileText size={12} /> Report
+            </button>
             <button
               onClick={() => setShowNewForm(true)}
               className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded"
@@ -805,6 +815,157 @@ export default function MessagesPage() {
           </div>
         </div>
       )}
+
+      {showReportModal && (
+        <WeeklyReportModal onClose={() => setShowReportModal(false)} />
+      )}
+    </div>
+  );
+}
+
+// ── Weekly Report Modal ───────────────────────────────────────────────────────
+
+function WeeklyReportModal({ onClose }: { onClose: () => void }) {
+  const { data: enrollments } = useMyEnrollments();
+  const submit = useSubmitWeeklyReport();
+
+  const courses: { id: string; title: string }[] =
+    (enrollments as any)?.data ?? (Array.isArray(enrollments) ? enrollments : []);
+
+  const [courseId, setCourseId] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [remarks, setRemarks] = useState('');
+
+  const canSubmit = !!courseId && feedback.trim().length >= 1;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    try {
+      await submit.mutateAsync({ courseId, feedback: feedback.trim(), remarks: remarks.trim() || undefined });
+      toast.success('Weekly report submitted!');
+      onClose();
+    } catch {
+      toast.error('Failed to submit report. Please try again.');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4"
+      onClick={() => !submit.isPending && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="weekly-report-title"
+        className="w-full max-w-md rounded-2xl p-5 space-y-4"
+        style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText size={16} style={{ color: 'var(--color-accent)' }} />
+            <p id="weekly-report-title" className="font-semibold text-sm text-foreground">
+              Weekly Report
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={submit.isPending}
+            aria-label="Close"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              Course <span style={{ color: 'var(--color-accent)' }}>*</span>
+            </label>
+            <select
+              value={courseId}
+              onChange={(e) => setCourseId(e.target.value)}
+              disabled={submit.isPending}
+              className="w-full h-10 px-3 text-sm rounded-lg outline-none border text-foreground bg-transparent disabled:opacity-50"
+              style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 30%, transparent)', background: 'var(--color-bg-primary)' }}
+            >
+              <option value="">Select a course…</option>
+              {courses.map((c: any) => (
+                <option key={c.id ?? c.courseId} value={c.id ?? c.courseId}>
+                  {c.title ?? c.course?.title ?? 'Untitled'}
+                </option>
+              ))}
+            </select>
+            {courses.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">No enrolled courses found.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              Report <span style={{ color: 'var(--color-accent)' }}>*</span>
+            </label>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              disabled={submit.isPending}
+              placeholder="Share your weekly progress, challenges, and achievements…"
+              rows={5}
+              maxLength={4000}
+              className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border text-foreground resize-none disabled:opacity-50"
+              style={{
+                background: 'var(--color-bg-primary)',
+                borderColor: 'color-mix(in srgb, var(--color-accent) 30%, transparent)',
+              }}
+            />
+            <p className="text-[10px] text-muted-foreground text-right mt-0.5">{feedback.length}/4000</p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
+              Additional notes <span className="font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              disabled={submit.isPending}
+              placeholder="Any questions or specific help you need…"
+              rows={2}
+              maxLength={2000}
+              className="w-full rounded-lg px-3 py-2.5 text-sm outline-none border text-foreground resize-none disabled:opacity-50"
+              style={{
+                background: 'var(--color-bg-primary)',
+                borderColor: 'color-mix(in srgb, var(--color-accent) 30%, transparent)',
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onClose}
+            disabled={submit.isPending}
+            className="flex-1 h-10 rounded-lg text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+            style={{ border: '1px solid var(--color-border-medium)' }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit || submit.isPending}
+            className="flex-1 h-10 rounded-lg text-sm font-semibold text-white flex items-center justify-center gap-1.5 disabled:opacity-50"
+            style={{ background: 'var(--color-accent)' }}
+          >
+            {submit.isPending ? (
+              <><Loader2 size={13} className="animate-spin" /> Submitting…</>
+            ) : (
+              <><Send size={13} /> Submit Report</>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
