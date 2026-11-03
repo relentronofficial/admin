@@ -581,6 +581,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [selectedStateCode, setSelectedStateCode] = useState<string>("");
+  const [noGst, setNoGst] = useState(false);
 
   useEffect(() => {
     apiClient.get("/api/location/states?countryCode=IN").then((res) => {
@@ -629,7 +630,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     if (!str("teamSize")) errs.teamSize = "Team size is required";
     if (!str("instagramStats")) errs.instagramStats = "Instagram stats are required";
     if (!str("facebookStats")) errs.facebookStats = "Facebook stats are required";
-    if (!str("gstNumber")) errs.gstNumber = "GST number is required";
     if (profile.preferredSessionMode == null) errs.preferredSessionMode = "Please select a session mode";
     if (profile.hasMarketingTeam == null) errs.hasMarketingTeam = "Please select an option";
     if (profile.hasVideoEditing == null) errs.hasVideoEditing = "Please select an option";
@@ -1247,8 +1247,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <SectionHeader icon={Shield} title="Compliance & Challenges" />
 
               <div data-field-error={errors.gstNumber ? true : undefined}>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number *</label>
-                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value)} placeholder="22AAAAA0000A1Z5" className={INPUT_CLS} style={inputStyle("gstNumber")} />
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number</label>
+                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value)} placeholder="22AAAAA0000A1Z5" disabled={noGst} className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`} style={inputStyle("gstNumber")} />
+                <label className="mt-2 inline-flex items-center gap-2 text-xs font-medium cursor-pointer" style={{ color: "var(--color-text-subtle)" }}>
+                  <input
+                    type="checkbox"
+                    checked={noGst}
+                    onChange={(e) => {
+                      setNoGst(e.target.checked);
+                      if (e.target.checked) setField("gstNumber", "");
+                    }}
+                    style={{ accentColor: "var(--color-accent)" }}
+                  />
+                  No GST
+                </label>
                 <FieldError error={errors.gstNumber} />
               </div>
 
