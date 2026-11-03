@@ -6,6 +6,7 @@ import {
   editAdminChatMessageHandler,
   deleteAdminChatMessageHandler,
   closeConversationHandler,
+  raiseTicketFromDmHandler,
 } from './controller.js';
 export async function conversationsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -21,7 +22,8 @@ export async function conversationsRoutes(fastify: FastifyInstance) {
       },
     },
   }, sendAdminChatMessageHandler);
-  fastify.put('/:id/messages/:messageId',    editAdminChatMessageHandler);
-  fastify.delete('/:id/messages/:messageId', deleteAdminChatMessageHandler);
-  fastify.patch('/:id/close',                closeConversationHandler);
+  fastify.put('/:id/messages/:messageId',                  editAdminChatMessageHandler);
+  fastify.delete('/:id/messages/:messageId',               deleteAdminChatMessageHandler);
+  fastify.post('/:id/messages/:messageId/raise-ticket',    raiseTicketFromDmHandler);
+  fastify.patch('/:id/close',                              closeConversationHandler);
 }

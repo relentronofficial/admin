@@ -15,7 +15,7 @@
  *   * Settings    — singleton contact-channels form
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useHelpdeskDashboard,
@@ -70,10 +70,64 @@ import {
   BarChart3,
   UserCheck,
   History,
+  Clock,
 } from "lucide-react";
 import { format } from "date-fns";
 
 const HELPDESK_MANAGER_ROLES = new Set(["admin", "super_admin"]);
+
+// ── Resolve-by countdown ─────────────────────────────────────────────────────
+function ResolveByTimer({
+  deadline,
+  status,
+}: {
+  deadline: string;
+  status: string;
+}) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status === "resolved" || status === "closed") return;
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  const by = new Date(deadline);
+  const formatted = format(by, "d MMM, HH:mm");
+
+  if (status === "resolved" || status === "closed") {
+    return (
+      <div className="text-[10px] text-green-400 font-bold mt-0.5 flex items-center gap-1">
+        <Clock size={10} /> Resolve deadline was {formatted} · Resolved ✓
+      </div>
+    );
+  }
+
+  const diff = by.getTime() - Date.now();
+  let label: string;
+  let color: string;
+  if (diff <= 0) {
+    const over = Math.abs(diff);
+    const h = Math.floor(over / 3_600_000);
+    const m = Math.floor((over % 3_600_000) / 60_000);
+    label = h > 0 ? `Overdue by ${h}h ${m}m` : `Overdue by ${m}m`;
+    color = "text-red-400";
+  } else {
+    const days = Math.floor(diff / 86_400_000);
+    const h = Math.floor((diff % 86_400_000) / 3_600_000);
+    const m = Math.floor((diff % 3_600_000) / 60_000);
+    if (days > 0) { label = `${days}d ${h}h left`; color = "text-green-400"; }
+    else if (h >= 4) { label = `${h}h ${m}m left`; color = "text-green-400"; }
+    else if (h >= 1) { label = `${h}h ${m}m left`; color = "text-yellow-400"; }
+    else { label = `${m}m left`; color = "text-red-400"; }
+  }
+
+  return (
+    <div className={`text-[10px] font-bold mt-0.5 flex items-center gap-1 ${color}`}>
+      <Clock size={10} className="flex-shrink-0" />
+      Resolve by {formatted} · {label}
+    </div>
+  );
+}
 
 const labelCls =
   "block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani";
@@ -558,6 +612,9 @@ function TicketDetailPanel({
               ⚠️ Escalated at {format(new Date(ticket.escalatedAt), "d MMM, HH:mm")}
             </div>
           )}
+          {ticket.resolveDeadline && (
+            <ResolveByTimer deadline={ticket.resolveDeadline} status={ticket.status} />
+          )}
         </div>
         <button onClick={onClose} className="p-1 rounded hover:bg-white/5 text-[#a0a0a0]">
           <X size={16} />
@@ -641,6 +698,26 @@ function TicketDetailPanel({
                 </div>
               )}
             </div>
+          </div>
+        )}
+
+        {!ticket.chatGroupId && ticket.chatMessageId && ticket.raisedByAdminId && (
+          <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] font-bold text-orange-400 uppercase tracking-widest font-rajdhani">
+                Raised from Direct Message
+              </span>
+            </div>
+            {ticket.chatMessageSnapshot && (
+              <div className="rounded bg-black/30 border border-white/10 p-2">
+                <div className="text-[9px] font-bold text-[#666] uppercase tracking-widest font-rajdhani mb-1">
+                  Original message
+                </div>
+                <div className="text-[12px] text-[#f0f0f0] whitespace-pre-wrap break-words">
+                  {ticket.chatMessageSnapshot}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

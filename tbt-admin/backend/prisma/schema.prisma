@@ -3177,6 +3177,7 @@ model HelpdeskTicket {
   escalatedAt      DateTime? @map("escalated_at") @db.Timestamptz(6)
   resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
   closedAt         DateTime? @map("closed_at") @db.Timestamptz(6)
+  resolveDeadline  DateTime? @map("resolve_deadline") @db.Timestamptz(6)
   member           Member?             @relation("MemberHelpdeskTickets", fields: [memberId], references: [id], onDelete: SetNull)
   category         HelpdeskCategory?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   replies          HelpdeskTicketReply[]

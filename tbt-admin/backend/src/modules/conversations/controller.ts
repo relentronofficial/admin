@@ -1,5 +1,7 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
 import { notifyMembers } from '../../lib/notifications.js';
+import { createAdminNotification } from '../../lib/adminNotifications.js';
+import { notifyMember } from '../../lib/memberNotifications.js';
 
 // ── GET /api/conversations ────────────────────────────────────────────────────
 export async function listAdminConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -236,6 +238,110 @@ export async function deleteAdminChatMessageHandler(request: FastifyRequest, rep
   });
 
   return reply.send({ success: true, data: { deleted: true }, error: null });
+}
+
+// ── POST /api/conversations/:id/messages/:messageId/raise-ticket ─────────────
+export async function raiseTicketFromDmHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id, messageId } = request.params as { id: string; messageId: string };
+  const { subject, message: ticketMsg, priority = 'medium', resolveDeadline } = request.body as {
+    subject?: string;
+    message?: string;
+    priority?: string;
+    resolveDeadline?: string;
+  };
+
+  if (!subject?.trim() || !ticketMsg?.trim()) {
+    return reply.status(400).send({ success: false, data: null, error: 'subject and message are required' });
+  }
+  if (subject.trim().length > 255) {
+    return reply.status(400).send({ success: false, data: null, error: 'subject too long (max 255)' });
+  }
+
+  const msg = await request.server.prisma.directMessage.findFirst({
+    where: { id: messageId, conversationId: id },
+    select: { id: true, body: true, mediaType: true, deletedForEveryone: true },
+  });
+  if (!msg) return reply.status(404).send({ success: false, data: null, error: 'Message not found' });
+  if (msg.deletedForEveryone) {
+    return reply.status(400).send({ success: false, data: null, error: 'Cannot raise a ticket for a deleted message' });
+  }
+
+  // Duplicate guard — skip if previous ticket for this message is already open/in-progress
+  const existing = await request.server.prisma.helpdeskTicket.findFirst({
+    where: { chatMessageId: messageId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true },
+  });
+  if (existing && !['resolved', 'closed'].includes(existing.status)) {
+    return reply.status(409).send({ success: false, data: null, error: 'A ticket already exists for this message' });
+  }
+
+  const convo = await request.server.prisma.conversation.findUnique({
+    where: { id },
+    include: {
+      member: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
+    },
+  });
+  if (!convo) return reply.status(404).send({ success: false, data: null, error: 'Conversation not found' });
+
+  const admin = await request.server.prisma.admin.findFirst({
+    where: { clerkId: request.user },
+    select: { id: true, fullName: true, email: true },
+  });
+
+  const member = convo.member;
+  const memberName = [member.firstName, member.lastName].filter(Boolean).join(' ') || 'Member';
+  const snapshot = msg.body ?? (msg.mediaType ? `[${msg.mediaType}]` : null);
+  const validPriority = ['low', 'medium', 'high', 'urgent'].includes(priority) ? priority : 'medium';
+
+  let resolveBy: Date | null = null;
+  if (resolveDeadline) {
+    resolveBy = new Date(resolveDeadline);
+    if (isNaN(resolveBy.getTime())) {
+      return reply.status(400).send({ success: false, data: null, error: 'Invalid resolveDeadline' });
+    }
+  }
+
+  const created = await request.server.prisma.helpdeskTicket.create({
+    data: {
+      memberId:           member.id,
+      name:               memberName,
+      email:              member.email,
+      phone:              member.phone,
+      subject:            subject.trim(),
+      message:            ticketMsg.trim(),
+      priority:           validPriority,
+      chatMessageId:      messageId,
+      chatMessageSenderId: member.id,
+      chatMessageSnapshot: snapshot,
+      raisedByAdminId:    admin?.id ?? null,
+      resolveDeadline:    resolveBy,
+      status:             'new',
+    },
+  });
+
+  request.server.io.to('admin').emit('admin:helpdesk_ticket', {
+    ticketId: created.id,
+    subject: created.subject,
+    submitterName: created.name,
+    createdAt: created.createdAt,
+    source: 'dm_conversation',
+  });
+  void createAdminNotification(request.server.prisma, {
+    title: 'Ticket raised from DM',
+    body: `${memberName}: ${subject.trim()}`,
+    type: 'helpdesk_ticket',
+    metadata: { ticketId: created.id },
+  });
+  void notifyMember(request.server.prisma, request.server.io, request.server.redis ?? null, {
+    memberId: member.id,
+    title: 'Support ticket created',
+    message: `A support ticket "${subject.trim()}" has been raised on your behalf.`,
+    type: 'helpdesk_status',
+    actionUrl: `/support/tickets/${created.id}`,
+  });
+
+  return reply.status(201).send({ success: true, data: { id: created.id }, error: null });
 }
 
 // ── PATCH /api/conversations/:id/close ────────────────────────────────────────

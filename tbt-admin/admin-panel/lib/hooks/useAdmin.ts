@@ -333,3 +333,29 @@ export const useDeleteAdminChatMessage = () => {
     },
   });
 };
+
+export const useRaiseTicketFromDm = () => {
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      messageId,
+      subject,
+      message,
+      priority,
+      resolveDeadline,
+    }: {
+      conversationId: string;
+      messageId: string;
+      subject: string;
+      message: string;
+      priority?: string;
+      resolveDeadline?: string;
+    }) => {
+      const res: any = await apiClient.post(
+        `/api/conversations/${conversationId}/messages/${messageId}/raise-ticket`,
+        { subject, message, priority, resolveDeadline },
+      );
+      return res.data || res;
+    },
+  });
+};

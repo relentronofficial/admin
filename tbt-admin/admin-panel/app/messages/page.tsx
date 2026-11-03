@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Copy,
   Edit3,
+  LifeBuoy,
   Loader2,
   MessageSquare,
   Reply,
@@ -23,6 +24,7 @@ import {
   useCloseConversation,
   useEditAdminChatMessage,
   useDeleteAdminChatMessage,
+  useRaiseTicketFromDm,
 } from "@/lib/hooks/useAdmin";
 import { getAdminSocket } from "@/lib/socket/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,6 +35,12 @@ const TYPING_DEBOUNCE_MS = 2000;
 type FilterTab = "all" | "open" | "closed";
 
 // ── AdminBubble ───────────────────────────────────────────────────────────────
+
+function defaultDeadline() {
+  const d = new Date(Date.now() + 24 * 3_600_000);
+  d.setSeconds(0, 0);
+  return d.toISOString().slice(0, 16);
+}
 
 function AdminBubble({
   message,
@@ -45,13 +53,19 @@ function AdminBubble({
   conversationId: string;
   onReply: (msg: any) => void;
 }) {
-  const [menuOpen, setMenuOpen]   = useState(false);
-  const [editing, setEditing]     = useState(false);
-  const [editText, setEditText]   = useState("");
-  const [confirmDel, setConfirmDel] = useState(false);
+  const [menuOpen, setMenuOpen]       = useState(false);
+  const [editing, setEditing]         = useState(false);
+  const [editText, setEditText]       = useState("");
+  const [confirmDel, setConfirmDel]   = useState(false);
+  const [ticketModal, setTicketModal] = useState(false);
+  const [tkSubject, setTkSubject]     = useState("");
+  const [tkMessage, setTkMessage]     = useState("");
+  const [tkPriority, setTkPriority]   = useState("medium");
+  const [tkDeadline, setTkDeadline]   = useState("");
 
-  const editMsg   = useEditAdminChatMessage();
-  const deleteMsg = useDeleteAdminChatMessage();
+  const editMsg      = useEditAdminChatMessage();
+  const deleteMsg    = useDeleteAdminChatMessage();
+  const raiseTicket  = useRaiseTicketFromDm();
 
   const isAdmin  = message.senderType === "admin";
   const deleted  = !!message.deletedForEveryone;
@@ -214,6 +228,22 @@ function AdminBubble({
               >
                 <Copy size={13} /> Copy
               </button>
+              {!deleted && (
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    const preview = (message.body ?? "").slice(0, 100);
+                    setTkSubject(preview || "Support ticket");
+                    setTkMessage(message.body ?? "");
+                    setTkPriority("medium");
+                    setTkDeadline(defaultDeadline());
+                    setTicketModal(true);
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-orange-400 hover:text-orange-300 hover:bg-white/[0.04]"
+                >
+                  <LifeBuoy size={13} /> Raise Ticket
+                </button>
+              )}
               {isAdmin && (
                 <button
                   onClick={startEdit}
@@ -263,6 +293,142 @@ function AdminBubble({
                   {deleteMsg.isPending && <Loader2 size={13} className="animate-spin" />}
                   Delete
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Raise Ticket modal */}
+        {ticketModal && (
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
+            onClick={() => !raiseTicket.isPending && setTicketModal(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl overflow-hidden"
+              style={{ background: "#141414", border: "1px solid #2a2a2a" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
+                <div className="flex items-center gap-2">
+                  <LifeBuoy size={15} className="text-orange-400" />
+                  <span className="text-sm font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">
+                    Raise Support Ticket
+                  </span>
+                </div>
+                <button
+                  onClick={() => setTicketModal(false)}
+                  disabled={raiseTicket.isPending}
+                  className="p-1 rounded text-[#777] hover:text-[#a0a0a0]"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Modal body */}
+              <div className="p-5 space-y-4">
+                {/* Original message preview */}
+                {message.body && (
+                  <div className="rounded-lg px-3 py-2 text-xs text-[#888]" style={{ background: "#1a1a1a", borderLeft: "3px solid #555" }}>
+                    <div className="text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani mb-1">Source message</div>
+                    <div className="text-[#a0a0a0] line-clamp-3 whitespace-pre-wrap">{message.body}</div>
+                  </div>
+                )}
+
+                {/* Subject */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+                    Subject *
+                  </label>
+                  <input
+                    value={tkSubject}
+                    onChange={(e) => setTkSubject(e.target.value)}
+                    maxLength={255}
+                    placeholder="Describe the issue..."
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+                    Description *
+                  </label>
+                  <textarea
+                    value={tkMessage}
+                    onChange={(e) => setTkMessage(e.target.value)}
+                    rows={3}
+                    placeholder="Add more context for this ticket..."
+                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-[#dc2626] transition-all resize-none"
+                  />
+                </div>
+
+                {/* Priority + Resolve By */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+                      Priority
+                    </label>
+                    <select
+                      value={tkPriority}
+                      onChange={(e) => setTkPriority(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="urgent">Urgent</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
+                      Resolve By
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={tkDeadline}
+                      onChange={(e) => setTkDeadline(e.target.value)}
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    onClick={() => setTicketModal(false)}
+                    disabled={raiseTicket.isPending}
+                    className="px-4 h-9 rounded-lg text-sm text-[#888] hover:text-[#f0f0f0] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={raiseTicket.isPending || !tkSubject.trim() || !tkMessage.trim()}
+                    onClick={async () => {
+                      try {
+                        await raiseTicket.mutateAsync({
+                          conversationId,
+                          messageId: message.id,
+                          subject: tkSubject.trim(),
+                          message: tkMessage.trim(),
+                          priority: tkPriority,
+                          resolveDeadline: tkDeadline || undefined,
+                        });
+                        setTicketModal(false);
+                        toast.success("Ticket raised successfully");
+                      } catch (err: any) {
+                        const msg = err?.response?.data?.error ?? "Failed to raise ticket";
+                        toast.error(msg);
+                      }
+                    }}
+                    className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {raiseTicket.isPending && <Loader2 size={13} className="animate-spin" />}
+                    <LifeBuoy size={13} />
+                    Raise Ticket
+                  </button>
+                </div>
               </div>
             </div>
           </div>
