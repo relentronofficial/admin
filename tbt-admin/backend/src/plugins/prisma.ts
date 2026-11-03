@@ -3004,6 +3004,23 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_synced_at TIMESTAMPTZ`);
     await safeAlter(`ALTER TABLE member_social_reports ADD COLUMN IF NOT EXISTS instagram_auto_sync BOOLEAN NOT NULL DEFAULT false`);
 
+    // ── DM Star + Pin (WHATSAPP_MSG_ACTIONS_SPECKIT.md 2026-11-03) ───────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS direct_message_stars (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id  UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        message_id UUID NOT NULL,
+        starred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (member_id, message_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_dm_stars_member ON direct_message_stars(member_id, starred_at DESC)`
+    ).catch(() => {});
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS is_pinned   BOOLEAN NOT NULL DEFAULT false`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_at   TIMESTAMPTZ`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by   UUID REFERENCES members(id) ON DELETE SET NULL`);
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }

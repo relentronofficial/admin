@@ -159,6 +159,14 @@ import {
   reactConversationMessageHandler,
   forwardConversationMessageHandler,
 } from './conversationMessageActions.js';
+import {
+  starConversationMessageHandler,
+  listDmStarredMessagesHandler,
+  pinConversationMessageHandler,
+  unpinConversationMessageHandler,
+  getPinnedConversationMessageHandler,
+  getDmMessageInfoHandler,
+} from './dmMessageActions.js';
 
 const AVATAR_BODY_LIMIT = 10 * 1024 * 1024; // profile page allows up to 5 MB; headroom for the raw body
 
@@ -349,6 +357,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.delete('/conversations/:id/messages/:messageId',            deleteConversationMessageHandler);
   fastify.post('/conversations/:id/messages/:messageId/react',        reactConversationMessageHandler);
   fastify.post('/conversations/:id/messages/:messageId/forward',      forwardConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/star',         starConversationMessageHandler);
+  fastify.get('/messages/starred',                                    listDmStarredMessagesHandler);
+  fastify.get('/conversations/:id/pinned',                            getPinnedConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/pin',          pinConversationMessageHandler);
+  fastify.delete('/conversations/:id/messages/:messageId/pin',        unpinConversationMessageHandler);
+  fastify.get('/conversations/:id/messages/:messageId/info',          getDmMessageInfoHandler);
 
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);

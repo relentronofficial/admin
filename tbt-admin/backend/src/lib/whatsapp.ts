@@ -46,10 +46,14 @@ function detectAndAlertLowBalance(status: number, body: string): boolean {
   //     shape observed 2026-07-16)
   //   * "insufficient balance" case-insensitive (safety net for BSPs that
   //     use a different code but the same wording)
+  //   * HTTP 403 with "Subscription is expired" — @zacx returns this when the
+  //     monthly/annual plan lapses (observed 2026-11-02). Different root cause
+  //     from low balance but requires the same operator action (top up / renew).
   const isLowBalance =
     status === 402 ||
     body.includes('INSUFFICIENT_BALANCE') ||
-    /insufficient\s+balance/i.test(body);
+    /insufficient\s+balance/i.test(body) ||
+    (status === 403 && /subscription.*expired/i.test(body));
   if (!isLowBalance) return false;
 
   const now = Date.now();

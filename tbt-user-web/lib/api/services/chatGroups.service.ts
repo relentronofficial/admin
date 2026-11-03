@@ -71,6 +71,8 @@ export interface ChatGroupMessage {
   reactions: Array<{ emoji: string; memberId: string }>;
   readByCount: number;
   readByMemberIds: string[];
+  isPinned?: boolean;
+  pinnedAt?: string | null;
 }
 
 export interface ChatGroupPresenceEntry {
@@ -181,6 +183,20 @@ export const chatGroupsService = {
 
   getPinnedMessages: (id: string) =>
     apiClient.get<never, ApiResponse<PinnedMessage[]>>(`/api/chat-groups/${id}/pinned`),
+
+  pinMessage: (id: string, messageId: string) =>
+    apiClient.post<never, ApiResponse<{ pinned: boolean }>>(`/api/chat-groups/${id}/messages/${messageId}/pin`),
+
+  unpinMessage: (id: string, messageId: string) =>
+    apiClient.delete<never, ApiResponse<{ pinned: boolean }>>(`/api/chat-groups/${id}/messages/${messageId}/pin`),
+
+  getMessageInfo: (id: string, messageId: string) =>
+    apiClient.get<never, ApiResponse<{
+      messageId: string;
+      sentAt: string;
+      readByCount: number;
+      readBy: Array<{ memberId: string; firstName: string | null; lastName: string | null; readAt: string }>;
+    }>>(`/api/chat-groups/${id}/messages/${messageId}/info`),
 };
 
 /**

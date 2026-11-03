@@ -13,7 +13,9 @@ import {
   Copy,
   FileText,
   Forward,
+  Info,
   Loader2,
+  MapPin,
   MoreVertical,
   Paperclip,
   Pause,
@@ -51,6 +53,8 @@ import {
   useStarredMessages,
   useToggleChatGroupReaction,
   useToggleChatGroupStar,
+  useTogglePinChatGroupMessage,
+  useChatGroupMessageInfo,
 } from "@/lib/hooks/useChatGroups";
 import type { ChatGroupMessage } from "@/lib/api/services/chatGroups.service";
 import { cn } from "@/lib/utils/cn";
@@ -113,6 +117,7 @@ export default function GroupChatPage() {
   const markRead = useMarkChatGroupRead(groupId);
   const forwardMsg = useForwardChatGroupMessage(groupId);
   const toggleStar = useToggleChatGroupStar(groupId);
+  const togglePin = useTogglePinChatGroupMessage(groupId);
   const muteGroup = useMuteChatGroup(groupId);
   const { data: pinned = [] } = usePinnedMessages(groupId);
   const { data: starred = [] } = useStarredMessages();
@@ -130,6 +135,7 @@ export default function GroupChatPage() {
     mediaType: "image" | "video" | "document" | "audio";
   } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [infoMsgId, setInfoMsgId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [forwardingMsg, setForwardingMsg] = useState<ChatGroupMessage | null>(null);
   const [reactorsMsg, setReactorsMsg] = useState<{ msg: ChatGroupMessage; emoji: string | null } | null>(null);
@@ -584,6 +590,13 @@ export default function GroupChatPage() {
     );
   }
 
+  function handleTogglePin(msg: ChatGroupMessage) {
+    togglePin.mutate(
+      { messageId: msg.id, isPinned: !!msg.isPinned },
+      { onError: () => toast.error("Failed to update pin") },
+    );
+  }
+
   async function handleMute(preset: "8h" | "1w" | "always" | "off") {
     let until: string | null = null;
     let stored: string | "always" | null = null;
@@ -808,6 +821,8 @@ export default function GroupChatPage() {
                   onForward={() => setForwardingMsg(m)}
                   onCopy={() => handleCopy(m)}
                   onStar={() => handleToggleStar(m)}
+                  onPin={() => handleTogglePin(m)}
+                  onInfo={() => setInfoMsgId(m.id)}
                   onShowReactors={(emoji) => setReactorsMsg({ msg: m, emoji })}
                 />
               );
@@ -1077,6 +1092,87 @@ export default function GroupChatPage() {
           onClose={() => setReactorsMsg(null)}
         />
       )}
+
+      {infoMsgId && (
+        <GroupMessageInfoSheet
+          groupId={groupId}
+          messageId={infoMsgId}
+          onClose={() => setInfoMsgId(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Group Message Info Sheet ──────────────────────────────────────────────────
+
+function GroupMessageInfoSheet({
+  groupId,
+  messageId,
+  onClose,
+}: {
+  groupId: string;
+  messageId: string;
+  onClose: () => void;
+}) {
+  const { data: info, isLoading } = useChatGroupMessageInfo(groupId, messageId);
+
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    });
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Message info"
+        className="w-full max-w-md rounded-t-2xl p-5 space-y-4"
+        style={{ background: "var(--color-modal-bg)", border: "1px solid var(--color-border-medium)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-semibold text-sm text-foreground">Message info</p>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
+            <X size={16} />
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : info ? (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+              <span className="text-muted-foreground">Sent</span>
+              <span className="text-foreground font-medium">{fmt(info.sentAt)}</span>
+            </div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pt-1">
+              Read by {info.readByCount}
+            </p>
+            {info.readByCount === 0 ? (
+              <p className="text-sm text-muted-foreground italic py-2">No one has read this message yet.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto space-y-1">
+                {info.readBy.map((r) => (
+                  <div key={r.memberId} className="flex items-center justify-between py-1.5">
+                    <span className="text-foreground text-xs">
+                      {[r.firstName, r.lastName].filter(Boolean).join(" ") || "Member"}
+                    </span>
+                    <span className="text-muted-foreground text-[10px]">{fmt(r.readAt)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Could not load message info.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1104,6 +1200,8 @@ function MessageBubble({
   onForward,
   onCopy,
   onStar,
+  onPin,
+  onInfo,
   onShowReactors,
 }: {
   message: ChatGroupMessage;
@@ -1120,6 +1218,8 @@ function MessageBubble({
   onForward: () => void;
   onCopy: () => void;
   onStar: () => void;
+  onPin: () => void;
+  onInfo: () => void;
   onShowReactors: (emoji: string) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1373,6 +1473,24 @@ function MessageBubble({
                   className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                 >
                   <Star size={13} /> {isStarred ? "Unstar" : "Star"}
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onPin();
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <MapPin size={13} /> {message.isPinned ? "Unpin" : "Pin"}
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onInfo();
+                  }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Info size={13} /> Info
                 </button>
                 {isMine && !message.mediaUrl && message.body && (
                   <button

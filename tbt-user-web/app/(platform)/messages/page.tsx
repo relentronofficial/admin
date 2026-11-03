@@ -10,7 +10,9 @@ import {
   Copy,
   Edit3,
   FileText,
+  Info,
   Loader2,
+  MapPin,
   MessageSquare,
   MoreVertical,
   Paperclip,
@@ -34,6 +36,11 @@ import {
   useStartConversation,
   useSendChatMessage,
   useArchiveConversation,
+  useStarChatMessage,
+  useDmStarredMessages,
+  usePinChatMessage,
+  useDmPinnedMessage,
+  useDmMessageInfo,
 } from '@/lib/hooks/useDashboard';
 import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
 import { useMe } from '@/lib/hooks/useUser';
@@ -167,6 +174,12 @@ export default function MessagesPage() {
   const sendMessage          = useSendChatMessage();
   const archiveConversation  = useArchiveConversation();
 
+  const { data: dmStarredList = [] } = useDmStarredMessages();
+  const { data: dmPinnedMsg }        = useDmPinnedMessage(activeId ?? '');
+  const pinToggle                    = usePinChatMessage();
+
+  const dmStarredIdSet = useMemo(() => new Set(dmStarredList.map((s) => s.id)), [dmStarredList]);
+
   const conversations  = (convoData as any)?.data ?? [];
   const messages       = (msgData as any)?.data ?? [];
   const activeMeta     = (msgData as any)?.meta ?? null;
@@ -275,6 +288,11 @@ export default function MessagesPage() {
       queryClient.invalidateQueries({ queryKey: ['user', 'conversations', activeId, 'messages'] });
     };
 
+    const handlePinned = ({ conversationId: cid }: any) => {
+      if (cid !== activeId) return;
+      queryClient.invalidateQueries({ queryKey: ['user', 'dm-pinned', activeId] });
+    };
+
     getSocket().then((s) => {
       if (!mounted) return;
       socketRef.current = s;
@@ -284,6 +302,7 @@ export default function MessagesPage() {
       s.on('chat:typing', handleTyping);
       s.on('chat:conversation_closed', handleClosed);
       s.on('chat:conversation_reopened', handleReopened);
+      s.on('chat:pinned', handlePinned);
     });
 
     return () => {
@@ -294,6 +313,7 @@ export default function MessagesPage() {
         socketRef.current.off('chat:message_updated', handleMessage);
         socketRef.current.off('chat:typing', handleTyping);
         socketRef.current.off('chat:conversation_closed', handleClosed);
+        socketRef.current.off('chat:pinned', handlePinned);
         socketRef.current.off('chat:conversation_reopened', handleReopened);
       }
       socketRef.current = null;
@@ -576,6 +596,33 @@ export default function MessagesPage() {
               </div>
             </div>
 
+            {/* Pin strip */}
+            {dmPinnedMsg && (
+              <div
+                className="flex items-center gap-2 px-4 py-2 border-b text-xs cursor-pointer hover:opacity-80"
+                style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)', background: 'color-mix(in srgb, var(--color-accent) 6%, transparent)' }}
+                onClick={() => {
+                  const el = document.getElementById(`msg-${dmPinnedMsg.id}`);
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+              >
+                <MapPin size={12} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+                <span className="flex-1 truncate text-muted-foreground">
+                  {dmPinnedMsg.body || (dmPinnedMsg.mediaType ? `📎 ${dmPinnedMsg.mediaType}` : 'Pinned message')}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    pinToggle.mutate({ conversationId: activeId!, messageId: dmPinnedMsg.id, unpin: true });
+                  }}
+                  className="p-0.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Unpin"
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )}
+
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
               {messageGroups.map(({ label, messages: dayMsgs }) => (
@@ -600,7 +647,11 @@ export default function MessagesPage() {
                         conversationId={activeId!}
                         conversations={conversations}
                         chatGroups={groups}
+                        isStarred={dmStarredIdSet.has(m.id)}
+                        isPinned={dmPinnedMsg?.id === m.id}
                         onReply={() => setReplyingTo(m)}
+                        onStar={() => undefined}
+                        onPin={() => pinToggle.mutate({ conversationId: activeId!, messageId: m.id, unpin: dmPinnedMsg?.id === m.id })}
                       />
                     );
                   })}
@@ -823,6 +874,68 @@ export default function MessagesPage() {
   );
 }
 
+// ── DM Message Info Sheet ─────────────────────────────────────────────────────
+
+function DmMessageInfoSheet({
+  conversationId,
+  messageId,
+  onClose,
+}: {
+  conversationId: string;
+  messageId: string;
+  onClose: () => void;
+}) {
+  const { data: info, isLoading } = useDmMessageInfo(conversationId, messageId);
+
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+
+  return (
+    <div
+      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Message info"
+        className="w-full max-w-md rounded-t-2xl p-5 space-y-4"
+        style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-semibold text-sm text-foreground">Message info</p>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground">
+            <X size={16} />
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 size={16} className="animate-spin text-muted-foreground" />
+          </div>
+        ) : info ? (
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <span className="text-muted-foreground">Sent</span>
+              <span className="text-foreground font-medium">{fmt(info.sentAt)}</span>
+            </div>
+            <div className="flex items-center justify-between py-2">
+              <span className="text-muted-foreground">Read</span>
+              <span className={info.readAt ? 'text-foreground font-medium' : 'text-muted-foreground italic'}>
+                {info.readAt ? fmt(info.readAt) : 'Not yet read'}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Could not load message info.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Weekly Report Modal ───────────────────────────────────────────────────────
 
 function WeeklyReportModal({ onClose }: { onClose: () => void }) {
@@ -984,7 +1097,11 @@ function DmBubble({
   conversationId,
   conversations,
   chatGroups,
+  isStarred,
+  isPinned,
   onReply,
+  onStar: _onStar,
+  onPin,
 }: {
   message: any;
   isMe: boolean;
@@ -993,7 +1110,11 @@ function DmBubble({
   conversations: any[];
   /** Chat groups the member belongs to (forward targets). */
   chatGroups: Array<{ id: string; name: string }>;
+  isStarred: boolean;
+  isPinned: boolean;
   onReply: () => void;
+  onStar: () => void;
+  onPin: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -1004,11 +1125,13 @@ function DmBubble({
   const [forwardTo, setForwardTo] = useState<Set<string>>(new Set());
   const [forwardToGroups, setForwardToGroups] = useState<Set<string>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const editMsg = useEditChatMessage();
   const deleteMsg = useDeleteChatMessage();
   const reactMsg = useReactChatMessage();
   const forwardMsg = useForwardChatMessage();
+  const starMsg = useStarChatMessage();
 
   const deleted = !!message.deletedForEveryone;
   const canEdit =
@@ -1309,6 +1432,35 @@ function DmBubble({
             >
               <Reply size={13} className="scale-x-[-1]" /> Forward
             </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                starMsg.mutate({ conversationId, messageId: message.id });
+              }}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+            >
+              <Star size={13} className={isStarred ? 'fill-current' : ''} style={isStarred ? { color: '#f59e0b' } : {}} />
+              {isStarred ? 'Unstar' : 'Star'}
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onPin();
+              }}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+            >
+              <MapPin size={13} className={isPinned ? 'fill-current' : ''} style={isPinned ? { color: 'var(--color-accent)' } : {}} />
+              {isPinned ? 'Unpin' : 'Pin'}
+            </button>
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                setInfoOpen(true);
+              }}
+              className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+            >
+              <Info size={13} /> Info
+            </button>
             {canEdit && (
               <button
                 onClick={startEdit}
@@ -1494,6 +1646,14 @@ function DmBubble({
             </div>
           </div>
         </div>
+      )}
+
+      {infoOpen && (
+        <DmMessageInfoSheet
+          conversationId={conversationId}
+          messageId={message.id}
+          onClose={() => setInfoOpen(false)}
+        />
       )}
 
       {lightboxOpen && message.mediaUrl && message.mediaType === 'image' && (
