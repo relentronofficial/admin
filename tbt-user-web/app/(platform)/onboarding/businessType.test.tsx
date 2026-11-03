@@ -50,6 +50,7 @@ const COMPLETE_PROFILE = {
   instagramLink: "https://instagram.com/asha", annualTurnover: "0-10L", revenueGoalAfterTbt: "50L", goalAfter90Days: "Grow",
   businessStartedFrom: "2020", teamSize: "1-5", instagramStats: "1k", facebookStats: "500", gstNumber: "33ABCDE1234F1Z5",
   preferredSessionMode: "online", hasMarketingTeam: false, hasVideoEditing: false,
+  profilePhotoUrl: "https://cdn.example.com/asha.webp",
 };
 
 const continueBtn = () => screen.getByRole("button", { name: /^Continue$/ });
@@ -88,5 +89,15 @@ describe("onboarding Business Type", () => {
     fireEvent.click(continueBtn());
     await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
     expect(state.save.mock.calls[0][0].productServiceType).toBe(legacy);
+  });
+});
+
+describe("onboarding profile photo", () => {
+  it("blocks Continue without a photo and shows 'Please upload a photo'", async () => {
+    Element.prototype.scrollIntoView = vi.fn(); // not implemented in jsdom
+    openProfileStep({ ...COMPLETE_PROFILE, profilePhotoUrl: null });
+    fireEvent.click(continueBtn());
+    expect(await screen.findByText("Please upload a photo")).toBeTruthy();
+    expect(state.save).not.toHaveBeenCalled();
   });
 });
