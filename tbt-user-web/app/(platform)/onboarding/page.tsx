@@ -43,7 +43,7 @@ const DOCUMENT_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
+const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline", "None"];
 
 const ANNUAL_TURNOVER_OPTIONS = [
   "No Revenue", "Under 1 Lakh", "Under 5 Lakhs",

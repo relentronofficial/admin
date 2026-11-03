@@ -1268,7 +1268,7 @@ Widget _multilineField(
   );
 }
 
-const _kMarketingChannels = ['SEO', 'Paid Ads', 'Social Media', 'Email', 'Referral', 'Offline'];
+const _kMarketingChannels = ['SEO', 'Paid Ads', 'Social Media', 'Email', 'Referral', 'Offline', 'None'];
 
 Widget _marketingChannelChips(
   Map<String, dynamic> profile,
