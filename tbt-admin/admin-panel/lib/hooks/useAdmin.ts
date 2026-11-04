@@ -334,6 +334,64 @@ export const useDeleteAdminChatMessage = () => {
   });
 };
 
+export const useToggleDmReaction = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId, emoji }: { conversationId: string; messageId: string; emoji: string }) => {
+      const res: any = await apiClient.post(`/api/conversations/${conversationId}/messages/${messageId}/react`, { emoji });
+      return res.data || res;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'conversations', v.conversationId, 'messages'] });
+    },
+  });
+};
+
+export const useForwardDmMessage = () => {
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId, conversationIds }: { conversationId: string; messageId: string; conversationIds: string[] }) => {
+      const res: any = await apiClient.post(`/api/conversations/${conversationId}/messages/${messageId}/forward`, { conversationIds });
+      return res.data || res;
+    },
+  });
+};
+
+export const useToggleDmPin = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId }: { conversationId: string; messageId: string }) => {
+      const res: any = await apiClient.patch(`/api/conversations/${conversationId}/messages/${messageId}/pin`);
+      return res.data || res;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'conversations', v.conversationId, 'messages'] });
+    },
+  });
+};
+
+export const useToggleDmStar = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ conversationId, messageId }: { conversationId: string; messageId: string }) => {
+      const res: any = await apiClient.patch(`/api/conversations/${conversationId}/messages/${messageId}/star`);
+      return res.data || res;
+    },
+    onSuccess: (_d, v) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'conversations', v.conversationId, 'messages'] });
+    },
+  });
+};
+
+export const useAdminStarredMessages = () => {
+  return useQuery({
+    queryKey: ['admin', 'starred-messages'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/conversations/starred');
+      return res;
+    },
+  });
+};
+
 export const useRaiseTicketFromDm = () => {
   return useMutation({
     mutationFn: async ({

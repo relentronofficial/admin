@@ -7,11 +7,19 @@ import {
   deleteAdminChatMessageHandler,
   closeConversationHandler,
   raiseTicketFromDmHandler,
+  toggleDmReactionHandler,
+  forwardDmMessageHandler,
+  toggleDmPinHandler,
+  toggleDmAdminStarHandler,
+  listAdminStarredMessagesHandler,
 } from './controller.js';
+
 export async function conversationsRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', fastify.authenticate);
 
-  fastify.get('/',             listAdminConversationsHandler);
+  fastify.get('/',         listAdminConversationsHandler);
+  fastify.get('/starred',  listAdminStarredMessagesHandler);   // before /:id to avoid param conflict
+
   fastify.get('/:id/messages', getAdminConversationMessagesHandler);
   fastify.post('/:id/messages', {
     schema: {
@@ -22,8 +30,12 @@ export async function conversationsRoutes(fastify: FastifyInstance) {
       },
     },
   }, sendAdminChatMessageHandler);
-  fastify.put('/:id/messages/:messageId',                  editAdminChatMessageHandler);
-  fastify.delete('/:id/messages/:messageId',               deleteAdminChatMessageHandler);
-  fastify.post('/:id/messages/:messageId/raise-ticket',    raiseTicketFromDmHandler);
-  fastify.patch('/:id/close',                              closeConversationHandler);
+  fastify.put('/:id/messages/:messageId',                      editAdminChatMessageHandler);
+  fastify.delete('/:id/messages/:messageId',                   deleteAdminChatMessageHandler);
+  fastify.post('/:id/messages/:messageId/raise-ticket',        raiseTicketFromDmHandler);
+  fastify.post('/:id/messages/:messageId/react',               toggleDmReactionHandler);
+  fastify.post('/:id/messages/:messageId/forward',             forwardDmMessageHandler);
+  fastify.patch('/:id/messages/:messageId/pin',                toggleDmPinHandler);
+  fastify.patch('/:id/messages/:messageId/star',               toggleDmAdminStarHandler);
+  fastify.patch('/:id/close',                                  closeConversationHandler);
 }

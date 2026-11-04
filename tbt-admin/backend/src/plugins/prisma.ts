@@ -3017,9 +3017,24 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_dm_stars_member ON direct_message_stars(member_id, starred_at DESC)`
     ).catch(() => {});
-    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS is_pinned   BOOLEAN NOT NULL DEFAULT false`);
-    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_at   TIMESTAMPTZ`);
-    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by   UUID REFERENCES members(id) ON DELETE SET NULL`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS is_pinned          BOOLEAN NOT NULL DEFAULT false`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_at          TIMESTAMPTZ`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by          UUID REFERENCES members(id) ON DELETE SET NULL`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by_admin_id UUID REFERENCES admins(id)  ON DELETE SET NULL`);
+
+    // Admin-side personal starred messages (separate from member direct_message_stars)
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS dm_admin_stars (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admin_id   UUID NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+        message_id UUID NOT NULL,
+        starred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (admin_id, message_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_dm_admin_stars ON dm_admin_stars(admin_id, starred_at DESC)`
+    ).catch(() => {});
 
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});

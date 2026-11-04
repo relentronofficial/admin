@@ -4,16 +4,22 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle,
+  ArrowUpRight,
   Check,
   ChevronDown,
   Copy,
   Edit3,
+  Info,
   LifeBuoy,
   Loader2,
   MessageSquare,
+  Pin,
+  PinOff,
   Reply,
   Search,
   Send,
+  Smile,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -26,6 +32,11 @@ import {
   useEditAdminChatMessage,
   useDeleteAdminChatMessage,
   useRaiseTicketFromDm,
+  useToggleDmReaction,
+  useForwardDmMessage,
+  useToggleDmPin,
+  useToggleDmStar,
+  useMe,
 } from "@/lib/hooks/useAdmin";
 import { getAdminSocket } from "@/lib/socket/client";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,9 +44,10 @@ import { format, formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
 
 const TYPING_DEBOUNCE_MS = 2000;
+const EMOJI_SET = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
 type FilterTab = "all" | "open" | "closed";
 
-// ── AdminBubble ───────────────────────────────────────────────────────────────
+// ── defaultDeadline ───────────────────────────────────────────────────────────
 
 function defaultDeadline() {
   const d = new Date(Date.now() + 24 * 3_600_000);
@@ -43,64 +55,61 @@ function defaultDeadline() {
   return d.toISOString().slice(0, 16);
 }
 
+// ── AdminBubble ───────────────────────────────────────────────────────────────
+
 function AdminBubble({
   message,
   messages,
   conversationId,
+  conversations,
+  myAdminId,
   onReply,
 }: {
   message: any;
   messages: any[];
   conversationId: string;
+  conversations: any[];
+  myAdminId: string | null;
   onReply: (msg: any) => void;
 }) {
-  const [menuOpen, setMenuOpen]       = useState(false);
-  const [menuPos, setMenuPos]         = useState<{ top: number; left: number } | null>(null);
-  const [editing, setEditing]         = useState(false);
-  const [editText, setEditText]       = useState("");
-  const [confirmDel, setConfirmDel]   = useState(false);
-  const [ticketModal, setTicketModal] = useState(false);
-  const [tkSubject, setTkSubject]     = useState("");
-  const [tkMessage, setTkMessage]     = useState("");
-  const [tkPriority, setTkPriority]   = useState("medium");
-  const [tkDeadline, setTkDeadline]   = useState("");
+  // ── dropdown state
+  const [menuOpen, setMenuOpen]         = useState(false);
+  const [menuPos, setMenuPos]           = useState<{ top: number; left: number } | null>(null);
+  const triggerRef                      = useRef<HTMLButtonElement>(null);
+  const MENU_W                          = 184;
 
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  // ── editing / delete
+  const [editing, setEditing]           = useState(false);
+  const [editText, setEditText]         = useState("");
+  const [confirmDel, setConfirmDel]     = useState(false);
 
+  // ── ticket modal
+  const [ticketModal, setTicketModal]   = useState(false);
+  const [tkSubject, setTkSubject]       = useState("");
+  const [tkMessage, setTkMessage]       = useState("");
+  const [tkPriority, setTkPriority]     = useState("medium");
+  const [tkDeadline, setTkDeadline]     = useState("");
+
+  // ── message info modal
+  const [infoOpen, setInfoOpen]         = useState(false);
+
+  // ── emoji picker
+  const [emojiPos, setEmojiPos]         = useState<{ top: number; left: number } | null>(null);
+  const emojiTriggerRef                 = useRef<{ top: number; right: number } | null>(null);
+
+  // ── forward modal
+  const [forwardOpen, setForwardOpen]   = useState(false);
+  const [fwdSearch, setFwdSearch]       = useState("");
+  const [fwdSelected, setFwdSelected]   = useState<Set<string>>(new Set());
+
+  // ── mutations
   const editMsg      = useEditAdminChatMessage();
   const deleteMsg    = useDeleteAdminChatMessage();
   const raiseTicket  = useRaiseTicketFromDm();
-
-  const MENU_W = 176; // w-44 = 11rem
-
-  function openMenu() {
-    const el = triggerRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    const menuH = 200; // conservative estimate
-    let top = r.bottom + 4;
-    let left = r.right - MENU_W;
-    if (top + menuH > window.innerHeight - 8) top = r.top - menuH - 4;
-    left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
-    setMenuPos({ top, left });
-    setMenuOpen(true);
-  }
-
-  // Close on any scroll (fixed dropdown doesn't track trigger movement)
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => setMenuOpen(false);
-    window.addEventListener("scroll", close, { capture: true, passive: true });
-    return () => window.removeEventListener("scroll", close, true);
-  }, [menuOpen]);
-
-  // Close on Escape
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen]);
+  const toggleRx     = useToggleDmReaction();
+  const forwardMsg   = useForwardDmMessage();
+  const togglePin    = useToggleDmPin();
+  const toggleStar   = useToggleDmStar();
 
   const isAdmin  = message.senderType === "admin";
   const deleted  = !!message.deletedForEveryone;
@@ -109,6 +118,50 @@ function AdminBubble({
     ? messages.find((m: any) => m.id === message.replyToId)
     : null;
 
+  // ── dropdown positioning
+  function openMenu() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const menuH = 340;
+    let top  = r.bottom + 4;
+    let left = r.right - MENU_W;
+    if (top + menuH > window.innerHeight - 8) top = r.top - menuH - 4;
+    left = Math.max(8, Math.min(left, window.innerWidth - MENU_W - 8));
+    setMenuPos({ top, left });
+    setMenuOpen(true);
+  }
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    window.addEventListener("scroll", close, { capture: true, passive: true });
+    return () => window.removeEventListener("scroll", close, true);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  // ── emoji picker positioning
+  function openEmojiPicker() {
+    const el = triggerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const pickerW = 264;
+    const pickerH = 60;
+    let top  = r.bottom + 4;
+    let left = r.right - pickerW;
+    if (top + pickerH > window.innerHeight - 8) top = r.top - pickerH - 4;
+    left = Math.max(8, Math.min(left, window.innerWidth - pickerW - 8));
+    emojiTriggerRef.current = { top: r.top, right: r.right };
+    setEmojiPos({ top, left });
+  }
+
+  // ── editing handlers
   function startEdit() {
     setMenuOpen(false);
     setEditText(message.body ?? "");
@@ -143,6 +196,58 @@ function AdminBubble({
     });
   }
 
+  function handleToggleReaction(emoji: string) {
+    setEmojiPos(null);
+    toggleRx.mutate({ conversationId, messageId: message.id, emoji }, {
+      onError: () => toast.error("Could not add reaction"),
+    });
+  }
+
+  function handleTogglePin() {
+    setMenuOpen(false);
+    togglePin.mutate({ conversationId, messageId: message.id }, {
+      onSuccess: (data: any) => toast.success(data?.pinned ? "Message pinned" : "Message unpinned"),
+      onError: () => toast.error("Could not pin message"),
+    });
+  }
+
+  function handleToggleStar() {
+    setMenuOpen(false);
+    toggleStar.mutate({ conversationId, messageId: message.id }, {
+      onSuccess: (data: any) => toast.success(data?.starred ? "Message starred" : "Message unstarred"),
+      onError: () => toast.error("Could not star message"),
+    });
+  }
+
+  async function handleForward() {
+    if (fwdSelected.size === 0) return;
+    try {
+      const result: any = await forwardMsg.mutateAsync({
+        conversationId,
+        messageId: message.id,
+        conversationIds: [...fwdSelected],
+      });
+      setForwardOpen(false);
+      setFwdSelected(new Set());
+      toast.success(`Forwarded to ${result?.forwarded ?? fwdSelected.size} conversation(s)`);
+    } catch {
+      toast.error("Could not forward message");
+    }
+  }
+
+  const fwdConversations = conversations.filter((c: any) => {
+    if (c.id === conversationId) return false;
+    if (c.status !== "open") return false;
+    if (!fwdSearch.trim()) return true;
+    const q = fwdSearch.toLowerCase();
+    return c.member?.name?.toLowerCase().includes(q) || c.subject?.toLowerCase().includes(q);
+  });
+
+  // ── derived
+  const reactions: { emoji: string; count: number; senderIds: string[] }[] = message.reactions ?? [];
+  const isPinned: boolean  = message.isPinned ?? false;
+  const isStarred: boolean = message.isStarredByAdmin ?? false;
+
   return (
     <div
       id={`msg-${message.id}`}
@@ -150,18 +255,34 @@ function AdminBubble({
     >
       {/* Avatar */}
       <div
-        className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
+        className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white self-end"
         style={{ background: isAdmin ? "#dc2626" : "#333" }}
       >
         {isAdmin ? "A" : (message.senderName?.[0]?.toUpperCase() ?? "M")}
       </div>
 
-      {/* Bubble wrapper — relative + group for hover button */}
+      {/* Bubble wrapper */}
       <div className={`max-w-[65%] flex flex-col relative group ${isAdmin ? "items-end" : ""}`}>
+
+        {/* Pin / Star indicators */}
+        {(isPinned || isStarred) && (
+          <div className={`flex gap-1.5 mb-0.5 ${isAdmin ? "justify-end" : "justify-start"}`}>
+            {isPinned  && <span title="Pinned"><Pin  size={10} className="text-[#facc15]" /></span>}
+            {isStarred && <span title="Starred"><Star size={10} className="text-[#facc15] fill-current" /></span>}
+          </div>
+        )}
+
         <div
           className={`rounded-2xl overflow-hidden ${isAdmin ? "rounded-tr-sm" : "rounded-tl-sm"}`}
           style={{ background: isAdmin ? "rgba(220,38,38,0.15)" : "#1f1f1f" }}
         >
+          {/* Forwarded label */}
+          {message.isForwarded && !deleted && (
+            <div className="flex items-center gap-1 px-3.5 pt-2 text-[10px] text-[#888]">
+              <ArrowUpRight size={10} /> Forwarded
+            </div>
+          )}
+
           {/* Reply quote */}
           {replyTo && !deleted && (
             <div
@@ -223,50 +344,129 @@ function AdminBubble({
           </p>
         </div>
 
-        {/* Hover action button — top-right of bubble */}
+        {/* Reactions row */}
+        {reactions.length > 0 && (
+          <div className={`flex flex-wrap gap-1 mt-1 ${isAdmin ? "justify-end" : "justify-start"}`}>
+            {reactions.map((r) => {
+              const iMine = myAdminId ? r.senderIds.includes(myAdminId) : false;
+              return (
+                <button
+                  key={r.emoji}
+                  onClick={() => handleToggleReaction(r.emoji)}
+                  title={iMine ? "Remove reaction" : "Add reaction"}
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] transition-colors"
+                  style={{
+                    background: iMine ? "rgba(220,38,38,0.2)" : "#1f1f1f",
+                    border: iMine ? "1px solid rgba(220,38,38,0.4)" : "1px solid #2a2a2a",
+                    color: iMine ? "#dc2626" : "#a0a0a0",
+                  }}
+                >
+                  {r.emoji}{r.count > 1 && <span className="ml-0.5">{r.count}</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Hover action button */}
         {!deleted && !editing && (
           <button
             ref={triggerRef}
             onClick={openMenu}
             className="absolute top-0 right-0 z-10 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
-            style={{
-              background: "#141414",
-              border: "1px solid #2a2a2a",
-              color: "#888",
-            }}
+            style={{ background: "#141414", border: "1px solid #2a2a2a", color: "#888" }}
             aria-label="Message options"
           >
             <ChevronDown size={12} />
           </button>
         )}
 
-        {/* Dropdown menu — portal to body so overflow-y-auto never clips it */}
+        {/* ── Dropdown menu (portal) ─────────────────────────────────── */}
         {menuOpen && menuPos && createPortal(
           <>
             <div className="fixed inset-0 z-[200]" onClick={() => setMenuOpen(false)} />
             <div
-              className="fixed z-[201] w-44 rounded-xl overflow-hidden py-1"
+              className="fixed z-[201] rounded-xl overflow-hidden py-1"
               style={{
-                top: menuPos.top,
-                left: menuPos.left,
-                background: "#141414",
-                border: "1px solid #2a2a2a",
+                top: menuPos.top, left: menuPos.left, width: MENU_W,
+                background: "#141414", border: "1px solid #2a2a2a",
                 boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
                 animation: "fadeInScale 0.1s ease",
               }}
             >
+              {/* 1. Message Info */}
+              <button
+                onClick={() => { setMenuOpen(false); setInfoOpen(true); }}
+                className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+              >
+                <Info size={13} /> Message Info
+              </button>
+
+              <div className="my-1 border-t border-[#2a2a2a]" />
+
+              {/* 2. Reply */}
               <button
                 onClick={() => { setMenuOpen(false); onReply(message); }}
                 className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
               >
                 <Reply size={13} /> Reply
               </button>
+
+              {/* 3. Copy */}
+              {!deleted && message.body && (
+                <button
+                  onClick={handleCopy}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                >
+                  <Copy size={13} /> Copy
+                </button>
+              )}
+
+              {/* 4. React */}
+              {!deleted && (
+                <button
+                  onClick={() => { setMenuOpen(false); openEmojiPicker(); }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                >
+                  <Smile size={13} /> React
+                </button>
+              )}
+
+              <div className="my-1 border-t border-[#2a2a2a]" />
+
+              {/* 5. Forward */}
+              {!deleted && (
+                <button
+                  onClick={() => { setMenuOpen(false); setFwdSearch(""); setFwdSelected(new Set()); setForwardOpen(true); }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                >
+                  <ArrowUpRight size={13} /> Forward
+                </button>
+              )}
+
+              {/* 6. Pin / Unpin */}
+              {!deleted && (
+                <button
+                  onClick={handleTogglePin}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                >
+                  {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+                  {isPinned ? "Unpin" : "Pin"}
+                </button>
+              )}
+
+              {/* 7. Star / Unstar */}
               <button
-                onClick={handleCopy}
+                onClick={handleToggleStar}
                 className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
               >
-                <Copy size={13} /> Copy
+                <Star size={13} className={isStarred ? "fill-[#facc15] text-[#facc15]" : ""} />
+                {isStarred ? "Unstar" : "Star"}
               </button>
+
+              <div className="my-1 border-t border-[#2a2a2a]" />
+
+              {/* 8. Raise Ticket */}
               {!deleted && (
                 <button
                   onClick={() => {
@@ -283,14 +483,21 @@ function AdminBubble({
                   <LifeBuoy size={13} /> Raise Ticket
                 </button>
               )}
-              {isAdmin && (
-                <button
-                  onClick={startEdit}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
-                >
-                  <Edit3 size={13} /> Edit
-                </button>
+
+              {/* 9. Edit (admin own messages only) */}
+              {isAdmin && !deleted && (
+                <>
+                  <div className="my-1 border-t border-[#2a2a2a]" />
+                  <button
+                    onClick={startEdit}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-white/[0.04]"
+                  >
+                    <Edit3 size={13} /> Edit
+                  </button>
+                </>
               )}
+
+              {/* 10. Delete (admin own messages only) */}
               {isAdmin && (
                 <button
                   onClick={() => { setMenuOpen(false); setConfirmDel(true); }}
@@ -304,7 +511,193 @@ function AdminBubble({
           document.body,
         )}
 
-        {/* Delete confirm dialog */}
+        {/* ── Emoji picker (portal) ──────────────────────────────────── */}
+        {emojiPos && createPortal(
+          <>
+            <div className="fixed inset-0 z-[200]" onClick={() => setEmojiPos(null)} />
+            <div
+              className="fixed z-[201] flex items-center gap-1 p-2 rounded-2xl"
+              style={{
+                top: emojiPos.top, left: emojiPos.left,
+                background: "#141414", border: "1px solid #2a2a2a",
+                boxShadow: "0 8px 32px rgba(0,0,0,0.8)",
+                animation: "fadeInScale 0.1s ease",
+              }}
+            >
+              {EMOJI_SET.map((emoji) => {
+                const iMine = myAdminId
+                  ? (reactions.find((r) => r.emoji === emoji)?.senderIds ?? []).includes(myAdminId)
+                  : false;
+                return (
+                  <button
+                    key={emoji}
+                    onClick={() => handleToggleReaction(emoji)}
+                    title={iMine ? "Remove" : "React"}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center text-xl hover:bg-white/10 transition-colors"
+                    style={iMine ? { background: "rgba(220,38,38,0.2)", outline: "1px solid rgba(220,38,38,0.4)" } : {}}
+                  >
+                    {emoji}
+                  </button>
+                );
+              })}
+            </div>
+          </>,
+          document.body,
+        )}
+
+        {/* ── Message Info modal ─────────────────────────────────────── */}
+        {infoOpen && createPortal(
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+            onClick={() => setInfoOpen(false)}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl overflow-hidden"
+              style={{ background: "#141414", border: "1px solid #2a2a2a" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
+                <span className="text-sm font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider flex items-center gap-2">
+                  <Info size={14} className="text-[#dc2626]" /> Message Info
+                </span>
+                <button onClick={() => setInfoOpen(false)} className="text-[#777] hover:text-[#a0a0a0]">
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="p-5 space-y-3 text-xs text-[#a0a0a0]">
+                <Row label="Sender"   value={message.senderType === "admin" ? "You (Admin)" : message.senderName} />
+                <Row label="Sent"     value={format(new Date(message.createdAt), "PPpp")} />
+                {message.editedAt && <Row label="Edited"   value={format(new Date(message.editedAt), "PPpp")} />}
+                <Row
+                  label="Read by admin"
+                  value={message.readByAdminAt ? format(new Date(message.readByAdminAt), "PPpp") : "—"}
+                />
+                <Row
+                  label="Read by member"
+                  value={message.readByMemberAt ? format(new Date(message.readByMemberAt), "PPpp") : "—"}
+                />
+                {message.isForwarded && <Row label="Type" value="Forwarded message" />}
+                {message.isPinned && (
+                  <Row label="Pinned" value={message.pinnedAt ? format(new Date(message.pinnedAt), "PPpp") : "Yes"} />
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+        {/* ── Forward modal ──────────────────────────────────────────── */}
+        {forwardOpen && createPortal(
+          <div
+            className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+            onClick={() => !forwardMsg.isPending && setForwardOpen(false)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl overflow-hidden flex flex-col max-h-[80vh]"
+              style={{ background: "#141414", border: "1px solid #2a2a2a" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a] flex-shrink-0">
+                <span className="text-sm font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider flex items-center gap-2">
+                  <ArrowUpRight size={14} className="text-[#dc2626]" /> Forward Message
+                </span>
+                <button
+                  onClick={() => setForwardOpen(false)}
+                  disabled={forwardMsg.isPending}
+                  className="text-[#777] hover:text-[#a0a0a0]"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Source preview */}
+              {message.body && (
+                <div className="mx-5 mt-4 px-3 py-2 rounded-lg text-xs text-[#888] flex-shrink-0" style={{ background: "#1a1a1a", borderLeft: "3px solid #555" }}>
+                  <div className="line-clamp-2 whitespace-pre-wrap text-[#a0a0a0]">{message.body}</div>
+                </div>
+              )}
+
+              {/* Search */}
+              <div className="px-5 mt-4 flex-shrink-0">
+                <div className="flex items-center gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 focus-within:border-[#dc2626]">
+                  <Search size={12} className="text-[#777] shrink-0" />
+                  <input
+                    value={fwdSearch}
+                    onChange={(e) => setFwdSearch(e.target.value)}
+                    placeholder="Search conversations..."
+                    className="flex-1 bg-transparent text-sm text-[#f0f0f0] outline-none placeholder:text-[#777]"
+                  />
+                </div>
+              </div>
+
+              {/* Conversation list */}
+              <div className="flex-1 overflow-y-auto px-5 mt-3 space-y-1 pb-3 min-h-0">
+                {fwdConversations.length === 0 ? (
+                  <p className="text-center text-xs text-[#666] py-6">No open conversations</p>
+                ) : (
+                  fwdConversations.map((c: any) => {
+                    const sel = fwdSelected.has(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          const next = new Set(fwdSelected);
+                          sel ? next.delete(c.id) : next.add(c.id);
+                          setFwdSelected(next);
+                        }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors"
+                        style={{
+                          background: sel ? "rgba(220,38,38,0.1)" : "#1a1a1a",
+                          border: sel ? "1px solid rgba(220,38,38,0.4)" : "1px solid #2a2a2a",
+                        }}
+                      >
+                        <div
+                          className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[11px] font-bold text-white"
+                          style={{ background: sel ? "#dc2626" : "#333" }}
+                        >
+                          {c.member?.name?.[0]?.toUpperCase() ?? "M"}
+                        </div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <p className="text-xs font-semibold text-[#f0f0f0] truncate">{c.member?.name ?? "Member"}</p>
+                          <p className="text-[10px] text-[#777] truncate">{c.subject}</p>
+                        </div>
+                        {sel && <Check size={13} className="text-[#dc2626] flex-shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-5 py-4 border-t border-[#2a2a2a] flex-shrink-0">
+                <span className="text-xs text-[#888]">
+                  {fwdSelected.size > 0 ? `${fwdSelected.size} selected` : "Select conversations"}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setForwardOpen(false)}
+                    disabled={forwardMsg.isPending}
+                    className="px-4 h-9 rounded-lg text-sm text-[#888] hover:text-[#f0f0f0] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleForward}
+                    disabled={forwardMsg.isPending || fwdSelected.size === 0}
+                    className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-[#dc2626] hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {forwardMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                    <ArrowUpRight size={13} /> Forward
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+        {/* ── Delete confirm ─────────────────────────────────────────── */}
         {confirmDel && (
           <div
             className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
@@ -338,7 +731,7 @@ function AdminBubble({
           </div>
         )}
 
-        {/* Raise Ticket modal */}
+        {/* ── Raise Ticket modal ─────────────────────────────────────── */}
         {ticketModal && (
           <div
             className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4"
@@ -349,7 +742,6 @@ function AdminBubble({
               style={{ background: "#141414", border: "1px solid #2a2a2a" }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Modal header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-[#2a2a2a]">
                 <div className="flex items-center gap-2">
                   <LifeBuoy size={15} className="text-orange-400" />
@@ -365,22 +757,15 @@ function AdminBubble({
                   <X size={15} />
                 </button>
               </div>
-
-              {/* Modal body */}
               <div className="p-5 space-y-4">
-                {/* Original message preview */}
                 {message.body && (
                   <div className="rounded-lg px-3 py-2 text-xs text-[#888]" style={{ background: "#1a1a1a", borderLeft: "3px solid #555" }}>
                     <div className="text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani mb-1">Source message</div>
                     <div className="text-[#a0a0a0] line-clamp-3 whitespace-pre-wrap">{message.body}</div>
                   </div>
                 )}
-
-                {/* Subject */}
                 <div>
-                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-                    Subject *
-                  </label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Subject *</label>
                   <input
                     value={tkSubject}
                     onChange={(e) => setTkSubject(e.target.value)}
@@ -389,12 +774,8 @@ function AdminBubble({
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
                   />
                 </div>
-
-                {/* Description */}
                 <div>
-                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-                    Description *
-                  </label>
+                  <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Description *</label>
                   <textarea
                     value={tkMessage}
                     onChange={(e) => setTkMessage(e.target.value)}
@@ -403,17 +784,13 @@ function AdminBubble({
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2.5 text-sm text-white outline-none focus:border-[#dc2626] transition-all resize-none"
                   />
                 </div>
-
-                {/* Priority + Resolve By */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-                      Priority
-                    </label>
+                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Priority</label>
                     <select
                       value={tkPriority}
                       onChange={(e) => setTkPriority(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626]"
                     >
                       <option value="low">Low</option>
                       <option value="medium">Medium</option>
@@ -422,19 +799,15 @@ function AdminBubble({
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-                      Resolve By
-                    </label>
+                    <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Resolve By</label>
                     <input
                       type="datetime-local"
                       value={tkDeadline}
                       onChange={(e) => setTkDeadline(e.target.value)}
-                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] transition-all"
+                      className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626]"
                     />
                   </div>
                 </div>
-
-                {/* Actions */}
                 <div className="flex justify-end gap-2 pt-1">
                   <button
                     onClick={() => setTicketModal(false)}
@@ -458,15 +831,13 @@ function AdminBubble({
                         setTicketModal(false);
                         toast.success("Ticket raised successfully");
                       } catch (err: any) {
-                        const msg = err?.response?.data?.error ?? "Failed to raise ticket";
-                        toast.error(msg);
+                        toast.error(err?.response?.data?.error ?? "Failed to raise ticket");
                       }
                     }}
                     className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-orange-600 hover:bg-orange-700 flex items-center gap-1.5 disabled:opacity-50"
                   >
                     {raiseTicket.isPending && <Loader2 size={13} className="animate-spin" />}
-                    <LifeBuoy size={13} />
-                    Raise Ticket
+                    <LifeBuoy size={13} /> Raise Ticket
                   </button>
                 </div>
               </div>
@@ -474,6 +845,17 @@ function AdminBubble({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Helper: info row ──────────────────────────────────────────────────────────
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-[#666] flex-shrink-0">{label}</span>
+      <span className="text-[#f0f0f0] text-right">{value}</span>
     </div>
   );
 }
@@ -494,6 +876,9 @@ export default function AdminMessagesPage() {
   const typingTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef       = useRef<HTMLTextAreaElement>(null);
+
+  const { data: meData } = useMe();
+  const myAdminId: string | null = (meData as any)?.id ?? null;
 
   // Deep-link from notification: ?conversation=<id>
   useEffect(() => {
@@ -569,6 +954,11 @@ export default function AdminMessagesPage() {
         queryClient.invalidateQueries({ queryKey: ["admin", "conversations"] });
       });
 
+      s.on("chat:reaction", ({ conversationId }: any) => {
+        if (conversationId !== activeId) return;
+        queryClient.invalidateQueries({ queryKey: ["admin", "conversations", activeId, "messages"] });
+      });
+
       s.on("chat:typing", ({ senderType, isTyping: t }: any) => {
         if (senderType !== "member") return;
         setIsTyping(t);
@@ -587,6 +977,7 @@ export default function AdminMessagesPage() {
       getAdminSocket().then((s) => {
         s.emit("chat:leave", { conversationId: activeId });
         s.off("chat:message");
+        s.off("chat:reaction");
         s.off("chat:typing");
         s.off("chat:conversation_closed");
       });
@@ -780,6 +1171,8 @@ export default function AdminMessagesPage() {
                       message={m}
                       messages={messages}
                       conversationId={activeId}
+                      conversations={allConversations}
+                      myAdminId={myAdminId}
                       onReply={handleReply}
                     />
                   ))}
