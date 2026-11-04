@@ -7,6 +7,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ && rm -rf /var/lib/apt/lists/*
 
+# npm 10.9.x ships with node:22-slim and has a known crash on certain package
+# trees. Upgrade to 10.9.2 (last stable before the edgesOut regression) first.
+RUN npm install -g npm@10.9.2
+
 # Layer-cache package manifests separately from source
 COPY package*.json ./
 RUN npm install
