@@ -33,11 +33,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Prisma's platform detection incorrectly reports debian-openssl-1.1.x on
-# Bookworm (node:22-slim), but Bookworm ships libssl.so.3 only. The 1.1.x
-# engine binary consequently fails with "libssl.so.1.1: cannot open shared
-# object file". Force the 3.0.x binary (bundled via binaryTargets in
-# schema.prisma) so the correct shared library is used at runtime.
+# Bookworm (node:22-slim), but node:22-slim does not ship libssl.so.1.1.
+# Force the 3.0.x binary (bundled via binaryTargets in schema.prisma) and
+# install openssl so libssl.so.3 is present. Bookworm (Debian 12) is not
+# EOL, so apt-get install works here (unlike Bullseye which is EOL since
+# June 2026 and returns 404 for security packages).
 ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 # Copy only the pruned dependency tree and compiled output
 COPY --from=builder /app/node_modules ./node_modules
