@@ -122,6 +122,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     environment: staging
+    outputs:
+      image: ${{ steps.deployed-image.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -166,11 +168,26 @@ jobs:
             --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,SUPABASE_URL=stg-SUPABASE_URL:latest,SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-WABA_FROM_NUMBER:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
             --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }}|ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }}|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-user-web-staging-464464507912.asia-south1.run.app,https://tbt-user-web-staging-nt77kcmmiq-el.a.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
             --port=8000 \
+            --max-instances=2 \
             --quiet
+
+      - name: Capture deployed image digest
+        id: deployed-image
+        run: |
+          IMAGE=$(gcloud run services describe tbt-backend-staging \
+            --region $GCP_REGION --project $GCP_PROJECT \
+            --format="value(spec.template.spec.containers[0].image)")
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "Staged image: $IMAGE"
 
   # ── Deploy production backend (main branch) ──────────────────────────────
   deploy-backend-production:
-    needs: build-and-test
+    # Waits for staging so we can promote the already-built staging image to
+    # production instead of rebuilding identical code (halves Cloud Build runs).
+    # On production-branch runs (workflow_dispatch from deploy-production.yml),
+    # deploy-backend-staging is skipped; the get-image step falls back to the
+    # current staging service image.
+    needs: [build-and-test, deploy-backend-staging]
     if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
     environment: production
@@ -190,6 +207,21 @@ jobs:
         with:
           node-version: '24'
 
+      - name: Resolve image for production deploy
+        id: get-image
+        run: |
+          # Prefer the image just built by the staging job (same workflow run).
+          # Falls back to the current staging service image for production-branch
+          # manual runs where deploy-backend-staging was skipped.
+          STAGING_IMG="${{ needs.deploy-backend-staging.outputs.image }}"
+          if [ -z "$STAGING_IMG" ]; then
+            STAGING_IMG=$(gcloud run services describe tbt-backend-staging \
+              --region $GCP_REGION --project $GCP_PROJECT \
+              --format="value(spec.template.spec.containers[0].image)")
+          fi
+          echo "image=$STAGING_IMG" >> $GITHUB_OUTPUT
+          echo "Promoting to production: $STAGING_IMG"
+
       # Additive-only schema sync — see the staging job above for why.
       - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
@@ -208,7 +240,7 @@ jobs:
       - name: Deploy to Cloud Run (production)
         run: |
           gcloud run deploy tbt-backend \
-            --source tbt-admin/backend \
+            --image "${{ steps.get-image.outputs.image }}" \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,SUPABASE_URL=prod-SUPABASE_URL:latest,SUPABASE_ANON_KEY=prod-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=prod-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,BUNNY_STORAGE_ACCESS_KEY=prod-BUNNY_STORAGE_ACCESS_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-ADMIN_INTAKE_NUMBER:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
@@ -274,6 +306,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=0 \
+            --max-instances=2 \
             --set-env-vars="NODE_ENV=production" \
             --no-traffic \
             --tag=candidate \
