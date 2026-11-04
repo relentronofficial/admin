@@ -1,5 +1,8 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // Bundle both OpenSSL variants so the binary works regardless of whether
+  // the Cloud Run runtime is Debian Bullseye (1.1.x) or Bookworm (3.0.x).
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
