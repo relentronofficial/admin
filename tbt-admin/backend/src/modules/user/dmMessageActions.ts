@@ -102,9 +102,9 @@ export async function listDmStarredMessagesHandler(req: FastifyRequest, reply: F
           dm.conversation_id::text AS conversation_id,
           dm.sender_type,
           dm.sender_id::text    AS sender_id,
-          CASE WHEN dm.sender_type = 'member' THEN sm.first_name ELSE NULL END AS sender_first_name,
-          CASE WHEN dm.sender_type = 'member' THEN sm.last_name  ELSE NULL END AS sender_last_name,
-          CASE WHEN dm.sender_type = 'member' THEN sm.avatar_url ELSE NULL END AS sender_photo,
+          CASE WHEN dm.sender_type = 'member' THEN sm.first_name       ELSE NULL END AS sender_first_name,
+          CASE WHEN dm.sender_type = 'member' THEN sm.last_name        ELSE NULL END AS sender_last_name,
+          CASE WHEN dm.sender_type = 'member' THEN sm.profile_photo_url ELSE NULL END AS sender_photo,
           om.first_name         AS other_first,
           om.last_name          AS other_last
          FROM direct_message_stars s

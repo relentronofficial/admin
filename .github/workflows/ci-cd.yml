@@ -180,6 +180,13 @@ jobs:
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
           echo "Staged image: $IMAGE"
 
+      - name: Tag staged image with commit SHA
+        run: |
+          IMAGE="${{ steps.deployed-image.outputs.image }}"
+          REPO=$(echo "$IMAGE" | cut -d'@' -f1)
+          gcloud artifacts docker tags add "$IMAGE" "${REPO}:commit-${{ github.sha }}"
+          echo "Tagged: ${REPO}:commit-${{ github.sha }}"
+
   # ── Deploy production backend (main branch) ──────────────────────────────
   deploy-backend-production:
     # Waits for staging so we can promote the already-built staging image to
@@ -210,17 +217,36 @@ jobs:
       - name: Resolve image for production deploy
         id: get-image
         run: |
-          # Prefer the image just built by the staging job (same workflow run).
-          # Falls back to the current staging service image for production-branch
-          # manual runs where deploy-backend-staging was skipped.
+          # Normal flow (main branch): deploy-backend-staging ran and output the image.
           STAGING_IMG="${{ needs.deploy-backend-staging.outputs.image }}"
-          if [ -z "$STAGING_IMG" ]; then
-            STAGING_IMG=$(gcloud run services describe tbt-backend-staging \
-              --region $GCP_REGION --project $GCP_PROJECT \
-              --format="value(spec.template.spec.containers[0].image)")
+          if [ -n "$STAGING_IMG" ]; then
+            echo "image=$STAGING_IMG" >> $GITHUB_OUTPUT
+            echo "Promoting image from this workflow run's staging deploy: $STAGING_IMG"
+            exit 0
           fi
-          echo "image=$STAGING_IMG" >> $GITHUB_OUTPUT
-          echo "Promoting to production: $STAGING_IMG"
+
+          # Production-branch flow (deploy-backend-staging was skipped):
+          # Require an image that was built and tagged for THIS exact commit SHA.
+          # Prevents promoting an unrelated or stale staging image.
+          SHA="${{ github.sha }}"
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend-staging"
+          TAGGED="${REPO}:commit-${SHA}"
+
+          DIGEST=$(gcloud artifacts docker images list "$REPO" \
+            --include-tags \
+            --filter="tags:commit-${SHA}" \
+            --project=$GCP_PROJECT \
+            --format="value(version)" \
+            --limit=1 2>/dev/null | head -1)
+
+          if [ -z "$DIGEST" ]; then
+            echo "::error::No staging image found for commit ${SHA}." >&2
+            echo "::error::This commit must be deployed to staging (main branch) before it can promote to production." >&2
+            exit 1
+          fi
+
+          echo "image=$TAGGED" >> $GITHUB_OUTPUT
+          echo "Promoting to production via commit-SHA tag: $TAGGED"
 
       # Additive-only schema sync — see the staging job above for why.
       - name: Apply database schema (production) — additive only, guarded
@@ -247,6 +273,16 @@ jobs:
             --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=https://app.tamilbusinesstribe.com|ADMIN_WEB_URL=https://tbt-admin-464464507912.asia-south1.run.app|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|BUNNY_STORAGE_HOSTNAME=sg.storage.bunnycdn.com|BUNNY_STORAGE_ZONE=tamil-business-tribe|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-admin-464464507912.asia-south1.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
             --min-instances=1 \
             --quiet
+
+      - name: Tag production release for rollback protection
+        if: success()
+        run: |
+          # Add a persistent prod-release tag so the cleanup policy never deletes
+          # this image. Each production release gets a unique tag by run number.
+          IMAGE="${{ steps.get-image.outputs.image }}"
+          REPO=$(echo "$IMAGE" | cut -d'@' -f1 | cut -d':' -f1)
+          gcloud artifacts docker tags add "$IMAGE" "${REPO}:prod-release-${{ github.run_number }}"
+          echo "Rollback tag added: ${REPO}:prod-release-${{ github.run_number }}"
 
   deploy-user-web-staging:
     # Waits for the staging backend deploy (when one runs) so a CORS change for

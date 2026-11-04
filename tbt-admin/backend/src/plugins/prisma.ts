@@ -1296,14 +1296,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `),
       // Per-member starred messages ("bookmarks"). Composite PK — one star
       // per (member, message) pair.
+      // NOTE: CREATE INDEX runs sequentially AFTER the parallel block (see below)
+      // to avoid the Promise.all race condition where the INDEX fires before the
+      // TABLE exists (same pattern as course_sections lines 1587-1603).
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS chat_group_starred_messages (
           member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
           message_id UUID NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
           starred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (member_id, message_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC);
+        )
       `),
       // Sprint 3 (2026-08-19) — Link preview card stored alongside the message.
       prisma.$executeRawUnsafe(`
@@ -1575,6 +1577,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
+
+    // ── chat_group_starred_messages index — must run SEQUENTIALLY after the
+    // parallel block so the TABLE exists before the INDEX is created.
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC)`
+    ).catch(() => {});
 
     // lesson_feedback.liked — must run after the parallel block because the
     // CREATE TABLE and ALTER TABLE ran in parallel, creating a race condition
