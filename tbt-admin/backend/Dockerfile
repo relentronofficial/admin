@@ -26,20 +26,18 @@ RUN npm prune --omit=dev
 
 # ── Stage 2: Runner ───────────────────────────────────────────────────────
 # Slim runtime image — no build tools, no source, no dev deps.
-#
-# Must use Bullseye (Debian 11) rather than the default Bookworm (node:22-slim)
-# because Prisma's OpenSSL detection reports debian-openssl-1.1.x at runtime,
-# which requires libssl.so.1.1. Bookworm ships libssl.so.3 only; Bullseye
-# ships libssl.so.1.1 natively. Without this, the Prisma query engine binary
-# fails to load with "libssl.so.1.1: cannot open shared object file".
-FROM node:22-bullseye-slim AS runner
+FROM node:22-slim AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Ensure openssl is present for the Prisma 1.1.x query engine binary.
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# Prisma's platform detection incorrectly reports debian-openssl-1.1.x on
+# Bookworm (node:22-slim), but Bookworm ships libssl.so.3 only. The 1.1.x
+# engine binary consequently fails with "libssl.so.1.1: cannot open shared
+# object file". Force the 3.0.x binary (bundled via binaryTargets in
+# schema.prisma) so the correct shared library is used at runtime.
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node
 
 # Copy only the pruned dependency tree and compiled output
 COPY --from=builder /app/node_modules ./node_modules
