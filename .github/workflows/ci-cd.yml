@@ -1,13 +1,15 @@
 name: CI/CD
 
+# MAIN PUSH → BUILD → TEST → PRODUCTION DEPLOY (all three services in parallel)
+# MANUAL STAGING → use deploy-staging.yml (workflow_dispatch, independent)
+
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-  # One-click deploy: Actions → CI/CD → "Run workflow" → pick main.
-  # A manual run deploys every part (backend + user-web + admin) regardless
-  # of what paths changed, and still runs every build/typecheck/test gate first.
+  # One-click redeploy: Actions → CI/CD → Run workflow → pick main.
+  # Forces all three production services to redeploy regardless of path filters.
   workflow_dispatch:
 
 env:
@@ -116,14 +118,14 @@ jobs:
       - name: verify-user-web-target.sh tests (mock backend)
         run: bash .github/scripts/verify-user-web-target.test.sh
 
-  # ── Deploy staging backend (main branch only) ────────────────────────────
-  deploy-backend-staging:
-    needs: build-and-test
+  # ── Deploy production backend (main branch only) ─────────────────────────
+  # Builds directly from source — no staging dependency.
+  # Runs in parallel with user-web and admin deploys after tests pass.
+  deploy-backend-production:
+    needs: [build-and-test]
     if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
-    environment: staging
-    outputs:
-      image: ${{ steps.deployed-image.outputs.image }}
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -144,111 +146,6 @@ jobs:
       # every table/column created by the startup DDL (src/plugins/prisma.ts) on
       # each deploy. The guard (scripts/schema-guard.ts) fails this step — and so
       # the deploy — on any destructive or unreviewed change, before touching the DB.
-      # NOTE: this staging job targets the PRODUCTION database (PROD_DATABASE_URL).
-      - name: Apply database schema (staging) — additive only, guarded
-        working-directory: tbt-admin/backend
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
-        run: |
-          set -euo pipefail
-          npm install --ignore-scripts
-          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
-          npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
-          if [ -s schema-apply.sql ]; then
-            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
-          fi
-
-      - name: Deploy to Cloud Run (staging)
-        run: |
-          gcloud run deploy tbt-backend-staging \
-            --source tbt-admin/backend \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,SUPABASE_URL=stg-SUPABASE_URL:latest,SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-WABA_FROM_NUMBER:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
-            --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }}|ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }}|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-user-web-staging-464464507912.asia-south1.run.app,https://tbt-user-web-staging-nt77kcmmiq-el.a.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
-            --port=8000 \
-            --max-instances=2 \
-            --quiet
-
-      - name: Capture deployed image digest
-        id: deployed-image
-        run: |
-          IMAGE=$(gcloud run services describe tbt-backend-staging \
-            --region $GCP_REGION --project $GCP_PROJECT \
-            --format="value(spec.template.spec.containers[0].image)")
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
-          echo "Staged image: $IMAGE"
-
-      - name: Tag staged image with commit SHA
-        run: |
-          IMAGE="${{ steps.deployed-image.outputs.image }}"
-          REPO=$(echo "$IMAGE" | cut -d'@' -f1)
-          gcloud artifacts docker tags add "$IMAGE" "${REPO}:commit-${{ github.sha }}"
-          echo "Tagged: ${REPO}:commit-${{ github.sha }}"
-
-  # ── Deploy production backend (main branch) ──────────────────────────────
-  deploy-backend-production:
-    # Waits for staging so we can promote the already-built staging image to
-    # production instead of rebuilding identical code (halves Cloud Build runs).
-    # On production-branch runs (workflow_dispatch from deploy-production.yml),
-    # deploy-backend-staging is skipped; the get-image step falls back to the
-    # current staging service image.
-    needs: [build-and-test, deploy-backend-staging]
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') && needs.build-and-test.outputs.backend_changed == 'true'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-
-      - name: Resolve image for production deploy
-        id: get-image
-        run: |
-          # Normal flow (main branch): deploy-backend-staging ran and output the image.
-          STAGING_IMG="${{ needs.deploy-backend-staging.outputs.image }}"
-          if [ -n "$STAGING_IMG" ]; then
-            echo "image=$STAGING_IMG" >> $GITHUB_OUTPUT
-            echo "Promoting image from this workflow run's staging deploy: $STAGING_IMG"
-            exit 0
-          fi
-
-          # Production-branch flow (deploy-backend-staging was skipped):
-          # Require an image that was built and tagged for THIS exact commit SHA.
-          # Prevents promoting an unrelated or stale staging image.
-          SHA="${{ github.sha }}"
-          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend-staging"
-          TAGGED="${REPO}:commit-${SHA}"
-
-          DIGEST=$(gcloud artifacts docker images list "$REPO" \
-            --include-tags \
-            --filter="tags:commit-${SHA}" \
-            --project=$GCP_PROJECT \
-            --format="value(version)" \
-            --limit=1 2>/dev/null | head -1)
-
-          if [ -z "$DIGEST" ]; then
-            echo "::error::No staging image found for commit ${SHA}." >&2
-            echo "::error::This commit must be deployed to staging (main branch) before it can promote to production." >&2
-            exit 1
-          fi
-
-          echo "image=$TAGGED" >> $GITHUB_OUTPUT
-          echo "Promoting to production via commit-SHA tag: $TAGGED"
-
-      # Additive-only schema sync — see the staging job above for why.
       - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
@@ -266,7 +163,7 @@ jobs:
       - name: Deploy to Cloud Run (production)
         run: |
           gcloud run deploy tbt-backend \
-            --image "${{ steps.get-image.outputs.image }}" \
+            --source tbt-admin/backend \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,SUPABASE_URL=prod-SUPABASE_URL:latest,SUPABASE_ANON_KEY=prod-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=prod-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,BUNNY_STORAGE_ACCESS_KEY=prod-BUNNY_STORAGE_ACCESS_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-ADMIN_INTAKE_NUMBER:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
@@ -274,97 +171,64 @@ jobs:
             --min-instances=1 \
             --quiet
 
+      - name: Capture deployed image digest
+        id: deployed-image
+        run: |
+          IMAGE=$(gcloud run services describe tbt-backend \
+            --region $GCP_REGION --project $GCP_PROJECT \
+            --format="value(spec.template.spec.containers[0].image)")
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "Deployed image: $IMAGE"
+
+      - name: Tag production image with commit SHA
+        run: |
+          IMAGE="${{ steps.deployed-image.outputs.image }}"
+          REPO=$(echo "$IMAGE" | cut -d'@' -f1)
+          gcloud artifacts docker tags add "$IMAGE" "${REPO}:commit-${{ github.sha }}" \
+            --project=$GCP_PROJECT
+          echo "Tagged: ${REPO}:commit-${{ github.sha }}"
+
       - name: Tag production release for rollback protection
         if: success()
         run: |
-          # Add a persistent prod-release tag so the cleanup policy never deletes
-          # this image. Each production release gets a unique tag by run number.
-          IMAGE="${{ steps.get-image.outputs.image }}"
+          IMAGE="${{ steps.deployed-image.outputs.image }}"
           REPO=$(echo "$IMAGE" | cut -d'@' -f1 | cut -d':' -f1)
-          gcloud artifacts docker tags add "$IMAGE" "${REPO}:prod-release-${{ github.run_number }}"
-          echo "Rollback tag added: ${REPO}:prod-release-${{ github.run_number }}"
+          gcloud artifacts docker tags add "$IMAGE" "${REPO}:prod-release-${{ github.run_number }}" \
+            --project=$GCP_PROJECT
+          echo "Rollback tag: prod-release-${{ github.run_number }}"
 
-  deploy-user-web-staging:
-    # Waits for the staging backend deploy (when one runs) so a CORS change for
-    # this site is live before the site starts calling it.
-    needs: [build-user-web, deploy-backend-staging, test-deploy-scripts]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.deploy-backend-staging.result != 'failure' && needs.test-deploy-scripts.result == 'success' }}
-    runs-on: ubuntu-latest
-    environment: staging
-    env:
-      SERVICE: tbt-user-web-staging
-      API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
-      SITE_ORIGIN: https://tbt-user-web-staging-464464507912.asia-south1.run.app
-    steps:
-      - uses: actions/checkout@v4
-
-      # The staging backend scales to zero, so wake it (up to 180 s) before the
-      # CORS check; a healthy /health alone does not prove CORS.
-      - name: Check the backend this build will use
+      - name: Prune old prod-release tags (keep newest 10)
+        if: success()
         run: |
-          bash .github/scripts/verify-user-web-target.sh config staging "$API_URL" "$SITE_ORIGIN"
-          bash .github/scripts/verify-user-web-target.sh wake "$API_URL"
-          bash .github/scripts/verify-user-web-target.sh cors "$API_URL" "$SITE_ORIGIN"
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend"
+          readarray -t TAGS < <(
+            gcloud artifacts docker images list "$REPO" \
+              --include-tags \
+              --project=$GCP_PROJECT \
+              --format="value(tags)" 2>/dev/null \
+            | tr ',' '\n' | grep '^prod-release-' | sort -t- -k3 -n
+          )
+          COUNT=${#TAGS[@]}
+          if [ "$COUNT" -gt 10 ]; then
+            DELETE_COUNT=$((COUNT - 10))
+            echo "Pruning $DELETE_COUNT old prod-release tag(s) (keeping newest 10)"
+            for i in $(seq 0 $((DELETE_COUNT - 1))); do
+              TAG="${TAGS[$i]}"
+              gcloud artifacts docker tags delete "${REPO}:${TAG}" --quiet --project=$GCP_PROJECT 2>/dev/null || true
+              echo "  Deleted: $TAG"
+            done
+          else
+            echo "$COUNT prod-release tag(s) — no pruning needed"
+          fi
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Read Clerk publishable key from GCP Secret Manager
-        run: |
-          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
-          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
-
-      # Read by tbt-user-web/Dockerfile — the only way build-time values reach a
-      # `--source` Dockerfile build. Public values only: it is uploaded with the source.
-      - name: Write build-time env for the Dockerfile
-        run: |
-          cat > tbt-user-web/.ci-build-env <<EOF
-          NEXT_PUBLIC_API_URL='$API_URL'
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
-          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
-          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
-          EOF
-
-      - name: Deploy user-web to Cloud Run (staging) — no traffic yet
-        run: |
-          gcloud run deploy $SERVICE \
-            --source tbt-user-web \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --port=3000 \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --min-instances=0 \
-            --max-instances=2 \
-            --set-env-vars="NODE_ENV=production" \
-            --no-traffic \
-            --tag=candidate \
-            --quiet
-
-      - name: Verify the new revision calls only the staging backend
-        run: |
-          CANDIDATE_URL=$(gcloud run services describe $SERVICE --region $GCP_REGION --project $GCP_PROJECT --format=json \
-            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
-          bash .github/scripts/verify-user-web-target.sh bundle "$CANDIDATE_URL" "$API_URL"
-
-      - name: Route traffic to the new revision
-        run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet
-
-  # ── Deploy production user-web (main branch) ─────────────────────────────
-  # Cloud Run is the user-web host (app.tamilbusinesstribe.com is served by
-  # tbt-user-web). Each new revision gets no traffic until the bundle it
-  # actually serves is checked against the expected backend — see
-  # .github/scripts/verify-user-web-target.sh.
+  # ── Deploy production user-web (main branch only) ─────────────────────────
+  # Runs in parallel with the backend deploy — does NOT wait for it.
+  # Cloud Run is the primary host (app.tamilbusinesstribe.com). The new revision
+  # is deployed with no traffic first; the bundle is verified against the
+  # production backend before traffic is routed.
   deploy-user-web-production:
-    needs: [build-user-web, deploy-backend-production]
-    if: ${{ !cancelled() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production') && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.deploy-backend-production.result != 'failure' }}
+    needs: [build-user-web, test-deploy-scripts]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.test-deploy-scripts.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -392,7 +256,8 @@ jobs:
           CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      # See the staging job: read by tbt-user-web/Dockerfile. Public values only.
+      # Read by tbt-user-web/Dockerfile — the only way build-time values reach a
+      # `--source` Dockerfile build. Public values only: it is uploaded with the source.
       - name: Write build-time env for the Dockerfile
         run: |
           cat > tbt-user-web/.ci-build-env <<EOF
@@ -429,9 +294,8 @@ jobs:
       - name: Route traffic to the new revision
         run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet
 
-      # Optional mirror to the v0-tbt-ott-user-web Vercel project. Cloud Run is
-      # the host, so a Vercel failure (e.g. its 100 deployments/day free-plan
-      # limit) must not fail the deploy.
+      # Optional mirror to Vercel. Cloud Run is the primary host, so a Vercel
+      # failure must not fail the deploy.
       - name: Install Vercel CLI
         continue-on-error: true
         run: npm install -g vercel@latest
@@ -452,10 +316,11 @@ jobs:
             --build-env NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community \
             --build-env NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A
 
-  # ── Deploy production admin panel (main branch) ──────────────────────────
+  # ── Deploy production admin panel (main branch only) ─────────────────────
+  # Runs in parallel with backend and user-web deploys.
   deploy-admin-production:
     needs: build-and-test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/production'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     steps:
