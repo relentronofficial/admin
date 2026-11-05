@@ -158,9 +158,14 @@ jobs:
       - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
-          CLOUDSQL_URL: postgresql://postgres:${{ secrets.CLOUDSQL_DB_PASSWORD }}@127.0.0.1:5433/tbt_production
+          CLOUDSQL_DB_PASSWORD: ${{ secrets.CLOUDSQL_DB_PASSWORD }}
         run: |
           set -euo pipefail
+          CLOUDSQL_URL=$(python3 -c "
+          import os, urllib.parse
+          pw = os.environ['CLOUDSQL_DB_PASSWORD']
+          print(f'postgresql://postgres:{urllib.parse.quote(pw, safe=\"\")}@127.0.0.1:5433/tbt_production')
+          ")
           npm install --ignore-scripts
           npx prisma migrate diff --from-url "$CLOUDSQL_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
           npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
