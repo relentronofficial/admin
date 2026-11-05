@@ -5888,17 +5888,6 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
 
   const key = `members/photos/${Date.now()}-${filename}`;
 
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('avatars').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
-
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -5925,17 +5914,6 @@ export async function assignmentImagePresignHandler(request: FastifyRequest, rep
 
   const key = `assignment-submissions/${Date.now()}-${filename}`;
 
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('workshops').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/workshops/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
-
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -5954,17 +5932,6 @@ export async function assignmentFilePresignHandler(request: FastifyRequest, repl
 
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `assignment-files/${Date.now()}-${safeFilename}`;
-
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('workshops').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/workshops/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
 
   const s3 = new S3Client({
     region: 'auto',

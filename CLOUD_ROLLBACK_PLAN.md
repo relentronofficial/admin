@@ -265,3 +265,4 @@ Record every change made here for audit purposes.
 | 2026-11-05 | gcr.io deletion | Skipped | Only 395 MB (not 372 GB) — fresh cache, negligible savings |
 | 2026-11-05 | Cloud Run revision cleanup (Phase 9) — 3-pass approach | Claude Code | ✅ Background task running; target: keep 25 newest per service across 6 services |
 | 2026-11-05 | Cloud Build eliminated for user-web + admin (Phase 10) | Claude Code | ✅ ci-cd.yml: added build-user-web-image + build-admin-image GHA jobs; deploy-staging.yml: added build-user-web-staging job; all --source replaced with --image; saves ~₹1,500–2,500/month |
+| 2026-11-06 | Supabase code decommission (Phase 11) | Claude Code | ✅ Removed supabase.ts plugin, all 4 fallback blocks in upload+user controllers, @supabase/supabase-js+ws packages, 3 Supabase secrets from CI/CD; env vars made optional; Supabase project stays alive until 2026-12-05 rollback window |

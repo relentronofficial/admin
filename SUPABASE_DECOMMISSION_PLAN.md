@@ -23,51 +23,33 @@
     > supabase-final-backup-$(date +%Y%m%d).sql
   ```
 
-## Code changes (one PR)
+## Code changes (one PR) — ✅ Implemented 2026-11-06 (Phase 11)
 
-### 1. `tbt-admin/backend/src/config/env.ts`
-Make the three Supabase vars optional (`.optional()`) first, then remove entirely after deploy confirms they're unused:
-```typescript
-// Remove these three lines:
-SUPABASE_URL: z.string().url(),
-SUPABASE_ANON_KEY: z.string(),
-SUPABASE_SERVICE_KEY: z.string(),
-```
+### 1. `tbt-admin/backend/src/config/env.ts` ✅
+Made the three Supabase vars optional (`.optional()`) — backend starts without them.
 
-### 2. `tbt-admin/backend/src/server.ts`
-```typescript
-// Remove this import:
-import supabasePlugin from './plugins/supabase.js';
+### 2. `tbt-admin/backend/src/server.ts` ✅
+Removed `import supabasePlugin` and `await fastify.register(supabasePlugin)`.
 
-// Remove this registration:
-await fastify.register(supabasePlugin);
-```
+### 3. `tbt-admin/backend/src/modules/upload/controller.ts` ✅
+Removed the Supabase fallback block (was lines 133–165). Now proceeds directly to R2 path.
 
-### 3. `tbt-admin/backend/src/modules/upload/controller.ts`
-Remove the `if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || ...)` Supabase fallback block (lines ~133–165). The function should proceed directly to the R2 path (lines after the block). Remove the `SUPABASE_URL` publicUrl construction.
+### 4. `tbt-admin/backend/src/modules/user/controller.ts` ✅
+Removed three Supabase fallback blocks in `avatarPresignHandler`, `assignmentImagePresignHandler`, `assignmentFilePresignHandler`.
 
-### 4. `tbt-admin/backend/src/modules/user/controller.ts`
-Remove three identical Supabase fallback blocks in `presignProfilePhotoHandler`, `assignmentImagePresignHandler`, `assignmentFilePresignHandler` (lines ~5891–5900, ~5928–5937, ~5958–5967). Each block is guarded by `!env.CLOUDFLARE_R2_ACCESS_KEY_ID`.
+### 5. `tbt-admin/backend/src/plugins/supabase.ts` ✅
+Deleted.
 
-### 5. `tbt-admin/backend/src/plugins/supabase.ts`
-Delete the file entirely.
-
-### 6. `tbt-admin/package.json` (or `tbt-admin/backend/package.json`)
-Remove `@supabase/supabase-js` from dependencies. Run `npm install` to update lockfile.
+### 6. `tbt-admin/backend/package.json` ✅
+Removed `@supabase/supabase-js` and `ws` (only used by supabase.ts). Lockfile updated.
 
 ## CI/CD changes
 
-### `.github/workflows/ci-cd.yml` — both staging and production `--set-secrets` blocks
-Remove these three entries from every `gcloud run deploy` `--set-secrets` flag:
-```
-SUPABASE_URL=stg-SUPABASE_URL:latest,
-SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,
-SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,
-```
-(and the `prod-` variants in the production deploy step)
+### `.github/workflows/ci-cd.yml` — ✅ Done 2026-11-06
+Removed `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` from production `--set-secrets`.
 
-### `.github/workflows/deploy-staging.yml`
-Same: remove the three `stg-SUPABASE_*` entries from `deploy-backend-staging`'s `--set-secrets`.
+### `.github/workflows/deploy-staging.yml` — ✅ Done 2026-11-06
+Removed `stg-SUPABASE_URL`, `stg-SUPABASE_ANON_KEY`, `stg-SUPABASE_SERVICE_KEY` from staging `--set-secrets`.
 
 ## GCP Secret Manager cleanup
 
