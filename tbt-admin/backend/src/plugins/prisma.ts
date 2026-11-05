@@ -3044,6 +3044,28 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_dm_admin_stars ON dm_admin_stars(admin_id, starred_at DESC)`
     ).catch(() => {});
 
+    // ── DM + Conversation performance indexes (P1 — 2026-11-05) ─────────────
+    // Prisma does not auto-create FK indexes in Postgres. Without these,
+    // every getAdminConversationMessages call does a full direct_messages
+    // scan and every conversation list does a full conversations scan.
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_direct_messages_conv_created
+       ON direct_messages(conversation_id, created_at ASC)
+       WHERE conversation_id IS NOT NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_direct_messages_member_created
+       ON direct_messages(member_id, created_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_conversations_member_last_msg
+       ON conversations(member_id, last_message_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at
+       ON conversations(last_message_at DESC)`
+    ).catch(() => {});
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }

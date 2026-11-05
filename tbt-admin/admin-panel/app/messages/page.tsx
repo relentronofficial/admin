@@ -1000,16 +1000,62 @@ export default function AdminMessagesPage() {
     if (!activeId || !input.trim()) return;
     const body = input.trim();
     setInput("");
+    const capturedReplyTo = replyTo;
     setReplyTo(null);
+
+    // Optimistic update — append a temporary message immediately so the UI
+    // feels instant. The socket's chat:message event will trigger an
+    // invalidateQueries that replaces it with the real server row.
+    const optimisticId = `optimistic-${Date.now()}`;
+    const msgKey = ["admin", "conversations", activeId, "messages"];
+    queryClient.setQueryData(msgKey, (old: any) => {
+      if (!old) return old;
+      const existing: any[] = Array.isArray(old?.data) ? old.data : [];
+      const optimisticMsg = {
+        id:               optimisticId,
+        body,
+        mediaUrl:         null,
+        mediaType:        null,
+        senderType:       "admin",
+        senderId:         myAdminId,
+        senderName:       "You",
+        senderAvatarUrl:  null,
+        replyToId:        capturedReplyTo?.id ?? null,
+        editedAt:         null,
+        deletedAt:        null,
+        deletedForEveryone: false,
+        readByAdminAt:    null,
+        readByMemberAt:   null,
+        createdAt:        new Date().toISOString(),
+        isForwarded:      false,
+        isPinned:         false,
+        pinnedAt:         null,
+        isStarredByAdmin: false,
+        reactions:        [],
+        _optimistic:      true,
+      };
+      return { ...old, data: [...existing, optimisticMsg] };
+    });
+
     try {
       await sendMessage.mutateAsync({
         conversationId: activeId,
         body,
-        ...(replyTo ? { replyToId: replyTo.id } : {}),
+        ...(capturedReplyTo ? { replyToId: capturedReplyTo.id } : {}),
       } as any);
-      queryClient.invalidateQueries({ queryKey: ["admin", "conversations", activeId, "messages"] });
-      queryClient.invalidateQueries({ queryKey: ["admin", "conversations"] });
+      // The socket's chat:message event (fired by the backend after save)
+      // will invalidate both keys — no need to do it again here.
+      // If the socket is temporarily disconnected, fall back to a single
+      // invalidation so the real message replaces the optimistic one.
+      queryClient.invalidateQueries({ queryKey: msgKey });
     } catch {
+      // Roll back optimistic update on failure
+      queryClient.setQueryData(msgKey, (old: any) => {
+        if (!old) return old;
+        return { ...old, data: (old.data as any[]).filter((m: any) => m.id !== optimisticId) };
+      });
+      setInput(body);
+      setReplyTo(capturedReplyTo);
       toast.error("Failed to send message");
     }
   };

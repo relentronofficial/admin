@@ -5,33 +5,54 @@ import { notifyMember } from '../../lib/memberNotifications.js';
 
 // ── GET /api/conversations ────────────────────────────────────────────────────
 export async function listAdminConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
-  const conversations = await request.server.prisma.conversation.findMany({
-    orderBy: { lastMessageAt: 'desc' },
-    include: {
-      member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } },
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        select: { body: true, senderType: true, createdAt: true },
-      },
+  const { limit: rawLimit, cursor } = (request.query as Record<string, string | undefined>);
+  const take = Math.min(Number(rawLimit) || 100, 200);
+
+  const include = {
+    member: { select: { id: true, firstName: true, lastName: true, profilePhotoUrl: true } },
+    messages: {
+      orderBy: { createdAt: 'desc' as const },
+      take: 1,
+      select: { body: true, senderType: true, createdAt: true },
     },
-  });
+  };
+
+  const conversations = cursor
+    ? await request.server.prisma.conversation.findMany({
+        take,
+        skip: 1,
+        cursor: { id: cursor },
+        orderBy: { lastMessageAt: 'desc' },
+        include,
+      })
+    : await request.server.prisma.conversation.findMany({
+        take,
+        orderBy: { lastMessageAt: 'desc' },
+        include,
+      });
+
+  const mapped = conversations.map((c) => ({
+    id:               c.id,
+    subject:          c.subject,
+    status:           c.status,
+    adminUnreadCount: c.adminUnreadCount,
+    lastMessageAt:    c.lastMessageAt,
+    member: {
+      id:        c.member.id,
+      name:      `${c.member.firstName ?? ''} ${c.member.lastName ?? ''}`.trim() || 'Member',
+      avatarUrl: c.member.profilePhotoUrl ?? null,
+    },
+    lastMessage: c.messages[0] ?? null,
+  }));
 
   return reply.send({
     success: true,
-    data: conversations.map((c) => ({
-      id:               c.id,
-      subject:          c.subject,
-      status:           c.status,
-      adminUnreadCount: c.adminUnreadCount,
-      lastMessageAt:    c.lastMessageAt,
-      member: {
-        id:        c.member.id,
-        name:      `${c.member.firstName ?? ''} ${c.member.lastName ?? ''}`.trim() || 'Member',
-        avatarUrl: c.member.profilePhotoUrl ?? null,
-      },
-      lastMessage: c.messages[0] ?? null,
-    })),
+    data: mapped,
+    meta: {
+      hasMore:    conversations.length === take,
+      nextCursor: conversations.length === take ? conversations[conversations.length - 1].id : null,
+      count:      conversations.length,
+    },
     error: null,
   });
 }
@@ -43,36 +64,39 @@ export async function getAdminConversationMessagesHandler(request: FastifyReques
   const convo = await request.server.prisma.conversation.findUnique({ where: { id } });
   if (!convo) return reply.status(404).send({ success: false, data: null, error: 'Conversation not found' });
 
-  // Reset admin unread count when admin opens the conversation
-  await request.server.prisma.conversation.update({ where: { id }, data: { adminUnreadCount: 0 } });
-
-  const messages = await request.server.prisma.directMessage.findMany({
-    where: { conversationId: id },
-    orderBy: { createdAt: 'asc' },
-  });
-
-  // Batch-resolve admin senders
-  const adminIds = [...new Set(messages.filter((m) => m.senderType === 'admin').map((m) => m.senderId))];
-  const admins = adminIds.length > 0
-    ? await request.server.prisma.admin.findMany({
-        where: { id: { in: adminIds } },
-        select: { id: true, fullName: true, profilePhotoUrl: true },
-      })
-    : [];
-  const adminMap = Object.fromEntries(admins.map((a) => [a.id, a]));
-
-  const member = await request.server.prisma.member.findUnique({
-    where: { id: convo.memberId },
-    select: { firstName: true, lastName: true, profilePhotoUrl: true },
-  });
+  // Level 2 — parallelise: reset admin unread + load messages + load member profile.
+  // All three are independent once we have the conversation row.
+  const [, messages, member] = await Promise.all([
+    request.server.prisma.conversation.update({ where: { id }, data: { adminUnreadCount: 0 } }),
+    request.server.prisma.directMessage.findMany({
+      where: { conversationId: id },
+      orderBy: { createdAt: 'asc' },
+    }),
+    request.server.prisma.member.findUnique({
+      where: { id: convo.memberId },
+      select: { firstName: true, lastName: true, profilePhotoUrl: true },
+    }),
+  ]);
   const memberName = `${member?.firstName ?? ''} ${member?.lastName ?? ''}`.trim() || 'Member';
+
+  // Level 3 — parallelise: resolve unique admin senders + identify requesting admin.
+  const adminIds = [...new Set(messages.filter((m) => m.senderType === 'admin').map((m) => m.senderId))];
+  const [admins, reqAdmin] = await Promise.all([
+    adminIds.length > 0
+      ? request.server.prisma.admin.findMany({
+          where: { id: { in: adminIds } },
+          select: { id: true, fullName: true, profilePhotoUrl: true },
+        })
+      : Promise.resolve([]),
+    request.server.prisma.admin.findFirst({
+      where: { clerkId: request.user },
+      select: { id: true },
+    }),
+  ]);
+  const adminMap = Object.fromEntries(admins.map((a) => [a.id, a]));
 
   // ── Enrich with reactions, pin state, and admin stars ──────────────────────
   const msgIds = messages.map((m) => m.id);
-  const reqAdmin = await request.server.prisma.admin.findFirst({
-    where: { clerkId: request.user },
-    select: { id: true },
-  });
 
   type RxRow  = { message_id: string; emoji: string; count: number; sender_ids: string[] };
   type PinRow = { id: string; is_pinned: boolean; pinned_at: Date | null };
