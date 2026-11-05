@@ -256,14 +256,71 @@ jobs:
             echo "$COUNT prod-release tag(s) — no pruning needed"
           fi
 
+  # ── Build user-web Docker image (main branch only) ───────────────────────
+  # Builds the Docker image in GitHub Actions and pushes directly to Artifact
+  # Registry. Skips Cloud Build entirely — same approach as build-backend.
+  # NEXT_PUBLIC_* vars are written to .ci-build-env, which the Dockerfile
+  # sources at build time (line 37: `. ./.ci-build-env && npm run build`).
+  build-user-web-image:
+    needs: [build-user-web]
+    if: github.ref == 'refs/heads/main' && needs.build-user-web.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    env:
+      API_URL: https://tbt-backend-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://app.tamilbusinesstribe.com
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
+      - name: Write build-time env for the Dockerfile
+        run: |
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
+
+      - name: Build and push user-web Docker image
+        id: push
+        run: |
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-user-web"
+          TAG="$REPO:commit-${{ github.sha }}"
+          docker build -t "$TAG" tbt-user-web
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
+
   # ── Deploy production user-web (main branch only) ─────────────────────────
   # Runs in parallel with the backend deploy — does NOT wait for it.
-  # Cloud Run is the primary host (app.tamilbusinesstribe.com). The new revision
-  # is deployed with no traffic first; the bundle is verified against the
-  # production backend before traffic is routed.
+  # Cloud Run is the primary host (app.tamilbusinesstribe.com). Uses the
+  # pre-built image from build-user-web-image — no Cloud Build triggered.
+  # The new revision is deployed with no traffic first; the bundle is verified
+  # against the production backend before traffic is routed.
   deploy-user-web-production:
-    needs: [build-user-web, test-deploy-scripts]
-    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web.result == 'success' && needs.build-user-web.outputs.changed == 'true' && needs.test-deploy-scripts.result == 'success' }}
+    needs: [build-user-web-image, test-deploy-scripts]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web-image.result == 'success' && needs.test-deploy-scripts.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
     env:
@@ -291,24 +348,10 @@ jobs:
           CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      # Read by tbt-user-web/Dockerfile — the only way build-time values reach a
-      # `--source` Dockerfile build. Public values only: it is uploaded with the source.
-      - name: Write build-time env for the Dockerfile
-        run: |
-          cat > tbt-user-web/.ci-build-env <<EOF
-          NEXT_PUBLIC_API_URL='$API_URL'
-          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
-          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
-          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
-          EOF
-
       - name: Deploy user-web to Cloud Run (production) — no traffic yet
         run: |
           gcloud run deploy $SERVICE \
-            --source tbt-user-web \
+            --image ${{ needs.build-user-web-image.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --port=3000 \
@@ -351,11 +394,59 @@ jobs:
             --build-env NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community \
             --build-env NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A
 
-  # ── Deploy production admin panel (main branch only) ─────────────────────
-  # Runs in parallel with backend and user-web deploys.
-  deploy-admin-production:
-    needs: build-and-test
+  # ── Build admin Docker image (main branch only) ───────────────────────────
+  # Builds the Docker image in GitHub Actions and pushes directly to Artifact
+  # Registry. NEXT_PUBLIC_* build args are passed via --build-arg.
+  # Runs in parallel with build-user-web-image and build-backend.
+  build-admin-image:
+    needs: [build-and-test]
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
+      - name: Build and push admin Docker image
+        id: push
+        run: |
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-admin"
+          TAG="$REPO:commit-${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
+            --build-arg "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$CLERK_PK" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard \
+            -t "$TAG" tbt-admin/admin-panel
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
+
+  # ── Deploy production admin panel (main branch only) ─────────────────────
+  # Runs in parallel with backend and user-web deploys. Uses the pre-built
+  # image from build-admin-image — no Cloud Build triggered.
+  deploy-admin-production:
+    needs: [build-and-test, build-admin-image]
+    if: github.ref == 'refs/heads/main' && needs.build-admin-image.result == 'success'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -377,14 +468,13 @@ jobs:
       - name: Deploy admin panel to Cloud Run (production)
         run: |
           gcloud run deploy tbt-admin \
-            --source tbt-admin/admin-panel \
+            --image ${{ needs.build-admin-image.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --port=3000 \
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }},NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in,NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-in,NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard,NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard" \
             --set-secrets="CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest" \
             --set-env-vars="NODE_ENV=production|NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}|NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app" \
             --quiet

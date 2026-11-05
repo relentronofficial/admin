@@ -235,10 +235,68 @@ jobs:
             --max-instances=2 \
             --quiet
 
+  # ── Build user-web Docker image for staging ──────────────────────────────
+  # Builds at the resolved commit SHA with staging env baked in and pushes to
+  # Artifact Registry. Tagged with -staging suffix to avoid collision with the
+  # production image (which has different baked-in NEXT_PUBLIC_* values).
+  build-user-web-staging:
+    needs: [resolve-commit, build-user-web]
+    if: ${{ !cancelled() && needs.build-user-web.result == 'success' && (inputs.services == 'user-web' || inputs.services == 'both') }}
+    runs-on: ubuntu-latest
+    env:
+      API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://tbt-user-web-staging-464464507912.asia-south1.run.app
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
+      - name: Write build-time env for the Dockerfile
+        run: |
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
+
+      - name: Build and push user-web Docker image (staging)
+        id: push
+        run: |
+          SHA="${{ needs.resolve-commit.outputs.sha }}"
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-user-web"
+          TAG="$REPO:commit-${SHA}-staging"
+          docker build -t "$TAG" tbt-user-web
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
+
   # ── Deploy user-web to staging ────────────────────────────────────────────
   deploy-user-web-staging:
-    needs: [resolve-commit, build-user-web, deploy-backend-staging]
-    if: ${{ !cancelled() && needs.build-user-web.result == 'success' && (inputs.services == 'user-web' || inputs.services == 'both') && needs.deploy-backend-staging.result != 'failure' }}
+    needs: [resolve-commit, build-user-web-staging, deploy-backend-staging]
+    if: ${{ !cancelled() && needs.build-user-web-staging.result == 'success' && (inputs.services == 'user-web' || inputs.services == 'both') && needs.deploy-backend-staging.result != 'failure' }}
     runs-on: ubuntu-latest
     environment: staging
     env:
@@ -264,26 +322,10 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Read Clerk publishable key from GCP Secret Manager
-        run: |
-          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
-          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
-
-      - name: Write build-time env for the Dockerfile
-        run: |
-          cat > tbt-user-web/.ci-build-env <<EOF
-          NEXT_PUBLIC_API_URL='$API_URL'
-          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
-          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
-          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
-          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
-          EOF
-
       - name: Deploy user-web to Cloud Run (staging) — no traffic yet
         run: |
           gcloud run deploy $SERVICE \
-            --source tbt-user-web \
+            --image ${{ needs.build-user-web-staging.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --port=3000 \

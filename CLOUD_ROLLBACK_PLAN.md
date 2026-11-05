@@ -263,3 +263,5 @@ Record every change made here for audit purposes.
 | 2026-11-05 | Bulk AR image cleanup: 2,114 untagged images deleted | Claude Code | ✅ cloud-run-source-deploy: ~329 GB → ~126 GB |
 | 2026-11-05 | GCS lifecycle rule: run-sources 30d, cloudbuild 90d | Claude Code | ✅ Applied; 12.5 GiB will reduce over 30 days |
 | 2026-11-05 | gcr.io deletion | Skipped | Only 395 MB (not 372 GB) — fresh cache, negligible savings |
+| 2026-11-05 | Cloud Run revision cleanup (Phase 9) — 3-pass approach | Claude Code | ✅ Background task running; target: keep 25 newest per service across 6 services |
+| 2026-11-05 | Cloud Build eliminated for user-web + admin (Phase 10) | Claude Code | ✅ ci-cd.yml: added build-user-web-image + build-admin-image GHA jobs; deploy-staging.yml: added build-user-web-staging job; all --source replaced with --image; saves ~₹1,500–2,500/month |
