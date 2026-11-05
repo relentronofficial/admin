@@ -155,19 +155,28 @@ jobs:
         with:
           node-version: '24'
 
-      # Staging also runs against the production DB (same schema target as prod).
+      # Staging schema check runs against the production Cloud SQL instance
+      # (same schema target as prod — staging DB only holds test data).
+      - name: Start Cloud SQL Auth Proxy (staging schema check)
+        run: |
+          curl -sLo cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port=5433 \
+            tbt-lms-platform:asia-south1:tbt-db-production &
+          sleep 3
+
       - name: Apply database schema (staging) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+          CLOUDSQL_URL: postgresql://postgres:${{ secrets.CLOUDSQL_DB_PASSWORD }}@127.0.0.1:5433/tbt_production
         run: |
           set -euo pipefail
           npm install --ignore-scripts
-          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx prisma migrate diff --from-url "$CLOUDSQL_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
           npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
           if [ -s schema-apply.sql ]; then
-            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
+            npx prisma db execute --url "$CLOUDSQL_URL" --file schema-apply.sql
           fi
 
       - name: Deploy to Cloud Run (staging)

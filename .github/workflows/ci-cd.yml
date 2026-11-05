@@ -142,22 +142,30 @@ jobs:
         with:
           node-version: '24'
 
-      # Additive-only schema sync. Never `db push --accept-data-loss`: it dropped
-      # every table/column created by the startup DDL (src/plugins/prisma.ts) on
-      # each deploy. The guard (scripts/schema-guard.ts) fails this step — and so
-      # the deploy — on any destructive or unreviewed change, before touching the DB.
+      # Additive-only schema sync via Cloud SQL Auth Proxy (runs against the
+      # production Cloud SQL instance). The guard (scripts/schema-guard.ts) fails
+      # this step — and so the deploy — on any destructive or unreviewed change.
+      - name: Start Cloud SQL Auth Proxy (production schema migration)
+        run: |
+          curl -sLo cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port=5433 \
+            tbt-lms-platform:asia-south1:tbt-db-production &
+          sleep 3
+          echo "Cloud SQL Auth Proxy started"
+
       - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+          CLOUDSQL_URL: postgresql://postgres:${{ secrets.CLOUDSQL_DB_PASSWORD }}@127.0.0.1:5433/tbt_production
         run: |
           set -euo pipefail
           npm install --ignore-scripts
-          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx prisma migrate diff --from-url "$CLOUDSQL_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
           npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
           if [ -s schema-apply.sql ]; then
-            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
+            npx prisma db execute --url "$CLOUDSQL_URL" --file schema-apply.sql
           fi
 
       - name: Deploy to Cloud Run (production)
