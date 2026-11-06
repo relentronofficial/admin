@@ -13,9 +13,9 @@ import {
 import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
 import { useCourseLifelines, useCourse } from "@/lib/hooks/useCourses";
 import { sumLessonDurations, formatSeconds, formatMinutes } from "@/lib/utils/courseDurations";
-import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
+import { useMyBatchProgram, useBuyExtraLifeline, extraLifelineMessage } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
-import { useUserSupportQuota } from "@/lib/hooks/useUser";
+import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
 import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
@@ -712,7 +712,7 @@ function WeeklyLineChart({
 const PEAK_KIND: Record<ChartPeriod, string> = { daily: "DAY", weekly: "WEEK", monthly: "MONTH", yearly: "YEAR", overall: "WEEK" };
 
 function WeeklyChartSection({ revenue }: { revenue: any }) {
-  const [period, setPeriod] = useState<ChartPeriod>("overall");
+  const [period, setPeriod] = useState<ChartPeriod>("daily");
   const [showPeriodHint, setShowPeriodHint] = useState(false);
   const weekDays = weekDaysFor(revenue);
   // Longer periods read every saved week; Daily keeps using this week's saved days.
@@ -1165,6 +1165,19 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: callSummary } = useSupportCallsSummary();
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
+  const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
+  const { data: pricingList } = useCreditPricing();
+  const lifelinePriceInr = (pricingList ?? []).find((p: any) => p.credit_type === "lifeline")
+    ? Number((pricingList ?? []).find((p: any) => p.credit_type === "lifeline")!.price_inr)
+    : null;
+  const handleBuyLifeline = useCallback(async () => {
+    const result = await buyLifeline();
+    const msg = extraLifelineMessage(result);
+    if (!msg) return;
+    if (result.outcome === "success") toast.success(msg.text, { id: "buy-lifeline" });
+    else if (result.outcome === "cancelled") toast(msg.text, { id: "buy-lifeline" });
+    else toast.error(msg.text, { id: "buy-lifeline" });
+  }, [buyLifeline]);
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
   const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
@@ -1177,12 +1190,17 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
+  // When no courseId is provided (e.g. /batch-program/mentorship or /profile), fall back to
+  // the most recently watched in-progress course so hearts still reflect a real lifeline balance.
+  const { data: continueLearning } = useContinueLearning();
+  const resolvedCourseId = courseId ??
+    ((continueLearning as any[] | undefined)?.find((i: any) => i.type === "course" && !i.isCompleted)?.id ?? null);
+
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  // Course-scoped lifelines — use the courseId passed from the courses page (primaryCourseId).
-  // This is the same courseId the video player uses, so the counts always match.
-  const { data: courseLifelines } = useCourseLifelines(courseId);
+  // Course-scoped lifelines — same courseId the video player uses, so counts always match.
+  const { data: courseLifelines } = useCourseLifelines(resolvedCourseId);
   const lifelinesTotal: number | null =
     courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
   // Use server-authoritative .remaining (same as video player), not recomputed from parts
@@ -1258,6 +1276,9 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         lifelinesTotal={lifelinesTotal}
         lifelinesUsed={lifelinesUsed}
         programVideos={stats?.programVideos ?? null}
+        onBuyLifeline={handleBuyLifeline}
+        buyingLifeline={buyingLifeline}
+        lifelinePriceInr={lifelinePriceInr}
       />
 
       {/* ── KPI Strip ────────────────────────────────────────────────── */}

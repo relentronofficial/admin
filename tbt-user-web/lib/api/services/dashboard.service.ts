@@ -72,6 +72,9 @@ export const dashboardService = {
   ) =>
     apiClient.post(`/api/user/conversations/${id}/messages`, { body, ...(extras ?? {}) }),
 
+  markConversationRead: (id: string) =>
+    apiClient.post(`/api/user/conversations/${id}/read`, {}),
+
   archiveConversation: (id: string, hidden: boolean) =>
     apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),
 

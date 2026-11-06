@@ -5637,6 +5637,16 @@ export async function archiveConversationHandler(request: FastifyRequest, reply:
   return ok(reply, { id, hidden });
 }
 
+export async function markConversationReadHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id } = request.params as { id: string };
+  const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
+  if (!convo) return fail(reply, 404, 'Conversation not found');
+  void request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
+  void invalidateCache(request.server.redis ?? null, `conv:unread:${memberId}`);
+  return ok(reply, { ok: true });
+}
+
 export async function getMemberConversationMessagesHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { id } = request.params as { id: string };
@@ -5644,9 +5654,6 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
 
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
-
-  // Fire-and-forget: unread reset must not block the message payload delivery.
-  void request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
 
   // Messages the member deleted "for me" are hidden from them (the TBT team still sees them).
   const visibleWhere = { conversationId: id, NOT: { AND: [{ deletedAt: { not: null } }, { deletedForEveryone: false }] } };

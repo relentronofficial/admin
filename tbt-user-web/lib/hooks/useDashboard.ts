@@ -202,6 +202,17 @@ export const useConversationMessages = (id: string | null) =>
     staleTime: 30_000,
   });
 
+export const useMarkConversationRead = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.markConversationRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations", "unread-count"] });
+    },
+  });
+};
+
 export const useStartConversation = () => {
   const queryClient = useQueryClient();
   return useMutation({

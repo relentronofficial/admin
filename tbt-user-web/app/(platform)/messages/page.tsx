@@ -30,6 +30,7 @@ import { useSiteConfig } from '@/lib/context/SiteConfigContext';
 import {
   useConversations,
   useConversationMessages,
+  useMarkConversationRead,
   useEditChatMessage,
   useDeleteChatMessage,
   useReactChatMessage,
@@ -174,6 +175,7 @@ export default function MessagesPage() {
   const startConversation    = useStartConversation();
   const sendMessage          = useSendChatMessage();
   const archiveConversation  = useArchiveConversation();
+  const markConversationRead = useMarkConversationRead();
 
   const { data: dmStarredList = [] } = useDmStarredMessages();
   const { data: dmPinnedMsg }        = useDmPinnedMessage(activeId ?? '');
@@ -349,6 +351,7 @@ export default function MessagesPage() {
     if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
     setPendingMedia(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    markConversationRead.mutate(id);
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
