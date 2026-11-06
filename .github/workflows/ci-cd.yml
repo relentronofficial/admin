@@ -358,6 +358,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
+            --max-instances=16 \
             --set-env-vars="NODE_ENV=production" \
             --no-traffic \
             --tag=candidate \

@@ -67,6 +67,27 @@ gcloud storage buckets update gs://tbt-lms-platform_cloudbuild \
 
 ## Rollback Procedures by Change
 
+### R0: Cloud Build Trigger Re-enable (Phase 14)
+
+**Scenario:** Legacy Cloud Build trigger needs to be re-enabled (e.g., debugging a build issue).  
+**Note:** This trigger built the backend and pushed to gcr.io — a path no longer used by any Cloud Run service. Re-enabling it resumes unnecessary Cloud Build charges (~₹3,251/month).
+
+```bash
+# Re-enable the trigger
+TOKEN=$(gcloud auth print-access-token)
+TRIGGER_CONFIG=$(curl -s \
+  "https://cloudbuild.googleapis.com/v1/projects/tbt-lms-platform/triggers/dc098d73-790d-4140-bf12-11593526d8f6" \
+  -H "Authorization: Bearer $TOKEN")
+echo "$TRIGGER_CONFIG" | python3 -c "
+import sys,json; d=json.load(sys.stdin); d['disabled']=False; print(json.dumps(d))
+" > /tmp/trigger_enabled.json
+gcloud alpha builds triggers update github dc098d73-790d-4140-bf12-11593526d8f6 \
+  --project=tbt-lms-platform \
+  --trigger-config=/tmp/trigger_enabled.json
+```
+
+---
+
 ### R1: Artifact Registry Cleanup Policy Rollback
 
 **Scenario:** Cleanup policy unexpectedly deletes an image referenced by an active Cloud Run revision.  
@@ -263,6 +284,17 @@ Record every change made here for audit purposes.
 | 2026-11-05 | Bulk AR image cleanup: 2,114 untagged images deleted | Claude Code | ✅ cloud-run-source-deploy: ~329 GB → ~126 GB |
 | 2026-11-05 | GCS lifecycle rule: run-sources 30d, cloudbuild 90d | Claude Code | ✅ Applied; 12.5 GiB will reduce over 30 days |
 | 2026-11-05 | gcr.io deletion | Skipped | Only 395 MB (not 372 GB) — fresh cache, negligible savings |
-| 2026-11-05 | Cloud Run revision cleanup (Phase 9) — 3-pass approach | Claude Code | ✅ Background task running; target: keep 25 newest per service across 6 services |
+| 2026-11-05 | Cloud Run revision cleanup (Phase 9) — 4-pass approach | Claude Code | ✅ Complete; kept 25 newest per service across all 6 services |
 | 2026-11-05 | Cloud Build eliminated for user-web + admin (Phase 10) | Claude Code | ✅ ci-cd.yml: added build-user-web-image + build-admin-image GHA jobs; deploy-staging.yml: added build-user-web-staging job; all --source replaced with --image; saves ~₹1,500–2,500/month |
 | 2026-11-06 | Supabase code decommission (Phase 11) | Claude Code | ✅ Removed supabase.ts plugin, all 4 fallback blocks in upload+user controllers, @supabase/supabase-js+ws packages, 3 Supabase secrets from CI/CD; env vars made optional; Supabase project stays alive until 2026-12-05 rollback window |
+| 2026-11-06 | Phase 12: LB removal via Cloud Run domain mapping | Claude Code | ⛔ Blocked — Cloud Run domain mappings unsupported in asia-south1 (HTTP 501) |
+| 2026-11-06 | Phase 13: LB removal via Cloudflare proxy | Claude Code | ⏳ Instructions provided; user must change DNS (app CNAME → tbt-user-web-nt77kcmmiq-el.a.run.app, Cloudflare proxy on, SSL=Full); LB kept until confirmed |
+| 2026-11-06 | Phase 14: Legacy Cloud Build trigger disabled (trigger dc098d73) | Claude Code | ✅ Trigger "rmgpgab-tbt-backend…" disabled; was building gcr.io image unused by any Cloud Run service on every push to main; saves ~₹3,251/month in Cloud Build costs |
+| 2026-11-06 | Phase 15a: Secret Manager version cleanup | Claude Code | ✅ Disabled stg-DATABASE_URL/DIRECT_URL v1-v3, prod-DATABASE_URL v2, prod-DIRECT_URL v2, stg-SUPABASE_URL/ANON_KEY/SERVICE_KEY v1-v2; prod-DATABASE_URL v1 + prod-DIRECT_URL v1 kept ENABLED as Supabase rollback until 2026-12-05 |
+| 2026-11-06 | Phase 15b: coachx AR cleanup | Claude Code | ✅ Deleted 42 old images from coachx repo; kept only active tag 20260806-162706; ~3.4 GB freed |
+| 2026-11-06 | Phase 16a: coachx Cloud Build trigger disabled (trigger a3fa7ace) | Claude Code | ✅ Trigger "rmgpgab-coachx-…" disabled; monitored relentronofficial/coachX repo; eliminates Cloud Build risk if coachX dev resumes |
+| 2026-11-06 | Phase 16b: Cloud SQL sizing analysis | Claude Code | ✅ Production (db-custom-2-7680): mem at 50% = 3.84 GB used → CANNOT safely downsize (would fill 1-vCPU instance). Staging (db-custom-1-3840): mem at 26% → db-g1-small possible but marginal (70% peak); pending user approval |
+| 2026-11-06 | Phase 17a: Orphaned secrets deleted | Claude Code | ✅ prod-CLOUDSQL-DATABASE_URL + prod-CLOUDSQL-DIRECT_URL deleted; created 2026-11-05 during migration but never mounted on any service or referenced in CI/CD |
+| 2026-11-06 | Phase 17b: tbt-admin min-instances 1→0 | Claude Code | ✅ Applied immediately + ci-cd.yml updated; admin panel tolerates cold start; saves idle memory cost (~₹270/month) |
+| 2026-11-06 | Phase 18a: Orphaned/empty secrets deleted (6 secrets) | Claude Code | ✅ Deleted prod-ADMIN_WEB_URL, prod-USER_WEB_URL (values hardcoded in --set-env-vars, never from Secret Manager); stg-SUPABASE_URL/ANON_KEY/SERVICE_KEY (0 active versions); prod-RESEND_API_KEY (empty shell, no versions); saves ~6 × $0.06 = $0.36/month per active version eliminated |
+| 2026-11-06 | Phase 18b: tbt-user-web max-instances 20→16 (prod) + 20→8 (staging) | Claude Code | ✅ Applied immediately; ci-cd.yml updated with explicit --max-instances=16 for production; 30-day peak was 15 instances; staging 8 is well above observed peak |
