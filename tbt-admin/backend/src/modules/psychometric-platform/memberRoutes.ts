@@ -13,6 +13,7 @@ export async function psychometricMemberRoutes(fastify: FastifyInstance) {
   fastify.post('/start', candidate.startSession);
   fastify.post('/submit', candidate.submitAssessment);
   fastify.get('/result', candidate.getResult);
+  fastify.get('/answers', candidate.getMyAnswers);
   fastify.post('/retest/request', candidate.requestRetest);
   fastify.get('/retest/my-request', candidate.getMyRetest);
 }
