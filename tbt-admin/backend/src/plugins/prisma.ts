@@ -40,11 +40,10 @@ export const LIFELINE_ORDERS_DDL: readonly string[] = [
 function buildDatasourceUrl(raw: string): string {
   try {
     const url = new URL(raw);
-    // 40 connections: sized for 230-VU concurrent load on a single Cloud Run instance.
-    // DATABASE_URL points to Supabase PgBouncer (transaction mode, port 6543), so Prisma
-    // connections are multiplexed — it's safe to hold more than direct Postgres allows.
-    // Formula: peak_concurrent_db_requests ≈ 60 (after caching) / avg_hold_time_ms * 1000 ≈ 30–40.
-    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '40');
+    // 20 connections: Cloud SQL via Unix socket (direct, not PgBouncer).
+    // Each connection is persistent. Safety ceiling: 5 instances × 20 = 100,
+    // well within Cloud SQL max_connections ≈ 187 for db-custom-2-7680 (7.5 GB RAM).
+    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '20');
     if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '15');
     return url.toString();
   } catch {

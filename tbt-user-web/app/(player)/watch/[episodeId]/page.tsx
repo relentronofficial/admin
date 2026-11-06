@@ -8,8 +8,9 @@ import { useEpisodePlayback, usePostEpisodeProgress, useCompleteWorkshopEpisode 
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { VideoWatermark } from "@/components/features/video/VideoWatermark";
-import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
+import dynamic from "next/dynamic";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
+const PlyrPlayer = dynamic(() => import("@/components/features/video/PlyrPlayer").then(m => ({ default: m.PlyrPlayer })), { ssr: false });
 import toast from "react-hot-toast";
 
 export default function WatchPage() {

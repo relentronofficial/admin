@@ -1182,6 +1182,8 @@ model Notification {
   // Relations
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
+  @@index([memberId, sentAt(sort: Desc)])
+  @@index([memberId, isRead])
   @@map("notifications")
 }
 

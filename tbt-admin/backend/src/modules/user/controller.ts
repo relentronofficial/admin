@@ -5594,25 +5594,36 @@ export async function getConversationUnreadCountHandler(request: FastifyRequest,
 export async function listMemberConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
 
-  const conversations = await request.server.prisma.conversation.findMany({
-    where: { memberId, memberHidden: false },
-    orderBy: { lastMessageAt: 'desc' },
-    include: {
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        select: { body: true, senderType: true, createdAt: true },
-      },
-    },
-  });
+  // Single query with LATERAL JOIN to avoid N+1 (one subquery per conversation for last message).
+  const rows = await request.server.prisma.$queryRawUnsafe<Array<{
+    id: string; subject: string | null; status: string;
+    member_unread_count: number; last_message_at: Date | null;
+    lm_body: string | null; lm_sender_type: string | null; lm_created_at: Date | null;
+  }>>(
+    `SELECT c.id, c.subject, c.status, c.member_unread_count, c.last_message_at,
+            lm.body AS lm_body, lm.sender_type AS lm_sender_type, lm.created_at AS lm_created_at
+       FROM conversations c
+       LEFT JOIN LATERAL (
+         SELECT body, sender_type, created_at
+           FROM direct_messages
+          WHERE conversation_id = c.id
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) lm ON true
+      WHERE c.member_id = $1::uuid AND c.member_hidden = false
+      ORDER BY c.last_message_at DESC`,
+    memberId,
+  );
 
-  return ok(reply, conversations.map((c) => ({
+  return ok(reply, rows.map((c) => ({
     id:                c.id,
     subject:           c.subject,
     status:            c.status,
-    memberUnreadCount: c.memberUnreadCount,
-    lastMessageAt:     c.lastMessageAt,
-    lastMessage:       c.messages[0] ?? null,
+    memberUnreadCount: Number(c.member_unread_count),
+    lastMessageAt:     c.last_message_at,
+    lastMessage:       c.lm_body != null || c.lm_sender_type != null
+      ? { body: c.lm_body, senderType: c.lm_sender_type, createdAt: c.lm_created_at }
+      : null,
   })));
 }
 
@@ -5634,7 +5645,8 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
 
-  await request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
+  // Fire-and-forget: unread reset must not block the message payload delivery.
+  void request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
 
   // Messages the member deleted "for me" are hidden from them (the TBT team still sees them).
   const visibleWhere = { conversationId: id, NOT: { AND: [{ deletedAt: { not: null } }, { deletedForEveryone: false }] } };

@@ -11,8 +11,9 @@ import {
   Heart, Bookmark, BookmarkCheck,
 } from "lucide-react";
 import { VideoPlayer } from "@/components/features/video/VideoPlayer";
-import { PlyrPlayer } from "@/components/features/video/PlyrPlayer";
+import dynamic from "next/dynamic";
 import type { PlyrPlayerHandle } from "@/components/features/video/PlyrPlayer";
+const PlyrPlayer = dynamic(() => import("@/components/features/video/PlyrPlayer").then(m => ({ default: m.PlyrPlayer })), { ssr: false });
 import { PageLoader } from "@/components/common/LoadingSpinner";
 import { EpisodeResourcesSection } from "@/components/features/course/EpisodeResourcesSection";
 import { EpisodeSideContent } from "@/components/features/course/EpisodeSideContent";

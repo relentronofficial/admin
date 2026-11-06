@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useMe } from "@/lib/hooks/useUser";
-import { motion, AnimatePresence } from "framer-motion";
 import { Maximize, Minimize } from "lucide-react";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -175,31 +174,24 @@ export function VideoWatermark({
         <>
           {/* ── Layer 1: Dynamic floating watermark (appear → move → disappear) */}
           <div className="absolute inset-0 pointer-events-none select-none z-50 overflow-hidden">
-            <AnimatePresence>
-              {isVisible && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 0.14 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: FADE_MS / 1000, ease: "easeInOut" }}
-                  style={{
-                    position: "absolute",
-                    left: position.x,
-                    top: position.y,
-                    color: "#ffffff",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    letterSpacing: "0.04em",
-                    textShadow: "0 1px 4px rgba(0,0,0,0.95)",
-                    // difference blend: text always contrasts with whatever is beneath it
-                    mixBlendMode: "difference",
-                  }}
-                >
-                  {displayLine}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div
+              style={{
+                position: "absolute",
+                left: position.x,
+                top: position.y,
+                color: "#ffffff",
+                fontSize: "11px",
+                fontWeight: 700,
+                whiteSpace: "nowrap",
+                letterSpacing: "0.04em",
+                textShadow: "0 1px 4px rgba(0,0,0,0.95)",
+                mixBlendMode: "difference",
+                opacity: isVisible ? 0.14 : 0,
+                transition: `opacity ${FADE_MS}ms ease-in-out`,
+              }}
+            >
+              {displayLine}
+            </div>
           </div>
 
           {/* ── Layer 2: Faint diagonal tile grid (survives screenshots) ───── */}
