@@ -52,6 +52,29 @@ export interface QuestionsResponse {
   session: { sessionId: string; expiresAt: string } | null;
 }
 
+/** One question of the member's submitted attempt, with what they answered (GET /answers). */
+export interface ReviewQuestion {
+  _id: string;
+  text: string;
+  order: number;
+  questionType: string;
+  language: "en" | "ta";
+  timeLimitSeconds: number | null;
+  instructionText: string;
+  imageUrl: string;
+  options: { _id: string; optionText: string; optionImageUrl: string; order: number }[];
+  answer: { status: "answered" | "skipped" | "timeout"; selectedOptionIds: string[]; timeTakenSeconds: number | null } | null;
+}
+
+export interface AnswersReview {
+  attemptNumber: number;
+  startedAt: string;
+  submittedAt: string | null;
+  autoSubmitted: boolean;
+  durationMinutes: number | null;
+  sections: { typeId: string; typeName: string; typeIcon?: string; typeColor?: string; questions: ReviewQuestion[] }[];
+}
+
 export interface StartResponse {
   success: boolean;
   sessionId: string;
@@ -67,6 +90,7 @@ export const psychometricService = {
   submit: (sessionId: string, answers: SubmitEntry[]) =>
     apiClient.post<never, { success: boolean; resultId: string }>(`${BASE}/submit`, { sessionId, answers }),
   result: () => apiClient.get<never, ResultResponse>(`${BASE}/result`),
+  answers: () => apiClient.get<never, { success: boolean; data: AnswersReview }>(`${BASE}/answers`),
   myRetest: () => apiClient.get<never, { success: boolean; retest: RetestState }>(`${BASE}/retest/my-request`),
   requestRetest: (reason?: string) =>
     apiClient.post<never, { success: boolean; message: string }>(`${BASE}/retest/request`, reason ? { reason } : {}),
