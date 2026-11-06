@@ -198,7 +198,7 @@ describe("MentorshipDashboard", () => {
   it("renders saved revenue numbers and derived metrics", () => {
     render(<MentorshipDashboard />);
     expect(screen.queryAllByText("₹4,57,856").length).toBeGreaterThan(0);
-    expect(screen.getByText("575 Orders")).toBeTruthy();
+    expect(screen.queryAllByText("575 Orders").length).toBeGreaterThan(0);
     expect(screen.getByText("₹45,856")).toBeTruthy();
     expect(screen.getByText("128 Leads")).toBeTruthy();
     expect(screen.getByText("Avg Order Value: ₹796")).toBeTruthy(); // derived 457856 / 575
@@ -207,6 +207,7 @@ describe("MentorshipDashboard", () => {
 
   it("plots the saved daily series with week labels from the report's ISO week", () => {
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(screen.getByText("Mon(12)")).toBeTruthy();
     expect(screen.getByText("Sun(18)")).toBeTruthy();
     const peak = screen.getByTestId("peak-callout").textContent!;
@@ -232,6 +233,7 @@ describe("MentorshipDashboard", () => {
       },
     };
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
 
     // Cards
     expect(screen.getByText("₹4,99,900")).toBeTruthy();
@@ -247,13 +249,13 @@ describe("MentorshipDashboard", () => {
 
   });
 
-  it("period dropdown replaces Daily/Cumulative: Daily, Weekly, Monthly, Yearly, Overall; Daily by default", () => {
+  it("period dropdown replaces Daily/Cumulative: Daily, Weekly, Monthly, Yearly, Overall; Overall by default", () => {
     render(<MentorshipDashboard />);
     expect(screen.queryByText("Cumulative")).toBeNull();
     const select = screen.getByRole("combobox", { name: "Chart period" }) as HTMLSelectElement;
     expect([...select.options].map((o) => o.textContent)).toEqual(["Daily", "Weekly", "Monthly", "Yearly", "Overall"]);
-    expect(select.value).toBe("daily");
-    expect(state.historyRequested).toBe(false); // Daily uses this week's data only
+    expect(select.value).toBe("overall");
+    expect(state.historyRequested).toBe(true); // Overall spans all saved weeks, needs history
   });
 
   it("Weekly: one point per week from the saved history (daily sums, or the weekly total when no days were saved)", () => {
@@ -311,6 +313,7 @@ describe("MentorshipDashboard", () => {
 
   it("shows a hover tooltip for the day under the pointer, from the saved data", () => {
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     const svg = document.querySelector('svg[aria-label="Weekly revenue and order trajectory"]') as SVGSVGElement;
     // jsdom has no layout: give the chart its default 700px box (1 SVG unit = 1px).
     svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 700, height: 200, right: 700, bottom: 200, x: 0, y: 0, toJSON() {} }) as DOMRect;
@@ -336,6 +339,7 @@ describe("MentorshipDashboard", () => {
 
   it("updates the displayed metrics when the underlying data changes", () => {
     const { rerender } = render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(tile("Tasks")).toContain("32/75");
     state.stats = { ...state.stats, data: { ...state.stats.data, tasksCompleted: 40, leaderboardRank: 12 } };
     state.quota = { ...state.quota, data: { ...state.quota.data, salesSupport: bucket(7, 5) } };
@@ -351,6 +355,7 @@ describe("MentorshipDashboard", () => {
   it("shows empty states — not zeros or sample values — when no revenue is saved", () => {
     state.revenue = { data: null };
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(screen.getByText("No revenue numbers saved for this week yet.")).toBeTruthy();
     expect(screen.getByText("No daily revenue saved for this week yet")).toBeTruthy();
     expect(screen.queryByTestId("peak-callout")).toBeNull();

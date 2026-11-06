@@ -712,7 +712,7 @@ function WeeklyLineChart({
 const PEAK_KIND: Record<ChartPeriod, string> = { daily: "DAY", weekly: "WEEK", monthly: "MONTH", yearly: "YEAR", overall: "WEEK" };
 
 function WeeklyChartSection({ revenue }: { revenue: any }) {
-  const [period, setPeriod] = useState<ChartPeriod>("daily");
+  const [period, setPeriod] = useState<ChartPeriod>("overall");
   const [showPeriodHint, setShowPeriodHint] = useState(false);
   const weekDays = weekDaysFor(revenue);
   // Longer periods read every saved week; Daily keeps using this week's saved days.
