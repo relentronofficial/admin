@@ -51,6 +51,8 @@ import {
   useChatGroup,
   useChatGroupMessages,
   useSendChatGroupMessage,
+  useDeleteChatGroupMessage,
+  useToggleChatGroupStar,
   chatGroupKeys,
 } from '@/lib/hooks/useChatGroups';
 import { senderColor } from '@/components/features/chat/senderColor';
@@ -730,6 +732,7 @@ export default function MessagesPage() {
                     isMe={isMe}
                     clustered={clustered}
                     meId={(me as any)?.id ?? ''}
+                    groupId={activeGroupId!}
                   />
                 );
               })}
@@ -2119,12 +2122,21 @@ function InlineGroupBubble({
   isMe,
   clustered,
   meId,
+  groupId,
 }: {
   message: any;
   isMe: boolean;
   clustered: boolean;
   meId: string;
+  groupId: string;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
+
+  const deleteMsg = useDeleteChatGroupMessage(groupId);
+  const starMsg = useToggleChatGroupStar(groupId);
+  const qc = useQueryClient();
+
   const deleted = message.deletedForEveryone || !!message.deletedAt;
   const color = senderColor(message.senderMemberId);
 
@@ -2137,6 +2149,29 @@ function InlineGroupBubble({
     }
     return Array.from(map.entries());
   }, [message.reactions]);
+
+  async function handleCopy() {
+    setMenuOpen(false);
+    const result = await copyMessageText(message.body);
+    if (result === 'copied') toast.success('Copied');
+    else if (result === 'empty') toast(noTextToCopyMessage(message.mediaType), { icon: 'ℹ️' });
+    else toast.error("Couldn't copy — your browser blocked clipboard access");
+  }
+
+  function doDelete() {
+    if (!confirmDelete) return;
+    deleteMsg.mutate(
+      { messageId: message.id, forEveryone: confirmDelete === 'everyone' },
+      {
+        onSuccess: () => {
+          setConfirmDelete(null);
+          qc.invalidateQueries({ queryKey: chatGroupKeys.messages(groupId) });
+          toast.success('Message deleted');
+        },
+        onError: () => toast.error('Could not delete the message'),
+      }
+    );
+  }
 
   return (
     <div className={cn('flex gap-2.5', isMe && 'flex-row-reverse', clustered ? 'mt-0.5' : 'mt-2')}>
@@ -2156,26 +2191,95 @@ function InlineGroupBubble({
             {[message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(' ') || 'Member'}
           </span>
         )}
-        <div
-          className={cn('rounded-2xl overflow-hidden', isMe ? 'rounded-tr-sm' : 'rounded-tl-sm')}
-          style={{
-            background: isMe
-              ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
-              : 'var(--color-bg-surface)',
-          }}
-        >
-          {deleted ? (
-            <p className="text-sm italic text-muted-foreground px-3.5 py-2">This message was deleted</p>
-          ) : (
-            message.body && (
-              <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
-                {message.body}
-              </p>
-            )
+        {/* Wrapper carries `group` so the hover trigger shows on mouse-over */}
+        <div className="relative group">
+          <div
+            className={cn('rounded-2xl overflow-hidden', isMe ? 'rounded-tr-sm' : 'rounded-tl-sm')}
+            style={{
+              background: isMe
+                ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
+                : 'var(--color-bg-surface)',
+            }}
+          >
+            {deleted ? (
+              <p className="text-sm italic text-muted-foreground px-3.5 py-2">This message was deleted</p>
+            ) : (
+              message.body && (
+                <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
+                  {message.body}
+                </p>
+              )
+            )}
+            <p className="text-[10px] text-muted-foreground px-3.5 pb-1.5 text-right">
+              {timeAgo(message.createdAt)}
+            </p>
+          </div>
+          {!deleted && (
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="absolute top-0 right-0 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100 z-10"
+              style={{
+                background: 'var(--color-modal-bg)',
+                border: '1px solid var(--color-border-medium)',
+                color: 'var(--color-text-secondary)',
+              }}
+              aria-label="Message options"
+            >
+              <ChevronDown size={12} />
+            </button>
           )}
-          <p className="text-[10px] text-muted-foreground px-3.5 pb-1.5 text-right">
-            {timeAgo(message.createdAt)}
-          </p>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div
+                className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
+                style={{
+                  background: 'var(--color-modal-bg)',
+                  border: '1px solid var(--color-border-medium)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                }}
+              >
+                <button
+                  onClick={handleCopy}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Copy size={13} /> Copy
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    starMsg.mutate({ messageId: message.id, starred: false });
+                    toast.success('Starred');
+                  }}
+                  disabled={starMsg.isPending}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50"
+                >
+                  <Star size={13} /> Star
+                </button>
+                <Link
+                  href={`/messages/group/${groupId}`}
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <ExternalLink size={13} /> Full view
+                </Link>
+                <button
+                  onClick={() => { setMenuOpen(false); setConfirmDelete('me'); }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Trash2 size={13} /> Delete for me
+                </button>
+                {isMe && (
+                  <button
+                    onClick={() => { setMenuOpen(false); setConfirmDelete('everyone'); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Trash2 size={13} /> Delete for everyone
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </div>
         {reactionGroups.length > 0 && !deleted && (
           <div className={cn('flex gap-1 mt-0.5 flex-wrap', isMe ? 'justify-end' : 'justify-start')}>
@@ -2198,6 +2302,49 @@ function InlineGroupBubble({
           </div>
         )}
       </div>
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !deleteMsg.isPending && setConfirmDelete(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+            style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1.5">
+              <p className="font-semibold text-sm text-foreground">
+                {confirmDelete === 'everyone' ? 'Delete for everyone?' : 'Delete for me?'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {confirmDelete === 'everyone'
+                  ? 'This message will be removed for everyone. This cannot be undone.'
+                  : 'This message will be removed from your view only.'}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doDelete}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deleteMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
