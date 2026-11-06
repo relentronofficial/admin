@@ -398,7 +398,7 @@ describe("MentorshipDashboard", () => {
 });
 
 describe("MentorshipDashboard — lifeline hearts", () => {
-  /** The red lifeline pill: filled ❤️ = remaining, faded 🤍 = used, and the + buy button. */
+  /** The red lifeline pill: filled ❤️ = remaining, white 🤍 = used, and the + buy button. */
   const pill = () => {
     const el = [...document.querySelectorAll("span")].find((s) => /❤️|🤍/.test(s.textContent ?? "") && s.style.background !== "")!;
     return {

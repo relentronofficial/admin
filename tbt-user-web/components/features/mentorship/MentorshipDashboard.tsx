@@ -117,7 +117,7 @@ function MentorshipHeader({
               <span key={i} style={{ fontSize: 12 }}>❤️</span>
             ))}
             {Array.from({ length: totalHearts - filledHearts }).map((_, i) => (
-              <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
+              <span key={`e-${i}`} style={{ fontSize: 12 }}>🤍</span>
             ))}
             {showBuy && (
               <button
