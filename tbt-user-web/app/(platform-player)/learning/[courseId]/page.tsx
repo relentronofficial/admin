@@ -1700,6 +1700,10 @@ export default function CourseDetailPage({
   // When true, any unexpected play event is intercepted and re-paused.
   // Set during cue quizzes; cleared on dismiss.
   const videoBlockedRef = useRef(false);
+  // When true, the focus timer has expired and no play event may proceed until
+  // a lifeline/coin unlock is confirmed by the backend. Separate from videoBlockedRef
+  // so the two blocking conditions can be cleared independently.
+  const timerLockedRef = useRef(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Pause/resume helpers — assigned each render so they always read fresh refs
@@ -2009,6 +2013,7 @@ export default function CourseDetailPage({
     firedCuesRef.current = new Set();
     cueQuizActiveRef.current = false;
     videoBlockedRef.current = false;
+    timerLockedRef.current = false;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
@@ -2138,9 +2143,9 @@ export default function CourseDetailPage({
   };
 
   const handleVideoPlay = () => {
-    // If a cue quiz is blocking playback, re-pause immediately instead of
-    // letting the video resume through HLS buffering or Plyr internal state.
-    if (videoBlockedRef.current) {
+    // If a cue quiz or focus timer is blocking playback, re-pause immediately
+    // instead of letting the video resume through HLS buffering or Plyr internal state.
+    if (videoBlockedRef.current || timerLockedRef.current) {
       pausePlayerRef.current();
       return;
     }
@@ -2375,7 +2380,7 @@ export default function CourseDetailPage({
       }
 
       if (isPlay && !isEnd) {
-        if (videoBlockedRef.current) {
+        if (videoBlockedRef.current || timerLockedRef.current) {
           pausePlayerRef.current();
         } else {
           isPlayingRef.current = true;
@@ -2718,15 +2723,32 @@ export default function CourseDetailPage({
       timerLessonRef.current = null;
       if (wasAlreadyCompleted) return; // lesson was already done before this timer started
 
-      // Pause the video and lock the lesson — user must manually choose to use a lifeline
-      pausePlayerRef.current();
+      // 1. Engage the playback lock SYNCHRONOUSLY before any async work so that
+      //    racing play events (HLS buffering resume, Plyr internal state, keyboard
+      //    shortcuts) are caught by handleVideoPlay / the iframe isPlay handler
+      //    before React has had a chance to re-render the enforcement modal.
+      timerLockedRef.current = true;
       setFocusLockedIds(prev => new Set([...prev, lessonId]));
+
       const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
-      if (!lessonData || selectedLessonRef.current?.id !== lessonId) return;
-      if (lifelinesLeftRef.current > 0) {
-        setLifelineDialog({ lesson: lessonData, duration: timerDurationRef.current });
+
+      const showEnforcementModal = () => {
+        pausePlayerRef.current();
+        if (!lessonData || selectedLessonRef.current?.id !== lessonId) return;
+        if (lifelinesLeftRef.current > 0) {
+          setLifelineDialog({ lesson: lessonData, duration: timerDurationRef.current });
+        } else {
+          setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
+        }
+      };
+
+      // 2. Exit fullscreen first so the enforcement modal renders over the video
+      //    (same pattern as cue quizzes). Fullscreen failure must never allow
+      //    playback to continue — the lock is already engaged above.
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {}).finally(showEnforcementModal);
       } else {
-        setCoinDialog({ lesson: lessonData, duration: timerDurationRef.current });
+        showEnforcementModal();
       }
     }
 
@@ -2795,6 +2817,10 @@ export default function CourseDetailPage({
   };
 
   const unlockAfterLifeline = (lesson: any, duration: number) => {
+    // Release the timer lock only after the backend has confirmed the lifeline/coin
+    // redemption — this is always called from handleManualUseLifeline /
+    // handleSpendCoinsForLesson / handleGetTbtCoins after a successful server response.
+    timerLockedRef.current = false;
     setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
     startLessonTimer(lesson.id, duration);
   };
