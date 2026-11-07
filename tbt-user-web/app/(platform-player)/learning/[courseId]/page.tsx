@@ -1704,6 +1704,10 @@ export default function CourseDetailPage({
   // a lifeline/coin unlock is confirmed by the backend. Separate from videoBlockedRef
   // so the two blocking conditions can be cleared independently.
   const timerLockedRef = useRef(false);
+  // Snapshot of the lesson + duration at the moment the focus timer expired.
+  // Used to reopen the enforcement modal when the user attempts playback after
+  // dismissing the modal without redeeming. Cleared on lesson change and unlock.
+  const timerExpiredLessonRef = useRef<{ lesson: any; duration: number } | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Pause/resume helpers — assigned each render so they always read fresh refs
@@ -2014,6 +2018,7 @@ export default function CourseDetailPage({
     cueQuizActiveRef.current = false;
     videoBlockedRef.current = false;
     timerLockedRef.current = false;
+    timerExpiredLessonRef.current = null;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
@@ -2147,6 +2152,16 @@ export default function CourseDetailPage({
     // instead of letting the video resume through HLS buffering or Plyr internal state.
     if (videoBlockedRef.current || timerLockedRef.current) {
       pausePlayerRef.current();
+      // Re-raise the enforcement modal so the user understands why playback is
+      // blocked (handles the case where the modal was dismissed without unlocking).
+      if (timerLockedRef.current && timerExpiredLessonRef.current) {
+        const { lesson, duration } = timerExpiredLessonRef.current;
+        if (lifelinesLeftRef.current > 0) {
+          setLifelineDialog({ lesson, duration });
+        } else {
+          setCoinDialog({ lesson, duration });
+        }
+      }
       return;
     }
     isPlayingRef.current = true;
@@ -2382,6 +2397,15 @@ export default function CourseDetailPage({
       if (isPlay && !isEnd) {
         if (videoBlockedRef.current || timerLockedRef.current) {
           pausePlayerRef.current();
+          // Re-raise enforcement modal on blocked play (mirror of handleVideoPlay)
+          if (timerLockedRef.current && timerExpiredLessonRef.current) {
+            const { lesson, duration } = timerExpiredLessonRef.current;
+            if (lifelinesLeftRef.current > 0) {
+              setLifelineDialog({ lesson, duration });
+            } else {
+              setCoinDialog({ lesson, duration });
+            }
+          }
         } else {
           isPlayingRef.current = true;
           setWatchState((s) => (s === "completed" ? "completed" : "watching"));
@@ -2732,6 +2756,13 @@ export default function CourseDetailPage({
 
       const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === lessonId);
 
+      // 2. Persist lesson snapshot so the enforcement modal can be re-raised when
+      //    the user dismisses it and then attempts playback again. The ref must be
+      //    set before showEnforcementModal runs (regardless of the fullscreen path).
+      timerExpiredLessonRef.current = lessonData
+        ? { lesson: lessonData, duration: timerDurationRef.current }
+        : null;
+
       const showEnforcementModal = () => {
         pausePlayerRef.current();
         if (!lessonData || selectedLessonRef.current?.id !== lessonId) return;
@@ -2821,6 +2852,7 @@ export default function CourseDetailPage({
     // redemption — this is always called from handleManualUseLifeline /
     // handleSpendCoinsForLesson / handleGetTbtCoins after a successful server response.
     timerLockedRef.current = false;
+    timerExpiredLessonRef.current = null;
     setFocusLockedIds(prev => { const s = new Set(prev); s.delete(lesson.id); return s; });
     startLessonTimer(lesson.id, duration);
   };
