@@ -4,6 +4,7 @@ import {
   notifyBadgeAwarded,
 } from '../../lib/courseNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { resourceUrlError } from '../../lib/resourceUrl.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { validateCoursePrice } from '../../lib/coursePriceValidation.js';
 import { planEpisodeOrder, sectionPositions, parseEpisodePosition, type OrderChange } from '../../lib/episodeOrdering.js';
@@ -1218,6 +1219,8 @@ export async function createEpisodeResourceHandler(req: FastifyRequest, reply: F
   if (!body.title?.trim() || !body.fileUrl?.trim()) {
     return reply.status(400).send({ success: false, data: null, error: 'title and fileUrl are required' });
   }
+  const urlError = resourceUrlError(body);
+  if (urlError) return reply.status(400).send({ success: false, data: null, error: urlError });
   const episode = await req.server.prisma.courseEpisode.findUnique({ where: { id: eid }, select: { id: true } });
   if (!episode) return reply.status(404).send({ success: false, data: null, error: 'Episode not found' });
   const order = await req.server.prisma.appResource.count({ where: { courseEpisodeId: eid } })
@@ -1245,6 +1248,8 @@ export async function createEpisodeResourceHandler(req: FastifyRequest, reply: F
 export async function updateEpisodeResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { rid } = req.params as any;
   const body = (req.body ?? {}) as any;
+  const urlError = resourceUrlError(body);
+  if (urlError) return reply.status(400).send({ success: false, data: null, error: urlError });
   const data: any = {};
   ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'fileCount',
     'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {
