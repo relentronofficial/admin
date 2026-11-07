@@ -217,8 +217,11 @@ export function PostCard({
         </div>
       )}
 
-      {/* Media grid */}
-      {media.length > 0 && (
+      {/* Media */}
+      {media.length === 1 && (
+        <SingleMedia url={media[0]} onOpen={() => setViewerIdx(0)} />
+      )}
+      {media.length > 1 && (
         <div className={cn("grid gap-1 rounded-xl overflow-hidden", gridClass)}>
           {media.slice(0, 4).map((url, i) => {
             const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url);
@@ -339,6 +342,67 @@ export function PostCard({
         />
       )}
     </article>
+  );
+}
+
+// ── Single-image / single-video renderer ───────────────────────────────────
+// Uses object-contain so the image is never cropped. Multi-image grids keep
+// aspect-square + object-cover (thumbnail UX; lightbox shows the full image).
+
+function SingleMedia({ url, onOpen }: { url: string; onOpen: () => void }) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url);
+
+  if (errored) {
+    return (
+      <div
+        className="w-full h-28 rounded-xl flex items-center justify-center text-xs"
+        style={{
+          background: "var(--color-surface-overlay, #1a1a1a)",
+          color: "var(--color-text-subtle)",
+        }}
+      >
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onOpen}
+      className="block w-full rounded-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+      style={{ background: "#0f0f0f" }}
+      aria-label="View media"
+    >
+      {!loaded && (
+        <div
+          className="w-full animate-pulse rounded-xl"
+          style={{ height: 180, background: "var(--color-surface-overlay, #1a1a1a)" }}
+        />
+      )}
+      {isVideo ? (
+        <video
+          src={url}
+          className="block w-auto max-w-full h-auto max-h-[600px] mx-auto"
+          style={{ display: loaded ? "block" : "none" }}
+          muted
+          preload="metadata"
+          onLoadedMetadata={() => setLoaded(true)}
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          className="block w-auto max-w-full h-auto max-h-[600px] mx-auto"
+          style={{ display: loaded ? "block" : "none" }}
+          loading="lazy"
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+        />
+      )}
+    </button>
   );
 }
 
