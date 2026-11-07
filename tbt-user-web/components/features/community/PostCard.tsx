@@ -371,21 +371,22 @@ function SingleMedia({ url, onOpen }: { url: string; onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
-      className="block w-full rounded-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-      style={{ background: "#0f0f0f" }}
+      className="relative block w-full rounded-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+      style={{ background: "#0f0f0f", minHeight: loaded ? undefined : 180 }}
       aria-label="View media"
     >
+      {/* Skeleton overlays the image — does NOT replace it. Image must always be
+          in the layout flow so the browser can fire onLoad / trigger lazy load. */}
       {!loaded && (
         <div
-          className="w-full animate-pulse rounded-xl"
-          style={{ height: 180, background: "var(--color-surface-overlay, #1a1a1a)" }}
+          className="absolute inset-0 animate-pulse rounded-xl"
+          style={{ background: "var(--color-surface-overlay, #1a1a1a)" }}
         />
       )}
       {isVideo ? (
         <video
           src={url}
-          className="block w-auto max-w-full h-auto max-h-[600px] mx-auto"
-          style={{ display: loaded ? "block" : "none" }}
+          className="relative block w-auto max-w-full h-auto max-h-[600px] mx-auto"
           muted
           preload="metadata"
           onLoadedMetadata={() => setLoaded(true)}
@@ -395,9 +396,7 @@ function SingleMedia({ url, onOpen }: { url: string; onOpen: () => void }) {
         <img
           src={url}
           alt=""
-          className="block w-auto max-w-full h-auto max-h-[600px] mx-auto"
-          style={{ display: loaded ? "block" : "none" }}
-          loading="lazy"
+          className="relative block w-auto max-w-full h-auto max-h-[600px] mx-auto"
           onLoad={() => setLoaded(true)}
           onError={() => setErrored(true)}
         />
