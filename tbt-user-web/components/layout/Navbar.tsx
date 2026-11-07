@@ -47,7 +47,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-80 rounded-2xl overflow-hidden z-50 flex flex-col"
+      className="absolute right-0 top-full mt-2 w-[min(320px,calc(100vw-24px))] rounded-2xl overflow-hidden z-50 flex flex-col"
       style={{
         background: "var(--color-notif-bg)",
         border: "1px solid var(--color-border-medium)",
@@ -214,21 +214,25 @@ function ProfileButton() {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white overflow-hidden flex-shrink-0"
-        style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
+        className="-m-2 p-2 rounded-full flex items-center justify-center flex-shrink-0"
         aria-label="Account menu"
       >
-        {avatarUrl && !avatarError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt=""
-            width={28}
-            height={28}
-            className="w-full h-full object-cover"
-            onError={() => setAvatarError(true)}
-          />
-        ) : initials}
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white overflow-hidden pointer-events-none"
+          style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
+        >
+          {avatarUrl && !avatarError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              width={28}
+              height={28}
+              className="w-full h-full object-cover"
+              onError={() => setAvatarError(true)}
+            />
+          ) : initials}
+        </div>
       </button>
 
       {open && (

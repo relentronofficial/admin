@@ -159,7 +159,7 @@ export default function EbookReaderPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto h-[calc(100vh-8rem)] flex flex-col gap-3">
+    <div className="max-w-7xl mx-auto h-[calc(100dvh-8rem)] flex flex-col gap-3">
       {/* Toolbar */}
       <div
         className="flex items-center gap-2 p-2 rounded-2xl flex-wrap flex-shrink-0"

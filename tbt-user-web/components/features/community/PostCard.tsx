@@ -363,11 +363,11 @@ function ActionBtn({
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
+      className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
       style={{ color }}
     >
       <Icon size={16} fill={filled ? (activeColor ?? "currentColor") : "none"} />
-      <span>{label}</span>
+      <span className={/^\d+$/.test(label) ? undefined : "hidden sm:inline"}>{label}</span>
     </button>
   );
 }

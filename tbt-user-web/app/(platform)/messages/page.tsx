@@ -565,7 +565,7 @@ export default function MessagesPage() {
 
   return (
     <div
-      className="flex h-[calc(100vh-140px)] rounded-xl border overflow-hidden"
+      className="flex h-[calc(100dvh-140px)] rounded-xl border overflow-hidden"
       style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
     >
       {/* ── Left pane: unified list (groups + DMs interleaved) ───────────── */}
@@ -761,12 +761,12 @@ export default function MessagesPage() {
                   rows={1}
                   placeholder="Type a message… (Enter to send)"
                   className="flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground leading-relaxed"
-                  style={{ maxHeight: 96, overflowY: 'auto' }}
+                  style={{ maxHeight: 96, overflowY: 'auto', fontSize: '16px' }}
                 />
                 <button
                   onClick={handleGroupSend}
                   disabled={!groupInput.trim() || sendGroupMessage.isPending}
-                  className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendGroupMessage.isPending ? (
@@ -1002,7 +1002,7 @@ export default function MessagesPage() {
                       : 'Write a message… (Enter to send, Shift+Enter for new line)'
                   }
                   className="flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground leading-relaxed"
-                  style={{ maxHeight: 96, overflowY: 'auto' }}
+                  style={{ maxHeight: 96, overflowY: 'auto', fontSize: '16px' }}
                 />
                 <button
                   onClick={handleSend}
@@ -1011,7 +1011,7 @@ export default function MessagesPage() {
                     sendMessage.isPending ||
                     pendingMedia?.uploading
                   }
-                  className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendMessage.isPending ? (

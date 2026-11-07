@@ -653,7 +653,7 @@ export default function GroupChatPage() {
   const isMuted = isLocallyMuted(groupId);
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
+    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100dvh-8rem)]">
       {/* Header */}
       <div
         className="flex items-center gap-3 p-3 rounded-t-2xl flex-shrink-0"
@@ -1042,6 +1042,7 @@ export default function GroupChatPage() {
               style={{
                 background: "var(--color-bg-primary)",
                 border: "1px solid var(--color-border-subtle)",
+                fontSize: '16px',
               }}
             />
           </div>
