@@ -1234,12 +1234,20 @@ function MessageBubble({
   } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
+  const [reactPickerPos, setReactPickerPos] = useState<{ top: number; left: number } | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
-  // Close action menu when the message list scrolls or the window resizes.
+  // Close action menu and reaction picker when the message list scrolls or
+  // the window resizes — both use fixed/portal positioning and must track
+  // the trigger position, so it's simpler to dismiss on movement.
   useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => { setMenuOpen(false); setMenuPos(null); };
+    if (!menuOpen && !reactPickerOpen) return;
+    const close = () => {
+      setMenuOpen(false);
+      setMenuPos(null);
+      setReactPickerOpen(false);
+      setReactPickerPos(null);
+    };
     const el = scrollContainerRef.current;
     if (el) el.addEventListener("scroll", close, { passive: true });
     window.addEventListener("resize", close);
@@ -1247,25 +1255,62 @@ function MessageBubble({
       if (el) el.removeEventListener("scroll", close);
       window.removeEventListener("resize", close);
     };
-  }, [menuOpen, scrollContainerRef]);
+  }, [menuOpen, reactPickerOpen, scrollContainerRef]);
 
-  // Calculate portal position so the menu never clips behind the composer.
+  // Calculate viewport-aware position for the emoji reaction picker so it is
+  // never clipped by the scroll container's overflow boundary.
+  function openReactPicker() {
+    const PICKER_HEIGHT = 44; // single row of emoji buttons
+    const PICKER_WIDTH = 220; // ~6 emoji × 36px
+    const GAP = 4;
+    const SAFE = 8;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setReactPickerPos({ top: SAFE, left: SAFE });
+      setReactPickerOpen(true);
+      return;
+    }
+    // Prefer above the trigger; fall back to below if not enough room.
+    const spaceAbove = rect.top - GAP - SAFE;
+    let top: number;
+    if (spaceAbove >= PICKER_HEIGHT) {
+      top = rect.top - PICKER_HEIGHT - GAP;
+    } else {
+      top = rect.bottom + GAP;
+    }
+    top = Math.max(SAFE, Math.min(top, window.innerHeight - PICKER_HEIGHT - SAFE));
+    let left = isMine ? rect.right - PICKER_WIDTH : rect.left;
+    left = Math.max(SAFE, Math.min(left, window.innerWidth - PICKER_WIDTH - SAFE));
+    setReactPickerPos({ top, left });
+    setReactPickerOpen(true);
+  }
+
+  // Calculate portal position so the menu is always fully visible.
   function openMenu(anchor?: { top: number; bottom: number; left: number; right: number }) {
     const MENU_WIDTH = 176; // w-44 = 11rem
     const MENU_MAX_HEIGHT = 340; // 10 items × ~32px + 8px padding
     const GAP = 4;
+    // Minimum clearance from any viewport edge so the menu never touches the
+    // browser chrome. This also prevents the menu from being hidden behind a
+    // rounded-corner on mobile.
+    const SAFE = 8;
 
     const rect = anchor ?? triggerRef.current?.getBoundingClientRect();
-    const container = scrollContainerRef.current?.getBoundingClientRect();
 
-    if (!rect || !container) {
-      setMenuPos({ top: 80, left: 20, maxHeight: MENU_MAX_HEIGHT });
+    if (!rect) {
+      setMenuPos({ top: SAFE, left: SAFE, maxHeight: MENU_MAX_HEIGHT });
       setMenuOpen(true);
       return;
     }
 
-    const spaceBelow = container.bottom - rect.bottom - GAP;
-    const spaceAbove = rect.top - container.top - GAP;
+    // The menu is rendered via createPortal with `position:fixed`, so its
+    // top/left are relative to the VIEWPORT, not the scroll container.
+    // Using container.bottom to measure "space below" was wrong: the scroll
+    // container ends above the composer, so a trigger near the bottom of the
+    // scroll area appeared to have almost no space below even though the
+    // fixed-positioned menu can overlay the composer via z-index.
+    const spaceBelow = window.innerHeight - rect.bottom - GAP - SAFE;
+    const spaceAbove = rect.top - GAP - SAFE;
 
     let top: number;
     let maxHeight: number;
@@ -1281,9 +1326,9 @@ function MessageBubble({
       maxHeight = h;
     }
 
-    // Horizontal: align to the trigger edge, clamped inside the container.
+    // Horizontal: align to trigger edge, clamped to viewport bounds.
     let left = isMine ? rect.right - MENU_WIDTH : rect.left;
-    left = Math.max(container.left + 4, Math.min(left, container.right - MENU_WIDTH - 4));
+    left = Math.max(SAFE, Math.min(left, window.innerWidth - MENU_WIDTH - SAFE));
 
     setMenuPos({ top, left, maxHeight });
     setMenuOpen(true);
@@ -1508,7 +1553,7 @@ function MessageBubble({
                   <button
                     onClick={() => {
                       setMenuOpen(false); setMenuPos(null);
-                      setReactPickerOpen(true);
+                      openReactPicker();
                     }}
                     className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                   >
@@ -1606,15 +1651,17 @@ function MessageBubble({
             </>,
             document.body
           )}
-          {reactPickerOpen && (
+          {reactPickerOpen && reactPickerPos && createPortal(
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setReactPickerOpen(false)} />
               <div
-                className={cn(
-                  "absolute z-50 -top-10 flex gap-1 px-2 py-1 rounded-full",
-                  isMine ? "right-0" : "left-0",
-                )}
+                className="fixed inset-0 z-[200]"
+                onClick={() => { setReactPickerOpen(false); setReactPickerPos(null); }}
+              />
+              <div
+                className="fixed z-[201] flex gap-1 px-2 py-1 rounded-full"
                 style={{
+                  top: reactPickerPos.top,
+                  left: reactPickerPos.left,
                   background: "var(--color-modal-bg)",
                   border: "1px solid var(--color-border-medium)",
                   boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
@@ -1626,6 +1673,7 @@ function MessageBubble({
                     onClick={() => {
                       onReact(emoji);
                       setReactPickerOpen(false);
+                      setReactPickerPos(null);
                     }}
                     className="text-lg hover:scale-125 transition-transform"
                   >
@@ -1633,7 +1681,8 @@ function MessageBubble({
                   </button>
                 ))}
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
         {reactionGroups.length > 0 && (
