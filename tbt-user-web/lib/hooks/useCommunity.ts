@@ -58,8 +58,6 @@ export function useSubmitPost() {
     mutationFn: (body: { content: string; mediaUrls?: string[] }) =>
       communityService.submitPost(body),
     onSuccess: () => {
-      // Refetch the currently visible tab; posts start as isApproved=false
-      // and won't appear until an admin approves, so just invalidate.
       qc.invalidateQueries({ queryKey: ["community", "feed"] });
     },
   });
