@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'crypto';
 import { env } from '../../config/env.js';
 import { deleteBunnyVideo } from '../../lib/bunny.js';
+import { cdnObjectUrl } from '../../lib/resourceUrl.js';
 import sharp from 'sharp';
 
 // Image MIME types that will be converted to WebP before storage
@@ -14,10 +15,10 @@ const CONVERTIBLE_IMAGE_TYPES = new Set([
 
 // BUNNY_CDN_URL is usually a bare hostname, but may carry a scheme or a
 // trailing slash — build public URLs without producing "https://https://…".
+// Path segments are percent-encoded so a filename with spaces, # or ? still
+// resolves to the stored object.
 function cdnPublicUrl(key: string): string {
-  const base = (env.BUNNY_CDN_URL ?? '').trim();
-  const origin = (base.startsWith('http') ? base : `https://${base}`).replace(/\/+$/, '');
-  return `${origin}/${key}`;
+  return cdnObjectUrl(env.BUNNY_CDN_URL, key);
 }
 
 export async function uploadImageHandler(req: FastifyRequest, reply: FastifyReply) {
