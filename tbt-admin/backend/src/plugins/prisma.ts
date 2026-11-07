@@ -1153,6 +1153,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS is_mentor BOOLEAN NOT NULL DEFAULT false,
           ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT true
       `),
+      // Moderation audit trail (2026-11): stored as raw SQL to avoid a
+      // Prisma migration file. All three columns are nullable.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE community_posts
+          ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+          ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(255)
+      `),
       // ── Morning Ritual (2026-07-20, Module 8B) ─────────────────────
       // Ported from co-worker's FULL_MIGRATION.sql lines 305-342.
       // No member FK — habits are global; each member's daily yes/no

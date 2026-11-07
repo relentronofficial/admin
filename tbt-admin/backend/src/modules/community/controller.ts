@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema } from './schema.js';
+import { createPostSchema, updatePostPinSchema, submitPostSchema, approvePostSchema, rejectPostSchema } from './schema.js';
 import { cacheGetOrCompute, invalidateCache } from '../../lib/cache.js';
 import { notifyMembers } from '../../lib/notifications.js';
 
@@ -1097,7 +1097,7 @@ export async function memberSubmitPostHandler(request: FastifyRequest, reply: Fa
       memberId: request.memberId!,
       content: parsed.data.content,
       mediaUrls: parsed.data.mediaUrls ?? [],
-      isApproved: true,
+      isApproved: false,
     },
     include: {
       member: {
@@ -1105,10 +1105,23 @@ export async function memberSubmitPostHandler(request: FastifyRequest, reply: Fa
       },
     },
   });
-  return reply.status(201).send({ success: true, data: post, error: null });
+
+  // Notify admins so the pending queue badge updates live.
+  try {
+    (request.server as any).io?.to('admin')?.emit('admin:post_pending', {
+      postId: post.id,
+      memberId: post.memberId,
+    });
+  } catch (_) {}
+
+  return reply.status(201).send({
+    success: true,
+    data: { ...post, pendingReview: true },
+    error: null,
+  });
 }
 
-// Admin moderation — flip is_approved
+// Admin moderation — approve a pending post
 export async function adminApprovePostHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id } = request.params as { id: string };
   const parsed = approvePostSchema.safeParse(request.body);
@@ -1117,20 +1130,120 @@ export async function adminApprovePostHandler(request: FastifyRequest, reply: Fa
       .status(400)
       .send({ success: false, data: null, error: { code: 'invalid_input', message: parsed.error.message } });
   }
-  const post = await request.server.prisma.post.update({
-    where: { id },
-    data: { isApproved: parsed.data.isApproved },
+
+  // Resolve the acting admin's DB record for audit trail.
+  const adminRow = await request.server.prisma.admin.findFirst({
+    where: { clerkId: request.user },
+    select: { id: true },
   });
-  // Item #30: fan-out to every member connected to the 'community'
-  // room so their feed refreshes without a manual pull-to-refresh.
-  // Only emits when going pending → approved (isApproved: true).
-  if (parsed.data.isApproved) {
+
+  // Conditional update: only act if the post is currently un-approved.
+  // Prevents two admins from racing over the same post.
+  const updatedCount = await request.server.prisma.post.updateMany({
+    where: { id, isApproved: !parsed.data.isApproved },
+    data: {
+      isApproved: parsed.data.isApproved,
+      ...(parsed.data.isApproved
+        ? { reviewedAt: new Date(), reviewedBy: adminRow?.id ?? request.user, rejectionReason: null }
+        : {}),
+    } as any,
+  });
+
+  if (updatedCount.count === 0) {
+    // Either post not found or already in target state — fetch current row
+    const existing = await request.server.prisma.post.findUnique({
+      where: { id },
+      select: { id: true, isApproved: true, memberId: true },
+    });
+    if (!existing) {
+      return reply.status(404).send({ success: false, data: null, error: { code: 'not_found', message: 'Post not found.' } });
+    }
+    return reply.send({ success: true, data: existing, meta: { alreadyActioned: true }, error: null });
+  }
+
+  const post = await request.server.prisma.post.findUnique({ where: { id }, select: { id: true, memberId: true, isApproved: true } });
+
+  if (parsed.data.isApproved && post) {
+    // Invalidate all public feed caches so the approved post becomes visible.
+    void invalidateCache(request.server.redis ?? null, 'feed:page:*');
+
+    // Notify the post author.
+    void notifyMembers(request.server, {
+      memberIds: [post.memberId],
+      title: 'Your post has been approved',
+      body: 'Your community post is now visible in the feed.',
+      type: 'community_post_approved',
+      actionUrl: '/community',
+    }).catch(() => {});
+
+    // Fan-out to community room so open feeds refresh without a pull-to-refresh.
     try {
       (request.server as any).io
           ?.to('community')
           ?.emit('community:post_created', { postId: id, memberId: post.memberId });
     } catch (_) {}
   }
+
+  return reply.send({ success: true, data: post, error: null });
+}
+
+// Admin moderation — reject a pending post
+export async function adminRejectPostHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string };
+  const parsed = rejectPostSchema.safeParse(request.body);
+  if (!parsed.success) {
+    return reply.status(400).send({ success: false, data: null, error: { code: 'invalid_input', message: parsed.error.message } });
+  }
+
+  const adminRow = await request.server.prisma.admin.findFirst({
+    where: { clerkId: request.user },
+    select: { id: true },
+  });
+
+  // Conditional: only act if the post is currently pending (isApproved=false).
+  // Rejecting an already-approved post would remove it from the feed — require
+  // it to be pending so admins must un-approve first.
+  const updatedCount = await request.server.prisma.post.updateMany({
+    where: { id, isApproved: false },
+    data: {
+      isApproved: false,
+      rejectionReason: parsed.data.reason || null,
+      reviewedAt: new Date(),
+      reviewedBy: adminRow?.id ?? request.user,
+    } as any,
+  });
+
+  if (updatedCount.count === 0) {
+    const existing = await request.server.prisma.post.findUnique({
+      where: { id },
+      select: { id: true, isApproved: true },
+    });
+    if (!existing) {
+      return reply.status(404).send({ success: false, data: null, error: { code: 'not_found', message: 'Post not found.' } });
+    }
+    if (existing.isApproved) {
+      return reply.status(409).send({ success: false, data: null, error: { code: 'conflict', message: 'Post is already published. Un-approve it before rejecting.' } });
+    }
+  }
+
+  const post = await request.server.prisma.post.findUnique({
+    where: { id },
+    select: { id: true, memberId: true, isApproved: true },
+  });
+
+  if (post) {
+    const reason = parsed.data.reason?.trim();
+    void notifyMembers(request.server, {
+      memberIds: [post.memberId],
+      title: 'Your post was not approved',
+      body: reason
+        ? `Your community post was not approved. Reason: ${reason}`
+        : 'Your community post was not approved for the community.',
+      type: 'community_post_rejected',
+      actionUrl: '/community?tab=mine',
+    }).catch(() => {});
+  }
+
   return reply.send({ success: true, data: post, error: null });
 }
 

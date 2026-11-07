@@ -38,3 +38,7 @@ export const updatePostPinSchema = z.object({
 export const approvePostSchema = z.object({
   isApproved: z.boolean(),
 });
+
+export const rejectPostSchema = z.object({
+  reason: z.string().max(500).optional().default(''),
+});

@@ -27,6 +27,7 @@ import {
   adminListReportsHandler,
   adminUpdateReportHandler,
   adminApprovePostHandler,
+  adminRejectPostHandler,
 } from './controller.js';
 
 /**
@@ -50,6 +51,7 @@ export async function communityRoutes(fastify: FastifyInstance) {
       adminScope.delete('/posts/:id', deletePostHandler);
       adminScope.put('/posts/:id/pin', pinPostHandler);
       adminScope.put('/posts/:id/approve', adminApprovePostHandler);
+      adminScope.post('/posts/:id/reject', adminRejectPostHandler);
       adminScope.get('/posts/:id/comments', getCommentsHandler);
       adminScope.get('/reports', adminListReportsHandler);
       adminScope.put('/reports/:id', adminUpdateReportHandler);

@@ -58,7 +58,9 @@ export function useSubmitPost() {
     mutationFn: (body: { content: string; mediaUrls?: string[] }) =>
       communityService.submitPost(body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["community", "feed"] });
+      // Post is pending review — only refresh the author's own "mine" feed.
+      // Don't invalidate the public feeds since the post won't appear there yet.
+      qc.invalidateQueries({ queryKey: communityKeys.feed("mine") });
     },
   });
 }
