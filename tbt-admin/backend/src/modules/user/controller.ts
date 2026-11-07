@@ -5174,7 +5174,7 @@ export async function startEpisodeTimerHandler(request: FastifyRequest, reply: F
      ON CONFLICT (member_id, episode_id) DO UPDATE SET
        status = 'ACTIVE', duration_seconds = $3, started_at = $4,
        expires_at = $5, completed_at = NULL, last_heartbeat_at = $4
-     WHERE lesson_timer_sessions.status != 'COMPLETED'`,
+     WHERE lesson_timer_sessions.status NOT IN ('COMPLETED', 'EXPIRED')`,
     memberId, episodeId, durationSeconds, now, expiresAt,
   );
   return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });

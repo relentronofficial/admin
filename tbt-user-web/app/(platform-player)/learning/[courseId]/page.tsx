@@ -1587,11 +1587,39 @@ export default function CourseDetailPage({
   const batchId = (batchData as any)?.batch?.id as string | undefined;
   const isProgramLifeline = false; // unified — course lifelines replace program-wide
   // Lifelines are course-scoped — count persists across all episodes in the course.
-  // Restore active timer session from server on lesson load (survives page refresh)
+  // Restore timer session from server on lesson load (survives page refresh + back navigation)
   useEffect(() => {
     if (!selectedLesson || !existingTimerSession) return;
-    if (existingTimerSession.status !== 'ACTIVE') return;
     if (timerRestoredForRef.current === selectedLesson.id) return;
+
+    // EXPIRED session: re-engage the timer lock without starting a new countdown.
+    // This prevents returning users from accidentally getting a fresh timer — the
+    // server already refused to reset it (startEpisodeTimerHandler guards on EXPIRED).
+    if (existingTimerSession.status === 'EXPIRED') {
+      timerRestoredForRef.current = selectedLesson.id;
+      // Completed lessons ignore expired sessions — the timer was already irrelevant.
+      if (completedIdsRef.current.has(selectedLesson.id) || !!selectedLesson.isCompleted) return;
+      timerLockedRef.current = true;
+      const duration = (existingTimerSession as any).durationSeconds ?? timerDurationRef.current ?? 300;
+      timerDurationRef.current = duration;
+      const lessonData = courseRef.current?.lessons?.find((l: any) => l.id === selectedLesson.id);
+      timerExpiredLessonRef.current = lessonData ? { lesson: lessonData, duration } : null;
+      setFocusLockedIds(prev => new Set([...prev, selectedLesson.id]));
+      // Defer modal slightly to let course data settle before reading lifelinesLeft
+      if (lessonData) {
+        setTimeout(() => {
+          if (selectedLessonRef.current?.id !== selectedLesson.id) return;
+          if (lifelinesLeftRef.current > 0) {
+            setLifelineDialog({ lesson: lessonData, duration });
+          } else {
+            setCoinDialog({ lesson: lessonData, duration });
+          }
+        }, 300);
+      }
+      return;
+    }
+
+    if (existingTimerSession.status !== 'ACTIVE') return;
     if (timerLessonRef.current === selectedLesson.id) return; // already running
     const remaining = existingTimerSession.remainingSeconds;
     if (remaining <= 0) return;
@@ -1678,6 +1706,12 @@ export default function CourseDetailPage({
   // Prevents double XP flash when both lesson completion and quiz pass fire for the same lesson.
   const xpFlashedRef = useRef<string | null>(null);
   const missionFlashedRef = useRef<string | null>(null);
+
+  // Exit warning: shown when user navigates away with an active focus timer
+  const [exitWarning, setExitWarning] = useState<{ onLeave: () => void } | null>(null);
+  const exitWarningActiveRef = useRef(false);
+  const sentinelDepthRef = useRef(0);
+  const bypassingExitRef = useRef(false);
 
   // Section accordion state — start all sections expanded; collapse all except the active lesson's section
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -2019,6 +2053,7 @@ export default function CourseDetailPage({
     videoBlockedRef.current = false;
     timerLockedRef.current = false;
     timerExpiredLessonRef.current = null;
+    timerRestoredForRef.current = null;
     setCueQuizModal(null);
     justCompletedInSessionRef.current = false;
     xpFlashedRef.current = null;
@@ -2432,22 +2467,29 @@ export default function CourseDetailPage({
     const handleVisibility = () => { isHiddenRef.current = document.hidden; };
     document.addEventListener("visibilitychange", handleVisibility);
 
-    const handleBeforeUnload = () => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       const lesson = selectedLessonRef.current;
-      if (!lesson || !isPlayingRef.current) return;
-      const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
-      if (delta <= 0) return;
-      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-      fetch(`${apiBase}/api/user/enrollments/${courseId}/progress/${lesson.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        keepalive: true,
-        body: JSON.stringify({
-          watchedSeconds: Math.floor(lastPlayheadRef.current),
-          deltaSeconds: delta,
-        }),
-      });
+      if (lesson && isPlayingRef.current) {
+        const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
+        if (delta > 0) {
+          const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+          fetch(`${apiBase}/api/user/enrollments/${courseId}/progress/${lesson.id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            keepalive: true,
+            body: JSON.stringify({
+              watchedSeconds: Math.floor(lastPlayheadRef.current),
+              deltaSeconds: delta,
+            }),
+          });
+        }
+      }
+      // Native exit warning when focus timer is running on an incomplete lesson
+      if (timerLessonRef.current && !completedIdsRef.current.has(timerLessonRef.current)) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
 
@@ -2463,6 +2505,46 @@ export default function CourseDetailPage({
       clearInterval(tick);
     };
   }, [selectedLesson?.id, courseId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Back-button exit warning (popstate sentinel) ──────────────────────────────
+  // Pushes a sentinel history entry on mount so we can intercept the first back-
+  // press with a custom TBT modal. Uses the capture phase to fire before Next.js's
+  // internal popstate handler. All reads come from refs so the effect only runs once
+  // per course page (not per lesson change).
+  useEffect(() => {
+    window.history.pushState(null, "", window.location.href);
+    sentinelDepthRef.current = 1;
+    bypassingExitRef.current = false;
+
+    const handlePopState = (e: PopStateEvent) => {
+      if (bypassingExitRef.current) return;
+      const lessonId = timerLessonRef.current;
+      const timerActive = !!lessonId && !completedIdsRef.current.has(lessonId);
+      if (!timerActive) return;
+      // Re-push to stay on the page — this is synchronous, so it beats Next.js's handler
+      e.stopImmediatePropagation();
+      window.history.pushState(null, "", window.location.href);
+      sentinelDepthRef.current++;
+      if (exitWarningActiveRef.current) return; // modal already showing
+      exitWarningActiveRef.current = true;
+      setExitWarning({
+        onLeave: () => {
+          exitWarningActiveRef.current = false;
+          setExitWarning(null);
+          bypassingExitRef.current = true;
+          // Go back past all the sentinel entries we've pushed
+          window.history.go(-sentinelDepthRef.current);
+          setTimeout(() => { bypassingExitRef.current = false; }, 200);
+        },
+      });
+    };
+
+    // Capture phase fires before bubble-phase handlers (including Next.js's)
+    window.addEventListener("popstate", handlePopState, true);
+    return () => {
+      window.removeEventListener("popstate", handlePopState, true);
+    };
+  }, [courseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 30-second heartbeat ──────────────────────────────────────────────────────
   // watchedSeconds uses the actual video playhead (lastPlayheadRef) — not
@@ -3288,6 +3370,50 @@ export default function CourseDetailPage({
         </div>
       )}
 
+      {/* ── Exit Warning Modal ────────────────────────────────────────────────
+          Shown when the user presses the browser Back button while a focus timer
+          is running on an incomplete lesson. "Stay & Continue" dismisses; "Leave
+          Page" navigates back — the timer session is preserved server-side. */}
+      {exitWarning && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.82)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-5" style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)" }}>
+                <span className="text-xl">⏱️</span>
+              </div>
+              <div>
+                <p className="font-bold text-base" style={{ color: "var(--color-text-normal)" }}>Focus timer still running</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>Your session will be saved</p>
+              </div>
+            </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+              Your focus timer is active. If you leave, your timer progress is{" "}
+              <strong style={{ color: "var(--color-text-normal)" }}>saved on the server</strong> and will
+              resume exactly where you left off when you return to this lesson.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  exitWarningActiveRef.current = false;
+                  setExitWarning(null);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all"
+                style={{ borderColor: "var(--color-border-medium)", background: "transparent", color: "var(--color-text-normal)" }}
+              >
+                Stay &amp; Continue
+              </button>
+              <button
+                onClick={exitWarning.onLeave}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all"
+                style={{ background: "var(--color-accent)" }}
+              >
+                Leave Page
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Two-column layout ── */}
       <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
         {/* LEFT: video / content */}
@@ -3295,7 +3421,24 @@ export default function CourseDetailPage({
 
       {/* Back */}
       <button
-        onClick={() => { window.history.length > 1 ? router.back() : router.push("/courses"); }}
+        onClick={() => {
+          const lessonId = timerLessonRef.current;
+          const timerActive = !!lessonId && !completedIds.has(lessonId);
+          if (timerActive) {
+            exitWarningActiveRef.current = true;
+            setExitWarning({
+              onLeave: () => {
+                exitWarningActiveRef.current = false;
+                setExitWarning(null);
+                bypassingExitRef.current = true;
+                window.history.length > 1 ? router.back() : router.push("/courses");
+                setTimeout(() => { bypassingExitRef.current = false; }, 200);
+              },
+            });
+            return;
+          }
+          window.history.length > 1 ? router.back() : router.push("/courses");
+        }}
         aria-label={`Back to ${course.title}`}
         className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100 cursor-pointer"
         style={{ color: "var(--color-text-subtle)" }}
