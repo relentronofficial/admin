@@ -1097,11 +1097,7 @@ export async function memberSubmitPostHandler(request: FastifyRequest, reply: Fa
       memberId: request.memberId!,
       content: parsed.data.content,
       mediaUrls: parsed.data.mediaUrls ?? [],
-      // New posts start unapproved by default when created via member
-      // submission — admins moderate before they appear in the feed.
-      // (Existing rows have is_approved default TRUE so pre-9A posts
-      //  keep showing.)
-      isApproved: false,
+      isApproved: true,
     },
     include: {
       member: {
