@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { buildCsv, dashboardFigures, type ExportResult } from '../../lib/psychometric/resultExport.js';
 import { candidateOut, notificationOut, resultOut, retestOut } from '../../lib/psychometric/rows.js';
+import { buildAnswerSheet } from '../../lib/psychometric/adminAnswerSheet.js';
 import { actingAdmin, fail, rows, type Db } from './db.js';
 
 // Psychometric results side: dashboard, candidates ("Users"), results +
@@ -134,6 +135,30 @@ export async function getResult(req: Req, reply: FastifyReply) {
   const [r] = await rows(db(req), `${RESULT_SELECT} WHERE r.id = $1`, req.params.id);
   if (!r) return fail(reply, 404, 'Not found.');
   return reply.send({ success: true, data: resultOut(r, { populateUser: true }) });
+}
+
+/**
+ * The attempt behind a result, question by question: the candidate's answers,
+ * the options with their scores and correct answer, and per-answer time.
+ * Read-only (GET /admin/results/:id/answers).
+ */
+export async function getResultAnswers(req: Req, reply: FastifyReply) {
+  const d = db(req);
+  const [r] = await rows(d, `SELECT id, session_id, candidate_id FROM psy_results WHERE id = $1`, req.params.id);
+  if (!r) return fail(reply, 404, 'Not found.');
+  const [session] = await rows(d, `SELECT * FROM psy_sessions WHERE id = $1`, r.session_id);
+  // Answers belong to the attempt; when the attempt is gone (candidate deleted) there is nothing to list.
+  const answers = session ? await rows(d, `SELECT * FROM psy_answers WHERE session_id = $1`, session.id) : [];
+  const qids = [...new Set([...((session?.question_ids as string[] | null) ?? []).map(String), ...answers.map((a) => String(a.question_id))])];
+  const [questions, options, types] = await Promise.all([
+    qids.length
+      ? rows(d, `SELECT id, type_id, text, question_type, language, dimension, time_limit_seconds, correct_option_id, correct_option_ids, ideal_order
+                 FROM psy_questions WHERE id = ANY($1::text[])`, qids)
+      : Promise.resolve([]),
+    qids.length ? rows(d, `SELECT * FROM psy_answer_options WHERE question_id = ANY($1::text[])`, qids) : Promise.resolve([]),
+    rows(d, `SELECT id, name FROM psy_question_types`),
+  ]);
+  return reply.send({ success: true, data: buildAnswerSheet({ session: session ?? null, questions, options, answers, types }) });
 }
 
 export async function resultsByCandidate(req: Req, reply: FastifyReply) {
