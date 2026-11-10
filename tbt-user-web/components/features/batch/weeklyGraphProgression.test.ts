@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressionLine, progressionSvgPath, smoothProgressionPath, weekLinePoints, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
+import { progressionLine, progressionSvgPath, achievementPoints, straightProgressionPath, weekLinePoints, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
 
 // x = weekIndex * 100, y = 100 - level * 10: easy to read back.
 const colX = (i: number) => i * 100;
@@ -118,45 +118,24 @@ describe("progressionSvgPath (smooth line from the chart origin)", () => {
   });
 });
 
-describe("smoothProgressionPath", () => {
-  // Sample a cubic Bézier segment's y at t.
-  const bez = (a: number, b: number, c: number, d: number, t: number) =>
-    (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t ** 2 * c + t ** 3 * d;
-  const segments = (d: string) => {
-    const nums = d.replace(/[MC]/g, " ").trim().split(/[\s,]+/).map(Number);
-    const start = { x: nums[0], y: nums[1] };
-    const out: Array<{ p: { x: number; y: number }; c1: number[]; c2: number[]; q: { x: number; y: number } }> = [];
-    let p = start;
-    for (let i = 2; i < nums.length; i += 6) {
-      const q = { x: nums[i + 4], y: nums[i + 5] };
-      out.push({ p, c1: [nums[i], nums[i + 1]], c2: [nums[i + 2], nums[i + 3]], q });
-      p = q;
-    }
-    return { start, out };
-  };
+describe("achievementPoints (growth line)", () => {
+  const colX = (i: number) => 100 + i * 50;
+  const yFor = (l: number) => 300 - l * 40;
+  const wk = (n: number, progressLevel: number | null) => ({ weekNumber: n, progressLevel });
 
-  it("is null with no points, and a straight line from the origin for one point", () => {
-    expect(smoothProgressionPath([], 0, 100)).toBeNull();
-    expect(smoothProgressionPath([{ x: 50, y: 40 }], 10, 100)).toBe("M 10,100 L 50,40");
+  it("one point per week that reaches a new high, so the line only rises", () => {
+    const pts = achievementPoints([wk(1, 1), wk(2, 2), wk(3, 1.5), wk(4, 2), wk(5, 3), wk(6, 4.5)], colX, yFor);
+    expect(pts.map((p) => [p.weekNumber, p.level])).toEqual([[1, 1], [2, 2], [5, 3], [6, 4.5]]);
+    expect(pts.map((p) => [p.x, p.y])).toEqual([[100, 260], [150, 220], [300, 180], [350, 120]]);
   });
 
-  it("starts at the origin and ends every segment exactly on a point", () => {
-    const pts = [{ x: 50, y: 80 }, { x: 100, y: 30 }, { x: 150, y: 60 }, { x: 200, y: 10 }];
-    const { start, out } = segments(smoothProgressionPath(pts, 10, 100)!);
-    expect(start).toEqual({ x: 10, y: 100 });
-    expect(out.map((s) => s.q)).toEqual(pts);
+  it("skips weeks not started, with no progress, or with broken values; nothing achieved → no points", () => {
+    expect(achievementPoints([wk(1, 0), wk(2, null), wk(3, NaN as unknown as number), wk(4, 2)], colX, yFor).map((p) => p.weekNumber)).toEqual([4]);
+    expect(achievementPoints([wk(1, 0), wk(2, null)], colX, yFor)).toEqual([]);
   });
 
-  it("never overshoots: each segment stays between its two points' heights", () => {
-    const pts = [{ x: 50, y: 80 }, { x: 100, y: 30 }, { x: 150, y: 60 }, { x: 200, y: 60 }, { x: 250, y: 10 }];
-    const { out } = segments(smoothProgressionPath(pts, 10, 100)!);
-    for (const s of out) {
-      const lo = Math.min(s.p.y, s.q.y) - 1e-6, hi = Math.max(s.p.y, s.q.y) + 1e-6;
-      for (let t = 0; t <= 1; t += 0.05) {
-        const y = bez(s.p.y, s.c1[1], s.c2[1], s.q.y, t);
-        expect(y).toBeGreaterThanOrEqual(lo);
-        expect(y).toBeLessThanOrEqual(hi);
-      }
-    }
+  it("straight segments from the origin through every point", () => {
+    expect(straightProgressionPath([], 0, 300)).toBeNull();
+    expect(straightProgressionPath([{ x: 100, y: 260 }, { x: 150, y: 220 }], 76, 300)).toBe("M 76,300 L 100,260 L 150,220");
   });
 });
