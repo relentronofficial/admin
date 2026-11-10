@@ -7,7 +7,7 @@ import type { Socket } from "socket.io-client";
 import { useMyWeeklyGraph, weeklyGraphQueryKey } from "@/lib/hooks/useBatchProgram";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
-import type { WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
+import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
 import { achievementPoints, straightProgressionPath, type ProgressionPoint } from "./weeklyGraphProgression";
 
 // Weekly growth graph (the member's hand-drawn reference design): weeks along
@@ -52,9 +52,17 @@ export default function WeeklyActivityGraph() {
   return <WeeklyActivityGraphContent />;
 }
 
+// A milestone the admin set up for a week (an activity linked to a milestone in
+// Admin → Weekly Graph) that is not approved yet: shown as a hollow marker on
+// its week and milestone row — never on the line, never counted as achieved.
+type Planned = { key: string; weekIndex: number; level: number; x: number; y: number; activities: WeeklyGraphActivity[]; awaiting: boolean };
+
 // `pinned` = opened by click / tap / keyboard (stays until closed); otherwise a
 // mouse-hover preview that closes when the pointer leaves the marker.
-type Selection = { key: string; point: ProgressionPoint; week: WeeklyGraphWeek; pinned: boolean };
+type Selection = { key: string; x: number; y: number; week: WeeklyGraphWeek; pinned: boolean } & (
+  | { kind: "point"; point: ProgressionPoint }
+  | { kind: "planned"; planned: Planned }
+);
 
 const inr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
@@ -169,6 +177,26 @@ function WeeklyActivityGraphContent() {
   const points = achievementPoints(weeks, colX, yFor);
   const linePath = straightProgressionPath(points, LEFT, originY);
 
+  // Planned milestones: the admin's milestone-linked activities that are not
+  // approved yet, one hollow marker per (week, milestone row). A spot already
+  // holding an achievement point shows only the achievement.
+  const planned: Planned[] = [];
+  weeks.forEach((w, i) => {
+    const byLevel = new Map<number, WeeklyGraphActivity[]>();
+    for (const a of w.activities ?? []) {
+      const level = typeof a.level === "number" ? a.level : 0;
+      if (level < 1 || level > levels || a.status === "completed") continue;
+      byLevel.set(level, [...(byLevel.get(level) ?? []), a]);
+    }
+    byLevel.forEach((acts, level) => {
+      if (points.some((p) => p.weekIndex === i && Math.abs(p.level - level) < 1e-9)) return;
+      planned.push({
+        key: `pl:${w.weekNumber}:${level}`, weekIndex: i, level, x: colX(i), y: yFor(level), activities: acts,
+        awaiting: acts.some((a) => a.status === "submitted" || a.status === "in_progress"),
+      });
+    });
+  });
+
   // The milestone a height corresponds to: the row it has reached (between two
   // rows — e.g. revenue on its way from 1 Lakh to 5 Lakhs — the lower one).
   const rowOf = (level: number) => Math.floor(level + 1e-9);
@@ -196,6 +224,41 @@ function WeeklyActivityGraphContent() {
     returnFocusRef.current = el;
     setSelected((cur) => (cur?.key === sel.key && cur.pinned ? null : { ...sel, pinned: true }));
   };
+  /** Shared props that make a marker a button with a hover / click popup. */
+  const markerProps = (sel: Selection, label: string, testId: string) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": label,
+    "aria-haspopup": "dialog" as const,
+    "aria-expanded": selected?.key === sel.key,
+    "data-testid": testId,
+    className: "cursor-pointer outline-none",
+    onClick: (e: React.MouseEvent<SVGGElement>) => open(sel, e.currentTarget),
+    onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(sel, e.currentTarget); }
+    },
+    onPointerEnter: (e: React.PointerEvent<SVGGElement>) => {
+      if (e.pointerType !== "mouse") return; // touch: the tap (click) opens it
+      setSelected((cur) => (cur?.pinned ? cur : sel));
+    },
+    onPointerLeave: () => setSelected((cur) => (cur && !cur.pinned && cur.key === sel.key ? null : cur)),
+    onFocus: () => setFocusedKey(sel.key),
+    onBlur: () => setFocusedKey((k) => (k === sel.key ? null : k)),
+  });
+
+  const statusLabel: Record<string, string> = {
+    completed: s?.batchGraphStatusCompleted ?? "Completed",
+    submitted: s?.batchGraphStatusSubmitted ?? "Awaiting approval",
+    needs_revision: s?.batchGraphStatusNeedsRevision ?? "Needs revision",
+    in_progress: s?.batchGraphStatusInProgress ?? "In progress",
+    not_started: s?.batchGraphStatusNotStarted ?? "Not started",
+    upcoming: s?.batchGraphStatusUpcoming ?? "Upcoming",
+  };
+  const plannedStatus = (pl: Planned) => pl.awaiting
+    ? s?.batchGraphPlannedAwaiting ?? "Awaiting approval — not counted yet"
+    : s?.batchGraphPlannedStatus ?? "Planned — not completed yet";
+  const plannedLabel = (pl: Planned, w: WeeklyGraphWeek) =>
+    `${weekLabel(w)}, ${milestoneOf(pl.level)?.label ?? ""}, ${plannedStatus(pl)}`;
 
   // Popup position: the marker's place inside the scrolled chart, relative to
   // the outer box. The line only climbs up and to the right, so the empty space
@@ -207,8 +270,8 @@ function WeeklyActivityGraphContent() {
     const outerW = outerRef.current?.clientWidth ?? 0;
     const offsetX = (box?.offsetLeft ?? 0) + (box?.clientLeft ?? 0) + BOX_PAD - (box?.scrollLeft ?? 0);
     const offsetY = (box?.offsetTop ?? 0) + (box?.clientTop ?? 0) + BOX_PAD;
-    const px = selected.point.x + offsetX;
-    const py = selected.point.y + offsetY;
+    const px = selected.x + offsetX;
+    const py = selected.y + offsetY;
     const gap = R + 8;
     const fitsRight = outerW === 0 || px + gap + POP_W <= outerW;
     const fitsLeft = px - gap - POP_W >= 0;
@@ -280,43 +343,52 @@ function WeeklyActivityGraphContent() {
               strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
           )}
 
-          {/* Circular milestone markers — each a button with a hover / click popup */}
-          {points.map((p) => {
+          {/* Markers in week order (so Tab moves week by week): planned milestones
+              (admin-set, not approved yet — hollow, off the line) and the line's
+              achievement points. They never share a spot. */}
+          {[
+            ...planned.map((pl) => ({ order: pl.weekIndex, kind: "planned" as const, pl })),
+            ...points.map((p) => ({ order: p.weekIndex + 0.5, kind: "point" as const, p })),
+          ].sort((a, b) => a.order - b.order).map((m) => m.kind === "planned" ? (() => {
+            const pl = m.pl;
+            const w = weeks[pl.weekIndex];
+            const sel: Selection = { kind: "planned", key: pl.key, x: pl.x, y: pl.y, week: w, pinned: false, planned: pl };
+            return (
+              <g key={pl.key} {...markerProps(sel, plannedLabel(pl, w), "planned-milestone")}>
+                {(focusedKey === pl.key || selected?.key === pl.key) &&
+                  <circle cx={pl.x} cy={pl.y} r={R + 4} fill="none" stroke="var(--color-text-normal)" strokeWidth={2} />}
+                <circle cx={pl.x} cy={pl.y} r={R - 1} fill="var(--color-bg-surface)" strokeWidth={2}
+                  stroke={pl.awaiting ? "var(--color-accent, #dc2626)" : "var(--color-text-subtle)"}
+                  strokeDasharray={pl.awaiting ? "3,2" : undefined} />
+                <circle cx={pl.x} cy={pl.y} r={R + 8} fill="transparent" />
+              </g>
+            );
+          })() : (() => {
+            // Circular milestone marker on the line — a button with a hover / click popup
+            const p = m.p;
             const w = weeks[p.weekIndex];
             const key = `p:${p.weekNumber}`;
-            const sel: Selection = { key, point: p, week: w, pinned: false };
-            const active = focusedKey === key || selected?.key === key;
+            const sel: Selection = { kind: "point", key, x: p.x, y: p.y, week: w, pinned: false, point: p };
             return (
-              <g
-                key={key}
-                role="button"
-                tabIndex={0}
-                aria-label={pointLabel(p, w)}
-                aria-haspopup="dialog"
-                aria-expanded={selected?.key === key}
-                data-testid="milestone-point"
-                className="cursor-pointer outline-none"
-                onClick={(e) => open(sel, e.currentTarget)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(sel, e.currentTarget); }
-                }}
-                onPointerEnter={(e) => {
-                  if (e.pointerType !== "mouse") return; // touch: the tap (click) opens it
-                  setSelected((cur) => (cur?.pinned ? cur : sel));
-                }}
-                onPointerLeave={() => setSelected((cur) => (cur && !cur.pinned && cur.key === key ? null : cur))}
-                onFocus={() => setFocusedKey(key)}
-                onBlur={() => setFocusedKey((k) => (k === key ? null : k))}
-              >
-                {active && <circle cx={p.x} cy={p.y} r={R + 4} fill="none" stroke="var(--color-text-normal)" strokeWidth={2} />}
+              <g key={key} {...markerProps(sel, pointLabel(p, w), "milestone-point")}>
+                {(focusedKey === key || selected?.key === key) &&
+                  <circle cx={p.x} cy={p.y} r={R + 4} fill="none" stroke="var(--color-text-normal)" strokeWidth={2} />}
                 <circle cx={p.x} cy={p.y} r={R} fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={2} />
                 {/* Larger invisible hit area for touch */}
                 <circle cx={p.x} cy={p.y} r={R + 8} fill="transparent" />
               </g>
             );
-          })}
+          })())}
         </svg>
       </div>
+
+      {planned.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px]" style={{ color: "var(--color-text-secondary)" }} aria-hidden="true">
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-accent)" }} />{s?.batchGraphAchievedLegend ?? "Milestone achieved"}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2 border-dashed" style={{ borderColor: "var(--color-accent)" }} />{s?.batchGraphStatusSubmitted ?? "Awaiting approval"}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-text-subtle)" }} />{s?.batchGraphPlannedLegend ?? "Planned"}</span>
+        </div>
+      )}
 
       {points.length === 0 && (
         <p className="mt-2 text-xs" style={{ color: "var(--color-text-secondary)" }} data-testid="no-progress">
@@ -353,9 +425,25 @@ function WeeklyActivityGraphContent() {
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphWeekField ?? "Week"}</dt>
             <dd className="font-semibold">{weekLabel(sw)}</dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphMilestoneField ?? "Milestone"}</dt>
-            <dd className="font-semibold">{milestoneOf(selected.point.level)?.label ?? ""}</dd>
+            <dd className="font-semibold">
+              {milestoneOf(selected.kind === "point" ? selected.point.level : selected.planned.level)?.label ?? ""}
+            </dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphStatusField ?? "Status"}</dt>
-            <dd>{statusOf(selected.point)}</dd>
+            <dd>{selected.kind === "point" ? statusOf(selected.point) : plannedStatus(selected.planned)}</dd>
+            {selected.kind === "planned" && (
+              <>
+                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphActivityField ?? "Activity"}</dt>
+                <dd>
+                  <ul className="space-y-0.5">
+                    {selected.planned.activities.map((a) => (
+                      <li key={a.taskId} className="break-words">
+                        {a.title} <span style={{ color: "var(--color-text-subtle)" }}>· {statusLabel[a.status] ?? a.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </>
+            )}
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphProgressField ?? "Week progress"}</dt>
             <dd>{sw.completed ?? 0} of {sw.total ?? 0} {s?.batchGraphTasksApproved ?? "tasks approved"}</dd>
             {sw.revenue != null && (
