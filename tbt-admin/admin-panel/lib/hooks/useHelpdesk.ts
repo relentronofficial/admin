@@ -89,6 +89,8 @@ export interface HelpdeskTicket {
   chatMessageSenderId?: string | null;
   chatMessageSnapshot?: string | null;
   raisedByAdminId?: string | null;
+  /** Set when admin raised this ticket with a resolve-by deadline (shown as countdown). */
+  resolveDeadline?: string | null;
   /** Only populated on the single-ticket detail fetch (adminGetTicketHandler). */
   chatContext?: {
     groupId: string | null;

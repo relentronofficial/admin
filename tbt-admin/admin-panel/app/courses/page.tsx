@@ -3254,7 +3254,8 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
         filename: file.name, contentType: file.type,
         bucket: "resources", pathPrefix: "episode-resources",
       });
-      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const put = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!put.ok) throw new Error(`Upload failed (HTTP ${put.status}) — the file was not stored; please try again`);
       // Auto-pick the type for media uploads so the course page renders them inline
       const mediaType = ["image", "video", "audio"].find(t => file.type.startsWith(`${t}/`));
       setForm((f: any) => ({ ...f, [field]: publicUrl, ...(field === "fileUrl" && mediaType ? { fileType: mediaType } : {}) }));
@@ -3269,6 +3270,10 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     if (!form.fileUrl.trim()) { toast.error("File URL required"); return; }
+    // A pasted local path (file:///C:/...) only opens on this computer — members get a dead link.
+    const isWebUrl = (v: string) => { try { return ["http:", "https:"].includes(new URL(v.trim()).protocol); } catch { return false; } };
+    if (!isWebUrl(form.fileUrl)) { toast.error("File URL must be an https:// link. Use the upload button to upload the file; a local file path can't be opened by members."); return; }
+    if (form.previewUrl?.trim() && !isWebUrl(form.previewUrl)) { toast.error("Preview Image URL must be an https:// link, or left empty."); return; }
     try {
       if (editing) { await updateRes.mutateAsync({ id: editing.id, data: form }); toast.success("Resource updated"); }
       else { await createRes.mutateAsync(form); toast.success("Resource created"); }

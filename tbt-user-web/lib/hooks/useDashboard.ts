@@ -202,6 +202,17 @@ export const useConversationMessages = (id: string | null) =>
     staleTime: 30_000,
   });
 
+export const useMarkConversationRead = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.markConversationRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations", "unread-count"] });
+    },
+  });
+};
+
 export const useStartConversation = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -286,6 +297,84 @@ export const useForwardChatMessage = () => {
       }),
   };
 };
+
+export const useStarChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { conversationId: string; messageId: string }) =>
+      dashboardService.starChatMessage(v.conversationId, v.messageId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["user", "dm-starred"] }),
+  });
+};
+
+export const useDmStarredMessages = () =>
+  useQuery({
+    queryKey: ["user", "dm-starred"],
+    queryFn: async () => {
+      const res: any = await dashboardService.listDmStarredMessages();
+      return (res?.data ?? []) as Array<{
+        id: string;
+        starredAt: string;
+        body: string | null;
+        mediaUrl: string | null;
+        mediaType: string | null;
+        createdAt: string;
+        conversationId: string;
+        senderType: string;
+        sender: { firstName: string | null; lastName: string | null; profilePhotoUrl: string | null };
+        otherPartyName: string;
+      }>;
+    },
+    staleTime: 60_000,
+  });
+
+export const usePinChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { conversationId: string; messageId: string; unpin?: boolean }) =>
+      v.unpin
+        ? dashboardService.unpinChatMessage(v.conversationId, v.messageId)
+        : dashboardService.pinChatMessage(v.conversationId, v.messageId),
+    onSuccess: (_d, v) =>
+      queryClient.invalidateQueries({ queryKey: ["user", "dm-pinned", v.conversationId] }),
+  });
+};
+
+export const useDmPinnedMessage = (conversationId: string) =>
+  useQuery({
+    queryKey: ["user", "dm-pinned", conversationId],
+    queryFn: async () => {
+      const res: any = await dashboardService.getPinnedChatMessage(conversationId);
+      return (res?.data ?? null) as {
+        id: string;
+        body: string | null;
+        mediaUrl: string | null;
+        mediaType: string | null;
+        createdAt: string;
+        pinnedAt: string | null;
+        senderType: string;
+      } | null;
+    },
+    enabled: !!conversationId,
+    staleTime: 30_000,
+  });
+
+export const useDmMessageInfo = (conversationId: string, messageId: string | null) =>
+  useQuery({
+    queryKey: ["user", "dm-msg-info", conversationId, messageId],
+    queryFn: async () => {
+      const res: any = await dashboardService.getDmMessageInfo(conversationId, messageId!);
+      return (res?.data ?? null) as {
+        messageId: string;
+        sentAt: string;
+        readAt: string | null;
+        sentByMe: boolean;
+      } | null;
+    },
+    enabled: !!conversationId && !!messageId,
+    staleTime: 30_000,
+  });
 
 export const useArchiveConversation = () => {
   const queryClient = useQueryClient();

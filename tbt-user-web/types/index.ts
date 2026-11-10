@@ -987,6 +987,8 @@ export interface SupportTicket {
   /** Member-safe subset of the ticket's activity log (see toMemberSafeActivity
    * on the backend) — action + timestamp only, no actor identity. */
   activityLog?: SupportTicketActivity[];
+  /** Resolve-by deadline set by admin when raising this ticket. Shown as a countdown. */
+  resolveDeadline?: string | null;
 }
 
 // ─── Community ────────────────────────────────────────────────────────────────

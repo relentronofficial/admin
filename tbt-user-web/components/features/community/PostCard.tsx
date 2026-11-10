@@ -217,8 +217,11 @@ export function PostCard({
         </div>
       )}
 
-      {/* Media grid */}
-      {media.length > 0 && (
+      {/* Media */}
+      {media.length === 1 && (
+        <SingleMedia url={media[0]} onOpen={() => setViewerIdx(0)} />
+      )}
+      {media.length > 1 && (
         <div className={cn("grid gap-1 rounded-xl overflow-hidden", gridClass)}>
           {media.slice(0, 4).map((url, i) => {
             const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url);
@@ -342,6 +345,66 @@ export function PostCard({
   );
 }
 
+// ── Single-image / single-video renderer ───────────────────────────────────
+// Uses object-contain so the image is never cropped. Multi-image grids keep
+// aspect-square + object-cover (thumbnail UX; lightbox shows the full image).
+
+function SingleMedia({ url, onOpen }: { url: string; onOpen: () => void }) {
+  const [loaded, setLoaded] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const isVideo = /\.(mp4|webm|mov|m4v)(\?|$)/i.test(url);
+
+  if (errored) {
+    return (
+      <div
+        className="w-full h-28 rounded-xl flex items-center justify-center text-xs"
+        style={{
+          background: "var(--color-surface-overlay, #1a1a1a)",
+          color: "var(--color-text-subtle)",
+        }}
+      >
+        Image unavailable
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onOpen}
+      className="relative block w-full rounded-xl overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+      style={{ background: "#0f0f0f", minHeight: loaded ? undefined : 180 }}
+      aria-label="View media"
+    >
+      {/* Skeleton overlays the image — does NOT replace it. Image must always be
+          in the layout flow so the browser can fire onLoad / trigger lazy load. */}
+      {!loaded && (
+        <div
+          className="absolute inset-0 animate-pulse rounded-xl"
+          style={{ background: "var(--color-surface-overlay, #1a1a1a)" }}
+        />
+      )}
+      {isVideo ? (
+        <video
+          src={url}
+          className="relative block w-auto max-w-full h-auto max-h-[600px] mx-auto"
+          muted
+          preload="metadata"
+          onLoadedMetadata={() => setLoaded(true)}
+        />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          className="relative block w-auto max-w-full h-auto max-h-[600px] mx-auto"
+          onLoad={() => setLoaded(true)}
+          onError={() => setErrored(true)}
+        />
+      )}
+    </button>
+  );
+}
+
 // ── Action button ───────────────────────────────────────────────────────────
 
 function ActionBtn({
@@ -363,11 +426,11 @@ function ActionBtn({
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
+      className="flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-2 rounded-lg text-xs font-medium hover:bg-[var(--color-surface-overlay)]"
       style={{ color }}
     >
       <Icon size={16} fill={filled ? (activeColor ?? "currentColor") : "none"} />
-      <span>{label}</span>
+      <span className={/^\d+$/.test(label) ? undefined : "hidden sm:inline"}>{label}</span>
     </button>
   );
 }

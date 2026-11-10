@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
   Instagram, RefreshCw, Unlink,
@@ -14,9 +13,9 @@ import {
 import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
 import { useCourseLifelines, useCourse } from "@/lib/hooks/useCourses";
 import { sumLessonDurations, formatSeconds, formatMinutes } from "@/lib/utils/courseDurations";
-import { useMyBatchProgram } from "@/lib/hooks/useBatchProgram";
+import { useMyBatchProgram, useBuyExtraLifeline, extraLifelineMessage } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
-import { useUserSupportQuota } from "@/lib/hooks/useUser";
+import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
 import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
 import { toast } from "react-hot-toast";
@@ -25,17 +24,6 @@ import SupportCallPanel from "./SupportCallPanel";
 import WeeklyActivityGraph from "@/components/features/batch/WeeklyActivityGraph";
 import type { SupportCallCategory, SupportCallsSummary } from "@/lib/api/services/supportCalls.service";
 import { WinsModal } from "@/components/features/community/WinsModal";
-
-// ─── Animation variants ───────────────────────────────────────────────────────
-
-const container: Variants = {
-  hidden: {},
-  show: { transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
-};
-const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 22 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.42, ease: "easeOut" } },
-};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -113,7 +101,7 @@ function MentorshipHeader({
   const buyLabel = `Buy an extra lifeline${lifelinePriceInr != null ? ` for ₹${lifelinePriceInr}` : ""}`;
 
   return (
-    <motion.div variants={fadeUp} className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
+    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 mb-5">
       <h2 className="flex-1 min-w-0 line-clamp-2 sm:truncate" style={{ fontSize: 22, fontWeight: 600, color: "#f5f5f7", lineHeight: 1.2 }}>
         {programName ?? "Mentorship Program"}
       </h2>
@@ -129,7 +117,7 @@ function MentorshipHeader({
               <span key={i} style={{ fontSize: 12 }}>❤️</span>
             ))}
             {Array.from({ length: totalHearts - filledHearts }).map((_, i) => (
-              <span key={`e-${i}`} style={{ fontSize: 12, opacity: 0.4 }}>🤍</span>
+              <span key={`e-${i}`} style={{ fontSize: 12 }}>🤍</span>
             ))}
             {showBuy && (
               <button
@@ -149,7 +137,7 @@ function MentorshipHeader({
           </span>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -170,9 +158,7 @@ function KpiCard({
 }) {
   const isEmpty = value === "—";
   return (
-    <motion.div
-      variants={fadeUp}
-      className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
+    <div className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
       style={{ background: "#242428", padding: 12, height: 63, cursor: onClick ? "pointer" : undefined }}
       onClick={onClick}
     >
@@ -193,7 +179,7 @@ function KpiCard({
           Tap to add →
         </span>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -464,7 +450,7 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   ) : null;
 
   return (
-    <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+    <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className="flex items-center justify-between mb-4 gap-3">
         <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
         {platform && (
@@ -517,7 +503,7 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
         )}
       </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -753,7 +739,7 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
     : "No revenue saved for this period yet";
 
   return (
-    <motion.div variants={fadeUp} className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
+    <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className="flex flex-wrap items-start justify-between mb-1 gap-3">
         <div>
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Weekly Revenue & Order Trajectory</h2>
@@ -811,7 +797,7 @@ function WeeklyChartSection({ revenue }: { revenue: any }) {
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -901,7 +887,7 @@ function SocialGrowthSection() {
   );
 
   return (
-    <motion.div variants={fadeUp} className="space-y-4">
+    <div className="space-y-4">
       {/* ── Social Growth display card ──────────────────────────────── */}
       <div
         className="rounded-2xl p-4"
@@ -1004,7 +990,7 @@ function SocialGrowthSection() {
         </div>
       </div>
 
-    </motion.div>
+    </div>
   );
 }
 
@@ -1047,7 +1033,7 @@ function NowLearningSection() {
     : null;
 
   return (
-    <motion.div variants={fadeUp}>
+    <div>
 
       {/* ── Task cards row ────────────────────────────────────────────── */}
       {processes.length > 0 && (
@@ -1165,7 +1151,7 @@ function NowLearningSection() {
           </div>
         </>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -1179,6 +1165,19 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: callSummary } = useSupportCallsSummary();
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
+  const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
+  const { data: pricingList } = useCreditPricing();
+  const lifelinePriceInr = (pricingList ?? []).find((p: any) => p.credit_type === "lifeline")
+    ? Number((pricingList ?? []).find((p: any) => p.credit_type === "lifeline")!.price_inr)
+    : null;
+  const handleBuyLifeline = useCallback(async () => {
+    const result = await buyLifeline();
+    const msg = extraLifelineMessage(result);
+    if (!msg) return;
+    if (result.outcome === "success") toast.success(msg.text, { id: "buy-lifeline" });
+    else if (result.outcome === "cancelled") toast(msg.text, { id: "buy-lifeline" });
+    else toast.error(msg.text, { id: "buy-lifeline" });
+  }, [buyLifeline]);
   const [openCall, setOpenCall] = useState<{ category: SupportCallCategory; label: string } | null>(null);
   const [winsOpen, setWinsOpen] = useState(false);
   const closeCallPanel = useCallback(() => setOpenCall(null), []);
@@ -1191,12 +1190,17 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
+  // When no courseId is provided (e.g. /batch-program/mentorship or /profile), fall back to
+  // the most recently watched in-progress course so hearts still reflect a real lifeline balance.
+  const { data: continueLearning } = useContinueLearning();
+  const resolvedCourseId = courseId ??
+    ((continueLearning as any[] | undefined)?.find((i: any) => i.type === "course" && !i.isCompleted)?.id ?? null);
+
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  // Course-scoped lifelines — use the courseId passed from the courses page (primaryCourseId).
-  // This is the same courseId the video player uses, so the counts always match.
-  const { data: courseLifelines } = useCourseLifelines(courseId);
+  // Course-scoped lifelines — same courseId the video player uses, so counts always match.
+  const { data: courseLifelines } = useCourseLifelines(resolvedCourseId);
   const lifelinesTotal: number | null =
     courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
   // Use server-authoritative .remaining (same as video player), not recomputed from parts
@@ -1264,12 +1268,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   }
 
   return (
-    <motion.div
-      className="space-y-6"
-      variants={container}
-      initial="hidden"
-      animate="show"
-    >
+    <div className="space-y-6">
       <MentorshipHeader
         programName={titleOverride ?? programName}
         weeklyReportSubmitted={weeklyReportSubmitted}
@@ -1277,10 +1276,13 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         lifelinesTotal={lifelinesTotal}
         lifelinesUsed={lifelinesUsed}
         programVideos={stats?.programVideos ?? null}
+        onBuyLifeline={handleBuyLifeline}
+        buyingLifeline={buyingLifeline}
+        lifelinePriceInr={lifelinePriceInr}
       />
 
       {/* ── KPI Strip ────────────────────────────────────────────────── */}
-      <motion.div variants={fadeUp} className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard
           label="Daily Time Spent"
           value={`${dailyHrsCount} hrs`}
@@ -1312,10 +1314,10 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           metricColor={leadsGrowthVal != null ? (leadsGrowthVal >= 0 ? "#df72c9" : "#ff313b") : "#df72c9"}
           note={revenue?.leadsPrev != null ? `prev: ${revenue.leadsPrev} leads` : undefined}
         />
-      </motion.div>
+      </div>
 
       {/* ── Expert Support Calls ─────────────────────────────────────── */}
-      <motion.div variants={fadeUp}>
+      <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Expert Support Calls</h2>
           <div className="flex items-center gap-2 flex-wrap">
@@ -1343,10 +1345,10 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         </div>
         {openCall && <SupportCallPanel category={openCall.category} label={openCall.label} onClose={closeCallPanel} />}
         <WinsModal open={winsOpen} onClose={() => setWinsOpen(false)} />
-      </motion.div>
+      </div>
 
       {/* ── Customer Journey ─────────────────────────────────────────── */}
-      <motion.div variants={fadeUp}>
+      <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Customer Journey</h2>
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}>
@@ -1410,14 +1412,14 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
             onClick={() => setWinsOpen(true)}
           />
         </div>
-      </motion.div>
+      </div>
 
       {/* ── D2. Weekly Activity Graph — the member's batch tasks by week, from
               GET /api/user-batch/weekly-graph. Renders nothing for a member
               without a batch. ─────────────────────────────────────────────── */}
-      <motion.div variants={fadeUp}>
+      <div>
         <WeeklyActivityGraph />
-      </motion.div>
+      </div>
 
       {/* ── E. Your Revenue Stats (saved weekly numbers) ───────────────── */}
       <RevenueSummarySection revenue={revenue} />
@@ -1431,7 +1433,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
       {/* ── H. Now Learning ──────────────────────────────────────────────── */}
       <NowLearningSection />
       {showBackLink && (
-        <motion.div variants={fadeUp}>
+        <div>
           <Link
             href="/batch-program"
             className="inline-flex items-center gap-2 text-sm font-medium hover:opacity-80 transition-opacity"
@@ -1440,8 +1442,8 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
             <ChevronRight className="w-4 h-4 rotate-180" />
             Back to Batch Program
           </Link>
-        </motion.div>
+        </div>
       )}
-    </motion.div>
+    </div>
   );
 }

@@ -40,11 +40,10 @@ export const LIFELINE_ORDERS_DDL: readonly string[] = [
 function buildDatasourceUrl(raw: string): string {
   try {
     const url = new URL(raw);
-    // 40 connections: sized for 230-VU concurrent load on a single Cloud Run instance.
-    // DATABASE_URL points to Supabase PgBouncer (transaction mode, port 6543), so Prisma
-    // connections are multiplexed — it's safe to hold more than direct Postgres allows.
-    // Formula: peak_concurrent_db_requests ≈ 60 (after caching) / avg_hold_time_ms * 1000 ≈ 30–40.
-    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '40');
+    // 20 connections: Cloud SQL via Unix socket (direct, not PgBouncer).
+    // Each connection is persistent. Safety ceiling: 5 instances × 20 = 100,
+    // well within Cloud SQL max_connections ≈ 187 for db-custom-2-7680 (7.5 GB RAM).
+    if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '20');
     if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '15');
     return url.toString();
   } catch {
@@ -1154,6 +1153,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
           ADD COLUMN IF NOT EXISTS is_mentor BOOLEAN NOT NULL DEFAULT false,
           ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT true
       `),
+      // Moderation audit trail (2026-11): stored as raw SQL to avoid a
+      // Prisma migration file. All three columns are nullable.
+      prisma.$executeRawUnsafe(`
+        ALTER TABLE community_posts
+          ADD COLUMN IF NOT EXISTS rejection_reason TEXT,
+          ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(255)
+      `),
       // ── Morning Ritual (2026-07-20, Module 8B) ─────────────────────
       // Ported from co-worker's FULL_MIGRATION.sql lines 305-342.
       // No member FK — habits are global; each member's daily yes/no
@@ -1296,14 +1303,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `),
       // Per-member starred messages ("bookmarks"). Composite PK — one star
       // per (member, message) pair.
+      // NOTE: CREATE INDEX runs sequentially AFTER the parallel block (see below)
+      // to avoid the Promise.all race condition where the INDEX fires before the
+      // TABLE exists (same pattern as course_sections lines 1587-1603).
       prisma.$executeRawUnsafe(`
         CREATE TABLE IF NOT EXISTS chat_group_starred_messages (
           member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
           message_id UUID NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
           starred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           PRIMARY KEY (member_id, message_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC);
+        )
       `),
       // Sprint 3 (2026-08-19) — Link preview card stored alongside the message.
       prisma.$executeRawUnsafe(`
@@ -1575,6 +1584,12 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     ]).catch((err) => {
       fastify.log.warn('⚠️ Some startup SQL statements failed (non-fatal):', err);
     });
+
+    // ── chat_group_starred_messages index — must run SEQUENTIALLY after the
+    // parallel block so the TABLE exists before the INDEX is created.
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC)`
+    ).catch(() => {});
 
     // lesson_feedback.liked — must run after the parallel block because the
     // CREATE TABLE and ALTER TABLE ran in parallel, creating a race condition
@@ -3003,6 +3018,60 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_token_expires_at TIMESTAMPTZ`);
     await safeAlter(`ALTER TABLE members ADD COLUMN IF NOT EXISTS instagram_synced_at TIMESTAMPTZ`);
     await safeAlter(`ALTER TABLE member_social_reports ADD COLUMN IF NOT EXISTS instagram_auto_sync BOOLEAN NOT NULL DEFAULT false`);
+
+    // ── DM Star + Pin (WHATSAPP_MSG_ACTIONS_SPECKIT.md 2026-11-03) ───────────
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS direct_message_stars (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        member_id  UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        message_id UUID NOT NULL,
+        starred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (member_id, message_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_dm_stars_member ON direct_message_stars(member_id, starred_at DESC)`
+    ).catch(() => {});
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS is_pinned          BOOLEAN NOT NULL DEFAULT false`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_at          TIMESTAMPTZ`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by          UUID REFERENCES members(id) ON DELETE SET NULL`);
+    await safeAlter(`ALTER TABLE direct_messages ADD COLUMN IF NOT EXISTS pinned_by_admin_id UUID REFERENCES admins(id)  ON DELETE SET NULL`);
+
+    // Admin-side personal starred messages (separate from member direct_message_stars)
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS dm_admin_stars (
+        id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admin_id   UUID NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+        message_id UUID NOT NULL,
+        starred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (admin_id, message_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_dm_admin_stars ON dm_admin_stars(admin_id, starred_at DESC)`
+    ).catch(() => {});
+
+    // ── DM + Conversation performance indexes (P1 — 2026-11-05) ─────────────
+    // Prisma does not auto-create FK indexes in Postgres. Without these,
+    // every getAdminConversationMessages call does a full direct_messages
+    // scan and every conversation list does a full conversations scan.
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_direct_messages_conv_created
+       ON direct_messages(conversation_id, created_at ASC)
+       WHERE conversation_id IS NOT NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_direct_messages_member_created
+       ON direct_messages(member_id, created_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_conversations_member_last_msg
+       ON conversations(member_id, last_message_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at
+       ON conversations(last_message_at DESC)`
+    ).catch(() => {});
 
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});

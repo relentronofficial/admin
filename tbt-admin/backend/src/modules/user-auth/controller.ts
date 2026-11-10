@@ -4,7 +4,8 @@ import { generateOtp, storeOtp, verifyAndConsumeOtp, checkOtpRateLimit } from '.
 import { sendOtpWhatsapp, sendOtpWhatsappDiagnostic } from '../../lib/whatsapp.js';
 import { sendOtp as sendOtpSms } from '../../lib/msg91.js';
 import { sendOtpEmail } from '../../lib/otpEmail.js';
-import { normalizePhone, phoneLookupVariants } from '../../lib/phoneNumber.js';
+import { normalizePhone, phoneLookupVariants, phoneKey } from '../../lib/phoneNumber.js';
+import { checkRateLimit } from '../../lib/rateLimit.js';
 import { decideRegistration, normalizeEmail, type ExistingAccount } from '../../lib/registrationLogic.js';
 import { deletePendingRegistration, findPendingRegistration, savePendingRegistration } from '../../lib/pendingRegistrations.js';
 
@@ -240,6 +241,18 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
 
   if (!phone) return reply.status(400).send({ success: false, data: null, error: 'Phone is required' });
 
+  // Brute-force protection: 10 login attempts per phone per 15 minutes.
+  // Checked before the DB query so attackers can't probe account existence by
+  // counting attempts needed to trigger 429 (enumeration via timing).
+  const rl = await checkRateLimit(getRedis(fastify), `login:${phoneKey(phone)}`, 10, 900);
+  if (!rl.ok) {
+    fastify.log.warn({ phone }, 'Login rate limit exceeded');
+    return reply
+      .status(429)
+      .header('Retry-After', String(rl.retryAfterSeconds))
+      .send({ success: false, data: null, error: 'Too many login attempts. Please try again later.', retryAfterSeconds: rl.retryAfterSeconds });
+  }
+
   const member = await fastify.prisma.member.findFirst({
     where: activeMemberByPhone(phone),
     select: { id: true, phone: true, passwordHash: true, status: true, deletedAt: true } as any,
@@ -253,7 +266,8 @@ export async function login(fastify: FastifyInstance, request: any, reply: any) 
     if (pending && password && (await bcrypt.compare(password, pending.payload.passwordHash))) {
       return sendPendingRegistrationOtp(fastify, reply, pending.phoneE164, pending.email);
     }
-    return reply.status(404).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
+    // Return 401 (not 404) to avoid revealing whether the phone is registered.
+    return reply.status(401).send({ success: false, data: null, error: 'Invalid phone or password' });
   }
 
   const m = member as any;
@@ -537,8 +551,13 @@ export async function forgotPassword(fastify: FastifyInstance, request: any, rep
     select: { id: true, phone: true, status: true } as any,
   });
 
+  // Return a generic 200 when no account matches — prevents phone enumeration.
+  // The client sees the same "check your phone for an OTP" UX regardless.
   if (!member) {
-    return reply.status(404).send({ success: false, data: null, error: 'Account not found. Please contact admin.' });
+    const check = normalizePhone(phone);
+    const displayPhone = check.ok ? check.e164 : phone.trim();
+    fastify.log.info({ phone: displayPhone }, 'Forgot password: account not found (silent)');
+    return reply.send({ success: true, data: { step: 'reset_password', phone: displayPhone } });
   }
 
   const m = member as any;

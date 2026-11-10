@@ -7,6 +7,7 @@ export const psychometricKeys = {
   settings: ["psychometric", "settings"] as const,
   result: ["psychometric", "result"] as const,
   retest: ["psychometric", "retest"] as const,
+  answers: ["psychometric", "answers"] as const,
 };
 
 export const usePsychometricSettings = () =>
@@ -25,6 +26,20 @@ export const usePsychometricResult = () =>
         return await psychometricService.result();
       } catch (e) {
         if ((e as Error).message === "No result found.") return null;
+        throw e;
+      }
+    },
+  });
+
+/** The member's latest submitted attempt with their saved answers, or null before they have submitted (404). */
+export const usePsychometricAnswers = () =>
+  useQuery({
+    queryKey: psychometricKeys.answers,
+    queryFn: async () => {
+      try {
+        return (await psychometricService.answers()).data;
+      } catch (e) {
+        if ((e as Error).message === "No submitted assessment found.") return null;
         throw e;
       }
     },

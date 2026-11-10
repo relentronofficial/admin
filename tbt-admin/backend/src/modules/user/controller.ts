@@ -5174,7 +5174,7 @@ export async function startEpisodeTimerHandler(request: FastifyRequest, reply: F
      ON CONFLICT (member_id, episode_id) DO UPDATE SET
        status = 'ACTIVE', duration_seconds = $3, started_at = $4,
        expires_at = $5, completed_at = NULL, last_heartbeat_at = $4
-     WHERE lesson_timer_sessions.status != 'COMPLETED'`,
+     WHERE lesson_timer_sessions.status NOT IN ('COMPLETED', 'EXPIRED')`,
     memberId, episodeId, durationSeconds, now, expiresAt,
   );
   return reply.send({ success: true, data: { expiresAt, remainingSeconds: durationSeconds, status: 'ACTIVE' }, error: null });
@@ -5594,25 +5594,36 @@ export async function getConversationUnreadCountHandler(request: FastifyRequest,
 export async function listMemberConversationsHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
 
-  const conversations = await request.server.prisma.conversation.findMany({
-    where: { memberId, memberHidden: false },
-    orderBy: { lastMessageAt: 'desc' },
-    include: {
-      messages: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-        select: { body: true, senderType: true, createdAt: true },
-      },
-    },
-  });
+  // Single query with LATERAL JOIN to avoid N+1 (one subquery per conversation for last message).
+  const rows = await request.server.prisma.$queryRawUnsafe<Array<{
+    id: string; subject: string | null; status: string;
+    member_unread_count: number; last_message_at: Date | null;
+    lm_body: string | null; lm_sender_type: string | null; lm_created_at: Date | null;
+  }>>(
+    `SELECT c.id, c.subject, c.status, c.member_unread_count, c.last_message_at,
+            lm.body AS lm_body, lm.sender_type AS lm_sender_type, lm.created_at AS lm_created_at
+       FROM conversations c
+       LEFT JOIN LATERAL (
+         SELECT body, sender_type, created_at
+           FROM direct_messages
+          WHERE conversation_id = c.id
+          ORDER BY created_at DESC
+          LIMIT 1
+       ) lm ON true
+      WHERE c.member_id = $1::uuid AND c.member_hidden = false
+      ORDER BY c.last_message_at DESC`,
+    memberId,
+  );
 
-  return ok(reply, conversations.map((c) => ({
+  return ok(reply, rows.map((c) => ({
     id:                c.id,
     subject:           c.subject,
     status:            c.status,
-    memberUnreadCount: c.memberUnreadCount,
-    lastMessageAt:     c.lastMessageAt,
-    lastMessage:       c.messages[0] ?? null,
+    memberUnreadCount: Number(c.member_unread_count),
+    lastMessageAt:     c.last_message_at,
+    lastMessage:       c.lm_body != null || c.lm_sender_type != null
+      ? { body: c.lm_body, senderType: c.lm_sender_type, createdAt: c.lm_created_at }
+      : null,
   })));
 }
 
@@ -5626,6 +5637,16 @@ export async function archiveConversationHandler(request: FastifyRequest, reply:
   return ok(reply, { id, hidden });
 }
 
+export async function markConversationReadHandler(request: FastifyRequest, reply: FastifyReply) {
+  const memberId = request.memberId!;
+  const { id } = request.params as { id: string };
+  const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
+  if (!convo) return fail(reply, 404, 'Conversation not found');
+  void request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
+  void invalidateCache(request.server.redis ?? null, `conv:unread:${memberId}`);
+  return ok(reply, { ok: true });
+}
+
 export async function getMemberConversationMessagesHandler(request: FastifyRequest, reply: FastifyReply) {
   const memberId = request.memberId!;
   const { id } = request.params as { id: string };
@@ -5633,8 +5654,6 @@ export async function getMemberConversationMessagesHandler(request: FastifyReque
 
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
-
-  await request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
 
   // Messages the member deleted "for me" are hidden from them (the TBT team still sees them).
   const visibleWhere = { conversationId: id, NOT: { AND: [{ deletedAt: { not: null } }, { deletedForEveryone: false }] } };
@@ -5888,17 +5907,6 @@ export async function avatarPresignHandler(request: FastifyRequest, reply: Fasti
 
   const key = `members/photos/${Date.now()}-${filename}`;
 
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('avatars').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/avatars/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
-
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -5925,17 +5933,6 @@ export async function assignmentImagePresignHandler(request: FastifyRequest, rep
 
   const key = `assignment-submissions/${Date.now()}-${filename}`;
 
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('workshops').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/workshops/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
-
   const s3 = new S3Client({
     region: 'auto',
     endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -5954,17 +5951,6 @@ export async function assignmentFilePresignHandler(request: FastifyRequest, repl
 
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `assignment-files/${Date.now()}-${safeFilename}`;
-
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage.from('workshops').createSignedUploadUrl(key);
-      if (error) throw error;
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/workshops/${key}`;
-      return ok(reply, { uploadUrl: data.signedUrl, publicUrl });
-    } catch (err: any) {
-      return fail(reply, 500, err.message || 'Failed to generate upload URL');
-    }
-  }
 
   const s3 = new S3Client({
     region: 'auto',

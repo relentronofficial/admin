@@ -1,74 +1,51 @@
-name: Deploy to production (one click)
+name: Force redeploy to production (one click)
 
-# Actions → "Deploy to production (one click)" → Run workflow → type "deploy".
+# Actions → "Force redeploy to production (one click)" → Run workflow → type "deploy".
 #
-# Promotes main to production and deploys it, replacing the manual
-# `git push origin main:production`:
-#   1. checks production can fast-forward to main (never rewrites production),
-#   2. moves the production branch to main,
-#   3. starts the CI/CD workflow on production, which runs every build/test gate
-#      and then deploys backend + user-web to the production Cloud Run services.
+# Forces production to redeploy the current main branch even if no code
+# changed since the last push. Useful after a Cloud Run config change,
+# a secret rotation, or a rollback recovery.
 #
-# The branch push uses GITHUB_TOKEN, which GitHub deliberately does not let start
-# push-triggered workflows — step 3 starts CI/CD explicitly, so production is
-# deployed exactly once.
+# Production deploys automatically on every push to main (via ci-cd.yml).
+# Use this only when you need a manual re-trigger without a code change.
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "deploy" to promote main to production'
+        description: 'Type "deploy" to force redeploy main to production'
         required: true
 
 permissions:
-  contents: write # move the production branch
-  actions: write # start the CI/CD workflow
+  actions: write
 
-# One promotion at a time; a second click waits instead of racing the first.
+# One redeploy at a time.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
-  promote:
+  redeploy:
     if: github.event.inputs.confirm == 'deploy'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Check production can fast-forward to main
-        run: |
-          git fetch origin production main
-          if ! git merge-base --is-ancestor origin/production origin/main; then
-            echo "::error::production has commits that are not on main. Merge them into main first — this workflow never rewrites production."
-            git log --oneline origin/main..origin/production
-            exit 1
-          fi
-
-      - name: Summarise what will be deployed
+      - name: Summarise what will be redeployed
         run: |
           {
-            echo "## Promoting main → production"
+            echo "## Force redeploying main to production"
             echo
-            echo "main: \`$(git rev-parse --short origin/main)\` · production before: \`$(git rev-parse --short origin/production)\`"
-            echo
-            if [ "$(git rev-parse origin/production)" = "$(git rev-parse origin/main)" ]; then
-              echo "production already matches main — redeploying the current code."
-            else
-              echo "### Commits going live"
-              git log --oneline --no-merges origin/production..origin/main | sed 's/^/- /'
-            fi
+            echo "Commit: \`$(git rev-parse --short HEAD)\`"
+            echo "Triggered by: @${{ github.actor }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Move production to main
-        run: git push origin "$(git rev-parse origin/main):refs/heads/production"
-
-      - name: Start the production deploy
+      - name: Trigger CI/CD on main (workflow_dispatch forces all services)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh workflow run ci-cd.yml --ref production
-          echo "Started CI/CD on production — follow it under Actions → CI/CD." >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run ci-cd.yml --ref main
+          echo "Started CI/CD on main — follow it under Actions → CI/CD." >> "$GITHUB_STEP_SUMMARY"

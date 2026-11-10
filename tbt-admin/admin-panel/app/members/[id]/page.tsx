@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MemberDailyActivity } from "@/components/members/MemberDailyActivity";
+import { MemberActivityLog } from "@/components/members/MemberActivityLog";
 import { useGetMember } from "@/lib/hooks/useMembers";
 import {
   useMemberProgress, useListMemberBadges, useListAllBadges,
@@ -672,8 +673,14 @@ export default function MemberDetailPage() {
           </div>
         )}
 
-        {/* ── ACTIVITY TAB — Daily Time Spent ── */}
-        {activeTab === "Activity" && <MemberDailyActivity memberId={id} />}
+        {/* ── ACTIVITY TAB — Daily Time Spent + Points Log ── */}
+        {activeTab === "Activity" && (
+          <div className="space-y-8">
+            <MemberDailyActivity memberId={id} />
+            <div className="border-t border-[#2a2a2a]" />
+            <MemberActivityLog memberId={id} />
+          </div>
+        )}
 
         {/* ── SUPPORT USAGE TAB ── */}
         {activeTab === "Support Usage" && (

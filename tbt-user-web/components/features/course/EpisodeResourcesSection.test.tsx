@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect } from "vitest";
-import { EpisodeResourcesSection, getResourceKind } from "./EpisodeResourcesSection";
+import { EpisodeResourcesSection, getResourceKind, isDownloadableUrl } from "./EpisodeResourcesSection";
 
 const res = (id: string, fileType: string, fileUrl: string | null, title = `Res ${id}`) => ({
   id, title, fileType, fileUrl, description: null, downloadLabel: null, fileTypeIconUrl: null,
@@ -57,5 +57,29 @@ describe("EpisodeResourcesSection", () => {
   it("skips resources with no file URL and hides the section if none remain", () => {
     const { container } = renderSection([res("1", "image", null)]);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("shows a resource saved with a local file:// path as unavailable, not as a dead download link", () => {
+    renderSection([res("1", "pdf", "file:///C:/Users/DELL/Downloads/Invoice-AMWAPMNM-0001.pdf", "Invoice")]);
+    expect(screen.getByText("Resources (1)")).toBeTruthy();
+    expect(screen.getByText("Invoice")).toBeTruthy();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.getByTestId("episode-resource-unavailable").textContent).toBe("File unavailable");
+  });
+
+  it("keeps valid resources downloadable next to an invalid one", () => {
+    renderSection([res("1", "pdf", "file:///C:/x.pdf"), res("2", "pdf", "https://cdn/c.pdf")]);
+    const links = screen.getAllByRole("link", { name: /Download/ });
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe("https://cdn/c.pdf");
+  });
+});
+
+describe("isDownloadableUrl", () => {
+  it("accepts http(s) and rejects local paths", () => {
+    expect(isDownloadableUrl("https://cdn/a.pdf")).toBe(true);
+    expect(isDownloadableUrl("file:///C:/a.pdf")).toBe(false);
+    expect(isDownloadableUrl("C:\\a.pdf")).toBe(false);
+    expect(isDownloadableUrl(null)).toBe(false);
   });
 });

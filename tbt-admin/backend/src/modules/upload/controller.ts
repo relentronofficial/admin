@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createHash } from 'crypto';
 import { env } from '../../config/env.js';
 import { deleteBunnyVideo } from '../../lib/bunny.js';
+import { cdnObjectUrl } from '../../lib/resourceUrl.js';
 import sharp from 'sharp';
 
 // Image MIME types that will be converted to WebP before storage
@@ -14,10 +15,10 @@ const CONVERTIBLE_IMAGE_TYPES = new Set([
 
 // BUNNY_CDN_URL is usually a bare hostname, but may carry a scheme or a
 // trailing slash — build public URLs without producing "https://https://…".
+// Path segments are percent-encoded so a filename with spaces, # or ? still
+// resolves to the stored object.
 function cdnPublicUrl(key: string): string {
-  const base = (env.BUNNY_CDN_URL ?? '').trim();
-  const origin = (base.startsWith('http') ? base : `https://${base}`).replace(/\/+$/, '');
-  return `${origin}/${key}`;
+  return cdnObjectUrl(env.BUNNY_CDN_URL, key);
 }
 
 export async function uploadImageHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -130,41 +131,7 @@ export async function getPresignedUrlHandler(request: FastifyRequest, reply: Fas
   const targetPrefix = pathPrefix || 'admins/photos';
   const key = `${targetPrefix}/${Date.now()}-${filename}`;
 
-  // Supabase Storage fallback when R2 is not configured
-  if (!env.CLOUDFLARE_R2_ACCESS_KEY_ID || !env.CLOUDFLARE_R2_SECRET_ACCESS_KEY) {
-    try {
-      const { data, error } = await (request.server as any).supabase.storage
-        .from(targetBucket)
-        .createSignedUploadUrl(key);
-
-      if (error) {
-        if (error.message.includes('not found') || error.message.includes('does not exist')) {
-          const isPublic = targetBucket !== 'kyc-documents';
-          await (request.server as any).supabase.storage.createBucket(targetBucket, { public: isPublic });
-          const { data: retryData, error: retryError } = await (request.server as any).supabase.storage
-            .from(targetBucket)
-            .createSignedUploadUrl(key);
-
-          if (retryError) throw retryError;
-
-          const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/${targetBucket}/${key}`;
-          return reply.send({ success: true, data: { uploadUrl: retryData.signedUrl, publicUrl } });
-        }
-        throw error;
-      }
-
-      const publicUrl = `${env.SUPABASE_URL}/storage/v1/object/public/${targetBucket}/${key}`;
-      return reply.send({ success: true, data: { uploadUrl: data.signedUrl, publicUrl } });
-    } catch (err: any) {
-      request.server.log.error(err);
-      return reply.status(500).send({
-        success: false,
-        error: { code: 'UPLOAD_ERROR', message: err.message || 'Failed to generate upload URL' },
-      });
-    }
-  }
-
-  // Primary path: Cloudflare R2 presigned PUT, delivered via Bunny CDN
+  // Cloudflare R2 presigned PUT, delivered via Bunny CDN
   const command = new PutObjectCommand({
     Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
     Key: key,

@@ -224,7 +224,7 @@ describe('pending registrations', () => {
     expect(l.body.data).toMatchObject({ step: 'otp_required', phone: '+6591234567' });
     expect(sent.filter((s) => s.phone === '+6591234567')).toHaveLength(1); // OTP not resent within the cooldown
     const wrongPw = await call(auth.login, { phone: '+6591234567', password: 'nope' });
-    expect(wrongPw.status).toBe(404);
+    expect(wrongPw.status).toBe(401);
   });
 
   it('resend works for a pending sign-up and respects the cooldown', async () => {
@@ -262,11 +262,11 @@ describe('login when the phone also belongs to a soft-deleted account', () => {
     expect(v.body.data.id).toBe('live');
   });
 
-  it('a phone whose only account is deleted still gets "Account not found" (same message)', async () => {
+  it('a phone whose only account is deleted returns 401 (no enumeration)', async () => {
     members.push(await deletedRow());
     const l = await call(auth.login, { phone: '9876543210', password: 'oldpass1' });
-    expect(l.status).toBe(404);
-    expect(l.body.error).toBe('Account not found. Please contact admin.');
+    expect(l.status).toBe(401);
+    expect(l.body.error).toBe('Invalid phone or password');
   });
 
   it('re-registering after the old account was deleted: signup → OTP → login works, one live account', async () => {
@@ -536,5 +536,61 @@ describe('signup OTP on WhatsApp and email', () => {
     expect(f.status).toBe(200);
     expect(sent).toHaveLength(2);
     expect(emails).toHaveLength(0);
+  });
+});
+
+describe('login brute-force protection (DEF-002)', () => {
+  const bcryptHash = async (pw: string) => (await import('bcrypt')).default.hash(pw, 4);
+
+  it('returns 429 after 10 failed login attempts on the same phone, with Retry-After header', async () => {
+    members.push({ id: 'rl', memberId: 'TBT-99', firstName: 'RL', lastName: null, email: 'rl@x.com',
+      phone: '+919000000099', passwordHash: await bcryptHash('correct'), status: 'active',
+      verificationStatus: 'verified', onboardingSubmittedAt: new Date(), deletedAt: null });
+    let last: any;
+    // Exhaust the 10-attempt window
+    for (let i = 0; i < 10; i++) {
+      last = await call(auth.login, { phone: '+919000000099', password: 'wrong' });
+      expect(last.status, `attempt ${i + 1}`).toBe(401);
+    }
+    // 11th attempt must be rate-limited regardless of password
+    const limited = await call(auth.login, { phone: '+919000000099', password: 'correct' });
+    expect(limited.status).toBe(429);
+    expect(limited.body.error).toMatch(/too many login attempts/i);
+    expect(limited.body.retryAfterSeconds).toBeGreaterThan(0);
+  });
+
+  it('rate limit is keyed per phone: different phones are independent', async () => {
+    for (let i = 0; i < 10; i++) await call(auth.login, { phone: '+919000000001', password: 'x' });
+    const other = await call(auth.login, { phone: '+919000000002', password: 'x' });
+    expect(other.status).toBe(401); // not 429 — different key
+  });
+});
+
+describe('login user enumeration prevention (DEF-003)', () => {
+  it('a non-existent phone returns 401 not 404 (no account existence disclosure)', async () => {
+    const r = await call(auth.login, { phone: '+919000000000', password: 'anypassword' });
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe('Invalid phone or password');
+    expect(r.body.error).not.toMatch(/not found/i);
+  });
+
+  it('a non-existent phone and a wrong-password phone both return the same 401', async () => {
+    const bcrypt = await import('bcrypt');
+    members.push({ id: 'x', memberId: 'TBT-77', firstName: 'X', lastName: null, email: 'x@x.com',
+      phone: '+919111111111', passwordHash: await bcrypt.default.hash('realpass', 4), status: 'active',
+      verificationStatus: 'verified', onboardingSubmittedAt: new Date(), deletedAt: null });
+    const noAccount = await call(auth.login, { phone: '+919000000099', password: 'anypassword' });
+    const wrongPw = await call(auth.login, { phone: '+919111111111', password: 'wrongpassword' });
+    expect(noAccount.status).toBe(401);
+    expect(wrongPw.status).toBe(401);
+    expect(noAccount.body.error).toBe(wrongPw.body.error);
+  });
+
+  it('forgot-password on a non-existent phone returns 200 silently (no enumeration)', async () => {
+    const r = await call(auth.forgotPassword, { phone: '+919000000000' });
+    expect(r.status).toBe(200);
+    expect(r.body.success).toBe(true);
+    expect(r.body.data.step).toBe('reset_password');
+    expect(sent).toHaveLength(0); // no OTP sent for non-existent phone
   });
 });

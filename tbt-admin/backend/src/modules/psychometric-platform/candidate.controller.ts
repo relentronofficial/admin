@@ -9,6 +9,7 @@ import {
   type AttemptQuestion,
   type SubmittedAnswer,
 } from '../../lib/psychometric/assessmentRules.js';
+import { buildAnswerReview } from '../../lib/psychometric/answerReview.js';
 import { candidateRef } from '../../lib/psychometric/candidateRef.js';
 import { calculateResult, computeQuestionMaxes, type ScoringOption } from '../../lib/psychometric/scoring.js';
 import { resultOut, retestOut } from '../../lib/psychometric/rows.js';
@@ -316,6 +317,37 @@ export async function getResult(req: Req, reply: FastifyReply) {
     attemptNumber: r.attempt_number || 1,
     history: history.map((h) => ({ _id: h.id, attemptNumber: h.attempt_number, percentage: h.percentage, level: h.level, totalMarks: h.total_marks, maxScore: h.max_score, createdAt: h.created_at })),
     retest: await retestState(d, cand),
+  });
+}
+
+/**
+ * GET /answers — read-only review of the member's latest submitted attempt:
+ * that attempt's questions (frozen at start), their options and time limits,
+ * and the member's saved answers. 404 until the member has submitted.
+ */
+export async function getMyAnswers(req: Req, reply: FastifyReply) {
+  const d = db(req);
+  const cand = await findCandidate(d, req.memberId!);
+  const [r] = cand ? await rows(d, `SELECT session_id, attempt_number FROM psy_results WHERE candidate_id = $1 ORDER BY created_at DESC LIMIT 1`, cand.id) : [];
+  const [session] = r?.session_id ? await rows(d, `SELECT * FROM psy_sessions WHERE id = $1 AND candidate_id = $2`, r.session_id, cand.id) : [];
+  if (!session) return fail(reply, 404, 'No submitted assessment found.');
+  const ids: string[] = session.question_ids ?? [];
+  const [types, qRows, oRows, aRows] = await Promise.all([
+    rows(d, `SELECT id, name, icon, color FROM psy_question_types ORDER BY sort_order`),
+    rows(d, `SELECT id, type_id, text, sort_order, question_type, language, time_limit_seconds, instruction_text, image_url FROM psy_questions WHERE id = ANY($1::text[])`, ids),
+    rows(d, `SELECT id, question_id, option_text, option_image_url, sort_order FROM psy_answer_options WHERE question_id = ANY($1::text[])`, ids),
+    rows(d, `SELECT question_id, answer_option_id, selected_option_ids, ranking_order, status, time_taken_seconds FROM psy_answers WHERE session_id = $1`, session.id),
+  ]);
+  return reply.send({
+    success: true,
+    data: {
+      attemptNumber: r.attempt_number || session.attempt_number || 1,
+      startedAt: session.started_at,
+      submittedAt: session.submitted_at,
+      autoSubmitted: !!session.auto_submitted,
+      durationMinutes: session.duration_minutes ?? null,
+      sections: buildAnswerReview(types, qRows, oRows, aRows, ids),
+    },
   });
 }
 

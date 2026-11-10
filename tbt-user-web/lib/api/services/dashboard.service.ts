@@ -72,6 +72,9 @@ export const dashboardService = {
   ) =>
     apiClient.post(`/api/user/conversations/${id}/messages`, { body, ...(extras ?? {}) }),
 
+  markConversationRead: (id: string) =>
+    apiClient.post(`/api/user/conversations/${id}/read`, {}),
+
   archiveConversation: (id: string, hidden: boolean) =>
     apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),
 
@@ -86,6 +89,24 @@ export const dashboardService = {
 
   forwardChatMessage: (id: string, messageId: string, toConversationIds: string[], toGroupIds: string[] = []) =>
     apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/forward`, { toConversationIds, toGroupIds }),
+
+  starChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.post(`/api/user/conversations/${conversationId}/messages/${messageId}/star`),
+
+  listDmStarredMessages: () =>
+    apiClient.get(`/api/user/messages/starred`),
+
+  pinChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.post(`/api/user/conversations/${conversationId}/messages/${messageId}/pin`),
+
+  unpinChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.delete(`/api/user/conversations/${conversationId}/messages/${messageId}/pin`),
+
+  getPinnedChatMessage: (conversationId: string) =>
+    apiClient.get(`/api/user/conversations/${conversationId}/pinned`),
+
+  getDmMessageInfo: (conversationId: string, messageId: string) =>
+    apiClient.get(`/api/user/conversations/${conversationId}/messages/${messageId}/info`),
 
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),

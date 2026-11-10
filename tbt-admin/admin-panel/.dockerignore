@@ -1,0 +1,14 @@
+node_modules
+.next
+.env
+.env.*
+*.log
+test/
+tests/
+coverage/
+public/uploads/
+*.md
+.git
+.gitignore
+.eslintcache
+tsconfig.tsbuildinfo

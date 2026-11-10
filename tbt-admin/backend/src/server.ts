@@ -11,7 +11,6 @@ import redisPlugin from './plugins/redis.js';
 import clerkPlugin from './plugins/clerk.js';
 import jwtPlugin from './plugins/jwt.js';
 import socketPlugin from './plugins/socket.js';
-import supabasePlugin from './plugins/supabase.js';
 
 // Routes
 import { authRoutes } from './modules/auth/routes.js';
@@ -111,7 +110,6 @@ async function bootstrap() {
     await fastify.register(redisPlugin);
     await fastify.register(clerkPlugin);
     await fastify.register(jwtPlugin);
-    await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
 
     // ── WhatsApp low-balance alert wiring ──────────────────────────

@@ -10,6 +10,7 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListCommunityPosts,
   useApproveCommunityPost,
+  useRejectCommunityPost,
   usePinCommunityPost,
   useDeleteCommunityPost,
   useListPostComments,
@@ -31,6 +32,7 @@ import {
   Heart,
   Clock,
   Flag,
+  Ban,
 } from "lucide-react";
 
 type Tab = "all" | "pending" | "approved" | "reports";
@@ -161,9 +163,12 @@ export default function CommunityPage() {
 
 function PostCard({ post }: { post: CommunityPost }) {
   const approve = useApproveCommunityPost();
+  const reject = useRejectCommunityPost();
   const pin = usePinCommunityPost();
   const del = useDeleteCommunityPost();
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const memberName = post.member
     ? [post.member.firstName, post.member.lastName]
@@ -181,6 +186,16 @@ function PostCard({ post }: { post: CommunityPost }) {
     try {
       await approve.mutateAsync({ id: post.id, isApproved });
       toast.success(isApproved ? "Approved" : "Un-approved");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error?.message ?? "Failed");
+    }
+  };
+  const doReject = async () => {
+    try {
+      await reject.mutateAsync({ id: post.id, reason: rejectReason.trim() });
+      toast.success("Post rejected");
+      setRejectOpen(false);
+      setRejectReason("");
     } catch (err: any) {
       toast.error(err?.response?.data?.error?.message ?? "Failed");
     }
@@ -279,20 +294,62 @@ function PostCard({ post }: { post: CommunityPost }) {
             </button>
           </div>
 
+          {/* Reject reason panel */}
+          {rejectOpen && (
+            <div className="mt-3 bg-[#0f0f0f] border border-[#dc2626]/30 rounded-lg p-3 space-y-2">
+              <p className="text-[11px] text-[#dc2626] font-bold uppercase tracking-widest font-rajdhani">
+                Reject Post
+              </p>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="Optional reason (shown to member)..."
+                maxLength={500}
+                rows={2}
+                className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg p-2 text-[13px] text-white placeholder-[#555] outline-none focus:border-[#dc2626] resize-none"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={doReject}
+                  disabled={reject.isPending}
+                  className="text-[11px] px-3 py-1.5 rounded bg-[#dc2626]/15 text-[#dc2626] hover:bg-[#dc2626]/25 font-bold uppercase tracking-widest font-rajdhani disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  <Ban size={12} /> Confirm Reject
+                </button>
+                <button
+                  onClick={() => { setRejectOpen(false); setRejectReason(""); }}
+                  className="text-[11px] px-3 py-1.5 rounded bg-[#0f0f0f] border border-[#2a2a2a] text-[#888] hover:text-white font-bold uppercase tracking-widest font-rajdhani"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
           {commentsOpen && (
             <CommentsList postId={post.id} />
           )}
         </div>
         <div className="flex flex-col gap-1 flex-shrink-0">
           {!post.isApproved && (
-            <button
-              onClick={() => doApprove(true)}
-              disabled={approve.isPending}
-              className="p-1.5 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40"
-              title="Approve"
-            >
-              <Check size={14} />
-            </button>
+            <>
+              <button
+                onClick={() => doApprove(true)}
+                disabled={approve.isPending}
+                className="p-1.5 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40"
+                title="Approve"
+              >
+                <Check size={14} />
+              </button>
+              <button
+                onClick={() => setRejectOpen((v) => !v)}
+                disabled={reject.isPending}
+                className="p-1.5 rounded bg-[#dc2626]/10 text-[#dc2626] hover:bg-[#dc2626]/20 disabled:opacity-40"
+                title="Reject"
+              >
+                <Ban size={14} />
+              </button>
+            </>
           )}
           {post.isApproved && (
             <button

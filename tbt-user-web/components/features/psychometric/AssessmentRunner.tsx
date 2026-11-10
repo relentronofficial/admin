@@ -125,6 +125,7 @@ export function AssessmentRunner() {
       await psychometricService.submit(loaded.sessionId, buildAnswerPayload(all, answers, timedOut, timeSpent));
       try { storage()?.removeItem(`tbt_psy_answers_${loaded.sessionId}`); } catch { /* ignore */ }
       await qc.invalidateQueries({ queryKey: psychometricKeys.result });
+      void qc.invalidateQueries({ queryKey: psychometricKeys.answers });
       router.replace("/psychometric/result");
     } catch (e) {
       submittedRef.current = false;

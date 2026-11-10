@@ -17,7 +17,9 @@ import {
   getMemberDailyRows,
   getMemberLastActiveAt,
 } from '../../lib/memberActivity.js';
-import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
+import { summarizeDailyActivity, clampDays, isoWeekLabel } from '../../lib/memberActivityLogic.js';
+import { QUALIFYING_ACTIVITY_SOURCES, localDayKey, dayKeyOf } from '../../lib/activityDays.js';
+import { computeMemberStats } from '../../lib/tbtStats.js';
 import { buildSkillRatingsQuery, mergeSkillRatings, profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
 import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
@@ -2100,4 +2102,163 @@ export async function upsertMemberRevenueAdminHandler(request: FastifyRequest, r
   // the graph and the revenue figures (socket batch:graph_updated to user:<id>).
   void notifyWeeklyGraphChanged(request.server, { memberIds: [id] }, 'revenue_updated');
   return reply.send({ success: true, data: mapAdminRevenueRow(r, weekNumber, year), error: null });
+}
+
+// ── AL-01 Points & Activity Log ───────────────────────────────────────────────
+// GET /api/members/:id/tbt-activity-log?view=daily&from=YYYY-MM-DD&to=YYYY-MM-DD&sourceGroup=all
+const LEARNING_SOURCES_SQL = QUALIFYING_ACTIVITY_SOURCES.map((s) => `'${s}'`).join(', ');
+const COIN_SOURCES_LIST = ['coin_purchase', 'admin_grant', 'early_completion', 'lifeline_spend', 'support_call_unlock', 'support_call_purchase'];
+const COIN_SOURCES_SQL = COIN_SOURCES_LIST.map((s) => `'${s}'`).join(', ');
+
+const IST_TZ = 'Asia/Kolkata';
+
+function fmtDateLabel(d: string): string {
+  return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(`${d}T00:00:00Z`),
+  );
+}
+
+export async function getMemberTbtActivityLogHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const {
+    view = 'daily',
+    from: fromParam,
+    to: toParam,
+    sourceGroup = 'all',
+  } = req.query as { view?: string; from?: string; to?: string; sourceGroup?: string };
+
+  const prisma = req.server.prisma;
+  const member = await prisma.member.findUnique({ where: { id }, select: { id: true } }).catch(() => null);
+  if (!member) {
+    return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+  }
+
+  // Date range clamped to 366 days; default last 30 days in IST
+  const todayIST = localDayKey(new Date(), IST_TZ);
+  const toDate = toParam && /^\d{4}-\d{2}-\d{2}$/.test(toParam) ? toParam : todayIST;
+  const defaultFrom = new Date(Date.parse(`${toDate}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+  let fromDate = fromParam && /^\d{4}-\d{2}-\d{2}$/.test(fromParam) ? fromParam : defaultFrom;
+
+  const toMs = Date.parse(`${toDate}T00:00:00Z`);
+  const fromMs = Date.parse(`${fromDate}T00:00:00Z`);
+  if (toMs - fromMs > 366 * 86_400_000) {
+    fromDate = new Date(toMs - 366 * 86_400_000).toISOString().slice(0, 10);
+  }
+  const effectiveFrom = fromDate <= toDate ? fromDate : toDate;
+  const effectiveTo   = fromDate <= toDate ? toDate : fromDate;
+
+  // Backfill legacy rows and get current streak
+  const stats = await computeMemberStats(prisma, id);
+
+  // Source group filter
+  const sourceFilter =
+    sourceGroup === 'learning' ? `AND source IN (${LEARNING_SOURCES_SQL})`
+    : sourceGroup === 'coins'  ? `AND source IN (${COIN_SOURCES_SQL})`
+    : '';
+
+  type LogRow = { id: string; points: bigint; source: string; activity_date: Date | string };
+  const rawRows = await prisma.$queryRawUnsafe<LogRow[]>(
+    `SELECT id, points, source, activity_date
+     FROM tbt_activity_log
+     WHERE member_id = $1::uuid
+       AND activity_date >= $2::date
+       AND activity_date <= $3::date
+       ${sourceFilter}
+     ORDER BY activity_date DESC, created_at DESC`,
+    id, effectiveFrom, effectiveTo,
+  );
+
+  // Summary totals
+  let totalEarned = 0, totalSpent = 0;
+  const activeDaySet = new Set<string>();
+  for (const row of rawRows) {
+    const pts = Number(row.points);
+    if (pts > 0) totalEarned += pts;
+    else if (pts < 0) totalSpent += Math.abs(pts);
+    if ((QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(row.source)) {
+      activeDaySet.add(dayKeyOf(row.activity_date));
+    }
+  }
+
+  const summary = {
+    totalPoints: totalEarned - totalSpent,
+    totalEarned,
+    totalSpent,
+    activeDays: activeDaySet.size,
+    currentStreak: stats.currentStreak,
+    rangeLabel: `${fmtDateLabel(effectiveFrom)} – ${fmtDateLabel(effectiveTo)}`,
+  };
+
+  // Period bucketing
+  interface Bucket {
+    periodKey: string;
+    label: string;
+    earned: number;
+    spent: number;
+    activeLearningEvents: number;
+    sourceCounts: Map<string, number>;
+  }
+  const bucketsMap = new Map<string, Bucket>();
+
+  const getBucketInfo = (dateStr: string): { key: string; label: string } => {
+    if (view === 'weekly') {
+      const { label, monday } = isoWeekLabel(dateStr);
+      const mondayStr = new Date(monday * 86_400_000).toISOString().slice(0, 10);
+      const sundayStr = new Date((monday + 6) * 86_400_000).toISOString().slice(0, 10);
+      return { key: label, label: `${fmtDateLabel(mondayStr)} – ${fmtDateLabel(sundayStr)}` };
+    }
+    if (view === 'monthly') {
+      const [y, m] = dateStr.split('-').map(Number);
+      const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      return { key: `${y}-${String(m).padStart(2, '0')}`, label: `${names[m - 1]} ${y}` };
+    }
+    // daily
+    const dt = new Date(`${dateStr}T00:00:00Z`);
+    const dayLabel = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(dt);
+    return { key: dateStr, label: dayLabel };
+  };
+
+  for (const row of rawRows) {
+    const dateStr = dayKeyOf(row.activity_date);
+    const { key, label } = getBucketInfo(dateStr);
+    let bucket = bucketsMap.get(key);
+    if (!bucket) {
+      bucket = { periodKey: key, label, earned: 0, spent: 0, activeLearningEvents: 0, sourceCounts: new Map() };
+      bucketsMap.set(key, bucket);
+    }
+    const pts = Number(row.points);
+    if (pts > 0) bucket.earned += pts;
+    else if (pts < 0) bucket.spent += Math.abs(pts);
+    if ((QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(row.source)) bucket.activeLearningEvents++;
+    bucket.sourceCounts.set(row.source, (bucket.sourceCounts.get(row.source) ?? 0) + 1);
+  }
+
+  const periodRows = [...bucketsMap.values()].map((b) => ({
+    periodKey: b.periodKey,
+    label: b.label,
+    earned: b.earned,
+    spent: b.spent,
+    net: b.earned - b.spent,
+    activeLearningEvents: b.activeLearningEvents,
+    topSources: [...b.sourceCounts.entries()].sort((a, z) => z[1] - a[1]).slice(0, 3).map(([s]) => s),
+  }));
+
+  // Source breakdown
+  const sourceMap = new Map<string, { events: number; points: number }>();
+  for (const row of rawRows) {
+    let entry = sourceMap.get(row.source);
+    if (!entry) { entry = { events: 0, points: 0 }; sourceMap.set(row.source, entry); }
+    entry.events++;
+    entry.points += Number(row.points);
+  }
+  const sources = [...sourceMap.entries()]
+    .map(([source, { events, points }]) => ({
+      source,
+      events,
+      points,
+      isLearning: (QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(source),
+    }))
+    .sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+
+  return reply.send({ success: true, data: { summary, rows: periodRows, sources }, error: null });
 }

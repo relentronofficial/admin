@@ -2,6 +2,7 @@
 
 import "./psychometric.css";
 import { useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import ToastProvider from "@/components/psychometric/ToastProvider";
 import { api, type ApiEnvelope } from "@/lib/psychometric/api";
@@ -10,22 +11,30 @@ import { api, type ApiEnvelope } from "@/lib/psychometric/api";
 // and now served by the TBT backend with the admin's TBT (Clerk) session — no
 // separate sign-in. The backend enforces Admin / Super Admin on every request;
 // this check only picks the screen to show.
-type Access = "checking" | "allowed" | "denied" | "not-connected" | "error";
+type Access = "checking" | "allowed" | "denied" | "signed-out" | "not-connected" | "error";
 
 export default function PsychometricLayout({ children }: { children: React.ReactNode }) {
   const [access, setAccess] = useState<Access>("checking");
+  // Wait for Clerk: on a refresh or direct URL this layout mounts before the
+  // session is restored, and a check sent then carries no token (401). Until
+  // Clerk is loaded the spinner shows; the check runs once it is.
+  const { isLoaded, isSignedIn } = useAuth();
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) { setAccess("signed-out"); return; }
     let alive = true;
+    setAccess("checking");
     (async () => {
       const { ok, status, data } = await api.get<ApiEnvelope<{ allowed: boolean; configured: boolean }>>("/access");
       if (!alive) return;
       if (status === 403) setAccess("denied");
+      else if (status === 401) setAccess("signed-out");
       else if (!ok) setAccess("error");
       else setAccess(data.data?.configured ? "allowed" : "not-connected");
     })();
     return () => { alive = false; };
-  }, []);
+  }, [isLoaded, isSignedIn]);
 
   return (
     <DashboardLayout>
@@ -48,6 +57,7 @@ function AccessScreen({ access }: { access: Access }) {
   }
   const text = {
     denied: ["No access", "Psychometric Admin is available to Admin and Super Admin only."],
+    "signed-out": ["Session couldn't be verified", "Your TBT Admin sign-in couldn't be verified. Please sign in again, then reopen this page."],
     "not-connected": ["Not connected yet", "Psychometric Admin hasn't been connected to the Psychometric service yet. Ask a Super Admin to set the Psychometric bridge key."],
     error: ["Couldn't load Psychometric Admin", "Please check your connection and reload the page."],
   }[access as Exclude<Access, "checking" | "allowed">];

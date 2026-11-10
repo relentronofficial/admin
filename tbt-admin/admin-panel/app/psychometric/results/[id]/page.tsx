@@ -8,6 +8,7 @@ import { api, getToken } from "@/lib/psychometric/api";
 import { useToast } from "@/components/psychometric/ToastProvider";
 import PageHeader from "@/components/psychometric/PageHeader";
 import StatCard from "@/components/psychometric/StatCard";
+import AnswerSheet from "@/components/psychometric/AnswerSheet";
 import { levelBadgeClass } from "@/lib/psychometric/badges";
 import type { Result } from "@/lib/psychometric/types";
 
@@ -209,6 +210,8 @@ export default function ResultDetailPage() {
             </div>
           </div>
         )}
+
+        <AnswerSheet resultId={r._id} />
       </main>
     </>
   );

@@ -39,16 +39,28 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
   // an emit on instance A never reaches sockets on instance B, so DM-style
   // events (`io.to('user:${id}').emit(...)`) silently drop for any client
   // that happens to be on another pod. Attach the Upstash TCP client only
-  // when the env var is present; otherwise stick with the default in-memory
-  // adapter (fine for local dev and single-instance runs).
+  // when the env var is present AND is a redis:// / rediss:// URL; otherwise
+  // stick with the default in-memory adapter (fine for local dev and
+  // single-instance runs).
+  //
+  // IMPORTANT: UPSTASH_REDIS_URL must use the TCP scheme (redis:// or
+  // rediss://) — NOT the HTTP REST scheme (https://). The REST URL goes in
+  // UPSTASH_REDIS_REST_URL. If the URL starts with https:// we skip TCP setup
+  // entirely rather than passing a URL ioredis can't parse.
   const tcpRedisUrl = env.UPSTASH_REDIS_URL;
-  if (tcpRedisUrl) {
+  const isTcpScheme = tcpRedisUrl?.startsWith('redis://') || tcpRedisUrl?.startsWith('rediss://');
+  if (tcpRedisUrl && isTcpScheme) {
     try {
       const useTls = tcpRedisUrl.startsWith('rediss://');
       const pubClient = new IORedis(tcpRedisUrl, {
-        maxRetriesPerRequest: 3,
-        enableReadyCheck: true,
-        lazyConnect: false,
+        maxRetriesPerRequest: 1,
+        enableReadyCheck: false,
+        lazyConnect: true,
+        connectTimeout: 4000,
+        // Give up after 3 retries (~12 s total) rather than retrying forever —
+        // on Cloud Run an ETIMEDOUT means the firewall is blocking the port;
+        // infinite retries just fill the logs.
+        retryStrategy: (times: number) => (times < 3 ? 1500 : null),
         ...(useTls ? { tls: {} } : {}),
       });
       const subClient = pubClient.duplicate();
@@ -56,6 +68,13 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       // the process — the adapter itself will recover on reconnect.
       pubClient.on('error', (err: Error) => fastify.log.warn({ err }, 'socket.io pub redis error'));
       subClient.on('error', (err: Error) => fastify.log.warn({ err }, 'socket.io sub redis error'));
+
+      // Lazy-connect so startup doesn't block waiting for a TCP handshake.
+      // If the connect fails the adapter degrades to in-memory silently.
+      await Promise.all([
+        pubClient.connect().catch((err: Error) => fastify.log.warn({ err }, '⚠️ Socket.IO pub redis connect failed')),
+        subClient.connect().catch((err: Error) => fastify.log.warn({ err }, '⚠️ Socket.IO sub redis connect failed')),
+      ]);
 
       io.adapter(createAdapter(pubClient, subClient));
       fastify.log.info('✅ Socket.IO Redis adapter attached (cross-instance broadcast)');
@@ -67,7 +86,11 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
       fastify.log.warn({ err }, '⚠️ Socket.IO Redis adapter failed to attach — falling back to in-memory (events will not cross instances)');
     }
   } else {
-    fastify.log.warn('⚠️ UPSTASH_REDIS_URL missing — Socket.IO using in-memory adapter (single instance only)');
+    if (tcpRedisUrl && !isTcpScheme) {
+      fastify.log.warn('⚠️ UPSTASH_REDIS_URL is not a TCP redis:// URL — Socket.IO using in-memory adapter. Set a rediss:// URL for cross-instance broadcast.');
+    } else {
+      fastify.log.warn('⚠️ UPSTASH_REDIS_URL missing — Socket.IO using in-memory adapter (single instance only)');
+    }
   }
 
   // ── Handshake auth ─────────────────────────────────────────────────────────

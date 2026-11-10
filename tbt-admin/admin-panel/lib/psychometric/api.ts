@@ -53,7 +53,6 @@ async function request<T = unknown>(method: string, path: string, body?: unknown
   }
 }
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
 export const api = {
   get: <T = unknown>(path: string, _token?: string | null) => request<T>("GET", path),
   post: <T = unknown>(path: string, body?: unknown, _token?: string | null) => request<T>("POST", path, body),
@@ -61,7 +60,6 @@ export const api = {
   patch: <T = unknown>(path: string, body?: unknown, _token?: string | null) => request<T>("PATCH", path, body),
   delete: <T = unknown>(path: string, _token?: string | null) => request<T>("DELETE", path),
 };
-/* eslint-enable @typescript-eslint/no-unused-vars */
 
 /**
  * Kept for the ported pages, which read a token before calling `api` and skip
@@ -76,7 +74,6 @@ export const API_BASE_URL = API_BASE;
 
 // Export endpoints need the admin's auth header, so they can't be plain <a href>
 // links. Fetch the file and trigger the download via a blob URL instead.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function downloadFile(path: string, _token: string | null, filename: string): Promise<{ ok: boolean; message?: string }> {
   try {
     const res = await fetch(`${API_BASE}${path}`, { headers: await authHeaders() });
