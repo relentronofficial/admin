@@ -402,6 +402,29 @@ suite('psychometric platform (real Postgres)', () => {
     expect(await prisma.$queryRawUnsafe(`SELECT 1 FROM psy_candidates`)).toHaveLength(0); // looking doesn't create a candidate
   });
 
+  it("member flow: /answers reviews the member's own submitted attempt", async () => {
+    const { q1, q2, q3 } = await setUpMembersAssessment(25);
+    expect((await callMember(member.getMyAnswers, M1)).status).toBe(404);
+    const sid = (await callMember(member.startSession, M1)).body.sessionId;
+    expect((await callMember(member.getMyAnswers, M1)).status).toBe(404); // in progress: nothing to review yet
+    await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3, false) } });
+
+    const r = await callMember(member.getMyAnswers, M1);
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ attemptNumber: 1, durationMinutes: 25, autoSubmitted: false });
+    expect(r.body.data.sections.map((s: any) => s.typeName)).toEqual(['Communication', 'Leadership']);
+    const [rank] = r.body.data.sections[0].questions;
+    expect(rank.options.map((o: any) => o.optionText)).toEqual(['first', 'second', 'third']); // configured order, not shuffled
+    expect(rank.answer.selectedOptionIds).toEqual([...q3.options].reverse().map((o: any) => o._id));
+    const lead = r.body.data.sections[1].questions;
+    expect(lead.map((x: any) => x._id)).toEqual([q1._id, q2._id]);
+    expect(lead[0]).toMatchObject({ text: q1.text, answer: { status: 'answered', selectedOptionIds: [q1.options[4]._id], timeTakenSeconds: 5 } });
+    const flat = JSON.stringify(r.body.data);
+    for (const secret of ['"score"', 'isCorrect', 'correctOptionId', 'idealOrder', 'dimensionScores']) expect(flat).not.toContain(secret);
+    // Another member sees nothing of it.
+    expect((await callMember(member.getMyAnswers, M2)).status).toBe(404);
+  });
+
   it('member flow: start creates the candidate, resumes the live attempt, scores the submission', async () => {
     const { q1, q2, q3, codeId } = await setUpMembersAssessment();
     const start = await callMember(member.startSession, M1);
