@@ -20,9 +20,10 @@
 /* header */
 .head { position: sticky; top: 0; z-index: 50; background: var(--card); border-bottom: 1px solid var(--line); }
 .headIn { max-width: 1200px; margin: 0 auto; min-height: 64px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-.brandT { font-size: 18px; font-weight: 800; color: var(--ink); line-height: 1.1; letter-spacing: -0.02em; }
-.brandT span { color: var(--r); }
-.brandS { font-size: 11px; color: var(--muted); margin-top: 1px; }
+/* The official TBT logo image: original aspect ratio, never cropped or stretched. */
+.brand { display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+.brandLogo { display: block; height: 36px; width: auto; max-width: 180px; object-fit: contain; }
+.brandS { font-size: 11px; color: var(--muted); margin-top: 3px; text-align: center; }
 .hMid { display: flex; align-items: center; gap: 14px; flex: 1; justify-content: center; }
 .hCount { text-align: center; white-space: nowrap; }
 .hCount b { font-size: 16px; font-weight: 800; color: var(--ink); }
@@ -127,6 +128,7 @@
 @media (max-width: 760px) {
   .headIn { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
   .brandS { display: none; }
+  .brandLogo { height: 30px; max-width: 140px; }
   .hMid { order: 3; width: 100%; justify-content: space-between; }
   .bar { width: auto; flex: 1; }
   .tl { display: none; }

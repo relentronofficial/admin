@@ -56,6 +56,15 @@ describe("AssessmentRunner", () => {
     expect(screen.getByRole("timer").textContent).toBe("20:00");
   });
 
+  it("shows the official TBT logo image in the header, not a text logo", async () => {
+    svc.questions.mockResolvedValue(questionsResponse({ sessionId: "s1", expiresAt: "x" }));
+    const { container } = wrap(<AssessmentRunner />);
+    expect(await screen.findByText("Question a")).toBeTruthy();
+    const logo = screen.getByRole("img", { name: "Tamil Business Tribe" });
+    expect(logo.getAttribute("src")).toBe("/tbt_logo.png");
+    expect(container.querySelector("header")!.textContent).not.toMatch(/Tamil\s*Business\s*Tribe/);
+  });
+
   it("resumes a live attempt without starting, restoring autosaved answers", async () => {
     localStorage.setItem("tbt_psy_answers_s9", JSON.stringify({ answers: { a: "ao2" }, timedOut: {}, timeSpent: {}, marked: [] }));
     svc.questions.mockResolvedValue(questionsResponse({ sessionId: "s9", expiresAt: "x" }, 90));

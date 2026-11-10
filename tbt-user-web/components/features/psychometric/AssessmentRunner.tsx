@@ -250,8 +250,9 @@ export function AssessmentRunner() {
     <div className={s.root}>
       <header className={s.head}>
         <div className={s.headIn}>
-          <div>
-            <div className={s.brandT}>Tamil <span>Business</span> Tribe</div>
+          <div className={s.brand}>
+            {/* The official red-and-white TBT logo (same asset as the login and marketing pages). */}
+            <img src="/tbt_logo.png" alt="Tamil Business Tribe" width={1055} height={289} className={s.brandLogo} />
             <div className={s.brandS}>Discover Your Business DNA</div>
           </div>
           <div className={s.hMid}>
