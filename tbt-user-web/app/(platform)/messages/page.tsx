@@ -6,10 +6,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Archive,
   Check,
+  CheckCheck,
   ChevronDown,
   ChevronLeft,
   Copy,
   Edit3,
+  ExternalLink,
   FileText,
   Info,
   Loader2,
@@ -30,6 +32,7 @@ import { useSiteConfig } from '@/lib/context/SiteConfigContext';
 import {
   useConversations,
   useConversationMessages,
+  useMarkConversationRead,
   useEditChatMessage,
   useDeleteChatMessage,
   useReactChatMessage,
@@ -43,7 +46,16 @@ import {
   useDmPinnedMessage,
   useDmMessageInfo,
 } from '@/lib/hooks/useDashboard';
-import { useMyChatGroups } from '@/lib/hooks/useChatGroups';
+import {
+  useMyChatGroups,
+  useChatGroup,
+  useChatGroupMessages,
+  useSendChatGroupMessage,
+  useDeleteChatGroupMessage,
+  useToggleChatGroupStar,
+  chatGroupKeys,
+} from '@/lib/hooks/useChatGroups';
+import { senderColor } from '@/components/features/chat/senderColor';
 import { useMe } from '@/lib/hooks/useUser';
 import { useMyEnrollments } from '@/lib/hooks/useCourses';
 import { useSubmitWeeklyReport } from '@/lib/hooks/useCourseReports';
@@ -123,6 +135,9 @@ function groupMessagesByDay(msgs: any[]): { label: string; messages: any[] }[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TYPING_DEBOUNCE_MS = 2000;
+// Two consecutive messages from the same sender within this window are
+// visually collapsed — same as the group chat page.
+const CLUSTER_WINDOW_MS = 60_000;
 
 // A single row in the interleaved sidebar list. WhatsApp mixes DMs and
 // groups together sorted by lastMessageAt; the row payload keeps the
@@ -139,16 +154,18 @@ export default function MessagesPage() {
   const deepLinkConvoId = searchParams.get('conversation');
   const deepLinkMessageId = searchParams.get('message');
 
-  const [activeId, setActiveId]       = useState<string | null>(null);
-  const [input, setInput]             = useState('');
-  const [isTyping, setIsTyping]       = useState(false);
-  const [showNewForm, setShowNewForm] = useState(false);
-  const [newSubject, setNewSubject]   = useState('');
-  const [newBody, setNewBody]         = useState('');
-  const [mobileView, setMobileView]   = useState<'list' | 'chat'>('list');
-  const [topMenuOpen, setTopMenuOpen] = useState(false);
+  const [activeId, setActiveId]           = useState<string | null>(null);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [input, setInput]                 = useState('');
+  const [groupInput, setGroupInput]       = useState('');
+  const [isTyping, setIsTyping]           = useState(false);
+  const [showNewForm, setShowNewForm]     = useState(false);
+  const [newSubject, setNewSubject]       = useState('');
+  const [newBody, setNewBody]             = useState('');
+  const [mobileView, setMobileView]       = useState<'list' | 'chat'>('list');
+  const [topMenuOpen, setTopMenuOpen]     = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const [replyingTo, setReplyingTo]       = useState<any | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{
     file: File;
     previewUrl: string;
@@ -157,11 +174,13 @@ export default function MessagesPage() {
     mediaType: 'image' | 'video' | 'document' | 'audio';
   } | null>(null);
 
-  const typingTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const socketRef      = useRef<Socket | null>(null);
-  const textareaRef    = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef   = useRef<HTMLInputElement>(null);
+  const typingTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesEndRef   = useRef<HTMLDivElement>(null);
+  const groupMsgsEndRef  = useRef<HTMLDivElement>(null);
+  const socketRef        = useRef<Socket | null>(null);
+  const textareaRef      = useRef<HTMLTextAreaElement>(null);
+  const groupTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef     = useRef<HTMLInputElement>(null);
   // Guards so a notification deep-link (?conversation=&message=) is consumed
   // exactly once — otherwise re-selecting the same conversation manually
   // later would keep re-jumping to the old message.
@@ -174,6 +193,14 @@ export default function MessagesPage() {
   const startConversation    = useStartConversation();
   const sendMessage          = useSendChatMessage();
   const archiveConversation  = useArchiveConversation();
+  const markConversationRead = useMarkConversationRead();
+
+  // Group chat hooks (only active when a group is selected inline)
+  const { data: activeGroupData } = useChatGroup(activeGroupId ?? '');
+  const { data: groupMsgPages }   = useChatGroupMessages(activeGroupId ?? '');
+  // useSendChatGroupMessage closes over the group ID; TanStack Query v5
+  // re-evaluates the closure on every render, so switching groups is safe.
+  const sendGroupMessage          = useSendChatGroupMessage(activeGroupId ?? '');
 
   const { data: dmStarredList = [] } = useDmStarredMessages();
   const { data: dmPinnedMsg }        = useDmPinnedMessage(activeId ?? '');
@@ -185,6 +212,14 @@ export default function MessagesPage() {
   const messages       = (msgData as any)?.data ?? [];
   const activeMeta     = (msgData as any)?.meta ?? null;
   const messageGroups  = groupMessagesByDay(messages);
+
+  // Flatten infinite-query pages into a time-sorted list for the inline group view.
+  const groupMessages = useMemo(() =>
+    (groupMsgPages?.pages ?? [])
+      .flatMap((p) => p)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [groupMsgPages]
+  );
 
   // Interleaved list: mix groups + DMs by lastMessageAt descending. Any
   // side with no timestamp bubbles to the bottom.
@@ -321,6 +356,39 @@ export default function MessagesPage() {
     };
   }, [activeId, queryClient]);
 
+  // Socket: join group room (inline group chat)
+  useEffect(() => {
+    if (!activeGroupId) return;
+    let mounted = true;
+    let sock: Socket | null = null;
+
+    const handleNew = () => {
+      if (!mounted) return;
+      queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(activeGroupId) });
+      queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
+    };
+
+    getSocket().then((s) => {
+      if (!mounted) return;
+      sock = s;
+      s.emit('join:chat_group', { groupId: activeGroupId });
+      s.on('group:message:new', handleNew);
+    });
+
+    return () => {
+      mounted = false;
+      if (sock) {
+        sock.emit('leave:chat_group', { groupId: activeGroupId });
+        sock.off('group:message:new', handleNew);
+      }
+    };
+  }, [activeGroupId, queryClient]);
+
+  // Scroll to bottom when group messages load or change
+  useEffect(() => {
+    groupMsgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [groupMessages.length]);
+
   // Auto-grow textarea (max ~4 rows / 96px)
   function autoResize() {
     const el = textareaRef.current;
@@ -342,6 +410,7 @@ export default function MessagesPage() {
 
   function selectConversation(id: string) {
     setActiveId(id);
+    setActiveGroupId(null);
     setMobileView('chat');
     setIsTyping(false);
     setInput('');
@@ -349,6 +418,39 @@ export default function MessagesPage() {
     if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
     setPendingMedia(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    markConversationRead.mutate(id);
+  }
+
+  function selectGroup(id: string) {
+    setActiveGroupId(id);
+    setActiveId(null);
+    setMobileView('chat');
+    setGroupInput('');
+    if (groupTextareaRef.current) groupTextareaRef.current.style.height = 'auto';
+  }
+
+  function autoResizeGroup() {
+    const el = groupTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 96) + 'px';
+  }
+
+  function handleGroupSend() {
+    const body = groupInput.trim();
+    if (!body || !activeGroupId || sendGroupMessage.isPending) return;
+    setGroupInput('');
+    if (groupTextareaRef.current) groupTextareaRef.current.style.height = 'auto';
+    sendGroupMessage.mutate(
+      { body },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(activeGroupId) });
+          queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
+        },
+        onError: () => toast.error('Failed to send message'),
+      }
+    );
   }
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -463,7 +565,7 @@ export default function MessagesPage() {
 
   return (
     <div
-      className="flex h-[calc(100vh-140px)] rounded-xl border overflow-hidden"
+      className="flex h-[calc(100dvh-140px)] rounded-xl border overflow-hidden"
       style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
     >
       {/* ── Left pane: unified list (groups + DMs interleaved) ───────────── */}
@@ -538,7 +640,12 @@ export default function MessagesPage() {
           ) : (
             rows.map((row) =>
               row.type === 'group' ? (
-                <GroupRow key={`g-${row.id}`} group={row.data} />
+                <GroupRow
+                  key={`g-${row.id}`}
+                  group={row.data}
+                  active={activeGroupId === row.id}
+                  onSelect={() => selectGroup(row.id)}
+                />
               ) : (
                 <DmRow
                   key={`d-${row.id}`}
@@ -565,7 +672,113 @@ export default function MessagesPage() {
         )}
         style={{ background: 'var(--color-bg-primary)' }}
       >
-        {activeId && activeMeta ? (
+        {activeGroupId ? (
+          /* ── Inline group chat ──────────────────────────────────────────── */
+          <>
+            {/* Group header */}
+            <div
+              className="px-4 py-3 border-b flex items-center gap-3"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+                background: 'var(--color-bg-surface)',
+              }}
+            >
+              <button
+                onClick={() => setMobileView('list')}
+                className="lg:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div
+                className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
+                style={{ background: 'var(--color-surface-overlay)' }}
+              >
+                {(activeGroupData as any)?.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={(activeGroupData as any).avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <Users size={15} className="text-muted-foreground" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-sm text-foreground truncate">
+                  {(activeGroupData as any)?.name ?? 'Group'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {(activeGroupData as any)?.members?.length ?? '?'} members
+                </p>
+              </div>
+              <Link
+                href={`/messages/group/${activeGroupId}`}
+                className="flex items-center gap-1 text-xs font-semibold flex-shrink-0"
+                style={{ color: 'var(--color-accent)' }}
+              >
+                Full view <ExternalLink size={11} />
+              </Link>
+            </div>
+
+            {/* Group messages */}
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5">
+              {groupMessages.map((m, idx) => {
+                const prev = groupMessages[idx - 1];
+                const clustered = !!prev &&
+                  prev.senderMemberId === m.senderMemberId &&
+                  new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < CLUSTER_WINDOW_MS;
+                const isMe = m.senderMemberId === (me as any)?.id;
+                return (
+                  <InlineGroupBubble
+                    key={m.id}
+                    message={m}
+                    isMe={isMe}
+                    clustered={clustered}
+                    meId={(me as any)?.id ?? ''}
+                    groupId={activeGroupId!}
+                  />
+                );
+              })}
+              <div ref={groupMsgsEndRef} />
+            </div>
+
+            {/* Group composer */}
+            <div
+              className="border-t px-4 py-3"
+              style={{
+                borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
+                background: 'var(--color-bg-surface)',
+              }}
+            >
+              <div
+                className="flex items-end gap-2 rounded-xl px-3 py-2"
+                style={{ background: 'var(--color-bg-primary)', border: '1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
+              >
+                <textarea
+                  ref={groupTextareaRef}
+                  value={groupInput}
+                  onChange={(e) => { setGroupInput(e.target.value); autoResizeGroup(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGroupSend(); }
+                  }}
+                  rows={1}
+                  placeholder="Type a message… (Enter to send)"
+                  className="flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground leading-relaxed"
+                  style={{ maxHeight: 96, overflowY: 'auto', fontSize: '16px' }}
+                />
+                <button
+                  onClick={handleGroupSend}
+                  disabled={!groupInput.trim() || sendGroupMessage.isPending}
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
+                  style={{ background: 'var(--color-accent)' }}
+                >
+                  {sendGroupMessage.isPending ? (
+                    <Loader2 size={13} className="animate-spin text-white" />
+                  ) : (
+                    <Send size={13} className="text-white" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : activeId && activeMeta ? (
           <>
             {/* Thread header */}
             <div
@@ -637,13 +850,18 @@ export default function MessagesPage() {
                     <div className="flex-1 h-px" style={{ background: 'var(--color-border-subtle)' }} />
                   </div>
 
-                  {dayMsgs.map((m: any) => {
+                  {dayMsgs.map((m: any, idx: number) => {
                     const isMe = m.senderType === 'member';
+                    const prev = dayMsgs[idx - 1];
+                    const clustered = !!prev &&
+                      prev.senderType === m.senderType &&
+                      new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < CLUSTER_WINDOW_MS;
                     return (
                       <DmBubble
                         key={m.id}
                         message={m}
                         isMe={isMe}
+                        clustered={clustered}
                         me={me}
                         conversationId={activeId!}
                         conversations={conversations}
@@ -784,7 +1002,7 @@ export default function MessagesPage() {
                       : 'Write a message… (Enter to send, Shift+Enter for new line)'
                   }
                   className="flex-1 resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground leading-relaxed"
-                  style={{ maxHeight: 96, overflowY: 'auto' }}
+                  style={{ maxHeight: 96, overflowY: 'auto', fontSize: '16px' }}
                 />
                 <button
                   onClick={handleSend}
@@ -793,7 +1011,7 @@ export default function MessagesPage() {
                     sendMessage.isPending ||
                     pendingMedia?.uploading
                   }
-                  className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendMessage.isPending ? (
@@ -1094,6 +1312,7 @@ const DM_EDIT_WINDOW_MS = 5 * 60 * 1000;
 function DmBubble({
   message,
   isMe,
+  clustered,
   me,
   conversationId,
   conversations,
@@ -1106,6 +1325,8 @@ function DmBubble({
 }: {
   message: any;
   isMe: boolean;
+  /** True when the previous message is from the same sender within 60 s. */
+  clustered?: boolean;
   me: any;
   conversationId: string;
   conversations: any[];
@@ -1210,13 +1431,17 @@ function DmBubble({
   }
 
   return (
-    <div id={`msg-${message.id}`} className={cn('flex gap-2.5', isMe && 'flex-row-reverse')}>
-      <Avatar
-        avatarUrl={isMe ? (me as any)?.avatarUrl : message.senderAvatarUrl}
-        name={isMe ? me?.firstName : message.senderName}
-        size={28}
-        style={{ background: isMe ? 'var(--color-accent)' : 'hsl(var(--muted-foreground))' }}
-      />
+    <div id={`msg-${message.id}`} className={cn('flex gap-2.5', isMe && 'flex-row-reverse', clustered && 'mt-0.5')}>
+      {clustered ? (
+        <div style={{ width: 28, flexShrink: 0 }} aria-hidden />
+      ) : (
+        <Avatar
+          avatarUrl={isMe ? (me as any)?.avatarUrl : message.senderAvatarUrl}
+          name={isMe ? me?.firstName : message.senderName}
+          size={28}
+          style={{ background: isMe ? 'var(--color-accent)' : 'hsl(var(--muted-foreground))' }}
+        />
+      )}
       <div className={cn('max-w-[65%] flex flex-col relative group', isMe && 'items-end')}>
         <div
           className={cn(
@@ -1305,10 +1530,21 @@ function DmBubble({
               </p>
             )
           )}
-          <p className="text-[10px] text-muted-foreground mt-0 px-3.5 pb-1.5 text-right">
-            {message.editedAt && !deleted ? 'edited · ' : ''}
-            {timeAgo(message.createdAt)}
-          </p>
+          <div className="flex items-center justify-end gap-1 px-3.5 pb-1.5">
+            {message.editedAt && !deleted && (
+              <span className="text-[10px] text-muted-foreground">edited ·</span>
+            )}
+            <span className="text-[10px] text-muted-foreground">{timeAgo(message.createdAt)}</span>
+            {isMe && !deleted && (
+              message.id.startsWith('opt-') ? (
+                <Loader2 size={10} className="text-muted-foreground animate-spin flex-shrink-0" />
+              ) : message.readByAdminAt ? (
+                <CheckCheck size={12} className="flex-shrink-0" style={{ color: 'var(--color-accent)' }} />
+              ) : (
+                <Check size={12} className="text-muted-foreground flex-shrink-0" />
+              )
+            )}
+          </div>
         </div>
 
         {reactions.length > 0 && !deleted && (
@@ -1812,7 +2048,7 @@ function DmRow({
 
 // ── Sidebar row: Group ─────────────────────────────────────────────────────
 
-function GroupRow({ group }: { group: any }) {
+function GroupRow({ group, active, onSelect }: { group: any; active?: boolean; onSelect?: () => void }) {
   // Mute state is a client-only mirror; the sidebar shows the muted
   // indicator without a fetch by reading the localStorage helper. The
   // hook file exports isLocallyMuted but we import it lazily to keep
@@ -1826,10 +2062,14 @@ function GroupRow({ group }: { group: any }) {
   }, [group.id]);
 
   return (
-    <Link
-      href={`/messages/group/${group.id}`}
-      className="flex items-center gap-3 px-4 py-3 border-b transition-colors hover:bg-[var(--color-surface-overlay)]"
-      style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)' }}
+    <button
+      type="button"
+      onClick={onSelect}
+      className="w-full text-left flex items-center gap-3 px-4 py-3 border-b transition-colors hover:bg-[var(--color-surface-overlay)]"
+      style={{
+        borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
+        background: active ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : undefined,
+      }}
     >
       <div
         className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center relative"
@@ -1871,6 +2111,240 @@ function GroupRow({ group }: { group: any }) {
           {group.unreadCount > 99 ? '99+' : group.unreadCount}
         </span>
       )}
-    </Link>
+    </button>
+  );
+}
+
+// ── Inline group message bubble ───────────────────────────────────────────────
+
+function InlineGroupBubble({
+  message,
+  isMe,
+  clustered,
+  meId,
+  groupId,
+}: {
+  message: any;
+  isMe: boolean;
+  clustered: boolean;
+  meId: string;
+  groupId: string;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
+
+  const deleteMsg = useDeleteChatGroupMessage(groupId);
+  const starMsg = useToggleChatGroupStar(groupId);
+  const qc = useQueryClient();
+
+  const deleted = message.deletedForEveryone || !!message.deletedAt;
+  const color = senderColor(message.senderMemberId);
+
+  const reactionGroups: [string, string[]][] = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const r of (message.reactions ?? [])) {
+      const arr = map.get(r.emoji) ?? [];
+      arr.push(r.memberId);
+      map.set(r.emoji, arr);
+    }
+    return Array.from(map.entries());
+  }, [message.reactions]);
+
+  async function handleCopy() {
+    setMenuOpen(false);
+    const result = await copyMessageText(message.body);
+    if (result === 'copied') toast.success('Copied');
+    else if (result === 'empty') toast(noTextToCopyMessage(message.mediaType), { icon: 'ℹ️' });
+    else toast.error("Couldn't copy — your browser blocked clipboard access");
+  }
+
+  function doDelete() {
+    if (!confirmDelete) return;
+    deleteMsg.mutate(
+      { messageId: message.id, forEveryone: confirmDelete === 'everyone' },
+      {
+        onSuccess: () => {
+          setConfirmDelete(null);
+          qc.invalidateQueries({ queryKey: chatGroupKeys.messages(groupId) });
+          toast.success('Message deleted');
+        },
+        onError: () => toast.error('Could not delete the message'),
+      }
+    );
+  }
+
+  return (
+    <div className={cn('flex gap-2.5', isMe && 'flex-row-reverse', clustered ? 'mt-0.5' : 'mt-2')}>
+      {clustered ? (
+        <div style={{ width: 28, flexShrink: 0 }} aria-hidden />
+      ) : (
+        <Avatar
+          avatarUrl={message.sender?.profilePhotoUrl}
+          name={message.sender?.firstName}
+          size={28}
+          style={{ background: senderColor(message.senderMemberId) }}
+        />
+      )}
+      <div className={cn('max-w-[65%] flex flex-col', isMe && 'items-end')}>
+        {!clustered && !isMe && !message.isSystem && (
+          <span className="text-[11px] font-semibold mb-0.5 ml-1" style={{ color }}>
+            {[message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(' ') || 'Member'}
+          </span>
+        )}
+        {/* Wrapper carries `group` so the hover trigger shows on mouse-over */}
+        <div className="relative group">
+          <div
+            className={cn('rounded-2xl overflow-hidden', isMe ? 'rounded-tr-sm' : 'rounded-tl-sm')}
+            style={{
+              background: isMe
+                ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
+                : 'var(--color-bg-surface)',
+            }}
+          >
+            {deleted ? (
+              <p className="text-sm italic text-muted-foreground px-3.5 py-2">This message was deleted</p>
+            ) : (
+              message.body && (
+                <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
+                  {message.body}
+                </p>
+              )
+            )}
+            <p className="text-[10px] text-muted-foreground px-3.5 pb-1.5 text-right">
+              {timeAgo(message.createdAt)}
+            </p>
+          </div>
+          {!deleted && (
+            <button
+              onClick={() => setMenuOpen((v) => !v)}
+              className="absolute top-0 right-0 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100 z-10"
+              style={{
+                background: 'var(--color-modal-bg)',
+                border: '1px solid var(--color-border-medium)',
+                color: 'var(--color-text-secondary)',
+              }}
+              aria-label="Message options"
+            >
+              <ChevronDown size={12} />
+            </button>
+          )}
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div
+                className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
+                style={{
+                  background: 'var(--color-modal-bg)',
+                  border: '1px solid var(--color-border-medium)',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                }}
+              >
+                <button
+                  onClick={handleCopy}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Copy size={13} /> Copy
+                </button>
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    starMsg.mutate({ messageId: message.id, starred: false });
+                    toast.success('Starred');
+                  }}
+                  disabled={starMsg.isPending}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50"
+                >
+                  <Star size={13} /> Star
+                </button>
+                <Link
+                  href={`/messages/group/${groupId}`}
+                  onClick={() => setMenuOpen(false)}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <ExternalLink size={13} /> Full view
+                </Link>
+                <button
+                  onClick={() => { setMenuOpen(false); setConfirmDelete('me'); }}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                >
+                  <Trash2 size={13} /> Delete for me
+                </button>
+                {isMe && (
+                  <button
+                    onClick={() => { setMenuOpen(false); setConfirmDelete('everyone'); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Trash2 size={13} /> Delete for everyone
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+        {reactionGroups.length > 0 && !deleted && (
+          <div className={cn('flex gap-1 mt-0.5 flex-wrap', isMe ? 'justify-end' : 'justify-start')}>
+            {reactionGroups.map(([emoji, memberIds]) => (
+              <span
+                key={emoji}
+                className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: memberIds.includes(meId)
+                    ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
+                    : 'var(--color-bg-surface)',
+                  border: memberIds.includes(meId)
+                    ? '1px solid var(--color-accent)'
+                    : '1px solid var(--color-border-subtle)',
+                }}
+              >
+                {emoji} <span className="text-muted-foreground">{memberIds.length}</span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !deleteMsg.isPending && setConfirmDelete(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            className="w-full max-w-sm rounded-2xl p-5 space-y-4"
+            style={{ background: 'var(--color-modal-bg)', border: '1px solid var(--color-border-medium)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-1.5">
+              <p className="font-semibold text-sm text-foreground">
+                {confirmDelete === 'everyone' ? 'Delete for everyone?' : 'Delete for me?'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {confirmDelete === 'everyone'
+                  ? 'This message will be removed for everyone. This cannot be undone.'
+                  : 'This message will be removed from your view only.'}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doDelete}
+                disabled={deleteMsg.isPending}
+                className="px-4 h-9 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-700 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deleteMsg.isPending && <Loader2 size={13} className="animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

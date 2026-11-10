@@ -168,3 +168,39 @@ export function progressionSvgPath(
   }
   return d;
 }
+
+/**
+ * The growth line's points (the member graph since the sketch redesign): one
+ * point per week in which the member's backend-confirmed progress
+ * (week.progressLevel — approved work, reported revenue against the admin
+ * thresholds, admin/mentor records) first reaches a new high. So the line only
+ * ever rises, as milestones are achieved, and a week that adds nothing new gets
+ * no point. Weeks that have not started (null) and weeks with no progress add
+ * nothing; pending / in-progress / upcoming work is never counted (it isn't in
+ * progressLevel). No achievement → no points (nothing is drawn or invented).
+ */
+export function achievementPoints(
+  weeks: ProgressionWeek[],
+  colX: (weekIndex: number) => number,
+  yFor: (level: number) => number,
+): ProgressionPoint[] {
+  const points: ProgressionPoint[] = [];
+  let best = 0;
+  weeks.forEach((w, i) => {
+    const level = w.progressLevel;
+    if (typeof level !== "number" || !Number.isFinite(level) || level <= best + 1e-9) return;
+    best = level;
+    points.push({ weekNumber: w.weekNumber, weekIndex: i, level, x: colX(i), y: yFor(level) });
+  });
+  return points;
+}
+
+/** Straight segments from the origin through every point; null with no points. */
+export function straightProgressionPath(
+  points: Array<{ x: number; y: number }>,
+  originX: number,
+  originY: number,
+): string | null {
+  if (points.length === 0) return null;
+  return [`M ${originX},${originY}`, ...points.map((p) => `L ${p.x},${p.y}`)].join(" ");
+}

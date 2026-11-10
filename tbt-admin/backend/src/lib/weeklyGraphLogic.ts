@@ -479,8 +479,11 @@ export function buildWeeklyGraph(params: {
   let completed = 0;
   weeks.forEach((w, i) => {
     w.completionPercent = percent(w.completed, w.total);
+    // A week that hasn't started has no task or revenue progress yet — but an
+    // admin/mentor record the admin saved for it is confirmed data and is
+    // plotted in its week (it used to be dropped here: progressLevel null).
     w.progressLevel = w.startDay > today
-      ? null
+      ? (recordLevelByWeek[i] > 0 ? recordLevelByWeek[i] : null)
       : Math.max(
           weekProgressLevel({ total: w.total, completed: w.completed, completedMilestoneLevel: milestoneLevelByWeek[i] }, cap),
           recordLevelByWeek[i],

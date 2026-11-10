@@ -74,6 +74,7 @@ export async function psychometricPlatformAdminRoutes(fastify: FastifyInstance) 
   fastify.get('/admin/results', results.listResults);
   fastify.get('/admin/results/user/:userId', results.resultsByCandidate);
   fastify.get('/admin/results/:id', results.getResult);
+  fastify.get('/admin/results/:id/answers', results.getResultAnswers);
   fastify.delete('/admin/results/:id', results.deleteResult);
   fastify.get('/admin/export/pdf', results.exportPdf);
   fastify.get('/admin/export/csv', results.exportCsv);

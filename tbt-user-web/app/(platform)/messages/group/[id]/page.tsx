@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -652,7 +653,7 @@ export default function GroupChatPage() {
   const isMuted = isLocallyMuted(groupId);
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
+    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100dvh-8rem)]">
       {/* Header */}
       <div
         className="flex items-center gap-3 p-3 rounded-t-2xl flex-shrink-0"
@@ -824,6 +825,7 @@ export default function GroupChatPage() {
                   onPin={() => handleTogglePin(m)}
                   onInfo={() => setInfoMsgId(m.id)}
                   onShowReactors={(emoji) => setReactorsMsg({ msg: m, emoji })}
+                  scrollContainerRef={scrollRef}
                 />
               );
             });
@@ -1040,6 +1042,7 @@ export default function GroupChatPage() {
               style={{
                 background: "var(--color-bg-primary)",
                 border: "1px solid var(--color-border-subtle)",
+                fontSize: '16px',
               }}
             />
           </div>
@@ -1203,6 +1206,7 @@ function MessageBubble({
   onPin,
   onInfo,
   onShowReactors,
+  scrollContainerRef,
 }: {
   message: ChatGroupMessage;
   isMine: boolean;
@@ -1221,10 +1225,115 @@ function MessageBubble({
   onPin: () => void;
   onInfo: () => void;
   onShowReactors: (emoji: string) => void;
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{
+    top: number;
+    left: number;
+    maxHeight: number;
+  } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
+  const [reactPickerPos, setReactPickerPos] = useState<{ top: number; left: number } | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Close action menu and reaction picker when the message list scrolls or
+  // the window resizes — both use fixed/portal positioning and must track
+  // the trigger position, so it's simpler to dismiss on movement.
+  useEffect(() => {
+    if (!menuOpen && !reactPickerOpen) return;
+    const close = () => {
+      setMenuOpen(false);
+      setMenuPos(null);
+      setReactPickerOpen(false);
+      setReactPickerPos(null);
+    };
+    const el = scrollContainerRef.current;
+    if (el) el.addEventListener("scroll", close, { passive: true });
+    window.addEventListener("resize", close);
+    return () => {
+      if (el) el.removeEventListener("scroll", close);
+      window.removeEventListener("resize", close);
+    };
+  }, [menuOpen, reactPickerOpen, scrollContainerRef]);
+
+  // Calculate viewport-aware position for the emoji reaction picker so it is
+  // never clipped by the scroll container's overflow boundary.
+  function openReactPicker() {
+    const PICKER_HEIGHT = 44; // single row of emoji buttons
+    const PICKER_WIDTH = 220; // ~6 emoji × 36px
+    const GAP = 4;
+    const SAFE = 8;
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setReactPickerPos({ top: SAFE, left: SAFE });
+      setReactPickerOpen(true);
+      return;
+    }
+    // Prefer above the trigger; fall back to below if not enough room.
+    const spaceAbove = rect.top - GAP - SAFE;
+    let top: number;
+    if (spaceAbove >= PICKER_HEIGHT) {
+      top = rect.top - PICKER_HEIGHT - GAP;
+    } else {
+      top = rect.bottom + GAP;
+    }
+    top = Math.max(SAFE, Math.min(top, window.innerHeight - PICKER_HEIGHT - SAFE));
+    let left = isMine ? rect.right - PICKER_WIDTH : rect.left;
+    left = Math.max(SAFE, Math.min(left, window.innerWidth - PICKER_WIDTH - SAFE));
+    setReactPickerPos({ top, left });
+    setReactPickerOpen(true);
+  }
+
+  // Calculate portal position so the menu is always fully visible.
+  function openMenu(anchor?: { top: number; bottom: number; left: number; right: number }) {
+    const MENU_WIDTH = 176; // w-44 = 11rem
+    const MENU_MAX_HEIGHT = 340; // 10 items × ~32px + 8px padding
+    const GAP = 4;
+    // Minimum clearance from any viewport edge so the menu never touches the
+    // browser chrome. This also prevents the menu from being hidden behind a
+    // rounded-corner on mobile.
+    const SAFE = 8;
+
+    const rect = anchor ?? triggerRef.current?.getBoundingClientRect();
+
+    if (!rect) {
+      setMenuPos({ top: SAFE, left: SAFE, maxHeight: MENU_MAX_HEIGHT });
+      setMenuOpen(true);
+      return;
+    }
+
+    // The menu is rendered via createPortal with `position:fixed`, so its
+    // top/left are relative to the VIEWPORT, not the scroll container.
+    // Using container.bottom to measure "space below" was wrong: the scroll
+    // container ends above the composer, so a trigger near the bottom of the
+    // scroll area appeared to have almost no space below even though the
+    // fixed-positioned menu can overlay the composer via z-index.
+    const spaceBelow = window.innerHeight - rect.bottom - GAP - SAFE;
+    const spaceAbove = rect.top - GAP - SAFE;
+
+    let top: number;
+    let maxHeight: number;
+
+    if (spaceBelow >= MENU_MAX_HEIGHT || spaceBelow >= spaceAbove) {
+      // Open below the trigger
+      top = rect.bottom + GAP;
+      maxHeight = Math.max(Math.min(spaceBelow, MENU_MAX_HEIGHT), 80);
+    } else {
+      // Not enough room below — open above
+      const h = Math.max(Math.min(spaceAbove, MENU_MAX_HEIGHT), 80);
+      top = rect.top - h - GAP;
+      maxHeight = h;
+    }
+
+    // Horizontal: align to trigger edge, clamped to viewport bounds.
+    let left = isMine ? rect.right - MENU_WIDTH : rect.left;
+    left = Math.max(SAFE, Math.min(left, window.innerWidth - MENU_WIDTH - SAFE));
+
+    setMenuPos({ top, left, maxHeight });
+    setMenuOpen(true);
+  }
 
   // Long-press support for touch devices. `pointerdown` starts a 500ms
   // timer; if the user hasn't lifted their finger by then we open the
@@ -1237,7 +1346,12 @@ function MessageBubble({
     if (e.pointerType === "mouse") return;
     longPressStartRef.current = { x: e.clientX, y: e.clientY };
     longPressTimerRef.current = setTimeout(() => {
-      setMenuOpen(true);
+      const pt = longPressStartRef.current;
+      if (pt) {
+        openMenu({ top: pt.y, bottom: pt.y, left: pt.x, right: pt.x });
+      } else {
+        openMenu();
+      }
     }, 500);
   }
   function cancelLongPress(e?: React.PointerEvent<HTMLDivElement>) {
@@ -1397,7 +1511,11 @@ function MessageBubble({
           </div>
           {!deleted && (
             <button
-              onClick={() => setMenuOpen((v) => !v)}
+              ref={triggerRef}
+              onClick={() => {
+                if (menuOpen) { setMenuOpen(false); setMenuPos(null); }
+                else { openMenu(); }
+              }}
               className="absolute top-0 right-0 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
               style={{
                 background: "var(--color-modal-bg)",
@@ -1409,128 +1527,142 @@ function MessageBubble({
               <ChevronDown size={12} />
             </button>
           )}
-          {menuOpen && !deleted && (
+          {menuOpen && !deleted && menuPos && createPortal(
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              {/* Full-screen backdrop — lives outside the scroll container so it
+                  can't be clipped, and uses a higher z-index than any page chrome. */}
               <div
-                className={cn(
-                  "absolute z-50 mt-1 w-44 rounded-xl overflow-hidden py-1",
-                  isMine ? "right-0" : "left-0",
-                )}
+                className="fixed inset-0 z-[200]"
+                onClick={() => { setMenuOpen(false); setMenuPos(null); }}
+              />
+              {/* Menu — fixed positioning derived from getBoundingClientRect(),
+                  guaranteed to never be clipped by the scroll container's
+                  overflow boundary. Opens above when there is not enough room
+                  below (spaceBelow < spaceAbove). */}
+              <div
+                className="fixed z-[201] w-44 rounded-xl overflow-hidden"
                 style={{
+                  top: menuPos.top,
+                  left: menuPos.left,
+                  maxHeight: menuPos.maxHeight,
                   background: "var(--color-modal-bg)",
                   border: "1px solid var(--color-border-medium)",
                   boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
                 }}
               >
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setReactPickerOpen(true);
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Smile size={13} /> React
-                </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onReply();
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Reply size={13} /> Reply
-                </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onForward();
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Forward size={13} /> Forward
-                </button>
-                {message.body && (
+                <div className="overflow-y-auto py-1" style={{ maxHeight: menuPos.maxHeight }}>
                   <button
                     onClick={() => {
-                      setMenuOpen(false);
-                      onCopy();
+                      setMenuOpen(false); setMenuPos(null);
+                      openReactPicker();
                     }}
                     className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                   >
-                    <Copy size={13} /> Copy
+                    <Smile size={13} /> React
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onStar();
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Star size={13} /> {isStarred ? "Unstar" : "Star"}
-                </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onPin();
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <MapPin size={13} /> {message.isPinned ? "Unpin" : "Pin"}
-                </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onInfo();
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Info size={13} /> Info
-                </button>
-                {isMine && !message.mediaUrl && message.body && (
                   <button
                     onClick={() => {
-                      setMenuOpen(false);
-                      onEdit();
+                      setMenuOpen(false); setMenuPos(null);
+                      onReply();
                     }}
                     className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                   >
-                    <MoreVertical size={13} /> Edit
+                    <Reply size={13} /> Reply
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete(false);
-                  }}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <Trash2 size={13} /> Delete for me
-                </button>
-                {isMine && (
                   <button
                     onClick={() => {
-                      setMenuOpen(false);
-                      onDelete(true);
+                      setMenuOpen(false); setMenuPos(null);
+                      onForward();
                     }}
-                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                   >
-                    <Trash2 size={13} /> Delete for everyone
+                    <Forward size={13} /> Forward
                   </button>
-                )}
+                  {message.body && (
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false); setMenuPos(null);
+                        onCopy();
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <Copy size={13} /> Copy
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false); setMenuPos(null);
+                      onStar();
+                    }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Star size={13} /> {isStarred ? "Unstar" : "Star"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false); setMenuPos(null);
+                      onPin();
+                    }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <MapPin size={13} /> {message.isPinned ? "Unpin" : "Pin"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false); setMenuPos(null);
+                      onInfo();
+                    }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Info size={13} /> Info
+                  </button>
+                  {isMine && !message.mediaUrl && message.body && (
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false); setMenuPos(null);
+                        onEdit();
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <MoreVertical size={13} /> Edit
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false); setMenuPos(null);
+                      onDelete(false);
+                    }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
+                  >
+                    <Trash2 size={13} /> Delete for me
+                  </button>
+                  {isMine && (
+                    <button
+                      onClick={() => {
+                        setMenuOpen(false); setMenuPos(null);
+                        onDelete(true);
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
+                    >
+                      <Trash2 size={13} /> Delete for everyone
+                    </button>
+                  )}
+                </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
-          {reactPickerOpen && (
+          {reactPickerOpen && reactPickerPos && createPortal(
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setReactPickerOpen(false)} />
               <div
-                className={cn(
-                  "absolute z-50 -top-10 flex gap-1 px-2 py-1 rounded-full",
-                  isMine ? "right-0" : "left-0",
-                )}
+                className="fixed inset-0 z-[200]"
+                onClick={() => { setReactPickerOpen(false); setReactPickerPos(null); }}
+              />
+              <div
+                className="fixed z-[201] flex gap-1 px-2 py-1 rounded-full"
                 style={{
+                  top: reactPickerPos.top,
+                  left: reactPickerPos.left,
                   background: "var(--color-modal-bg)",
                   border: "1px solid var(--color-border-medium)",
                   boxShadow: "0 8px 24px rgba(0,0,0,0.6)",
@@ -1542,6 +1674,7 @@ function MessageBubble({
                     onClick={() => {
                       onReact(emoji);
                       setReactPickerOpen(false);
+                      setReactPickerPos(null);
                     }}
                     className="text-lg hover:scale-125 transition-transform"
                   >
@@ -1549,7 +1682,8 @@ function MessageBubble({
                   </button>
                 ))}
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
         {reactionGroups.length > 0 && (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Image as ImageIcon, Loader2, Video, X } from "lucide-react";
+import { AlertCircle, Clock, Image as ImageIcon, Loader2, Video, X } from "lucide-react";
 
 import { useMe } from "@/lib/hooks/useUser";
 import { useSubmitPost } from "@/lib/hooks/useCommunity";
@@ -67,6 +67,7 @@ export function ComposerModal({
   const [slots, setSlots] = useState<MediaSlot[]>([]);
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [pendingReview, setPendingReview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -85,6 +86,7 @@ export function ComposerModal({
       slots.forEach((s) => URL.revokeObjectURL(s.previewUrl));
       setSlots([]);
       setBanner(null);
+      setPendingReview(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -164,7 +166,9 @@ export function ComposerModal({
         mediaUrls: urls.length > 0 ? urls : undefined,
       });
       onSubmitted?.();
-      onClose();
+      setPendingReview(true);
+      // Auto-close after a moment so the user reads the confirmation
+      setTimeout(() => onClose(), 2800);
     } catch (err) {
       const raw = err instanceof Error ? err.message : "Could not post. Please try again.";
       // Backend may return a Zod JSON array string — extract the first human-readable message
@@ -213,6 +217,26 @@ export function ComposerModal({
 
         {/* Body */}
         <div className="p-4 space-y-3">
+          {/* Pending review confirmation state */}
+          {pendingReview && (
+            <div
+              className="py-6 flex flex-col items-center gap-3 text-center"
+            >
+              <div
+                className="w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: "rgba(234,179,8,0.12)", border: "1px solid rgba(234,179,8,0.35)" }}
+              >
+                <Clock size={22} style={{ color: "#eab308" }} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">Post submitted for review</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Your post will appear in the feed once an admin approves it.
+                </p>
+              </div>
+            </div>
+          )}
+          {!pendingReview && (
           <div className="flex items-start gap-3">
             <MemberAvatar
               member={me as unknown as { firstName?: string; lastName?: string; profilePhotoUrl?: string | null }}
@@ -227,8 +251,9 @@ export function ComposerModal({
               className="flex-1 bg-transparent text-sm text-foreground outline-none resize-none placeholder:text-muted-foreground min-h-[120px]"
             />
           </div>
+          )}
 
-          {slots.length > 0 && (
+          {!pendingReview && slots.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               {slots.map((s) => (
                 <div
@@ -264,7 +289,7 @@ export function ComposerModal({
             </div>
           )}
 
-          {banner && (
+          {!pendingReview && banner && (
             <div
               className="p-2.5 rounded-lg flex items-start gap-2 text-xs"
               style={{
@@ -280,6 +305,7 @@ export function ComposerModal({
         </div>
 
         {/* Footer */}
+        {!pendingReview && (
         <div
           className="flex items-center justify-between p-3 gap-3"
           style={{
@@ -333,6 +359,7 @@ export function ComposerModal({
             )}
           </button>
         </div>
+        )}
       </div>
     </div>
   );

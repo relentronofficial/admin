@@ -309,6 +309,17 @@ describe('buildWeeklyGraph — per-milestone reached/dayNumber (Learning Roadmap
     expect(status(graph({ config: saved, records: [{ milestoneId: 'm-web', weekId: 'gone' }] }))[1]).toEqual(['Website', true, null]);
   });
 
+  it("an admin record lifts its week's point — also in a week the member hasn't reached yet", () => {
+    const weeks = [1, 2, 3, 4].map((n) => ({ id: `w${n}`, label: `W${n}`, startDay: (n - 1) * 7 + 1, endDay: n * 7 }));
+    const config = { ...saved, weeks, coveredUntilDay: 28 };
+    // Member is on day 10 (W2). Records: Website in W2 (current), 1 lakh in W4 (not started yet).
+    const g = graph({ config, currentDay: 10, records: [{ milestoneId: 'm-web', weekId: 'w2' }, { milestoneId: 'm-1l', weekId: 'w4' }] });
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 2, null, 4]);
+    expect(g.config.milestones.find((m) => m.id === 'm-1l')).toMatchObject({ reached: true, reachedBy: 'record', reachedWeek: 4 });
+    // Without records, the not-started weeks stay unplotted (nothing invented).
+    expect(graph({ config, currentDay: 10 }).weeks.map((w) => w.progressLevel)).toEqual([0, 0, null, null]);
+  });
+
   it('default (unsaved) revenue milestones can never be reached — records need a saved milestone id', () => {
     const g = graph({ records: [{ milestoneId: 'anything', weekId: null }] });
     expect(g.config.milestones.slice(3).map((m) => [m.id, m.reached])).toEqual([[null, false], [null, false], [null, false]]);

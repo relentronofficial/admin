@@ -66,6 +66,7 @@ import {
   sendMemberChatMessageHandler,
   getConversationUnreadCountHandler,
   archiveConversationHandler,
+  markConversationReadHandler,
   getWorkshopChallengesHandler,
   getWorkshopOverviewHandler,
   completeChallengeHandler,
@@ -353,6 +354,7 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/conversations/:id/messages',          getMemberConversationMessagesHandler);
   fastify.post('/conversations/:id/messages',         sendMemberChatMessageHandler);
   fastify.patch('/conversations/:id/archive',         archiveConversationHandler);
+  fastify.post('/conversations/:id/read',             markConversationReadHandler);
   fastify.put('/conversations/:id/messages/:messageId',               editConversationMessageHandler);
   fastify.delete('/conversations/:id/messages/:messageId',            deleteConversationMessageHandler);
   fastify.post('/conversations/:id/messages/:messageId/react',        reactConversationMessageHandler);

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Pencil, RefreshCw } from "lucide-react";
 
 import { useFeed } from "@/lib/hooks/useCommunity";
+import { usePodcastPlayer } from "@/lib/stores/usePodcastPlayer";
 import type { CommunityFilter, CommunityPost } from "@/types";
 
 import { PostCard } from "@/components/features/community/PostCard";
@@ -37,6 +38,8 @@ export default function CommunityPage() {
     refetch,
     isRefetching,
   } = useFeed(filter);
+
+  const miniPlayerActive = usePodcastPlayer((s) => !!s.episode);
 
   // Modal state
   const [composerOpen, setComposerOpen] = useState(false);
@@ -236,11 +239,15 @@ export default function CommunityPage() {
       {/* Floating compose button — mobile/tablet only; desktop has the sidebar button */}
       <button
         onClick={() => setComposerOpen(true)}
-        className="lg:hidden fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-2xl"
+        className="lg:hidden fixed right-6 z-50 w-14 h-14 rounded-full flex items-center justify-center text-white shadow-2xl"
         style={{
+          bottom: miniPlayerActive
+            ? 'calc(80px + env(safe-area-inset-bottom, 0px))'
+            : 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
           background: "var(--color-accent)",
           boxShadow:
             "0 10px 30px color-mix(in srgb, var(--color-accent) 40%, transparent)",
+          transition: 'bottom 0.2s ease',
         }}
         aria-label="Compose post"
       >

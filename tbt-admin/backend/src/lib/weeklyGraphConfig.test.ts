@@ -236,13 +236,17 @@ describe('member graph from the program configuration', () => {
     expect(g.weeks[0].progressLevel).toBe(4);
   });
 
-  it('records for disabled/unknown milestones or weeks, or future weeks, are not plotted', () => {
+  it('records for disabled/unknown milestones are not plotted; a record in a future week is plotted in that week', () => {
     const ms = DEFAULT_MS.map((m) => (m.id === 'm-1c' ? { ...m, isActive: false } : m));
     const g = build({ config: config(FOUR_WEEKS, ms), currentDay: 10, records: [
       { milestoneId: 'm-1c', weekId: 'w1' }, { milestoneId: 'nope', weekId: 'w1' }, { milestoneId: 'm-1l', weekId: 'w4' },
     ] });
     expect(g.weeks[0].progressLevel).toBe(0);
-    expect(g.weeks[3].progressLevel).toBeNull();
+    // W4 hasn't started (day 10), but the admin recorded 1 lakh for it: confirmed data, plotted on its row.
+    const oneLakhRow = g.config.milestones.findIndex((m) => m.id === 'm-1l') + 1;
+    expect(g.weeks[3].progressLevel).toBe(oneLakhRow);
+    // A future week with no record stays unplotted.
+    expect(g.weeks[2].progressLevel).toBeNull();
   });
 
   it('shows exactly the configured weeks: none is generated past the configured range', () => {

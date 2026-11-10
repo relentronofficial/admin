@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressionLine, progressionSvgPath, weekLinePoints, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
+import { progressionLine, progressionSvgPath, achievementPoints, straightProgressionPath, weekLinePoints, weekProgressionPoints, type ProgressionWeek } from "./weeklyGraphProgression";
 
 // x = weekIndex * 100, y = 100 - level * 10: easy to read back.
 const colX = (i: number) => i * 100;
@@ -115,5 +115,27 @@ describe("progressionSvgPath (smooth line from the chart origin)", () => {
     expect(d.startsWith("M 76,200")).toBe(true);
     expect(ends(d)).toEqual([[76, 200], [108, 160], [172, 100], [236, 180]]);
     expect(d.match(/C /g)).toHaveLength(3);
+  });
+});
+
+describe("achievementPoints (growth line)", () => {
+  const colX = (i: number) => 100 + i * 50;
+  const yFor = (l: number) => 300 - l * 40;
+  const wk = (n: number, progressLevel: number | null) => ({ weekNumber: n, progressLevel });
+
+  it("one point per week that reaches a new high, so the line only rises", () => {
+    const pts = achievementPoints([wk(1, 1), wk(2, 2), wk(3, 1.5), wk(4, 2), wk(5, 3), wk(6, 4.5)], colX, yFor);
+    expect(pts.map((p) => [p.weekNumber, p.level])).toEqual([[1, 1], [2, 2], [5, 3], [6, 4.5]]);
+    expect(pts.map((p) => [p.x, p.y])).toEqual([[100, 260], [150, 220], [300, 180], [350, 120]]);
+  });
+
+  it("skips weeks not started, with no progress, or with broken values; nothing achieved → no points", () => {
+    expect(achievementPoints([wk(1, 0), wk(2, null), wk(3, NaN as unknown as number), wk(4, 2)], colX, yFor).map((p) => p.weekNumber)).toEqual([4]);
+    expect(achievementPoints([wk(1, 0), wk(2, null)], colX, yFor)).toEqual([]);
+  });
+
+  it("straight segments from the origin through every point", () => {
+    expect(straightProgressionPath([], 0, 300)).toBeNull();
+    expect(straightProgressionPath([{ x: 100, y: 260 }, { x: 150, y: 220 }], 76, 300)).toBe("M 76,300 L 100,260 L 150,220");
   });
 });
