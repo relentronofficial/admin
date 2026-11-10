@@ -169,6 +169,8 @@ describe("WeeklyActivityGraph", () => {
     renderGraph();
     await chart();
     const user = userEvent.setup();
+    await user.tab(); // W1's progress-point marker comes first, then its task markers
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("W1: 1 of 3 tasks approved, Ads");
     await user.tab();
     expect(document.activeElement?.getAttribute("aria-label")).toBe("W1, Ads, Ads W1, Completed");
     await user.keyboard("{Enter}");
@@ -370,19 +372,23 @@ describe("WeeklyActivityGraph", () => {
       expect(pts(container).map(([x]) => x)).toEqual(["W1", "W2", "W3", "W4", "W6", "W7"].map(weekX));
     });
 
-    it("is drawn red, 3px, under the task markers (their look is unchanged) and never blocks clicks", async () => {
+    it("is drawn red, 3px, smooth, under the task markers (their look is unchanged) and never blocks clicks", async () => {
       get.mockResolvedValue(ok(weeksData()));
       const { container } = renderGraph();
       await chart();
       const l = line(container)!;
       expect(l.getAttribute("stroke")).toBe("var(--color-accent, #dc2626)");
       expect(Number(l.getAttribute("stroke-width"))).toBe(3);
-      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( L [\d.]+,[\d.]+)+$/); // straight segments through each week's dot
-      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("2.5");
+      // A smooth curve from the origin: one cubic segment per week's point.
+      expect(l.getAttribute("d")).toMatch(/^M [\d.]+,[\d.]+( C [\d.-]+,[\d.-]+ [\d.-]+,[\d.-]+ [\d.]+,[\d.]+)+$/);
+      for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) expect(dot.getAttribute("r")).toBe("5");
       const firstMarker = container.querySelector('[data-testid="activity-marker"]')!;
       expect(l.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      // Each week's progress point is drawn before (under) that week's task markers.
       for (const dot of container.querySelectorAll('[data-testid="progress-point"]')) {
-        expect(dot.compareDocumentPosition(firstMarker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        const weekMarkers = dot.closest("g")!.parentElement!.querySelectorAll('[data-testid="activity-marker"]');
+        expect(weekMarkers.length).toBeGreaterThan(0);
+        for (const m of weekMarkers) expect(dot.compareDocumentPosition(m) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       }
       expect(l.getAttribute("pointer-events")).toBe("none");
     });
@@ -421,6 +427,41 @@ describe("WeeklyActivityGraph", () => {
       const [ox, oy] = origin(container);
       expect(ox).toBeLessThan(weekX("W1"));
       expect(oy).toBeGreaterThan(rowY("Ads")); // the baseline is below the first milestone row
+    });
+
+    it("highlights no week: no column background, every week label styled the same", async () => {
+      get.mockResolvedValue(ok(weeksData())); // W4 is the current week
+      const { container } = renderGraph();
+      await chart();
+      expect(container.querySelectorAll("svg rect")).toHaveLength(0);
+      const labels = screen.getAllByTestId("week-label");
+      expect(new Set(labels.map((l) => `${l.getAttribute("fill")}|${l.getAttribute("font-weight")}`)).size).toBe(1);
+    });
+
+    it("a progress point's popup shows its week, milestone and progress; a mouse hover previews it", async () => {
+      const data = weeksData();
+      data.weeks[1].revenue = 50000;
+      get.mockResolvedValue(ok(data));
+      renderGraph();
+      await chart();
+      const user = userEvent.setup();
+      const point = screen.getByRole("button", { name: "W2: 2 of 2 tasks approved, Funnels" });
+      await user.hover(point);
+      let d = within(screen.getByRole("dialog"));
+      expect(d.getByText("Week").nextSibling!.textContent).toBe("W2");
+      expect(d.getByText("Milestone").nextSibling!.textContent).toBe("Funnels");
+      expect(d.getByText("Week progress").nextSibling!.textContent).toBe("2 of 2 tasks approved");
+      expect(d.getByText("Revenue this week").nextSibling!.textContent).toBe("₹50,000");
+      await user.unhover(point);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      // A click pins it: moving the mouse away keeps it open.
+      await user.click(point);
+      await user.unhover(point);
+      d = within(screen.getByRole("dialog"));
+      expect(d.getByText("Milestone").nextSibling!.textContent).toBe("Funnels");
+      // Between two rows (W4 progress 1.5) the milestone is the row it has reached.
+      await user.click(screen.getByRole("button", { name: "W4: 1 of 2 tasks approved, Ads" }));
+      expect(within(screen.getByRole("dialog")).getByText("Milestone").nextSibling!.textContent).toBe("Ads");
     });
 
     it("keeps the status legend unchanged", async () => {

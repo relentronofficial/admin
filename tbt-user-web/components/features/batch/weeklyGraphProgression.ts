@@ -168,3 +168,48 @@ export function progressionSvgPath(
   }
   return d;
 }
+
+/**
+ * The red line as a smooth SVG path `d`: from the chart origin (Start, bottom
+ * left) through every point, as a monotone cubic (Fritsch–Carlson, like d3's
+ * curveMonotoneX). Unlike Catmull-Rom, a monotone curve never overshoots: each
+ * segment stays between its two points' heights, so a smooth line can't
+ * suggest a milestone row the member did not reach (or dip below the baseline).
+ * Every point is a segment end point, exactly. null when there are no points.
+ */
+export function smoothProgressionPath(
+  points: Array<{ x: number; y: number }>,
+  originX: number,
+  originY: number,
+): string | null {
+  if (points.length === 0) return null;
+  const all = [{ x: originX, y: originY }, ...points.map((p) => ({ x: p.x, y: p.y }))];
+  if (all.length === 2) return `M ${all[0].x},${all[0].y} L ${all[1].x},${all[1].y}`;
+  const n = all.length;
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i++) slope.push((all[i + 1].y - all[i].y) / (all[i + 1].x - all[i].x || 1));
+  const tan: number[] = all.map((_, i) => {
+    if (i === 0) return slope[0];
+    if (i === n - 1) return slope[n - 2];
+    return slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2;
+  });
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) { tan[i] = 0; tan[i + 1] = 0; continue; }
+    const a = tan[i] / slope[i];
+    const b = tan[i + 1] / slope[i];
+    const s = a * a + b * b;
+    if (s > 9) {
+      const t = 3 / Math.sqrt(s);
+      tan[i] = t * a * slope[i];
+      tan[i + 1] = t * b * slope[i];
+    }
+  }
+  const f = (v: number) => Number(v.toFixed(2));
+  let d = `M ${all[0].x},${all[0].y}`;
+  for (let i = 0; i < n - 1; i++) {
+    const p = all[i], q = all[i + 1];
+    const h = (q.x - p.x) / 3;
+    d += ` C ${f(p.x + h)},${f(p.y + tan[i] * h)} ${f(q.x - h)},${f(q.y - tan[i + 1] * h)} ${q.x},${q.y}`;
+  }
+  return d;
+}
