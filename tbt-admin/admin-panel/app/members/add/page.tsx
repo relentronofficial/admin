@@ -74,7 +74,7 @@ const memberSchema = z.object({
   skillAds: z.number().int().min(1).max(10).default(1),
   skillSales: z.number().int().min(1).max(10).default(1),
   skillOverallMarketing: z.number().int().min(1).max(10).default(1),
-  weeklyLearningHours: z.number().int().min(5).max(80).default(5),
+  weeklyLearningHours: z.number().int().min(1).max(80).default(1), // hours per day (slider 1–24; ≤80 keeps legacy per-week values valid)
   teamSize: z.string().optional(),
   businessStartedFrom: z.string().optional(),
   instagramStats: z.string().optional(),
@@ -140,7 +140,7 @@ export default function AddMemberPage() {
       skillAds: 1,
       skillSales: 1,
       skillOverallMarketing: 1,
-      weeklyLearningHours: 5,
+      weeklyLearningHours: 1,
     }
   });
 
@@ -687,16 +687,16 @@ export default function AddMemberPage() {
               {/* Learning hours slider */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase">Hours per week for learning</p>
-                  <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 5} <span className="text-[#555] text-[13px] font-normal">hrs/week</span></span>
+                  <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase">Hours per day for learning</p>
+                  <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 1} <span className="text-[#555] text-[13px] font-normal">{(watchLearningHours ?? 1) === 1 ? "hr/day" : "hrs/day"}</span></span>
                 </div>
                 <input
-                  type="range" min={5} max={80} step={5}
+                  type="range" min={1} max={24} step={1}
                   {...register("weeklyLearningHours", { valueAsNumber: true })}
                   className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
                 />
                 <div className="flex justify-between text-[11px] text-[#555] mt-1">
-                  <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+                  <span>1 hr</span><span>12 hrs</span><span>24 hrs</span>
                 </div>
               </div>
 

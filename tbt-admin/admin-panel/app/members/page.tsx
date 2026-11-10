@@ -112,7 +112,7 @@ const memberUpdateSchema = z.object({
   skillAds: z.number().int().min(1).max(10).default(1),
   skillSales: z.number().int().min(1).max(10).default(1),
   skillOverallMarketing: z.number().int().min(1).max(10).default(1),
-  weeklyLearningHours: z.number().int().min(5).max(80).default(5),
+  weeklyLearningHours: z.number().int().min(1).max(80).default(1), // hours per day (slider 1–24; ≤80 keeps legacy per-week values valid)
   teamSize: z.string().optional().or(z.literal("")),
   businessStartedFrom: z.string().optional().or(z.literal("")),
   instagramStats: z.string().optional().or(z.literal("")),
@@ -391,7 +391,7 @@ export default function MembersListPage() {
         skillAds: editingMember.skillAds ?? 1,
         skillSales: editingMember.skillSales ?? 1,
         skillOverallMarketing: editingMember.skillOverallMarketing ?? 1,
-        weeklyLearningHours: editingMember.weeklyLearningHours ?? 5,
+        weeklyLearningHours: editingMember.weeklyLearningHours ?? 1,
         teamSize: editingMember.teamSize || "",
         businessStartedFrom: editingMember.businessStartedFrom || "",
         instagramStats: editingMember.instagramStats || "",
@@ -1345,14 +1345,14 @@ export default function MembersListPage() {
                     </div>
                     <div>
                       <div className="flex justify-between items-center mb-2">
-                        <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Hours per week for learning</p>
-                        <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 5} <span className="text-[#555] text-[13px] font-normal">hrs/week</span></span>
+                        <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Hours per day for learning</p>
+                        <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 1} <span className="text-[#555] text-[13px] font-normal">{(watchLearningHours ?? 1) === 1 ? "hr/day" : "hrs/day"}</span></span>
                       </div>
-                      <input type="range" min={5} max={80} step={5}
+                      <input type="range" min={1} max={24} step={1}
                         {...register("weeklyLearningHours", { valueAsNumber: true })}
                         className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
                       />
-                      <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>5 hrs</span><span>40 hrs</span><span>80 hrs</span></div>
+                      <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>1 hr</span><span>12 hrs</span><span>24 hrs</span></div>
                     </div>
                   </div>
                 </section>

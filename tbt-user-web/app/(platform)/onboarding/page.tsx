@@ -34,6 +34,16 @@ type FixedStep = "welcome" | "mentorship" | "profile" | "skills" | "documents" |
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
+// Learning hours are hours PER DAY (1–24), stored in members.weekly_learning_hours
+// (the column predates the switch from per-week). Untouched → 1; a legacy
+// per-week value above 24 shows, and saves, as 24.
+const LEARNING_HOURS_MIN = 1;
+const LEARNING_HOURS_MAX = 24;
+const learningHoursPerDay = (v: unknown): number =>
+  typeof v === "number" && Number.isFinite(v)
+    ? Math.min(LEARNING_HOURS_MAX, Math.max(LEARNING_HOURS_MIN, Math.round(v)))
+    : LEARNING_HOURS_MIN;
+
 const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state"] as const;
 
 const DOCUMENT_TYPES = [
@@ -672,12 +682,16 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
       // member saw is what gets stored (null was dropped below and never saved).
       if (step === "skills") {
         for (const { key } of SKILL_FIELDS) if (typeof editable[key] !== "number") editable[key] = 1;
+        // Same for the learning-hours slider: store the hours per day it shows.
+        editable.weeklyLearningHours = learningHoursPerDay(editable.weeklyLearningHours);
       }
       const body = Object.fromEntries(
         Object.entries({ ...editable, currentChallenges })
           .filter(([, v]) => v !== null && v !== undefined && v !== "")
       );
       await saveProgress.mutateAsync(body);
+      // Keep the shown/saved per-day hours in state so the review step matches what was stored.
+      if (step === "skills") setProfileState((p) => ({ ...p, weeklyLearningHours: editable.weeklyLearningHours }));
       setStep(next);
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || "Couldn't save your progress. Please try again.";
@@ -1351,23 +1365,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {/* Learning hours */}
               <div>
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-sm font-semibold text-foreground">Hours per week for learning</span>
+                  <span className="text-sm font-semibold text-foreground">Hours per day for learning</span>
                   <div className="flex items-baseline gap-0.5">
                     <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: "var(--color-accent)" }}>
-                      {typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
+                      {learningHoursPerDay(profile.weeklyLearningHours)}
                     </span>
-                    <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>hrs</span>
+                    <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>{learningHoursPerDay(profile.weeklyLearningHours) === 1 ? "hr" : "hrs"}</span>
                   </div>
                 </div>
                 <input
-                  type="range" min={5} max={80} step={5}
-                  value={typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
+                  type="range" min={LEARNING_HOURS_MIN} max={LEARNING_HOURS_MAX} step={1}
+                  value={learningHoursPerDay(profile.weeklyLearningHours)}
                   onChange={(e) => setField("weeklyLearningHours", Number(e.target.value))}
                   className="w-full h-2 rounded-full appearance-none cursor-pointer"
                   style={{ accentColor: "var(--color-accent)" }}
                 />
                 <div className="flex justify-between text-xs mt-1.5" style={{ color: "var(--color-text-subtle)" }}>
-                  <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+                  <span>1 hr</span><span>12 hrs</span><span>24 hrs</span>
                 </div>
               </div>
             </div>
@@ -1632,9 +1646,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                       style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : undefined }}
                     >
                       <span className="text-xs capitalize shrink-0 pt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                        {key.replace(/([A-Z])/g, " $1")}
+                        {key === "weeklyLearningHours" ? "learning Hours Per Day" : key.replace(/([A-Z])/g, " $1")}
                       </span>
-                      <span className="text-foreground text-right break-all">{String(value)}</span>
+                      <span className="text-foreground text-right break-all">
+                        {key === "weeklyLearningHours" ? `${value} ${value === 1 ? "hr" : "hrs"}` : String(value)}
+                      </span>
                     </div>
                   ))}
                 {((profile.marketingChannels as string[]) || []).length > 0 && (
