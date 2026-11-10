@@ -21,27 +21,76 @@ export type ApiEnvelope<T = unknown> = {
 
 export type ApiResult<T = unknown> = { ok: boolean; status: number; data: T };
 
+type TokenGetter = (options?: { skipCache?: boolean }) => Promise<string | null>;
+
+// The token source: the same Clerk `getToken` (from useAuth) that the rest of
+// TBT Admin's API client uses — registered by app/psychometric/layout.tsx,
+// which wraps every Psychometric page. Reading `window.Clerk.session` directly
+// (the previous approach) returned no token for admins whose regular TBT Admin
+// requests were authenticating fine at the same moment, so the backend got
+// requests without an Authorization header and answered 401.
+let tokenGetter: TokenGetter | null = null;
+export function setAuthTokenGetter(getter: TokenGetter | null) {
+  tokenGetter = getter;
+}
+
+async function currentToken(fresh = false): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const getter: TokenGetter | null = tokenGetter ?? (() => {
+    // Fallback only until the layout registers useAuth's getToken.
+    const clerk = (window as unknown as { Clerk?: { session?: { getToken: TokenGetter } | null } }).Clerk;
+    return clerk?.session ? (o) => clerk.session!.getToken(o) : null;
+  })();
+  if (!getter) return null;
+  try {
+    return (await getter(fresh ? { skipCache: true } : undefined)) || null;
+  } catch {
+    return null;
+  }
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The admin's Clerk session token. If none comes back, asks once more for a
+ * fresh one (Clerk may be mid-refresh) before giving up. Never logs the token.
+ */
+async function sessionToken(fresh = false): Promise<string | null> {
+  const token = await currentToken(fresh);
+  if (token) return token;
+  await wait(300);
+  return currentToken(true);
+}
+
 /** The admin's current Clerk session token, as the rest of TBT Admin sends it. */
-export async function authHeaders(): Promise<Record<string, string>> {
-  if (typeof window === "undefined") return {};
-  const clerk = (window as unknown as { Clerk?: { session?: { getToken: () => Promise<string | null> } | null } }).Clerk;
-  const token = await clerk?.session?.getToken().catch(() => null);
+export async function authHeaders(fresh = false): Promise<Record<string, string>> {
+  const token = await sessionToken(fresh);
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
+
+const NO_SESSION = { success: false, message: "Your TBT Admin session couldn't be read. Please reload the page." };
 
 // The ported pages pass a `token` argument everywhere; it is ignored now (the
 // Clerk token is attached per request) but kept so the page code is unchanged.
 async function request<T = unknown>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(await authHeaders()) };
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const send = async (fresh: boolean) => {
+      const auth = await authHeaders(fresh);
+      // Never send an unauthenticated request: without a token the backend can
+      // only answer 401.
+      if (!auth.Authorization) return null;
+      return fetch(`${API_BASE}${path}`, {
+        method,
+        headers: { "Content-Type": "application/json", ...auth },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    };
+    let res = await send(false);
+    // A token the backend rejects (e.g. it expired in flight): retry once with a fresh one.
+    if (res && res.status === 401) res = await send(true);
+    if (!res) return { ok: false, status: 401, data: NO_SESSION as unknown as T };
     const data = await res.json().catch(() => ({ success: false, message: "Server error" }));
-    // No redirect on 401/403: TBT Admin never auto-signs-out, and access is
-    // checked once in app/psychometric/layout.tsx.
+    // No redirect on 401/403 here: access is checked once in app/psychometric/layout.tsx.
     return { ok: res.ok, status: res.status, data };
   } catch (error) {
     console.error("Request failed:", error);
