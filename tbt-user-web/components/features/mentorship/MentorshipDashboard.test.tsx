@@ -164,10 +164,13 @@ describe("MentorshipDashboard", () => {
     for (const label of ["Ads", "Website", "Funnels", "1 lakh", "1 crore", "W1", "W2"]) {
       expect(graph.textContent).toContain(label);
     }
-    // One approved activity, not linked to a milestone (no progress level): no
-    // milestone point and no growth line are fabricated.
-    expect(within(graph).queryAllByRole("button")).toHaveLength(0);
+    // Both activities from the API are shown on their weeks (not linked to a
+    // milestone → on the baseline), with their real status; with no progress
+    // level, no milestone point and no growth line are fabricated.
+    expect(within(graph).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
+      .toEqual(["W1, No milestone, Approved", "W2, No milestone, Planned — not completed yet"]);
     expect(graph.querySelector('[data-testid="progress-line"]')).toBeNull();
+    expect(graph.querySelector('[data-testid="milestone-point"]')).toBeNull();
   });
 
   it("shows no graph for a member without a batch", () => {
