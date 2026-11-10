@@ -268,6 +268,84 @@ describe("WeeklyActivityGraph", () => {
     });
   });
 
+  describe("admin-configured milestones not approved yet (planned)", () => {
+    const planned = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="planned-milestone"]')];
+    const plannedXY = (el: Element) => {
+      const dot = el.querySelector("circle[fill='var(--color-bg-surface)']")!;
+      return [Number(dot.getAttribute("cx")), Number(dot.getAttribute("cy"))];
+    };
+
+    it("shows each on its week and milestone row, hollow and off the line", async () => {
+      get.mockResolvedValue(ok(growthData())); // W5: awaiting-approval 1 Lakh task, in-progress 5 Lakhs task
+      const { container } = renderGraph();
+      await chart();
+      expect(planned(container).map(plannedXY)).toEqual([
+        [weekX(container, "W5"), labelY(container, "₹1 Lakh")],
+        [weekX(container, "W5"), labelY(container, "₹5 Lakhs")],
+      ]);
+      // Never on the line and never counted: the line still tops out at Funnels (W4).
+      expect(linePts(container).map(([x]) => x)).not.toContain(weekX(container, "W5"));
+      expect(points(container)).toHaveLength(3);
+    });
+
+    it("a member with configured milestones but nothing approved sees them (no line, nothing counted)", async () => {
+      const data = growthData();
+      data.weeks = data.weeks.map((w: any) => ({
+        ...w,
+        progressLevel: w.progressLevel === null ? null : 0,
+        completed: 0,
+        activities: w.activities.map((a: any) => ({ ...a, status: "not_started", completed: false })),
+      }));
+      get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      expect(lineD(container)).toBeNull();
+      expect(points(container)).toHaveLength(0);
+      expect(planned(container).map(plannedXY)).toEqual([
+        [weekX(container, "W1"), labelY(container, "Ads")],
+        [weekX(container, "W2"), labelY(container, "Website")],
+        [weekX(container, "W3"), labelY(container, "Website")],
+        [weekX(container, "W4"), labelY(container, "Funnels")],
+        [weekX(container, "W5"), labelY(container, "₹1 Lakh")],
+        [weekX(container, "W5"), labelY(container, "₹5 Lakhs")],
+      ]);
+    });
+
+    it("its popup names the milestone, the week, the activities and their real status", async () => {
+      get.mockResolvedValue(ok(growthData()));
+      renderGraph();
+      await chart();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "W5, ₹1 Lakh, Awaiting approval — not counted yet" }));
+      const d = within(screen.getByRole("dialog"));
+      expect(d.getByText("Week").nextSibling!.textContent).toBe("W5");
+      expect(d.getByText("Milestone").nextSibling!.textContent).toBe("₹1 Lakh");
+      expect(d.getByText("Status").nextSibling!.textContent).toBe("Awaiting approval — not counted yet");
+      expect(d.getByText("Activity").nextSibling!.textContent).toBe("Big launch · Awaiting approval");
+    });
+
+    it("once approved it becomes a point on the line and the planned marker goes away", async () => {
+      get.mockResolvedValue(ok(growthData()));
+      const { container } = renderGraph();
+      await chart();
+      const later = growthData();
+      later.weeks[4].activities[0] = activity("a5", "Big launch", 30, "completed", ["m-1l", "₹1 Lakh", 4]);
+      later.weeks[4].completed = 1;
+      later.weeks[4].progressLevel = 4;
+      lastQc.setQueryData(["my-batch", "weekly-graph"], later);
+      await waitFor(() => expect(points(container)).toHaveLength(4));
+      expect(planned(container).map(plannedXY)).toEqual([[weekX(container, "W5"), labelY(container, "₹5 Lakhs")]]);
+    });
+
+    it("unlinked activities (no milestone) are not drawn as milestones", async () => {
+      const data = graphData(); // W1 has an unlinked "Read the playbook"
+      get.mockResolvedValue(ok(data));
+      renderGraph();
+      await chart();
+      expect(screen.queryByRole("button", { name: /Read the playbook/ })).toBeNull();
+    });
+  });
+
   it("highlights no week: no column background, every week label styled the same", async () => {
     get.mockResolvedValue(ok(growthData())); // W5 is the current week
     const { container } = renderGraph();
