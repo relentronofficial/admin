@@ -9,7 +9,7 @@ import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import type { WeeklyGraphActivity, WeeklyGraphMilestone, WeeklyGraphWeek } from "@/lib/api/services/batchProgram.service";
 import { amountFromRevenueLabel, revenueLevelOnAxis, revenueLinePoints, revenueLinePath } from "./weeklyGraphRevenueAxis";
-import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
+import { smoothProgressionPath, weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression";
 
 // Two-axis milestone graph: weeks along X, milestones up Y. Everything comes
 // from the API (GET /api/user-batch/weekly-graph): the program's admin
@@ -22,15 +22,18 @@ import { weekLinePoints, weekProgressionPoints } from "./weeklyGraphProgression"
 //    never means "achieved" — its fill shows the activity's own status;
 //  • a diamond where a revenue milestone was reached (from reported revenue
 //    against the admin threshold, or an admin record);
-//  • ONE red line: task progress, from Start through each started week's
-//    progress (week.progressLevel), rising and falling (weeklyGraphProgression.ts);
+//  • ONE red line: task progress, a smooth (non-overshooting) curve from Start
+//    at the bottom-left origin through each started week's progress
+//    (week.progressLevel), rising and falling (weeklyGraphProgression.ts), with
+//    a circular marker at each week's approved-progress point;
 //  • a red-ring / white-centre point for each week with saved revenue
 //    (week.revenue), at its actual amount on this same axis — not a line
 //    (revenueLevelOnAxis). A week with nothing saved has no point (never ₹0).
 // The graph refreshes live when the admin changes tasks, progress or revenue
 // (socket batch:graph_updated / batch:day_approved / batch:day_rejected).
-// Every marker is a keyboard-focusable button that opens a popup with the
-// Week, Milestone and Activity.
+// Every marker is a keyboard-focusable button: hovering it with a mouse shows
+// a popup (Week, Milestone, Activity / progress), and a click or tap pins it.
+// No week column is highlighted — every week label looks the same.
 
 const LEFT = 76;     // room for the milestone labels
 const RIGHT = 16;
@@ -39,6 +42,7 @@ const LEVEL_GAP = 36;
 const BOTTOM = 28;   // room for the week labels
 const MIN_COL = 64;  // below this the chart scrolls horizontally instead of squeezing
 const R = 6;         // marker radius
+const PR = 5;        // progress-point (line) marker radius
 const POP_W = 240;   // popup width
 const BOX_PAD = 12;  // the chart box's p-3 padding
 
@@ -55,9 +59,13 @@ export default function WeeklyActivityGraph() {
   return <WeeklyActivityGraphContent />;
 }
 
-type Selection =
+// `pinned` = opened by click / tap / keyboard (stays until closed); otherwise it
+// is a mouse-hover preview that closes when the pointer leaves the marker.
+type Selection = (
   | { kind: "activity"; key: string; week: WeeklyGraphWeek; activity: WeeklyGraphActivity; x: number; y: number }
-  | { kind: "revenue"; key: string; week: WeeklyGraphWeek; milestone: WeeklyGraphMilestone; x: number; y: number };
+  | { kind: "revenue"; key: string; week: WeeklyGraphWeek; milestone: WeeklyGraphMilestone; x: number; y: number }
+  | { kind: "progress"; key: string; week: WeeklyGraphWeek; level: number; x: number; y: number }
+) & { pinned?: boolean };
 
 const inr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
@@ -224,9 +232,14 @@ function WeeklyActivityGraphContent() {
   // Recomputed on every render, so it follows refreshed data and configuration.
   const progression = weekProgressionPoints(weeks, colX, yFor);
   const linePts = weekLinePoints(weeks, colX, yFor);
-  const linePoints = linePts.length > 0
-    ? [`M ${LEFT},${yFor(0)}`, ...linePts.map((p) => `L ${p.x},${p.y}`)].join(" ")
-    : null;
+  // Smooth from the bottom-left origin; monotone, so it never bulges past a point.
+  const linePoints = smoothProgressionPath(linePts, LEFT, yFor(0));
+  // The milestone a progress height corresponds to (the row it reached; between
+  // two rows it has reached the lower one).
+  const levelLabel = (level: number) => {
+    const row = Math.floor(level + 1e-9);
+    return row >= 1 && row <= milestones.length ? milestones[row - 1].label : s?.batchGraphStartLabel ?? "Start";
+  };
   const progressTitle = (w: WeeklyGraphWeek) =>
     `${weekLabel(w)}: ${w.completed ?? 0} of ${w.total ?? 0} ${s?.batchGraphTasksApproved ?? "tasks approved"}`;
 
@@ -246,9 +259,11 @@ function WeeklyActivityGraphContent() {
   const summary = graph!.summary ?? { total: 0, completed: 0, completionPercent: null };
   const revenueTotal = graph!.revenue?.totalToDate ?? null;
 
+  // Click / tap / keyboard pins the popup (a second click on a pinned marker
+  // closes it); a mouse hover only previews it.
   const open = (sel: Selection, el: SVGGElement) => {
     returnFocusRef.current = el;
-    setSelected((cur) => (cur?.key === sel.key ? null : sel));
+    setSelected((cur) => (cur?.key === sel.key && cur.pinned ? null : { ...sel, pinned: true }));
   };
   const keyOpen = (e: React.KeyboardEvent<SVGGElement>, sel: Selection) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -256,6 +271,27 @@ function WeeklyActivityGraphContent() {
       open(sel, e.currentTarget);
     }
   };
+  const hoverOn = (e: React.PointerEvent<SVGGElement>, sel: Selection) => {
+    if (e.pointerType !== "mouse") return; // touch: the tap (click) opens it
+    setSelected((cur) => (cur?.pinned ? cur : { ...sel, pinned: false }));
+  };
+  const hoverOff = (key: string) => setSelected((cur) => (cur && !cur.pinned && cur.key === key ? null : cur));
+  /** Shared props that make a marker a button with a hover / click popup. */
+  const markerProps = (sel: Selection, label: string, testId: string) => ({
+    role: "button" as const,
+    tabIndex: 0,
+    "aria-label": label,
+    "aria-haspopup": "dialog" as const,
+    "aria-expanded": selected?.key === sel.key,
+    "data-testid": testId,
+    className: "cursor-pointer outline-none",
+    onClick: (e: React.MouseEvent<SVGGElement>) => open(sel, e.currentTarget),
+    onKeyDown: (e: React.KeyboardEvent<SVGGElement>) => keyOpen(e, sel),
+    onPointerEnter: (e: React.PointerEvent<SVGGElement>) => hoverOn(e, sel),
+    onPointerLeave: () => hoverOff(sel.key),
+    onFocus: () => setFocusedKey(sel.key),
+    onBlur: () => setFocusedKey((k) => (k === sel.key ? null : k)),
+  });
 
   // Popup position: the marker's place inside the scrolled chart, relative to
   // the outer box; flipped below the marker near the top and kept inside the box.
@@ -311,14 +347,6 @@ function WeeklyActivityGraphContent() {
         style={{ borderColor: "var(--color-border-subtle)", background: "var(--color-bg-surface)" }}
       >
         <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="group" aria-label={title} className="block">
-          {/* Current week column highlight */}
-          {weeks.map((w, i) =>
-            w.isCurrent ? (
-              <rect key={`col-${w.weekNumber}`} x={LEFT + i * col + 2} y={TOP - 6} width={col - 4} height={PLOT_H + 6} rx={3}
-                fill="var(--color-accent)" opacity={0.08} aria-hidden="true" />
-            ) : null,
-          )}
-
           {/* Milestone gridlines: always subtle and dashed, so the red progress line is the
               only red line on the chart. A reached milestone shows through its accent label. */}
           {milestones.map((m, i) => (
@@ -342,10 +370,10 @@ function WeeklyActivityGraphContent() {
           </g>
 
 
-          {/* Week labels — current week in accent + bold */}
+          {/* Week labels — all the same; no week is highlighted */}
           {weeks.map((w, i) => (
             <text key={`wl-${w.weekNumber}`} data-testid="week-label" x={colX(i)} y={yFor(0) + 18} textAnchor="middle" fontSize="11"
-              aria-hidden="true" fill={w.isCurrent ? "var(--color-accent)" : "var(--color-text-secondary)"} fontWeight={w.isCurrent ? "700" : "400"}>
+              aria-hidden="true" fill="var(--color-text-secondary)" fontWeight="400">
               {weekLabel(w)}
             </text>
           ))}
@@ -357,37 +385,43 @@ function WeeklyActivityGraphContent() {
             <path data-testid="progress-line" d={linePoints} fill="none" stroke="var(--color-accent, #dc2626)"
               strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" pointerEvents="none" />
           )}
-          {progression.map((p) => (
-            <circle key={`pp-${p.weekNumber}`} data-testid="progress-point" cx={p.x} cy={p.y} r={2.5}
-              fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={1.5} pointerEvents="none">
-              <title>{progressTitle(weeks[p.weekIndex])}</title>
-            </circle>
-          ))}
-
-          {/* Activity markers */}
-          {markers.map((m) => {
-            const st = markerStyle(m.activity);
-            const msLabel = m.activity.milestoneLabel ?? noMilestone;
-            const sel: Selection = { kind: "activity", key: m.key, week: m.week, activity: m.activity, x: m.x, y: m.y };
+          {/* Week by week (so Tab moves through the weeks in order): the week's
+              progress-point marker — one circle at its approved progress, on the line —
+              then its task markers. The progress point is drawn under them, so where
+              both sit on one spot the task marker (with its status) is on top; its
+              popup shows the week's progress too. */}
+          {weeks.map((w, i) => {
+            const p = progression.find((pt) => pt.weekIndex === i);
+            const pKey = `p:${w.weekNumber}`;
+            const pSel: Selection | null = p ? { kind: "progress", key: pKey, week: w, level: p.level, x: p.x, y: p.y } : null;
             return (
-              <g
-                key={m.key}
-                role="button"
-                tabIndex={0}
-                aria-label={`${weekLabel(m.week)}, ${msLabel}, ${m.activity.title}, ${statusLabel[m.activity.status] ?? m.activity.status}`}
-                aria-haspopup="dialog"
-                aria-expanded={selected?.key === m.key}
-                data-testid="activity-marker"
-                className="cursor-pointer outline-none"
-                onClick={(e) => open(sel, e.currentTarget)}
-                onKeyDown={(e) => keyOpen(e, sel)}
-                onFocus={() => setFocusedKey(m.key)}
-                onBlur={() => setFocusedKey((k) => (k === m.key ? null : k))}
-              >
-                {focusRing(m.key, m.x, m.y, R)}
-                <circle cx={m.x} cy={m.y} r={R} fill={st.fill} stroke={st.stroke} strokeWidth={2} strokeDasharray={st.dash} />
-                {/* Larger invisible hit area for touch */}
-                <circle cx={m.x} cy={m.y} r={R + 6} fill="transparent" />
+              <g key={`wk-${w.weekNumber}`}>
+                {p && pSel && (
+                  <g {...markerProps(pSel, `${progressTitle(w)}, ${levelLabel(p.level)}`, "progress-marker")}>
+                    {focusRing(pKey, p.x, p.y, PR)}
+                    <circle data-testid="progress-point" cx={p.x} cy={p.y} r={PR}
+                      fill="var(--color-accent, #dc2626)" stroke="var(--color-bg-surface)" strokeWidth={2}>
+                      <title>{progressTitle(w)}</title>
+                    </circle>
+                    <circle cx={p.x} cy={p.y} r={PR + 7} fill="transparent" />
+                  </g>
+                )}
+                {markers.filter((m) => m.weekIndex === i).map((m) => {
+                  const st = markerStyle(m.activity);
+                  const msLabel = m.activity.milestoneLabel ?? noMilestone;
+                  const sel: Selection = { kind: "activity", key: m.key, week: m.week, activity: m.activity, x: m.x, y: m.y };
+                  return (
+                    <g
+                      key={m.key}
+                      {...markerProps(sel, `${weekLabel(m.week)}, ${msLabel}, ${m.activity.title}, ${statusLabel[m.activity.status] ?? m.activity.status}`, "activity-marker")}
+                    >
+                      {focusRing(m.key, m.x, m.y, R)}
+                      <circle cx={m.x} cy={m.y} r={R} fill={st.fill} stroke={st.stroke} strokeWidth={2} strokeDasharray={st.dash} />
+                      {/* Larger invisible hit area for touch */}
+                      <circle cx={m.x} cy={m.y} r={R + 6} fill="transparent" />
+                    </g>
+                  );
+                })}
               </g>
             );
           })}
@@ -399,17 +433,7 @@ function WeeklyActivityGraphContent() {
             return (
               <g
                 key={m.key}
-                role="button"
-                tabIndex={0}
-                aria-label={`${weekLabel(m.week)}, ${m.milestone.label}, ${s?.batchGraphRevenueReached ?? "revenue milestone reached"}`}
-                aria-haspopup="dialog"
-                aria-expanded={selected?.key === m.key}
-                data-testid="revenue-marker"
-                className="cursor-pointer outline-none"
-                onClick={(e) => open(sel, e.currentTarget)}
-                onKeyDown={(e) => keyOpen(e, sel)}
-                onFocus={() => setFocusedKey(m.key)}
-                onBlur={() => setFocusedKey((k) => (k === m.key ? null : k))}
+                {...markerProps(sel, `${weekLabel(m.week)}, ${m.milestone.label}, ${s?.batchGraphRevenueReached ?? "revenue milestone reached"}`, "revenue-marker")}
               >
                 {focusRing(m.key, m.x, m.y, d)}
                 <path d={`M ${m.x} ${m.y - d} L ${m.x + d} ${m.y} L ${m.x} ${m.y + d} L ${m.x - d} ${m.y} Z`}
@@ -485,9 +509,23 @@ function WeeklyActivityGraphContent() {
             <dd className="font-semibold">{weekLabel(selected.week)}</dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphMilestoneField ?? "Milestone"}</dt>
             <dd className="font-semibold">
-              {selected.kind === "activity" ? selected.activity.milestoneLabel ?? noMilestone : selected.milestone.label}
+              {selected.kind === "activity"
+                ? selected.activity.milestoneLabel ?? noMilestone
+                : selected.kind === "progress" ? levelLabel(selected.level) : selected.milestone.label}
             </dd>
-            {selected.kind === "activity" ? (
+            {selected.kind !== "revenue" && (
+              <>
+                <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphProgressField ?? "Week progress"}</dt>
+                <dd>{selected.week.completed ?? 0} of {selected.week.total ?? 0} {s?.batchGraphTasksApproved ?? "tasks approved"}</dd>
+                {selected.week.revenue != null && (
+                  <>
+                    <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphWeekRevenueField ?? "Revenue this week"}</dt>
+                    <dd>{inr(selected.week.revenue)}</dd>
+                  </>
+                )}
+              </>
+            )}
+            {selected.kind === "progress" ? null : selected.kind === "activity" ? (
               <>
                 <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphActivityField ?? "Activity"}</dt>
                 <dd className="font-semibold break-words">{selected.activity.title}</dd>
