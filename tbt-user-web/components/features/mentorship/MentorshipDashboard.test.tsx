@@ -159,14 +159,14 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     const h = headings();
     expect(h.indexOf("Weekly Activity Graph")).toBe(h.indexOf("Customer Journey") + 1);
-    // Milestone axis and week labels from the API, one accessible marker per activity.
+    // Milestone axis and week labels from the API.
     const graph = screen.getByRole("group", { name: "Weekly Activity Graph" });
     for (const label of ["Ads", "Website", "Funnels", "1 lakh", "1 crore", "W1", "W2"]) {
       expect(graph.textContent).toContain(label);
     }
-    expect(within(graph).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
-      .toEqual(["W1, No milestone, Set up store, Completed", "W2, No milestone, First ad, Upcoming"]);
-    // One approved activity, not linked to a milestone: no progression line is fabricated.
+    // One approved activity, not linked to a milestone (no progress level): no
+    // milestone point and no growth line are fabricated.
+    expect(within(graph).queryAllByRole("button")).toHaveLength(0);
     expect(graph.querySelector('[data-testid="progress-line"]')).toBeNull();
   });
 
