@@ -52,10 +52,15 @@ export default function WeeklyActivityGraph() {
   return <WeeklyActivityGraphContent />;
 }
 
-// A milestone the admin set up for a week (an activity linked to a milestone in
-// Admin → Weekly Graph) that is not approved yet: shown as a hollow marker on
-// its week and milestone row — never on the line, never counted as achieved.
-type Planned = { key: string; weekIndex: number; level: number; x: number; y: number; activities: WeeklyGraphActivity[]; awaiting: boolean };
+// The activities the admin set up for a week (Admin → Weekly Graph →
+// Activities), grouped by week and milestone row (row 0 = no milestone, on the
+// baseline). Styled by their real status: filled = approved, dashed = awaiting
+// approval, grey = planned. Never joined to the line — only the backend's
+// confirmed progress (progressLevel) moves the line.
+type Planned = {
+  key: string; weekIndex: number; level: number; x: number; y: number; activities: WeeklyGraphActivity[];
+  awaiting: boolean; approved: boolean;
+};
 
 // `pinned` = opened by click / tap / keyboard (stays until closed); otherwise a
 // mouse-hover preview that closes when the pointer leaves the marker.
@@ -177,21 +182,22 @@ function WeeklyActivityGraphContent() {
   const points = achievementPoints(weeks, colX, yFor);
   const linePath = straightProgressionPath(points, LEFT, originY);
 
-  // Planned milestones: the admin's milestone-linked activities that are not
-  // approved yet, one hollow marker per (week, milestone row). A spot already
-  // holding an achievement point shows only the achievement.
+  // Every activity the API returns for a week, one marker per (week, milestone
+  // row); unlinked activities sit on the baseline. A spot already holding a
+  // line point shows only the point (its popup lists the week's activities).
   const planned: Planned[] = [];
   weeks.forEach((w, i) => {
     const byLevel = new Map<number, WeeklyGraphActivity[]>();
     for (const a of w.activities ?? []) {
-      const level = typeof a.level === "number" ? a.level : 0;
-      if (level < 1 || level > levels || a.status === "completed") continue;
+      const raw = typeof a.level === "number" && Number.isFinite(a.level) ? a.level : 0;
+      const level = raw >= 1 && raw <= levels ? raw : 0;
       byLevel.set(level, [...(byLevel.get(level) ?? []), a]);
     }
     byLevel.forEach((acts, level) => {
       if (points.some((p) => p.weekIndex === i && Math.abs(p.level - level) < 1e-9)) return;
       planned.push({
         key: `pl:${w.weekNumber}:${level}`, weekIndex: i, level, x: colX(i), y: yFor(level), activities: acts,
+        approved: acts.every((a) => a.status === "completed"),
         awaiting: acts.some((a) => a.status === "submitted" || a.status === "in_progress"),
       });
     });
@@ -254,11 +260,15 @@ function WeeklyActivityGraphContent() {
     not_started: s?.batchGraphStatusNotStarted ?? "Not started",
     upcoming: s?.batchGraphStatusUpcoming ?? "Upcoming",
   };
-  const plannedStatus = (pl: Planned) => pl.awaiting
-    ? s?.batchGraphPlannedAwaiting ?? "Awaiting approval — not counted yet"
-    : s?.batchGraphPlannedStatus ?? "Planned — not completed yet";
+  const plannedStatus = (pl: Planned) => pl.approved
+    ? s?.batchGraphActivityApproved ?? "Approved"
+    : pl.awaiting
+      ? s?.batchGraphPlannedAwaiting ?? "Awaiting approval — not counted yet"
+      : s?.batchGraphPlannedStatus ?? "Planned — not completed yet";
+  const noMilestone = s?.batchGraphNoMilestone ?? "No milestone";
+  const plannedMilestone = (pl: Planned) => (pl.level >= 1 ? milestoneOf(pl.level)?.label ?? "" : noMilestone);
   const plannedLabel = (pl: Planned, w: WeeklyGraphWeek) =>
-    `${weekLabel(w)}, ${milestoneOf(pl.level)?.label ?? ""}, ${plannedStatus(pl)}`;
+    `${weekLabel(w)}, ${plannedMilestone(pl)}, ${plannedStatus(pl)}`;
 
   // Popup position: the marker's place inside the scrolled chart, relative to
   // the outer box. The line only climbs up and to the right, so the empty space
@@ -357,9 +367,11 @@ function WeeklyActivityGraphContent() {
               <g key={pl.key} {...markerProps(sel, plannedLabel(pl, w), "planned-milestone")}>
                 {(focusedKey === pl.key || selected?.key === pl.key) &&
                   <circle cx={pl.x} cy={pl.y} r={R + 4} fill="none" stroke="var(--color-text-normal)" strokeWidth={2} />}
-                <circle cx={pl.x} cy={pl.y} r={R - 1} fill="var(--color-bg-surface)" strokeWidth={2}
-                  stroke={pl.awaiting ? "var(--color-accent, #dc2626)" : "var(--color-text-subtle)"}
-                  strokeDasharray={pl.awaiting ? "3,2" : undefined} />
+                <circle cx={pl.x} cy={pl.y} r={R - 1} strokeWidth={2}
+                  fill={pl.approved ? "var(--color-accent, #dc2626)" : "var(--color-bg-surface)"}
+                  fillOpacity={pl.approved ? 0.55 : 1}
+                  stroke={pl.approved || pl.awaiting ? "var(--color-accent, #dc2626)" : "var(--color-text-subtle)"}
+                  strokeDasharray={pl.awaiting && !pl.approved ? "3,2" : undefined} />
                 <circle cx={pl.x} cy={pl.y} r={R + 8} fill="transparent" />
               </g>
             );
@@ -385,6 +397,7 @@ function WeeklyActivityGraphContent() {
       {planned.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px]" style={{ color: "var(--color-text-secondary)" }} aria-hidden="true">
           <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--color-accent)" }} />{s?.batchGraphAchievedLegend ?? "Milestone achieved"}</span>
+          <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-accent)", background: "color-mix(in srgb, var(--color-accent) 55%, transparent)" }} />{s?.batchGraphActivityApproved ?? "Approved"}</span>
           <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2 border-dashed" style={{ borderColor: "var(--color-accent)" }} />{s?.batchGraphStatusSubmitted ?? "Awaiting approval"}</span>
           <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: "var(--color-text-subtle)" }} />{s?.batchGraphPlannedLegend ?? "Planned"}</span>
         </div>
@@ -426,16 +439,16 @@ function WeeklyActivityGraphContent() {
             <dd className="font-semibold">{weekLabel(sw)}</dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphMilestoneField ?? "Milestone"}</dt>
             <dd className="font-semibold">
-              {milestoneOf(selected.kind === "point" ? selected.point.level : selected.planned.level)?.label ?? ""}
+              {selected.kind === "point" ? milestoneOf(selected.point.level)?.label ?? "" : plannedMilestone(selected.planned)}
             </dd>
             <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphStatusField ?? "Status"}</dt>
             <dd>{selected.kind === "point" ? statusOf(selected.point) : plannedStatus(selected.planned)}</dd>
-            {selected.kind === "planned" && (
+            {(selected.kind === "planned" ? selected.planned.activities : sw.activities ?? []).length > 0 && (
               <>
                 <dt style={{ color: "var(--color-text-secondary)" }}>{s?.batchGraphActivityField ?? "Activity"}</dt>
                 <dd>
                   <ul className="space-y-0.5">
-                    {selected.planned.activities.map((a) => (
+                    {(selected.kind === "planned" ? selected.planned.activities : sw.activities ?? []).map((a) => (
                       <li key={a.taskId} className="break-words">
                         {a.title} <span style={{ color: "var(--color-text-subtle)" }}>· {statusLabel[a.status] ?? a.status}</span>
                       </li>

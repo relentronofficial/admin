@@ -276,13 +276,20 @@ describe("WeeklyActivityGraph", () => {
     };
 
     it("shows each on its week and milestone row, hollow and off the line", async () => {
-      get.mockResolvedValue(ok(growthData())); // W5: awaiting-approval 1 Lakh task, in-progress 5 Lakhs task
+      get.mockResolvedValue(ok(growthData())); // W3: approved Website task (no new high); W5: awaiting 1 Lakh, in-progress 5 Lakhs
       const { container } = renderGraph();
       await chart();
-      expect(planned(container).map(plannedXY)).toEqual([
+      const xy = (el: Element) => {
+        const dot = el.querySelector("circle[stroke-width='2']:not([fill='none'])")!;
+        return [Number(dot.getAttribute("cx")), Number(dot.getAttribute("cy"))];
+      };
+      expect(planned(container).map(xy)).toEqual([
+        [weekX(container, "W3"), labelY(container, "Website")],
         [weekX(container, "W5"), labelY(container, "₹1 Lakh")],
         [weekX(container, "W5"), labelY(container, "₹5 Lakhs")],
       ]);
+      // The approved W3 activity is shown filled; the pending W5 ones hollow.
+      expect(screen.getByRole("button", { name: "W3, Website, Approved" })).toBeTruthy();
       // Never on the line and never counted: the line still tops out at Funnels (W4).
       expect(linePts(container).map(([x]) => x)).not.toContain(weekX(container, "W5"));
       expect(points(container)).toHaveLength(3);
@@ -334,15 +341,30 @@ describe("WeeklyActivityGraph", () => {
       later.weeks[4].progressLevel = 4;
       lastQc.setQueryData(["my-batch", "weekly-graph"], later);
       await waitFor(() => expect(points(container)).toHaveLength(4));
-      expect(planned(container).map(plannedXY)).toEqual([[weekX(container, "W5"), labelY(container, "₹5 Lakhs")]]);
+      expect(screen.queryByRole("button", { name: /^W5, ₹1 Lakh, Awaiting/ })).toBeNull();
+      expect(screen.getByRole("button", { name: /^W5, ₹5 Lakhs, Awaiting/ })).toBeTruthy();
     });
 
-    it("unlinked activities (no milestone) are not drawn as milestones", async () => {
-      const data = graphData(); // W1 has an unlinked "Read the playbook"
+    it("an activity with no milestone is shown on its week, on the baseline (never on the line)", async () => {
+      const data = graphData(); // W1 has an unlinked, not-started "Read the playbook"
       get.mockResolvedValue(ok(data));
+      const { container } = renderGraph();
+      await chart();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "W1, No milestone, Planned — not completed yet" }));
+      const d = within(screen.getByRole("dialog"));
+      expect(d.getByText("Activity").nextSibling!.textContent).toBe("Read the playbook · Not started");
+      const marker = planned(container).find((el) => el.getAttribute("aria-label")!.includes("No milestone"))!;
+      const axisY = Number(container.querySelectorAll('[data-testid="axes"] line')[1].getAttribute("y1"));
+      expect(plannedXY(marker)).toEqual([weekX(container, "W1"), axisY]);
+    });
+
+    it("a line point's popup lists that week's activities with their real status", async () => {
+      get.mockResolvedValue(ok(growthData()));
       renderGraph();
       await chart();
-      expect(screen.queryByRole("button", { name: /Read the playbook/ })).toBeNull();
+      await userEvent.setup().click(screen.getByRole("button", { name: /^W4, Funnels/ }));
+      expect(within(screen.getByRole("dialog")).getByText("Activity").nextSibling!.textContent).toBe("Funnel · Completed");
     });
   });
 
