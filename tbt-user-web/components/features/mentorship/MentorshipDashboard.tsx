@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
   Instagram, RefreshCw, Unlink,
@@ -589,6 +589,8 @@ function WeeklyLineChart({
   const peakBoxW = Math.max(88, Math.round(peakTitle.length * 4.6 + 12));
   const peakBoxX = Math.min(Math.max(peakX, PL + peakBoxW / 2), W - PR - peakBoxW / 2);
   const peakY = peakDisplay != null ? yRev(peakDisplay) : 0;
+  // Clamp so the 30px callout box never goes above the SVG top edge (y=0).
+  const peakYClamped = Math.max(36, peakY);
 
   const fmtY = (v: number) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`;
 
@@ -651,15 +653,15 @@ function WeeklyLineChart({
       {peakIdx >= 0 && peakDisplay != null && (
         <g data-testid="peak-callout">
           <line x1={peakX} y1={PT} x2={peakX} y2={PT + PH} stroke="rgba(255,255,255,0.12)" strokeWidth="1" strokeDasharray="3 2" />
-          <rect x={peakBoxX - peakBoxW / 2} y={peakY - 36} width={peakBoxW} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
-          <text x={peakBoxX} y={peakY - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
+          <rect x={peakBoxX - peakBoxW / 2} y={peakYClamped - 36} width={peakBoxW} height={30} rx={6} fill="#1e1e1e" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
+          <text x={peakBoxX} y={peakYClamped - 22} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.5)" fontWeight="600">
             {peakTitle}
           </text>
-          <text x={peakBoxX} y={peakY - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
+          <text x={peakBoxX} y={peakYClamped - 11} textAnchor="middle" fontSize="10" fill="var(--color-accent)" fontWeight="800">
             ₹{(revData[peakIdx] as number).toLocaleString("en-IN")}
           </text>
           {ordData[peakIdx] != null && (
-            <text x={peakBoxX} y={peakY - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
+            <text x={peakBoxX} y={peakYClamped - 1} textAnchor="middle" fontSize="8" fill="rgba(255,255,255,0.4)">
               {ordData[peakIdx]} Orders
             </text>
           )}
@@ -1165,6 +1167,17 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   const { data: callSummary } = useSupportCallsSummary();
   const cardFor = (category: SupportCallCategory) => callSummary?.categories.find((c) => c.category === category);
   const { data: revenue } = useMentorshipRevenue();
+  // Fetch history (deduplicated — WeeklyChartSection uses the same query key).
+  // Compute total from the same daily-first entries logic the chart uses so the
+  // KPI never shows less than any single week visible in the chart.
+  const { data: revenueHistory } = useMentorshipRevenueHistory(true);
+  const totalFromHistory = useMemo(() => {
+    if (!revenueHistory?.weeks?.length) return null;
+    const pts = buildPeriodPoints("overall", revenueHistory.weeks, revenueHistory.currentWeek);
+    const ns = pts.map((p) => p.rev).filter((v): v is number => v != null);
+    return ns.length ? ns.reduce((a, b) => a + b, 0) : null;
+  }, [revenueHistory]);
+  const displayedTotalAllTime = totalFromHistory ?? revenue?.totalAllTime ?? null;
   const { buy: buyLifeline, busy: buyingLifeline } = useBuyExtraLifeline();
   const { data: pricingList } = useCreditPricing();
   const lifelinePriceInr = (pricingList ?? []).find((p: any) => p.credit_type === "lifeline")
@@ -1233,7 +1246,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   const dailyHrsCount = useCountUp(dailyHrs, 1200, 2);
   const allCallsUsedCount = useCountUp(allCallsUsed, 900);
-  const revenueCount = useCountUp(revenue?.totalAllTime ?? 0, 1400);
+  const revenueCount = useCountUp(displayedTotalAllTime ?? 0, 1400);
 
   if (isLoading) {
     return (
@@ -1298,7 +1311,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         <KpiCard
           label="Revenue Generated"
           rightLabel={revenue?.numberOfOrders ? `${revenue.numberOfOrders}+ Orders` : undefined}
-          value={revenue?.totalAllTime != null ? `₹${revenueCount}` : "—"}
+          value={displayedTotalAllTime != null ? `₹${revenueCount}` : "—"}
           metricColor="#ffe600"
           note={
             revenue?.revenueGenerated != null
