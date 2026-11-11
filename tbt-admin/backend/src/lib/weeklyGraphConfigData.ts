@@ -55,7 +55,8 @@ export async function loadMemberGraphRecords(prisma: Prisma, memberId: string): 
  */
 export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): Promise<RevenueWeekRow[]> {
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue, created_at AS "reportedAt"
+    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue,
+            daily_revenue AS "dailyRevenue", created_at AS "reportedAt"
      FROM member_revenue_reports WHERE member_id = $1::uuid`,
     memberId,
   ).catch(() => []);
@@ -63,6 +64,9 @@ export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): P
     isoYear: Number(r.isoYear),
     isoWeek: Number(r.isoWeek),
     revenue: r.revenue === null || r.revenue === undefined ? null : Number(r.revenue),
+    dailyRevenue: Array.isArray(r.dailyRevenue)
+      ? r.dailyRevenue.map((v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null))
+      : null,
     reportedAt: r.reportedAt ? new Date(r.reportedAt) : null,
   }));
 }

@@ -37,6 +37,13 @@ export interface RevenueWeekRow {
   isoWeek: number;
   /** revenue_generated; null when the member left it blank */
   revenue: number | null;
+  /**
+   * daily_revenue JSONB — up to 7 nullable daily values (Mon–Sun).
+   * When any daily value is non-null, their sum is the effective week revenue
+   * (same daily-first logic as the Revenue Trajectory chart). Omitted/null →
+   * fall back to revenue_generated.
+   */
+  dailyRevenue?: (number | null)[] | null;
   /** created_at — when the member first reported this week. Omitted/null → placed on the week's Thursday. */
   reportedAt?: Date | null;
 }
@@ -59,6 +66,24 @@ export function isoWeekStartIst(isoYear: number, isoWeek: number): Date {
   return new Date(week1MondayUtc + (isoWeek - 1) * 7 * DAY_MS - IST_OFFSET_MS);
 }
 
+/** Convert a raw value to a finite number or null. */
+function toNum(v: unknown): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Effective revenue for a week: sum of daily values (Mon–Sun) when any daily
+ * value was saved, otherwise revenue_generated. Mirrors the same daily-first
+ * logic used by the Revenue Trajectory chart in revenuePeriods.ts.
+ */
+function effectiveRevenue(r: RevenueWeekRow): number | null {
+  const daily = (r.dailyRevenue ?? []).slice(0, 7).map(toNum);
+  if (daily.some((v) => v != null)) return daily.reduce((s, v) => s + (v ?? 0), 0);
+  return r.revenue != null ? toNum(r.revenue) : null;
+}
+
 /**
  * The member's reported weeks that fall in their program, in day order. A week
  * counts when it ends after the batch start (a batch that starts mid-week takes
@@ -67,9 +92,8 @@ export function isoWeekStartIst(isoYear: number, isoWeek: number): Date {
 export function revenueEntriesForProgram(rows: RevenueWeekRow[], batchStartsAt: Date): RevenueEntry[] {
   const out: RevenueEntry[] = [];
   for (const r of rows) {
-    if (r.revenue === null || r.revenue === undefined) continue;
-    const amount = Number(r.revenue);
-    if (!Number.isFinite(amount)) continue;
+    const amount = effectiveRevenue(r);
+    if (amount === null || !Number.isFinite(amount)) continue;
     if (!Number.isInteger(r.isoYear) || !Number.isInteger(r.isoWeek) || r.isoWeek < 1 || r.isoWeek > 53) continue;
     const monday = isoWeekStartIst(r.isoYear, r.isoWeek);
     const mondayDay = programDayOfIstDate(batchStartsAt, monday);

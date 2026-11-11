@@ -186,8 +186,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return db.records.filter((r) => r.memberId === a[0]).map((r) => ({ milestoneId: r.milestoneId, weekId: r.weekId }));
   }
   if (q.startsWith('SELECT extended_days FROM member_batch_settings')) return db.extendedDays ? [{ extended_days: db.extendedDays }] : [];
-  if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue, created_at AS "reportedAt" FROM member_revenue_reports')) {
-    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue, reportedAt: r.reportedAt ?? null }));
+  if (q.startsWith('SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue,')) {
+    return db.revenues.filter((r) => r.memberId === a[0]).map((r) => ({ isoYear: r.isoYear, isoWeek: r.isoWeek, revenue: r.revenue, dailyRevenue: null, reportedAt: r.reportedAt ?? null }));
   }
   if (q.startsWith('SELECT GREATEST( COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0)')) {
     // loadProgramWeekSpanDays: program length, the batch's length (snapshot null → program's) + extra days, latest active activity day.
