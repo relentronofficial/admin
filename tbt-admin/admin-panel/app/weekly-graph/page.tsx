@@ -115,7 +115,7 @@ export default function WeeklyGraphPage() {
             <WeeksSection config={config} programId={programId} />
             <MilestonesSection config={config} programId={programId} />
             <ActivitiesSection config={config} programId={programId} />
-            <MemberRecordsSection config={config} />
+            <MemberRecordsSection config={config} programs={programs} onSwitchProgram={setProgramId} />
           </>
         )}
       </div>
@@ -685,7 +685,11 @@ function ActivityForm({ config, initial, onClose, onSave }: {
 
 // ── Member milestones (admin-recorded) ───────────────────────────────────────
 
-function MemberRecordsSection({ config }: { config: WeeklyGraphConfig }) {
+function MemberRecordsSection({ config, programs, onSwitchProgram }: {
+  config: WeeklyGraphConfig;
+  programs: Array<{ id: string; name: string }>;
+  onSwitchProgram: (programId: string) => void;
+}) {
   const [search, setSearch] = useState("");
   const [memberId, setMemberId] = useState("");
   const { data: membersRes, isFetching } = useListMembers({ search, limit: 8 }, { enabled: search.trim().length >= 2 });
@@ -735,9 +739,31 @@ function MemberRecordsSection({ config }: { config: WeeklyGraphConfig }) {
 
         {memberId && isLoading && <p className="text-[13px] text-[#a0a0a0] flex items-center"><Loader2 size={14} className="animate-spin mr-2" /> Loading…</p>}
         {memberId && isError && <p className="text-[13px] text-[#ef4444]">{errMsg(error, "Could not load this member")}</p>}
-        {data && !inProgram && (
-          <p className="text-[13px] text-[#f59e0b]">This member is not in a batch of {config.program.name}. Switch the program above to the member&apos;s program.</p>
-        )}
+        {data && !inProgram && (() => {
+          // The member's graph always comes from their own batch's program
+          // (member → batch → program), never from the program selected here.
+          const name = data.member.firstName || "This member";
+          const own = data.member.programId ? programs.find((p) => p.id === data.member.programId) : null;
+          if (!data.member.programId) {
+            return (
+              <p className="text-[13px] text-[#f59e0b]" data-testid="member-program-mismatch">
+                {name}&apos;s batch isn&apos;t linked to a program, so their graph uses the built-in defaults and shows no program
+                activities. Link their batch to a program (Batches → edit batch → Program) first.
+              </p>
+            );
+          }
+          return (
+            <div className="flex flex-wrap items-center gap-3 text-[13px] text-[#f59e0b]" data-testid="member-program-mismatch">
+              <p>
+                {name}&apos;s graph comes from <b>{own?.name ?? "another program"}</b> (their batch&apos;s program), not {config.program.name}.
+                Activities and milestones added to {config.program.name} won&apos;t appear on their graph.
+              </p>
+              {own && (
+                <button className={BTN_GHOST} onClick={() => onSwitchProgram(own.id)}>Switch to {own.name}</button>
+              )}
+            </div>
+          );
+        })()}
         {data && inProgram && (
           <>
             {data.records.length === 0 ? (
