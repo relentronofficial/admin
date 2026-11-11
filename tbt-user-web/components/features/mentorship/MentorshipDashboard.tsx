@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import DailyTimeSpentModal from "./DailyTimeSpentModal";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
   Instagram, RefreshCw, Unlink,
@@ -161,6 +162,10 @@ function KpiCard({
     <div className="mentorship-kpi-card relative rounded-[10px] overflow-hidden"
       style={{ background: "#242428", padding: 12, height: 63, cursor: onClick ? "pointer" : undefined }}
       onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `${label}: ${value}` : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
     >
       <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
         <span className="truncate" style={{ color: "#d0cfd4", fontSize: 10, fontWeight: 500, lineHeight: 1.2 }}>{label}</span>
@@ -1161,6 +1166,9 @@ function NowLearningSection() {
 
 export default function MentorshipDashboard({ showBackLink = false, titleOverride = null, courseId = null }: { showBackLink?: boolean; titleOverride?: string | null; courseId?: string | null }) {
   const { data: stats, isLoading: statsLoading, isError: statsError, refetch: refetchStats } = useMentorshipStats();
+  // Daily Time Spent card → date-wise history popup.
+  const [timeHistoryOpen, setTimeHistoryOpen] = useState(false);
+  const closeTimeHistory = useCallback(() => setTimeHistoryOpen(false), []);
   const { data: batchData, isLoading: batchLoading } = useMyBatchProgram();
   const { data: quota, isLoading: quotaLoading, isError: quotaError, refetch: refetchQuota } = useUserSupportQuota();
   // Next action per call card (Book / Unlock with coins / Purchase coins / locked); optional overlay on the counts.
@@ -1282,6 +1290,8 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   return (
     <div className="space-y-6">
+      {/* Mounted only while open: no request until the member clicks the card. */}
+      {timeHistoryOpen && <DailyTimeSpentModal open onClose={closeTimeHistory} />}
       <MentorshipHeader
         programName={titleOverride ?? programName}
         weeklyReportSubmitted={weeklyReportSubmitted}
@@ -1301,6 +1311,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
           value={`${dailyHrsCount} hrs`}
           metricColor="#f5f5f7"
           note={dailyGrowth != null ? `${dailyGrowth >= 0 ? "+" : ""}${dailyGrowth}% vs goal` : undefined}
+          onClick={() => setTimeHistoryOpen(true)}
         />
         <KpiCard
           label="Support Delivered"

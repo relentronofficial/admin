@@ -26,8 +26,8 @@ import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday, localDayK
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
-import { trackActivity, recordActiveMinute } from '../../lib/memberActivity.js';
-import { isActiveHeartbeat } from '../../lib/memberActivityLogic.js';
+import { trackActivity, recordActiveMinute, ACTIVITY_TIMEZONE, getActivityToday, getTrackingStartDate, getMemberDailyRows } from '../../lib/memberActivity.js';
+import { isActiveHeartbeat, buildUsageHistory } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import {
   isInstagramConfigured,
@@ -2489,6 +2489,46 @@ export async function activityHeartbeatHandler(request: FastifyRequest, reply: F
   } catch (err) {
     request.log.warn({ err }, 'activity heartbeat failed');
     return ok(reply, { recorded: false });
+  }
+}
+
+// GET /api/user/activity/history — the member's own Daily Time Spent, date by
+// date, from their onboarding date to today (Daily Time Spent popup). Same
+// source as the dashboard card (member_daily_activity active minutes, program
+// timezone); always scoped to req.memberId. Days before tracking went live are
+// reported as untracked (trackedFrom), never as 0.
+export async function activityHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
+  const prisma = request.server.prisma;
+  const memberId = request.memberId!;
+  try {
+    const [m] = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT first_name AS "firstName", last_name AS "lastName",
+              to_char((COALESCE(onboarding_reviewed_at, onboarding_submitted_at, created_at) AT TIME ZONE '${ACTIVITY_TIMEZONE}')::date, 'YYYY-MM-DD') AS "onboardingDate",
+              CASE WHEN onboarding_reviewed_at IS NOT NULL THEN 'approved'
+                   WHEN onboarding_submitted_at IS NOT NULL THEN 'submitted'
+                   ELSE 'joined' END AS "onboardingSource"
+         FROM members WHERE id = $1::uuid`,
+      memberId,
+    );
+    if (!m) return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+    const today = await getActivityToday(prisma);
+    const maxDays = 1095;
+    const fromDate = new Date(Date.parse(`${today}T00:00:00Z`) - (maxDays - 1) * 86_400_000).toISOString().slice(0, 10);
+    const [rows, trackingStartDate] = await Promise.all([
+      getMemberDailyRows(prisma, memberId, fromDate),
+      getTrackingStartDate(prisma),
+    ]);
+    const history = buildUsageHistory(rows, { today, onboardingDate: m.onboardingDate ?? null, trackingStartDate, maxDays });
+    return ok(reply, {
+      timezone: ACTIVITY_TIMEZONE,
+      memberName: [m.firstName, m.lastName].filter(Boolean).join(' ').trim() || null,
+      onboardingSource: m.onboardingSource,
+      trackingStartDate,
+      ...history,
+    });
+  } catch (err) {
+    request.log.error({ err }, 'activity history failed');
+    return reply.status(500).send({ success: false, data: null, error: { code: 'INTERNAL', message: 'Could not load your time spent history' } });
   }
 }
 
