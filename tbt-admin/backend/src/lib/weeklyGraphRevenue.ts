@@ -80,7 +80,7 @@ function toNum(v: unknown): number | null {
  */
 function effectiveRevenue(r: RevenueWeekRow): number | null {
   const daily = (r.dailyRevenue ?? []).slice(0, 7).map(toNum);
-  if (daily.some((v) => v != null)) return daily.reduce((s, v) => s + (v ?? 0), 0);
+  if (daily.some((v) => v != null)) return daily.reduce<number>((s, v) => s + (v ?? 0), 0);
   return r.revenue != null ? toNum(r.revenue) : null;
 }
 
