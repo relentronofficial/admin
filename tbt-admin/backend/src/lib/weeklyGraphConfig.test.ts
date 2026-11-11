@@ -160,18 +160,18 @@ describe('member graph from the program configuration', () => {
   });
 
   it('uses configured week labels, order and ids; the Y axis comes from the config', () => {
-    const g = build({ config: config([week('w2', 'Launch', 8, 14, 0), week('w1', 'Setup', 1, 7, 1)]), totalDays: 14 });
+    const g = build({ config: config([week('w2', 'Launch', 8, 14, 0), week('w1', 'Setup', 1, 7, 1)]), totalDays: 14, currentDay: 7 });
     expect(g.weeks.map((w) => [w.label, w.weekId])).toEqual([['Launch', 'w2'], ['Setup', 'w1']]);
     expect(g.config.source).toBe('program');
     expect(g.config.milestones.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
   });
 
   it('adding W5 makes the new week appear in the graph', () => {
-    const before = build({ totalDays: 28 });
-    const after = build({ totalDays: 28, config: config([...FOUR_WEEKS, week('w5', 'W5', 29, 35, 4)]) });
+    const before = build({ totalDays: 28, currentDay: 28 });
+    const after = build({ totalDays: 35, currentDay: 35, config: config([...FOUR_WEEKS, week('w5', 'W5', 29, 35, 4)]) });
     expect(before.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
     expect(after.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect(after.weeks[4].progressLevel).toBeNull(); // not started yet
+    expect(after.weeks[4].progressLevel).toBe(0); // current week, no tasks
   });
 
   it('renaming a week or milestone keeps the activity and its approved progress (links are ids)', () => {
@@ -197,7 +197,7 @@ describe('member graph from the program configuration', () => {
     const submissions = [{ taskId: 't1', dayNumber: 3, status: 'approved' }];
     const disabled = [week('w1', 'W1', 1, 7, 0, false), ...FOUR_WEEKS.slice(1)];
     const g = build({ tasks, submissions, config: config(disabled) });
-    expect(g.weeks.map((w) => w.label)).toEqual(['W2', 'W3', 'W4']);
+    expect(g.weeks.map((w) => w.label)).toEqual(['W2', 'W3']);
     expect(g.weeks.flatMap((w) => w.activities.map((a) => a.taskId))).toEqual(['t2']);
     // Re-enabling brings the approved activity straight back
     const back = build({ tasks, submissions });
@@ -241,17 +241,14 @@ describe('member graph from the program configuration', () => {
     const g = build({ config: config(FOUR_WEEKS, ms), currentDay: 10, records: [
       { milestoneId: 'm-1c', weekId: 'w1' }, { milestoneId: 'nope', weekId: 'w1' }, { milestoneId: 'm-1l', weekId: 'w4' },
     ] });
+    expect(g.weeks).toHaveLength(2); // currentDay:10 → W2 → only W1 and W2 shown
     expect(g.weeks[0].progressLevel).toBe(0);
-    // W4 hasn't started (day 10), but the admin recorded 1 lakh for it: confirmed data, plotted on its row.
-    const oneLakhRow = g.config.milestones.findIndex((m) => m.id === 'm-1l') + 1;
-    expect(g.weeks[3].progressLevel).toBe(oneLakhRow);
-    // A future week with no record stays unplotted.
-    expect(g.weeks[2].progressLevel).toBeNull();
+    // W4 is not shown — the record for it is simply not plotted
   });
 
   it('shows exactly the configured weeks: none is generated past the configured range', () => {
     // Program length (35 days) runs past the configured W1–W4 (days 1–28).
-    const g = build({ tasks: [task('in-range', 20), task('late', 31)], totalDays: 35 });
+    const g = build({ tasks: [task('in-range', 20), task('late', 31)], totalDays: 35, currentDay: 28 });
     expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
     expect(g.weeks.every((w) => w.weekId !== null)).toBe(true);
     // An activity on a day no configured week covers is not shown until a week is added for it.
@@ -368,9 +365,8 @@ describe('weekly progress for the progression line (admin-configured program)', 
   it('a rejected submission pulls its week back down; future weeks get no point', () => {
     const g = build({ ...pattern, submissions: [...pattern.submissions.filter((s) => s.taskId !== 'a2'), { taskId: 'a2', dayNumber: 9, status: 'rejected' }], currentDay: 12 });
     expect(statusOf(g, 'a2')).toBe('needs_revision');
+    expect(g.weeks).toHaveLength(2); // currentDay:12 → W2 → only W1 and W2 shown; future weeks not rendered
     expect(g.weeks[1].progressLevel).toBe(1.5); // only b2 approved, no Funnels lift
-    expect(g.weeks[2].progressLevel).toBeNull();
-    expect(g.weeks[3].progressLevel).toBeNull();
   });
 
   it("another member's assignment never affects this member's line", () => {

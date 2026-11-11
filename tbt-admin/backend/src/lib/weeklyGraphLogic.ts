@@ -337,6 +337,8 @@ export function buildWeeklyGraph(params: {
     });
   }
   if (currentIdx < 0) currentIdx = 0;
+  // Trim future weeks — only show columns up to the member's current active week.
+  slots = slots.slice(0, currentIdx + 1);
   const currentWeek = currentIdx + 1;
 
   const weeks: GraphWeek[] = slots.map((w, i) => ({

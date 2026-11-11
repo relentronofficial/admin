@@ -127,12 +127,12 @@ describe('revenue milestones from reported revenue', () => {
 
   it('reaches a revenue milestone in the week the running total crosses its threshold', () => {
     const g = build({ revenue: [rev(3, 60000), rev(10, 50000)] });
-    expect(g.weeks.map((w) => [w.revenue, w.cumulativeRevenue])).toEqual([[60000, 60000], [50000, 110000], [null, 110000], [null, null]]);
+    expect(g.weeks.map((w) => [w.revenue, w.cumulativeRevenue])).toEqual([[60000, 60000], [50000, 110000], [null, 110000]]);
     expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2, threshold: 100000 });
     expect(ms(g, 'm-5l')).toMatchObject({ reached: false, reachedBy: null, reachedWeek: null, threshold: 500000 });
     // W1 (₹60k) stays below ₹1 Lakh; W2 onwards is on it, ₹10k of the way to ₹5 Lakhs
     // (4 + 10k/400k = 4.03, revenueProgressLevel); W4 has not started.
-    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03, null]);
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03]);
     expect(g.revenue).toEqual({ source: 'self_reported', totalToDate: 110000 });
   });
 
@@ -159,7 +159,7 @@ describe('revenue milestones from reported revenue', () => {
     expect(ms(g, 'm-1l')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 2, threshold: null });
     expect(ms(g, 'm-5l')).toMatchObject({ reached: false });
     expect(ms(g, 'm-big')).toMatchObject({ reached: false, threshold: null });
-    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03, null]); // identical to the ₹1,00,000 threshold case
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 4.03, 4.03]); // identical to the ₹1,00,000 threshold case
     // The built-in default rows ("1 lakh", "5 Lakhs", "1 crore") work the same way.
     const d = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 9, revenue: [rev(1, 9_00_000)] });
     expect(d.config.milestones.filter((m) => m.reached).map((m) => m.label)).toEqual(['1 lakh', '5 Lakhs']);
@@ -202,10 +202,10 @@ describe('revenue milestones from reported revenue', () => {
 
   it('W1–W10 show exactly ten weeks; adding W11 shows eleven', () => {
     const ten = Array.from({ length: 10 }, (_, i) => week(`w${i + 1}`, `W${i + 1}`, i * 7 + 1, i * 7 + 7, i));
-    const g10 = build({ config: resolveGraphConfig({ weeks: ten, milestones: REV_MS }), totalDays: 90, currentDay: 40 });
+    const g10 = build({ config: resolveGraphConfig({ weeks: ten, milestones: REV_MS }), totalDays: 90, currentDay: 70 });
     expect(g10.weeks.map((w) => w.label)).toEqual(ten.map((w) => w.label));
     const eleven = [...ten, week('w11', 'W11', 71, 77, 10)];
-    const g11 = build({ config: resolveGraphConfig({ weeks: eleven, milestones: REV_MS }), totalDays: 90, currentDay: 40 });
+    const g11 = build({ config: resolveGraphConfig({ weeks: eleven, milestones: REV_MS }), totalDays: 90, currentDay: 71 });
     expect(g11.weeks).toHaveLength(11);
     expect(g11.weeks.at(-1)).toMatchObject({ label: 'W11', weekId: 'w11', startDay: 71, endDay: 77 });
   });

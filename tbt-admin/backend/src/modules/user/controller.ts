@@ -8397,18 +8397,47 @@ export async function getMentorshipRevenueHandler(request: FastifyRequest, reply
     return ok(reply, demoRevenue({ isoWeek, isoYear }));
   }
 
-  const rows = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT * FROM member_revenue_reports
-     WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
-    memberId, isoWeek, isoYear,
-  ).catch(() => []);
+  const [rows, totalRows] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM member_revenue_reports
+       WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
+      memberId, isoWeek, isoYear,
+    ).catch(() => []),
+    request.server.prisma.$queryRawUnsafe<{ total: string | null }[]>(
+      `SELECT SUM(revenue_generated)::text AS total FROM member_revenue_reports WHERE member_id = $1::uuid`,
+      memberId,
+    ).catch(() => [{ total: null }]),
+  ]);
 
-  if (!rows.length) return ok(reply, null);
+  const totalAllTime = totalRows[0]?.total != null ? Number(totalRows[0].total) : null;
+
+  if (!rows.length) return ok(reply, {
+    weekNumber:        isoWeek,
+    year:              isoYear,
+    totalAllTime,
+    revenueGenerated:  null,
+    revenuePrev:       null,
+    numberOfOrders:    null,
+    ordersPrev:        null,
+    adBudgetSpent:     null,
+    roas:              null,
+    customerAcqCost:   null,
+    organicLeads:      null,
+    leadsPrev:         null,
+    avgOrderValue:     null,
+    rtoReturnsPercent: null,
+    conversionRate:    null,
+    platformBadge:     null,
+    dailyRevenue:      null,
+    dailyOrders:       null,
+    updatedAt:         null,
+  });
 
   const r = rows[0];
   return ok(reply, {
     weekNumber:          isoWeek,
     year:                isoYear,
+    totalAllTime,
     revenueGenerated:    r.revenue_generated != null ? Number(r.revenue_generated) : null,
     revenuePrev:         r.revenue_prev != null ? Number(r.revenue_prev) : null,
     numberOfOrders:      r.number_of_orders != null ? Number(r.number_of_orders) : null,

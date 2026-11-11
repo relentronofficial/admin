@@ -1233,7 +1233,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   const dailyHrsCount = useCountUp(dailyHrs, 1200, 2);
   const allCallsUsedCount = useCountUp(allCallsUsed, 900);
-  const revenueCount = useCountUp(revenue?.revenueGenerated ?? 0, 1400);
+  const revenueCount = useCountUp(revenue?.totalAllTime ?? 0, 1400);
 
   if (isLoading) {
     return (
@@ -1298,14 +1298,12 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         <KpiCard
           label="Revenue Generated"
           rightLabel={revenue?.numberOfOrders ? `${revenue.numberOfOrders}+ Orders` : undefined}
-          value={revenue?.revenueGenerated != null ? `₹${revenueCount}` : "—"}
+          value={revenue?.totalAllTime != null ? `₹${revenueCount}` : "—"}
           metricColor="#ffe600"
           note={
-            revenue?.revenueGenerated != null && revenue?.numberOfOrders
-              ? `Avg ₹${Math.round(revenue.revenueGenerated / revenue.numberOfOrders).toLocaleString("en-IN")}/order`
-              : revGrowth != null
-                ? `${revGrowth >= 0 ? "+" : ""}${revGrowth}% vs prev`
-                : undefined
+            revenue?.revenueGenerated != null
+              ? `This week: ₹${revenue.revenueGenerated.toLocaleString("en-IN")}`
+              : undefined
           }
         />
         <KpiCard

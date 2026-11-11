@@ -96,7 +96,7 @@ describe('buildWeeklyGraph', () => {
 
   it('plots no point (null) for weeks without activities instead of 0%', () => {
     const graph = buildWeeklyGraph({
-      memberId: ME, tasks: [task('a', 1)], submissions: [], dayProgress: [], totalDays: 14, currentDay: 1,
+      memberId: ME, tasks: [task('a', 1)], submissions: [], dayProgress: [], totalDays: 14, currentDay: 8,
     });
     expect(graph.weeks).toHaveLength(2);
     expect(graph.weeks[1].total).toBe(0);
@@ -122,7 +122,7 @@ describe('buildWeeklyGraph', () => {
 
   it('moves an activity to its new week when its day assignment changes', () => {
     const before = buildWeeklyGraph({ memberId: ME, tasks: [task('a', 3)], submissions: [], dayProgress: [], totalDays: 21, currentDay: 1 });
-    const after = buildWeeklyGraph({ memberId: ME, tasks: [task('a', 17)], submissions: [], dayProgress: [], totalDays: 21, currentDay: 1 });
+    const after = buildWeeklyGraph({ memberId: ME, tasks: [task('a', 17)], submissions: [], dayProgress: [], totalDays: 21, currentDay: 17 });
     expect(before.weeks[0].activities.map((a) => a.taskId)).toEqual(['a']);
     expect(after.weeks[0].activities).toHaveLength(0);
     expect(after.weeks[2].activities.map((a) => a.taskId)).toEqual(['a']);
@@ -139,7 +139,7 @@ describe('buildWeeklyGraph', () => {
   });
 
   it('extends the weeks to cover activities scheduled past totalDays', () => {
-    const graph = buildWeeklyGraph({ memberId: ME, tasks: [task('late', 16)], submissions: [], dayProgress: [], totalDays: 14, currentDay: 1 });
+    const graph = buildWeeklyGraph({ memberId: ME, tasks: [task('late', 16)], submissions: [], dayProgress: [], totalDays: 14, currentDay: 16 });
     expect(graph.weeks).toHaveLength(3);
     expect(graph.weeks[2].activities.map((a) => a.taskId)).toEqual(['late']);
   });
@@ -216,16 +216,17 @@ describe('milestone axis progress', () => {
       submissions: [{ taskId: 'a', dayNumber: 1, status: 'approved' }],
       dayProgress: [], totalDays: 28, currentDay: 3,
     });
-    expect(graph.weeks.map((w) => w.progressLevel)).toEqual([3, null, null, null]);
+    // Only W1 is shown — future weeks are not rendered.
+    expect(graph.weeks).toHaveLength(1);
+    expect(graph.weeks[0].progressLevel).toBe(3); // approved task 'a' lifts W1 to max
   });
 
   it('follows the configured program length (number of weeks)', () => {
     const short = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 14, currentDay: 20 });
     const long = buildWeeklyGraph({ memberId: ME, tasks: [], submissions: [], dayProgress: [], totalDays: 90, currentDay: 20 });
     expect(short.weeks).toHaveLength(2);
-    expect(long.weeks).toHaveLength(13);
-    expect(long.weeks.slice(0, 3).map((w) => w.progressLevel)).toEqual([0, 0, 0]);
-    expect(long.weeks[3].progressLevel).toBeNull();
+    expect(long.weeks).toHaveLength(3); // currentDay:20 → W3 → only W1–W3 shown
+    expect(long.weeks.map((w) => w.progressLevel)).toEqual([0, 0, 0]);
   });
 
   it('ignores another member\'s completed milestone task', () => {
@@ -309,15 +310,16 @@ describe('buildWeeklyGraph — per-milestone reached/dayNumber (Learning Roadmap
     expect(status(graph({ config: saved, records: [{ milestoneId: 'm-web', weekId: 'gone' }] }))[1]).toEqual(['Website', true, null]);
   });
 
-  it("an admin record lifts its week's point — also in a week the member hasn't reached yet", () => {
+  it("an admin record lifts its week's point; future weeks are trimmed by the current-week cap", () => {
     const weeks = [1, 2, 3, 4].map((n) => ({ id: `w${n}`, label: `W${n}`, startDay: (n - 1) * 7 + 1, endDay: n * 7 }));
     const config = { ...saved, weeks, coveredUntilDay: 28 };
-    // Member is on day 10 (W2). Records: Website in W2 (current), 1 lakh in W4 (not started yet).
+    // Member is on day 10 (W2). Record for W2 (current) is visible; record for W4 (future) is not shown.
     const g = graph({ config, currentDay: 10, records: [{ milestoneId: 'm-web', weekId: 'w2' }, { milestoneId: 'm-1l', weekId: 'w4' }] });
-    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 2, null, 4]);
-    expect(g.config.milestones.find((m) => m.id === 'm-1l')).toMatchObject({ reached: true, reachedBy: 'record', reachedWeek: 4 });
-    // Without records, the not-started weeks stay unplotted (nothing invented).
-    expect(graph({ config, currentDay: 10 }).weeks.map((w) => w.progressLevel)).toEqual([0, 0, null, null]);
+    expect(g.weeks.map((w) => w.progressLevel)).toEqual([0, 2]); // only W1–W2; W4 is future and trimmed
+    // The milestone is still marked reached (admin confirmed it) but reachedWeek is null — W4 is not visible.
+    expect(g.config.milestones.find((m) => m.id === 'm-1l')).toMatchObject({ reached: true, reachedBy: 'record', reachedWeek: null });
+    // Without records, visible weeks sit on the baseline.
+    expect(graph({ config, currentDay: 10 }).weeks.map((w) => w.progressLevel)).toEqual([0, 0]);
   });
 
   it('default (unsaved) revenue milestones can never be reached — records need a saved milestone id', () => {

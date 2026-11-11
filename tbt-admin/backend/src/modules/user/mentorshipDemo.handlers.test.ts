@@ -140,7 +140,7 @@ describe('Weekly Activity Graph overlay (GET /api/user-batch/weekly-graph)', () 
     expect(h.sent.headers['x-tbt-demo']).toBe('mentorship');
     const g = h.sent.body.data;
     expect(g.totalDays).toBe(90);
-    expect(g.weeks).toHaveLength(13);
+    expect(g.weeks).toHaveLength(5); // STARTS_AT is 29 days ago → day 30 → W5
     expect(g.weeks.flatMap((w: any) => w.activities).every((a: any) => a.taskId.startsWith('demo-'))).toBe(true);
     expect(h.queryRaw.mock.calls.some(([sql]) => String(sql).includes('FROM tasks'))).toBe(false);
     expect(g.weeks.every((w: any) => w.progressLevel === null || w.progressLevel <= 3)).toBe(true);
@@ -160,12 +160,12 @@ describe('Weekly Activity Graph overlay (GET /api/user-batch/weekly-graph)', () 
     const real = (await call(userBatch.getMyWeeklyGraphHandler, OTHER_ID, opts)).sent;
     expect(demo.headers['x-tbt-demo']).toBe('mentorship');
     const weeks = (g: any) => g.weeks.map((w: any) => [w.label, w.startDay, w.endDay]);
-    expect(weeks(demo.body.data)).toHaveLength(14);
+    expect(weeks(demo.body.data)).toHaveLength(5); // day 30 → W5; both demo and real cap at current week
     expect(weeks(demo.body.data)).toEqual(weeks(real.body.data));
-    expect(weeks(demo.body.data).at(-1)).toEqual(['W14', 92, 98]);
-    // No program: no span lookup, the demo's own 90 days (13 weeks) as before.
+    expect(weeks(demo.body.data).at(-1)).toEqual(['W5', 29, 35]);
+    // No program: no span lookup, the demo's own 90 days, still capped at day 30 → W5.
     const none = await call(userBatch.getMyWeeklyGraphHandler, TARGET_ID);
-    expect(none.sent.body.data.weeks).toHaveLength(13);
+    expect(none.sent.body.data.weeks).toHaveLength(5);
     expect(none.queryRaw.mock.calls.some(([sql]) => String(sql).includes('SELECT GREATEST('))).toBe(false);
   });
 

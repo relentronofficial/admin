@@ -98,11 +98,14 @@ describe('scenario: revenue milestones, thresholds present vs absent', () => {
 });
 
 describe('scenario: 28-day program, 35-day batch, never configured', () => {
-  it('a member graph given the program span lists W1–W5, the same as defaultWeeks of that span', () => {
+  it('a member graph given the program span lists W1–W4 (today clamps to lastDay=28)', () => {
+    // currentDay:31 is past totalDays:28 — today is clamped to 28 (W4), so 4 weeks are shown.
+    // defaultSpanDays:35 drives the week generation (7-day slots up to day 35) but the
+    // X-axis still stops at the current active week.
     const g = buildWeeklyGraph({
       memberId: MEMBER, tasks: [], submissions: [], dayProgress: [], totalDays: 28, currentDay: 31, defaultSpanDays: 35,
     });
-    expect(g.weeks.map((w) => [w.label, w.startDay, w.endDay])).toEqual(defaultWeeks(35).map((w) => [w.label, w.startDay, w.endDay]));
-    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect(g.weeks.map((w) => [w.label, w.startDay, w.endDay])).toEqual(defaultWeeks(35).slice(0, 4).map((w) => [w.label, w.startDay, w.endDay]));
+    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
   });
 });

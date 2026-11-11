@@ -308,28 +308,28 @@ describe('before any configuration (backward compatibility)', () => {
     expect(c.milestones.map((m: any) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '5 Lakhs', '1 crore']);
   });
 
-  it('the member graph is unchanged: default weeks, legacy milestone label still lifts', async () => {
+  it('the member graph caps at the current week (W3): only W1–W3 shown even with 4 default weeks', async () => {
     const g = await memberGraph();
     expect(g.config.source).toBe('default');
-    expect(g.weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
+    expect(g.weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']);
     expect(g.weeks[0].progressLevel).toBe(3); // approved "Ads" milestone, 1 of 1 → Funnels cap
   });
 
-  it('28-day program, 35-day batch: admin defaults and the member graph both list W1–W5; saving the defaults keeps W5', async () => {
+  it('28-day program, 35-day batch: admin defaults show W1–W5; member graph caps at current week (W3)', async () => {
     db.batchSnapshotDays = 35;
     const span = [['W1', 1, 7], ['W2', 8, 14], ['W3', 15, 21], ['W4', 22, 28], ['W5', 29, 35]];
     expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
-    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
+    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span.slice(0, 3));
     await call(graph.initializeHandler, { params: P });
     expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(span);
-    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']);
   });
 
-  it("a member's extra days count too: 28-day program + 7 extra days → W1–W5 on both sides", async () => {
+  it("a member's extra days count too: 28-day program + 7 extra days → admin sees W1–W5; member graph caps at W3", async () => {
     db.extendedDays = 7;
     expect((await config()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect((await memberGraph(OTHER_MEMBER)).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']);
+    expect((await memberGraph(OTHER_MEMBER)).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']);
   });
 
   it('saved custom weeks are kept exactly, whatever the batch length', async () => {
@@ -339,7 +339,7 @@ describe('before any configuration (backward compatibility)', () => {
     db.batchSnapshotDays = 42; // the batch now runs longer — saved weeks are never regenerated
     const saved = [['W1', 1, 7], ['W2', 8, 14], ['W3', 15, 21], ['Final stretch', 22, 30]];
     expect((await config()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(saved);
-    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(saved);
+    expect((await memberGraph()).weeks.map((w: any) => [w.label, w.startDay, w.endDay])).toEqual(saved.slice(0, 3));
   });
 });
 
@@ -348,7 +348,7 @@ describe('weeks: create, edit, reorder, enable/disable, delete', () => {
     const res = await call(graph.createWeekHandler, { params: P, body: { label: 'W5', startDay: 29, endDay: 35 } });
     expect(res.status).toBe(200);
     expect((await config()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']); // fresh request
-    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']); // capped at current week
   });
 
   it('renaming a week updates its label; the activity and approved progress stay', async () => {
@@ -365,7 +365,7 @@ describe('weeks: create, edit, reorder, enable/disable, delete', () => {
     const ids = (await config()).weeks.map((w: any) => w.id);
     const res = await call(graph.reorderWeeksHandler, { params: P, body: { ids: [ids[1], ids[0], ids[2], ids[3]] } });
     expect(res.status).toBe(200);
-    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W2', 'W1', 'W3', 'W4']);
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W2', 'W1', 'W3']);
   });
 
   it('disabling hides the week and its activities; re-enabling restores them with their history', async () => {
@@ -373,7 +373,7 @@ describe('weeks: create, edit, reorder, enable/disable, delete', () => {
     const w1 = (await config()).weeks[0];
     await call(graph.updateWeekHandler, { params: { ...P, id: w1.id }, body: { isActive: false } });
     let g = await memberGraph();
-    expect(g.weeks.map((w: any) => w.label)).toEqual(['W2', 'W3', 'W4']);
+    expect(g.weeks.map((w: any) => w.label)).toEqual(['W2', 'W3']); // W1 disabled, W4 future
     expect(db.submissions).toHaveLength(1); // nothing deleted
     await call(graph.updateWeekHandler, { params: { ...P, id: w1.id }, body: { isActive: true } });
     g = await memberGraph();
@@ -659,7 +659,7 @@ describe('revenue milestones and activity markers (admin → API → member grap
     expect(msOf(g, '₹5 Lakhs')).toMatchObject({ reached: false, reachedBy: null });
     expect(g.revenue.totalToDate).toBe(110000);
     expect(g.weeks.slice(0, 3).map((w: any) => w.cumulativeRevenue)).toEqual([60000, 110000, 110000]);
-    expect(g.weeks[3].cumulativeRevenue).toBeNull(); // W4 has not started
+    expect(g.weeks).toHaveLength(3); // only W1-W3 shown — W4 has not started
     const other = await memberGraph(OTHER_MEMBER);
     expect(msOf(other, '₹5 Lakhs')).toMatchObject({ reached: true, reachedBy: 'revenue', reachedWeek: 1 });
   });
@@ -720,16 +720,18 @@ describe('revenue milestones and activity markers (admin → API → member grap
     expect((await memberGraph()).weeks[0].activities.map((a: any) => a.title)).not.toContain('Run Meta Ads W1');
   });
 
-  it('configured W1–W10 show exactly up to W10; adding W11 extends the member graph to W11', async () => {
+  it('the member graph caps at the current week regardless of how many weeks are configured', async () => {
     await call(graph.initializeHandler, { params: P }); // W1–W4 for the 28-day program
     for (let n = 5; n <= 10; n++) {
       expect((await call(graph.createWeekHandler, { params: P, body: { label: `W${n}`, startDay: (n - 1) * 7 + 1, endDay: n * 7 } })).status).toBe(200);
     }
-    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(Array.from({ length: 10 }, (_, i) => `W${i + 1}`));
+    // currentDay=20 is in W3 — member sees only W1–W3 even though W1–W10 are configured
+    expect((await memberGraph()).weeks.map((w: any) => w.label)).toEqual(['W1', 'W2', 'W3']);
     await call(graph.createWeekHandler, { params: P, body: { label: 'W11', startDay: 71, endDay: 77 } });
+    // Adding W11 doesn't change what the member sees (still in W3)
     const g = await memberGraph();
-    expect(g.weeks).toHaveLength(11);
-    expect(g.weeks.at(-1)).toMatchObject({ label: 'W11', startDay: 71, endDay: 77 });
+    expect(g.weeks).toHaveLength(3);
+    expect(g.weeks.at(-1)).toMatchObject({ label: 'W3' });
   });
 });
 

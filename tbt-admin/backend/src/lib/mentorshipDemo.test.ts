@@ -51,7 +51,7 @@ describe('demo payloads', () => {
     expect(Object.keys(r).sort()).toEqual([
       'adBudgetSpent', 'avgOrderValue', 'conversionRate', 'customerAcqCost', 'dailyOrders', 'dailyRevenue',
       'leadsPrev', 'numberOfOrders', 'ordersPrev', 'organicLeads', 'platformBadge', 'revenueGenerated',
-      'revenuePrev', 'roas', 'rtoReturnsPercent', 'updatedAt', 'weekNumber', 'year',
+      'revenuePrev', 'roas', 'rtoReturnsPercent', 'totalAllTime', 'updatedAt', 'weekNumber', 'year',
     ]);
     expect([r.weekNumber, r.year]).toEqual([42, 2026]);
   });
@@ -183,8 +183,8 @@ describe('demo consistency across streak, Tier Access, graph and dashboard', () 
       expect(o.tierActiveDays).toBe(o.streak.totalActiveDays);
       expect(o.tierActiveDays).toBeLessThanOrEqual(totalDays);
 
-      // Graph follows the real program length
-      expect(o.graph!.weeks).toHaveLength(Math.ceil(totalDays / 7));
+      // Graph shows only weeks up to the current active week
+      expect(o.graph!.weeks).toHaveLength(Math.ceil((offset + 1) / 7));
 
       // An activity is completed exactly when its day is an active streak day
       const activeKeys = new Set(o.rows.map((r) => r.activity_date as string));

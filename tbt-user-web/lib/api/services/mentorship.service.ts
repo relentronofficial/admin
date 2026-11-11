@@ -27,6 +27,8 @@ export type MentorshipStats = {
 export type MentorshipRevenue = {
   weekNumber: number;
   year: number;
+  /** Sum of revenue_generated across all submitted weeks. Null if none ever submitted. */
+  totalAllTime: number | null;
   revenueGenerated: number | null;
   revenuePrev: number | null;
   numberOfOrders: number | null;
@@ -109,7 +111,7 @@ export const mentorshipService = {
     apiClient.get<never, ApiResponse<MentorshipStats>>("/api/user/mentorship/stats"),
 
   getRevenue: () =>
-    apiClient.get<never, ApiResponse<MentorshipRevenue | null>>("/api/user/mentorship/revenue"),
+    apiClient.get<never, ApiResponse<MentorshipRevenue>>("/api/user/mentorship/revenue"),
 
   getRevenueHistory: () =>
     apiClient.get<never, ApiResponse<MentorshipRevenueHistory>>("/api/user/mentorship/revenue/history"),
