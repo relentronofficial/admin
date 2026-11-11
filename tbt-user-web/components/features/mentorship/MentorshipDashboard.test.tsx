@@ -46,6 +46,8 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
   return { ...mod, useQueryClient: () => ({ invalidateQueries: vi.fn(), setQueryData: vi.fn() }) };
 });
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
+// Daily Time Spent popup data (the popup itself is tested in DailyTimeSpentModal.test.tsx).
+vi.mock("@/lib/hooks/useActivityHistory", () => ({ useActivityHistory: () => ({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() }) }));
 vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota, useCreditPricing: () => ({ data: state.pricing }) }));
 vi.mock("@/lib/hooks/useSupportCalls", () => ({ useSupportCallsSummary: () => state.callSummary }));
 
@@ -171,6 +173,18 @@ describe("MentorshipDashboard", () => {
       .toEqual(["W1, No milestone, Approved", "W2, No milestone, Planned — not completed yet"]);
     expect(graph.querySelector('[data-testid="progress-line"]')).toBeNull();
     expect(graph.querySelector('[data-testid="milestone-point"]')).toBeNull();
+  });
+
+  it("the Daily Time Spent card opens the date-wise history popup (click or keyboard); no popup before", () => {
+    render(<MentorshipDashboard />);
+    expect(screen.queryByRole("dialog", { name: "Daily Time Spent" })).toBeNull();
+    const card = screen.getByRole("button", { name: /^Daily Time Spent:/ });
+    fireEvent.click(card);
+    expect(screen.getByRole("dialog", { name: "Daily Time Spent" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Daily Time Spent" })).toBeNull();
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "Daily Time Spent" })).toBeTruthy();
   });
 
   it("shows no graph for a member without a batch", () => {
