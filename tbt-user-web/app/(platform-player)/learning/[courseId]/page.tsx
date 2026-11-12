@@ -3650,20 +3650,20 @@ export default function CourseDetailPage({
                   return (
                     <div className="shrink-0 flex items-center gap-2">
                       <button
-                        onClick={handleTextDisagree}
-                        disabled={markComplete.isPending}
-                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: "var(--color-accent)", color: "#fff" }}
-                      >
-                        {negLabel}
-                      </button>
-                      <button
                         onClick={handleTextAgree}
                         disabled={markComplete.isPending}
                         className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                         style={{ background: isLessonCompleted ? "var(--color-success)" : "var(--color-accent)", color: "#fff" }}
                       >
                         <CheckCircle2 size={13} /> {posLabel}
+                      </button>
+                      <button
+                        onClick={handleTextDisagree}
+                        disabled={markComplete.isPending}
+                        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-opacity hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ background: "var(--color-accent)", color: "#fff" }}
+                      >
+                        {negLabel}
                       </button>
                     </div>
                   );
