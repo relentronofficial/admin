@@ -1567,7 +1567,7 @@ export default function CourseDetailPage({
   }, [savedVideosData]);
   const saveVideo = useSaveVideo();
   const unsaveVideo = useUnsaveVideo();
-  const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id);
+  const { data: existingTimerSession } = useEpisodeTimerSession(selectedLesson?.id ?? targetLessonId ?? null);
   const startEpisodeTimerRef = useRef(startEpisodeTimerMutation.mutate);
   useEffect(() => { startEpisodeTimerRef.current = startEpisodeTimerMutation.mutate; }, [startEpisodeTimerMutation.mutate]);
   const heartbeatMutateRef = useRef(heartbeatEpisodeTimerMutation.mutate);
@@ -1836,10 +1836,38 @@ export default function CourseDetailPage({
             sideContent: (target as any).sideContent ?? null,
           });
         } else {
-          // Incomplete lesson — show focus dialog
-          urlFocusDialogShownRef.current = targetLessonId;
-          const dur = target.videoUrl ? ((target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300) : 0;
-          setFocusDialog({ lesson: target, duration: dur });
+          // Check for an active server-side timer session. Wait for the query result
+          // before deciding — undefined means still loading.
+          const hasActiveTimer =
+            existingTimerSession !== undefined &&
+            existingTimerSession?.status === "ACTIVE" &&
+            (existingTimerSession?.remainingSeconds ?? 0) > 0;
+          if (existingTimerSession === undefined) {
+            // Still loading — wait for the next render when session data arrives
+            return;
+          }
+          if (hasActiveTimer) {
+            // Active timer exists — auto-select without showing focus dialog so the
+            // restore effect can resume the countdown from the correct remaining time.
+            setSelectedLesson({
+              id: target.id,
+              title: target.title,
+              description: (target as any).description ?? null,
+              videoUrl: target.videoUrl ?? "",
+              hlsUrl: (target as any).hlsUrl ?? null,
+              durationSeconds: target.durationSeconds ?? 0,
+              resumeAtSeconds: (target as any).resumeAtSeconds ?? 0,
+              actualWatchedSecs: (target as any).actualWatchedSecs ?? 0,
+              isCompleted: false,
+              sectionId: (target as any).sectionId ?? null,
+              sideContent: (target as any).sideContent ?? null,
+            });
+          } else {
+            // No active session — show focus dialog as usual
+            urlFocusDialogShownRef.current = targetLessonId;
+            const dur = target.videoUrl ? ((target as any).timerSeconds ?? (target as any).sectionTimerSeconds ?? config?.taskTimerSeconds ?? 300) : 0;
+            setFocusDialog({ lesson: target, duration: dur });
+          }
         }
       } else if (target && (target as any).locked) {
         // Direct/deep-linked navigation to a locked lesson
@@ -1847,7 +1875,7 @@ export default function CourseDetailPage({
         toast.error("Complete the previous lesson first to unlock this one.", { id: "lesson-locked", duration: 3000 });
       }
     }
-  }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [course, targetLessonId, selectedLesson, existingTimerSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show quiz modal on first episode completion
   const quizTriggeredForRef = useRef<string | null>(null);
