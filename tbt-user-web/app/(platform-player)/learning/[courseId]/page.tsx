@@ -3285,7 +3285,7 @@ export default function CourseDetailPage({
               </div>
               <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
                 {allLifelinesUsed
-                  ? `You have used all ${MAX_FREE_LIFELINES} Lifelines, but the video is still not completed. You need additional TBT Coins to continue watching this video.`
+                  ? `You have used all ${maxLifelines} Lifelines, but the video is still not completed. You need additional TBT Coins to continue watching this video.`
                   : `Spending ${LIFELINE_COIN_COST} TBT coins will reset the ${fmtTime(coinDialog.duration)} focus timer for this lesson.`
                 }
               </p>
@@ -3338,11 +3338,14 @@ export default function CourseDetailPage({
               </div>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-              {lifelinesLeft === MAX_FREE_LIFELINES ? (
-                <>Your allotted time has ended. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(1)} Lifeline</strong> to continue watching this video.</>
-              ) : (
-                <>You have completed your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(MAX_FREE_LIFELINES - lifelinesLeft)}</strong> Lifeline. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(MAX_FREE_LIFELINES - lifelinesLeft + 1)} Lifeline</strong> to continue watching this video.</>
-              )}
+              {(() => {
+                const usedLifelines = maxLifelines - lifelinesLeft;
+                return usedLifelines === 0 ? (
+                  <>Your allotted time has ended. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(1)} Lifeline</strong> to continue watching this video.</>
+                ) : (
+                  <>You have completed your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(usedLifelines)}</strong> Lifeline. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(usedLifelines + 1)} Lifeline</strong> to continue watching this video.</>
+                );
+              })()}
             </p>
             <div className="flex gap-3">
               <button
@@ -3959,7 +3962,7 @@ export default function CourseDetailPage({
         </div>{/* end left panel */}
 
         {/* ── Right sidebar: Activities ── */}
-        <div className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-4 space-y-4">
+        <div className="w-full lg:w-[380px] shrink-0 lg:sticky lg:top-4 space-y-4 overflow-hidden">
           {/* Activities header + progress ring (section-scoped when ?section= active) */}
           {(() => {
             const ringTotal = sectionFilteredLessons.length;
@@ -4057,7 +4060,7 @@ export default function CourseDetailPage({
             </div>
 
             {/* Utility icons row */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {reviewDueIds.length > 0 && (
                 <span
                   className="text-[10px] px-2 py-1 rounded-full font-bold flex items-center gap-1"
