@@ -234,8 +234,10 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading || isFetching) return;
     // /api/user/me returned 401 — user is unauthenticated; send to login.
+    // Pass the current path as redirect_url so LoginScreen returns them here
+    // after a successful login instead of defaulting to /batch-program/mentorship.
     if (isError) {
-      router.replace("/login");
+      router.replace(`/login?redirect_url=${encodeURIComponent(pathname)}`);
       return;
     }
     if (isExempt || !me) return;
