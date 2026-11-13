@@ -1,3 +1,4 @@
+import { buildMemberSearchWhere } from '../../lib/memberSearch.js';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
@@ -174,17 +175,10 @@ export function buildMembersWhereClause(query: any): any {
   // over any multi-select status filter to keep the tab UX intuitive.
   if (status) where.status = status;
 
-  // Text search across the identity fields most admins look for by.
-  if (search) {
-    where.OR = [
-      { firstName: { contains: search, mode: 'insensitive' } },
-      { lastName: { contains: search, mode: 'insensitive' } },
-      { email: { contains: search, mode: 'insensitive' } },
-      { memberId: { contains: search, mode: 'insensitive' } },
-      { businessName: { contains: search, mode: 'insensitive' } },
-      { phone: { contains: search } },
-    ];
-  }
+  // Text search: name (incl. full name), email, phone (any formatting), member id,
+  // business name — rules in lib/memberSearch.ts.
+  const searchWhere = buildMemberSearchWhere(search);
+  if (searchWhere) where.OR = searchWhere.OR;
 
   // Multi-select facets. Each dimension only narrows further — an empty
   // list means "any value" for that facet.

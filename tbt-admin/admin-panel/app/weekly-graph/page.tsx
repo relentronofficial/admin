@@ -71,7 +71,7 @@ export default function WeeklyGraphPage() {
         </div>
 
         <section className={CARD}>
-          <SectionHeader title="Member milestones" hint="Search a member by name or phone. Their batch and program are loaded automatically." />
+          <SectionHeader title="Member milestones" hint="Search a member by name, phone number or email. Their batch and program are loaded automatically." />
           <div className="px-5 pb-5 space-y-4">
             <MemberPicker selected={memberId} onSelect={setMemberId} />
 
@@ -708,7 +708,7 @@ function ActivityForm({ config, initial, onClose, onSave }: {
 
 const memberName = (m: { firstName: string; lastName?: string | null }) => `${m.firstName} ${m.lastName ?? ""}`.trim();
 
-/** Search by name or phone; picking a result is the page's only selection step. */
+/** Search by name, phone number or email (rules: backend lib/memberSearch.ts); picking a result is the page's only selection step. */
 function MemberPicker({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
   const [search, setSearch] = useState("");
   const { data: membersRes, isFetching } = useListMembers({ search, limit: 8 }, { enabled: search.trim().length >= 2 && !selected });
@@ -717,16 +717,19 @@ function MemberPicker({ selected, onSelect }: { selected: string; onSelect: (id:
     <div className="space-y-2">
       <div className="relative max-w-md">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
-        <input className={cn(INPUT, "pl-9")} placeholder="Search a member by name or phone…" value={search}
+        <input className={cn(INPUT, "pl-9")} placeholder="Search member by name, phone number or email..." value={search}
           onChange={(e) => { setSearch(e.target.value); if (selected) onSelect(""); }} />
         {search.trim().length >= 2 && !selected && (
           <div className="absolute z-10 mt-1 w-full bg-[#141414] border border-[#2a2a2a] rounded-lg max-h-64 overflow-y-auto">
             {isFetching && <p className="p-3 text-[12px] text-[#606060]">Searching…</p>}
-            {!isFetching && results.length === 0 && <p className="p-3 text-[12px] text-[#606060]">No members found</p>}
+            {!isFetching && results.length === 0 && <p className="p-3 text-[12px] text-[#606060]">No members match &ldquo;{search.trim()}&rdquo;. Try a name, phone number or email.</p>}
             {results.map((m) => (
               <button key={m.id} className="w-full text-left px-3 py-2 hover:bg-[#1f1f1f] text-[13px] text-[#f0f0f0]"
                 onClick={() => { onSelect(m.id); setSearch(memberName(m)); }}>
-                {m.firstName} {m.lastName} <span className="text-[#606060]">· {m.phone} {m.batch?.name ? `· ${m.batch.name}` : "· no batch"}</span>
+                <span className="block font-semibold">{memberName(m)}</span>
+                <span className="block text-[12px] text-[#606060] truncate">
+                  {[m.email, m.phone, m.batch?.name ?? "No batch"].filter(Boolean).join(" · ")}
+                </span>
               </button>
             ))}
           </div>
@@ -748,8 +751,9 @@ function MemberSummary({ member }: { member: GraphMemberProgram }) {
     </div>
   );
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] px-4 py-3">
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] px-4 py-3">
       {cell("Member", memberName(member), "—")}
+      {cell("Email", member.email, "—")}
       {cell("Phone", member.phone, "—")}
       {cell("Batch", member.batchName, "No batch")}
       {cell("Program", member.programName, member.batchId ? "Batch not linked" : "—")}
