@@ -277,7 +277,11 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   // Members with any paid membershipPlan assigned by admin pass through even
   // if no Subscription row exists yet (admin sets plan directly on the member).
   const hasPaidPlan = (me as any)?.membershipPlan && (me as any).membershipPlan !== "free";
-  if (!isLoading && !isFetching && me && (me as any).status !== "pending" && !(me as any).subscription && !hasPaidPlan && !isExempt) {
+  // Active members (admin-approved) always pass through — they have been granted access.
+  // The FreeInterceptor only applies to members in a non-active, non-pending state
+  // who have neither a paid plan nor a subscription row (e.g., paused/suspended with no plan).
+  const isActive = (me as any)?.status === "active";
+  if (!isLoading && !isFetching && me && (me as any).status !== "pending" && !isActive && !(me as any).subscription && !hasPaidPlan && !isExempt) {
     return (
       <>
         {children}
