@@ -619,7 +619,7 @@ export async function listCourseModuleTabsHandler(request: FastifyRequest, reply
 }
 
 export async function listUserCoursesHandler(request: FastifyRequest, reply: FastifyReply) {
-  const { page = 1, limit = 24, search, level, sort, category, moduleTitle, modules } = request.query as {
+  const { page = 1, limit = 24, search, level, sort, category, moduleTitle, modules, courseType } = request.query as {
     page?: number;
     limit?: number;
     search?: string;
@@ -628,6 +628,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
     category?: string;
     moduleTitle?: string;
     modules?: string | string[];
+    courseType?: string;
   };
   const moduleArr = modules ? (Array.isArray(modules) ? modules : [modules]) : null;
 
@@ -636,7 +637,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   // Only cache non-search requests (search results vary per query and are rare)
   const canCache = !search?.trim();
   const catalogKey = canCache
-    ? `courses:catalog:v4:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}`
+    ? `courses:catalog:v5:${page}:${limit}:${sort ?? ''}:${category ?? ''}:${level ?? ''}:${moduleTitle ?? ''}:${moduleArr ? moduleArr.slice().sort().join(',') : ''}:${courseType ?? ''}`
     : null;
 
   type CatalogEntry = {
@@ -666,6 +667,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       if (category) { sqlParams.push(category); conditions.push(`c.category_id = $${sqlParams.length}::uuid`); }
       if (moduleTitle) { sqlParams.push(moduleTitle); conditions.push(`c.module = $${sqlParams.length}`); }
       if (moduleArr && moduleArr.length > 0) { sqlParams.push(moduleArr); conditions.push(`c.module = ANY($${sqlParams.length})`); }
+      if (courseType === 'mentorship' || courseType === 'mini_course') { sqlParams.push(courseType); conditions.push(`c.course_type = $${sqlParams.length}`); }
 
       const orderClause = sort === 'popular'
         ? 'COALESCE(enr.enrollment_count, 0) DESC, c.is_featured DESC, c.created_at DESC'
@@ -681,6 +683,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
           c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
           c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types, c.batch_visibility_ids,
+          COALESCE(c.course_type, 'mentorship') AS course_type,
           a.id AS creator_id, a.full_name AS creator_full_name,
           a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
           COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -743,6 +746,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
           instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
           applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
           batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
+          courseType: (r.course_type as string) ?? 'mentorship',
           _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
           ...catalogDurationTotals(r),
         };
@@ -766,6 +770,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
       searchConds.push(`(c.title ILIKE $${p} OR c.description ILIKE $${p})`);
     }
     if (moduleArr && moduleArr.length > 0) { searchParams.push(moduleArr); searchConds.push(`c.module = ANY($${searchParams.length})`); }
+    if (courseType === 'mentorship' || courseType === 'mini_course') { searchParams.push(courseType); searchConds.push(`c.course_type = $${searchParams.length}`); }
     searchParams.push(Number(limit));
     const searchLimit = searchParams.length;
     searchParams.push((Number(page) - 1) * Number(limit));
@@ -776,6 +781,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         c.id, c.title, c.slug, c.description, c.thumbnail_url, c.level,
         c.duration_hours, c.price, c.is_published, c.is_featured, c.created_at,
         c.xp_per_episode, c.module, c.required_tier, c.applicable_business_types, c.batch_visibility_ids,
+        COALESCE(c.course_type, 'mentorship') AS course_type,
         a.id AS creator_id, a.full_name AS creator_full_name,
         a.profile_photo_url AS creator_profile_photo_url, a.designation AS creator_designation,
         COALESCE(ea.episode_count, 0)::int AS lesson_count,
@@ -837,6 +843,7 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
         instructor: creator, module: r.module ?? null, requiredTier: Number(r.required_tier ?? 1),
         applicableBusinessTypes: (r.applicable_business_types as string[] | null) ?? null,
         batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? [],
+        courseType: (r.course_type as string) ?? 'mentorship',
         _count: { lessons: episodeCount, enrollments: Number(r.enrollment_count) },
         ...catalogDurationTotals(r),
       };
@@ -1071,9 +1078,9 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       },
     }),
     getCourseAccessRecord(prisma as any, memberId, id),
-    prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]>(
-      `SELECT applicable_business_types, batch_visibility_ids FROM courses WHERE id = $1::uuid`, id,
-    ).catch(() => [] as { applicable_business_types: string[] | null; batch_visibility_ids: string[] | null }[]),
+    prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]>(
+      `SELECT applicable_business_types, batch_visibility_ids, COALESCE(course_type, 'mentorship') AS course_type FROM courses WHERE id = $1::uuid`, id,
+    ).catch(() => [] as { applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]),
     prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null; current_tier: number | null }[]>(
       `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id, m.current_tier
        FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`, memberId,
@@ -1362,6 +1369,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     _count: { lessons: lessons.length, enrollments: course._count?.enrollments ?? 0 },
     upsellCourses,
     crossSellCourses,
+    courseType: (visRows[0] as any)?.course_type ?? 'mentorship',
   });
 }
 

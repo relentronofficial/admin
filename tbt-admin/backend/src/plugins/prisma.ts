@@ -3073,6 +3073,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
        ON conversations(last_message_at DESC)`
     ).catch(() => {});
 
+    // ── Mini Courses (MINI_COURSES_SPECKIT.md 2026-11-13) ────────────────────
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_type VARCHAR(20) NOT NULL DEFAULT 'mentorship'`);
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }

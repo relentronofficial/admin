@@ -11,6 +11,8 @@ export const createCourseSchema = z.object({
   module: z.enum(['Product', 'Service', 'Coach']).nullable().optional(),
   applicableBusinessTypes: z.array(z.string()).nullable().optional(),
   batchVisibilityIds: z.array(z.string()).nullable().optional(),
+  courseType: z.enum(['mentorship', 'mini_course']).optional().default('mentorship'),
 });
 
-export const updateCourseSchema = createCourseSchema.partial();
+// courseType is intentionally excluded from update — it cannot be changed after creation.
+export const updateCourseSchema = createCourseSchema.omit({ courseType: true }).partial();
