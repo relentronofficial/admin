@@ -2766,7 +2766,7 @@ export default function CourseDetailPage({
         <p>{(courseError as Error | null)?.message || (uiStrings?.errorGeneric ?? "Course not found.")}</p>
         {courseError && (
           <Link href="/mentorship" className="inline-block mt-4 font-semibold" style={{ color: "var(--color-accent)" }}>
-            {uiStrings?.mentorshipModulesChange ?? "Change modules"}
+            {uiStrings?.mentorshipModulesChange ?? "Back to Courses"}
           </Link>
         )}
       </div>
@@ -2778,6 +2778,7 @@ export default function CourseDetailPage({
     return <PaywallView course={course} courseId={courseId} />;
   }
 
+  const courseCatalogHref = (course as any)?.courseType === 'mini_course' ? '/courses' : '/mentorship';
   const lessons: Lesson[] = course.lessons ?? [];
   // sectionFilteredLessons / activeSectionMeta are computed above the early returns.
 
@@ -3463,13 +3464,13 @@ export default function CourseDetailPage({
                 exitWarningActiveRef.current = false;
                 setExitWarning(null);
                 bypassingExitRef.current = true;
-                window.history.length > 1 ? router.back() : router.push("/mentorship");
+                window.history.length > 1 ? router.back() : router.push(courseCatalogHref);
                 setTimeout(() => { bypassingExitRef.current = false; }, 200);
               },
             });
             return;
           }
-          window.history.length > 1 ? router.back() : router.push("/mentorship");
+          window.history.length > 1 ? router.back() : router.push(courseCatalogHref);
         }}
         aria-label={`Back to ${course.title}`}
         className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100 cursor-pointer"
@@ -4007,7 +4008,7 @@ export default function CourseDetailPage({
                   </p>
                   {activeSectionMeta && (
                     <Link
-                      href="/mentorship"
+                      href={courseCatalogHref}
                       className="flex items-center gap-1 text-xs font-semibold shrink-0 transition-opacity hover:opacity-70"
                       style={{ color: "var(--color-accent)" }}
                     >
