@@ -16,6 +16,9 @@ const OTHER_PROGRAM = '10000000-0000-0000-0000-000000000002';
 const BATCH = '20000000-0000-0000-0000-000000000001';
 const MEMBER = '30000000-0000-0000-0000-000000000001';
 const OTHER_MEMBER = '30000000-0000-0000-0000-000000000002';
+const NO_PROGRAM_BATCH = '20000000-0000-0000-0000-000000000002';
+const UNLINKED_MEMBER = '30000000-0000-0000-0000-000000000003';
+const NO_BATCH_MEMBER = '30000000-0000-0000-0000-000000000004';
 const DAY = 86_400_000;
 const TASK_ADS = '40000000-0000-4000-8000-000000000001';
 const TASK_W2 = '40000000-0000-4000-8000-000000000002';
@@ -34,6 +37,7 @@ interface Store {
   submissions: Array<{ taskId: string; memberId: string; dayNumber: number; status: string }>;
   records: Array<{ id: string; memberId: string; milestoneId: string; weekId: string | null; note: string | null; recordedBy: string; recordedAt: Date }>;
   members: Array<{ id: string; firstName: string; lastName: string; batchId: string | null }>;
+  batches: Array<{ id: string; name: string; programId: string | null }>;
   /** member_revenue_reports: the member's own weekly figure ("Your Revenue Stats"), per IST ISO week. */
   revenues: Array<{ memberId: string; isoYear: number; isoWeek: number; revenue: number | null; reportedAt?: Date | null }>;
   /** The test batch (of PROGRAM): batches.snapshot_days (null = the program's length) and the member's member_batch_settings.extended_days. */
@@ -167,9 +171,12 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return 1;
   }
   if (q.startsWith('SELECT m.id::text, m.first_name')) {
-    return db.members.filter((m) => m.id === a[0]).map((m) => ({
-      id: m.id, firstName: m.firstName, lastName: m.lastName, programId: m.batchId === BATCH ? PROGRAM : null,
-    }));
+    return db.members.filter((m) => m.id === a[0]).map((m) => {
+      const b = db.batches.find((x) => x.id === m.batchId) ?? null;
+      const p = b?.programId ? db.programs.find((x) => x.id === b.programId) ?? null : null;
+      return { id: m.id, firstName: m.firstName, lastName: m.lastName, phone: null, batchId: b?.id ?? null, batchName: b?.name ?? null,
+        programId: p?.id ?? null, programName: p?.name ?? null };
+    });
   }
   if (q.startsWith('INSERT INTO member_graph_milestone_records')) {
     const existing = db.records.find((r) => r.memberId === a[0] && r.milestoneId === a[1]);
@@ -178,7 +185,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return 1;
   }
   if (q.startsWith('SELECT r.id::text, r.milestone_id::text')) {
-    return db.records.filter((r) => r.memberId === a[0]).map((r) => ({ id: r.id, milestoneId: r.milestoneId, weekId: r.weekId, note: r.note }));
+    return db.records.filter((r) => r.memberId === a[0]).map((r) => ({ id: r.id, milestoneId: r.milestoneId, weekId: r.weekId, note: r.note,
+      programId: db.milestones.find((m) => m.id === r.milestoneId)?.programId ?? null }));
   }
   if (q.startsWith('DELETE FROM member_graph_milestone_records')) { db.records = db.records.filter((r) => !(r.id === a[0] && r.memberId === a[1])); return 1; }
   // ── member endpoint (GET /api/user-batch/weekly-graph) ──
@@ -293,6 +301,12 @@ beforeEach(() => {
     members: [
       { id: MEMBER, firstName: 'Priya', lastName: 'K', batchId: BATCH },
       { id: OTHER_MEMBER, firstName: 'Ravi', lastName: 'S', batchId: BATCH },
+      { id: UNLINKED_MEMBER, firstName: 'Nila', lastName: 'R', batchId: NO_PROGRAM_BATCH },
+      { id: NO_BATCH_MEMBER, firstName: 'Arun', lastName: 'M', batchId: null },
+    ],
+    batches: [
+      { id: BATCH, name: 'Batch 7', programId: PROGRAM },
+      { id: NO_PROGRAM_BATCH, name: 'Loose batch', programId: null },
     ],
     revenues: [],
     batchSnapshotDays: null,
@@ -562,6 +576,53 @@ describe('admin-recorded member milestones', () => {
     const week = (await config()).weeks[0];
     const res = await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: foreign.id, weekId: week.id } });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('member-first selection: the program is resolved from the member', () => {
+  const records = (memberId: string) => call(graph.listRecordsHandler, { params: { memberId } });
+
+  it("selecting a member returns their batch and program — no program id is sent by the admin", async () => {
+    const res = await records(MEMBER);
+    expect(res.status).toBe(200);
+    expect(res.body.data.member).toMatchObject({ batchId: BATCH, batchName: 'Batch 7', programId: PROGRAM, programName: 'eComm Mastery' });
+    expect(res.body.data.noProgramReason).toBeNull();
+  });
+
+  it('a record saved via the member lands in their program and shows in their own graph', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    const lakh = c.milestones.find((m: any) => m.label === '1 lakh');
+    expect((await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: lakh.id, weekId: c.weeks[0].id } })).status).toBe(200);
+    const listed = (await records(MEMBER)).body.data.records;
+    expect(listed).toEqual([expect.objectContaining({ milestoneId: lakh.id, programId: PROGRAM })]);
+    expect((await memberGraph(MEMBER)).weeks[0].progressLevel).toBe(4);
+  });
+
+  it("a member whose batch has no program gets a clear reason, and nothing can be saved", async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    const res = await records(UNLINKED_MEMBER);
+    expect(res.status).toBe(200);
+    expect(res.body.data.member).toMatchObject({ batchName: 'Loose batch', programId: null });
+    expect(res.body.data.noProgramReason).toMatch(/"Loose batch" is not linked to a program/);
+    const save = await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: c.milestones[3].id, weekId: c.weeks[0].id } });
+    expect(save.status).toBe(400);
+    expect(save.body.error).toMatch(/not linked to a program/);
+    expect(db.records).toHaveLength(0);
+  });
+
+  it('a member with no batch gets a clear reason, and nothing can be saved', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    expect((await records(NO_BATCH_MEMBER)).body.data.noProgramReason).toMatch(/not in a batch/);
+    const save = await call(graph.upsertRecordHandler, { params: { memberId: NO_BATCH_MEMBER }, body: { milestoneId: c.milestones[3].id, weekId: c.weeks[0].id } });
+    expect(save.status).toBe(400);
+    expect(db.records).toHaveLength(0);
+  });
+
+  it('an unknown member is a 404', async () => {
+    expect((await records('30000000-0000-0000-0000-000000000099')).status).toBe(404);
   });
 });
 

@@ -406,21 +406,44 @@ export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>,
 
 type M = { memberId: string };
 
+type MemberProgram = {
+  id: string; firstName: string; lastName: string | null; phone: string | null;
+  batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
+};
+
+/**
+ * The member's program is never chosen by the admin: it is resolved here from
+ * members.batch_id → batches.program_id — the same mapping the member's own
+ * graph uses (GET /api/user-batch/weekly-graph). A member has one batch and a
+ * batch at most one program, so the mapping is unambiguous.
+ */
 async function memberProgram(req: FastifyRequest<{ Params: M }>, reply: FastifyReply) {
   const { memberId } = req.params;
   if (!UUID.test(memberId)) { fail(reply, 400, 'Invalid member id'); return null; }
   const [m] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT m.id::text, m.first_name AS "firstName", m.last_name AS "lastName", b.program_id::text AS "programId"
-     FROM members m LEFT JOIN batches b ON b.id = m.batch_id WHERE m.id = $1::uuid`,
+    `SELECT m.id::text, m.first_name AS "firstName", m.last_name AS "lastName", m.phone,
+            m.batch_id::text AS "batchId", b.name AS "batchName",
+            b.program_id::text AS "programId", p.name AS "programName"
+     FROM members m
+     LEFT JOIN batches b ON b.id = m.batch_id
+     LEFT JOIN programs p ON p.id = b.program_id
+     WHERE m.id = $1::uuid`,
     memberId,
   );
   if (!m) { fail(reply, 404, 'Member not found'); return null; }
-  return m as { id: string; firstName: string; lastName: string; programId: string | null };
+  return m as MemberProgram;
 }
+
+/** Why a member's milestones can't be recorded, or null when they can. */
+const noProgramReason = (m: MemberProgram) =>
+  !m.batchId ? 'This member is not in a batch, so they have no program. Add them to a batch first (Members → edit member → Batch).'
+  : !m.programId ? `This member's batch "${m.batchName ?? ''}" is not linked to a program. Link the batch to a program first (Batches → edit batch → Program).`
+  : null;
 
 async function listRecords(prisma: any, memberId: string) {
   return prisma.$queryRawUnsafe(
     `SELECT r.id::text, r.milestone_id::text AS "milestoneId", gm.label AS "milestoneLabel", gm.kind,
+            gm.program_id::text AS "programId",
             r.week_id::text AS "weekId", gw.label AS "weekLabel", r.note, r.recorded_by AS "recordedBy", r.recorded_at AS "recordedAt"
      FROM member_graph_milestone_records r
      JOIN graph_milestones gm ON gm.id = r.milestone_id
@@ -435,7 +458,7 @@ export async function listRecordsHandler(req: FastifyRequest<{ Params: M }>, rep
   if (!(await requireViewer(req, reply))) return;
   const member = await memberProgram(req, reply);
   if (!member) return;
-  return ok(reply, { member, records: await listRecords(req.server.prisma, member.id) });
+  return ok(reply, { member, noProgramReason: noProgramReason(member), records: await listRecords(req.server.prisma, member.id) });
 }
 
 // PUT /api/weekly-graph/admin/members/:memberId/records  { milestoneId, weekId, note? } — one record per milestone
@@ -444,7 +467,8 @@ export async function upsertRecordHandler(req: FastifyRequest<{ Params: M }>, re
   if (!acting) return;
   const member = await memberProgram(req, reply);
   if (!member) return;
-  if (!member.programId) return fail(reply, 400, 'This member is not in a program batch');
+  const blocked = noProgramReason(member);
+  if (blocked || !member.programId) return fail(reply, 400, blocked ?? 'This member has no program');
   const { milestoneId, weekId, note } = (req.body ?? {}) as { milestoneId?: unknown; weekId?: unknown; note?: unknown };
   if (typeof milestoneId !== 'string' || typeof weekId !== 'string') return fail(reply, 400, 'Choose a milestone and a week');
   if (note != null && (typeof note !== 'string' || note.length > 500)) return fail(reply, 400, 'Note must be text up to 500 characters');

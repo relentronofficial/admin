@@ -182,6 +182,7 @@ export function buildMembersWhereClause(query: any): any {
       { email: { contains: search, mode: 'insensitive' } },
       { memberId: { contains: search, mode: 'insensitive' } },
       { businessName: { contains: search, mode: 'insensitive' } },
+      { phone: { contains: search } },
     ];
   }
 
