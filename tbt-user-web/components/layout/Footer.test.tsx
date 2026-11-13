@@ -17,14 +17,14 @@ describe("Footer", () => {
     expect(screen.getByText("© 2026 Tamil Business Tribe. All rights reserved.")).toBeTruthy();
   });
 
-  it("renders nothing on /courses, which shows the copyright in its own footer", () => {
-    nav.pathname = "/courses";
+  it("renders nothing on /mentorship, which shows the copyright in its own footer", () => {
+    nav.pathname = "/mentorship";
     const { container } = render(<Footer />);
     expect(container.innerHTML).toBe("");
   });
 
-  it("still renders on /courses sub-pages", () => {
-    nav.pathname = "/courses/intro/abc";
+  it("still renders on /mentorship sub-pages", () => {
+    nav.pathname = "/mentorship/intro/abc";
     render(<Footer />);
     expect(screen.getByRole("contentinfo")).toBeTruthy();
   });

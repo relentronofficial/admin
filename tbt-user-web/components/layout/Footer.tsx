@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
-// /courses renders its own footer, with the copyright in its main row.
-const PAGES_WITH_OWN_FOOTER = ["/courses"];
+// /mentorship renders its own footer, with the copyright in its main row.
+const PAGES_WITH_OWN_FOOTER = ["/mentorship"];
 
 export function Footer() {
   const { config } = useSiteConfig();

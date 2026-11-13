@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildNavMenu } from "./navOrder";
 
 const HOME = { id: "home-id", href: "/tbt", label: "Home" };
-const MENTORSHIP = { id: "mentorship-id", href: "/courses", label: "Mentorship" };
+const MENTORSHIP = { id: "mentorship-id", href: "/mentorship", label: "Mentorship" };
 const labels = (entries: { label: string }[]) => entries.map((e) => e.label);
 
 describe("buildNavMenu", () => {

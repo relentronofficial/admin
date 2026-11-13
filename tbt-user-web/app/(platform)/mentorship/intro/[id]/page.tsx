@@ -175,7 +175,7 @@ export default function IntroVideoPage() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => router.push(`/courses/intro/${s.id}`)}
+                    onClick={() => router.push(`/mentorship/intro/${s.id}`)}
                     style={{
                       display: "flex",
                       alignItems: "center",

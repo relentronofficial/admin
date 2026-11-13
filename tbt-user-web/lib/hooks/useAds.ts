@@ -45,7 +45,7 @@ function placementForRoute(pathname: string): string {
   if (pathname.startsWith("/community")) return "community";
   if (pathname.startsWith("/podcasts")) return "podcast";
   if (pathname.startsWith("/ebooks")) return "ebook";
-  if (pathname.startsWith("/courses") || pathname.startsWith("/learning")) return "course";
+  if (pathname.startsWith("/mentorship") || pathname.startsWith("/learning")) return "course";
   if (pathname.startsWith("/workshop")) return "workshop";
   if (pathname.startsWith("/watch")) return "video";
   if (pathname.startsWith("/profile")) return "profile";

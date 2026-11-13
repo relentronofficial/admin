@@ -1389,7 +1389,7 @@ function NewMemberCoursesView({ uiStrings }: { uiStrings: any }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function CoursesPage() {
+export default function MentorshipPage() {
   const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const { uiStrings, config } = useSiteConfig();

@@ -4,7 +4,7 @@ import { firstEnabledHref, isPathDisabled, type NavAccessConfig } from "./navAcc
 // Mirrors the live setup: Home and Mentorship are nav_items rows; Community, Ebooks
 // and Podcasts are Platform Sections controlled by hiddenMenuKeys.
 const HOME = { href: "/tbt" };
-const MENTORSHIP = { href: "/courses" };
+const MENTORSHIP = { href: "/mentorship" };
 
 function cfg(over: Partial<NavAccessConfig> = {}): NavAccessConfig {
   return { nav: [HOME, MENTORSHIP], hiddenHrefs: [], hiddenMenuKeys: [], ...over };
@@ -12,7 +12,7 @@ function cfg(over: Partial<NavAccessConfig> = {}): NavAccessConfig {
 
 describe("isPathDisabled", () => {
   it("allows every page when nothing is disabled", () => {
-    for (const p of ["/tbt", "/courses", "/community", "/ebooks", "/podcasts", "/profile"]) {
+    for (const p of ["/tbt", "/mentorship", "/community", "/ebooks", "/podcasts", "/profile"]) {
       expect(isPathDisabled(p, cfg())).toBe(false);
     }
   });
@@ -21,7 +21,7 @@ describe("isPathDisabled", () => {
     const c = cfg({ nav: [MENTORSHIP], hiddenHrefs: ["/tbt"] });
     expect(isPathDisabled("/tbt", c)).toBe(true);
     expect(isPathDisabled("/tbt/some-show", c)).toBe(true);
-    expect(isPathDisabled("/courses", c)).toBe(false);
+    expect(isPathDisabled("/mentorship", c)).toBe(false);
     // prefix only matches whole segments
     expect(isPathDisabled("/tbtx", c)).toBe(false);
   });
@@ -71,12 +71,12 @@ describe("isPathDisabled", () => {
   it("matches the live admin config: profile stays open, hidden task/workshop pages are blocked", () => {
     // Shape of /api/pub/config/nav on 2026-10-09.
     const c = cfg({
-      nav: [{ href: "/courses" }, { href: "/notifications" }, { href: "/messages" }],
+      nav: [{ href: "/mentorship" }, { href: "/notifications" }, { href: "/messages" }],
       hiddenHrefs: ["/discover", "/workshops", "/batch-program", "/Products", "/Resources", "/profile"],
       hiddenMenuKeys: ["podcasts"],
     });
     expect(isPathDisabled("/profile", c)).toBe(false);
-    expect(isPathDisabled("/courses", c)).toBe(false);
+    expect(isPathDisabled("/mentorship", c)).toBe(false);
     expect(isPathDisabled("/batch-program", c)).toBe(true);
     expect(isPathDisabled("/podcasts", c)).toBe(true);
   });
@@ -84,11 +84,11 @@ describe("isPathDisabled", () => {
 
 describe("firstEnabledHref", () => {
   it("returns the first enabled nav item in admin order", () => {
-    expect(firstEnabledHref(cfg({ nav: [MENTORSHIP, HOME] }))).toBe("/courses");
+    expect(firstEnabledHref(cfg({ nav: [MENTORSHIP, HOME] }))).toBe("/mentorship");
   });
 
   it("skips external links", () => {
-    expect(firstEnabledHref(cfg({ nav: [{ href: "https://example.com" }, MENTORSHIP] }))).toBe("/courses");
+    expect(firstEnabledHref(cfg({ nav: [{ href: "https://example.com" }, MENTORSHIP] }))).toBe("/mentorship");
   });
 
   it("treats a visible nav link as enabled even if its Platform Section is hidden", () => {
@@ -100,6 +100,6 @@ describe("firstEnabledHref", () => {
   });
 
   it("returns null when no in-app nav item is enabled", () => {
-    expect(firstEnabledHref(cfg({ nav: [], hiddenHrefs: ["/tbt", "/courses"] }))).toBeNull();
+    expect(firstEnabledHref(cfg({ nav: [], hiddenHrefs: ["/tbt", "/mentorship"] }))).toBeNull();
   });
 });

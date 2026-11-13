@@ -2746,7 +2746,7 @@ export default function CourseDetailPage({
       <div className="text-center py-16 text-sm" style={{ color: "var(--color-text-subtle)" }}>
         <p>{(courseError as Error | null)?.message || (uiStrings?.errorGeneric ?? "Course not found.")}</p>
         {courseError && (
-          <Link href="/courses" className="inline-block mt-4 font-semibold" style={{ color: "var(--color-accent)" }}>
+          <Link href="/mentorship" className="inline-block mt-4 font-semibold" style={{ color: "var(--color-accent)" }}>
             {uiStrings?.mentorshipModulesChange ?? "Change modules"}
           </Link>
         )}
@@ -3434,13 +3434,13 @@ export default function CourseDetailPage({
                 exitWarningActiveRef.current = false;
                 setExitWarning(null);
                 bypassingExitRef.current = true;
-                window.history.length > 1 ? router.back() : router.push("/courses");
+                window.history.length > 1 ? router.back() : router.push("/mentorship");
                 setTimeout(() => { bypassingExitRef.current = false; }, 200);
               },
             });
             return;
           }
-          window.history.length > 1 ? router.back() : router.push("/courses");
+          window.history.length > 1 ? router.back() : router.push("/mentorship");
         }}
         aria-label={`Back to ${course.title}`}
         className="inline-flex items-center gap-1.5 text-sm transition-colors hover:opacity-100 cursor-pointer"
@@ -3978,7 +3978,7 @@ export default function CourseDetailPage({
                   </p>
                   {activeSectionMeta && (
                     <Link
-                      href="/courses"
+                      href="/mentorship"
                       className="flex items-center gap-1 text-xs font-semibold shrink-0 transition-opacity hover:opacity-70"
                       style={{ color: "var(--color-accent)" }}
                     >

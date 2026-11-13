@@ -1,6 +1,6 @@
 import { render, screen, cleanup, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import CoursesPage from "@/app/(platform)/courses/page";
+import CoursesPage from "@/app/(platform)/mentorship/page";
 
 // The FAQ button sits on the same row as each Modules heading — heading first
 // (left), FAQ last (right) — in every personalised state of /courses, and the
