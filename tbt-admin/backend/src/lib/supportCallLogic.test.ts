@@ -1,14 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import {
+  callCardAction,
   canBook,
+  canBookWithCoins,
   canCancelBooking,
+  coinRefundFor,
   canManageSupportSession,
   canMarkAttendance,
   categoryQuota,
+  isOneToOneSession,
   isSupportCallCategory,
   joinState,
   quotaBucketFor,
   sessionEndsAt,
+  slotStatus,
+  isDateKey,
+  istDateKey,
+  istRangeBounds,
+  validateSlotBatch,
+  canChangeSlotTime,
+  canDeleteSlot,
+  MAX_SLOTS_PER_PUBLISH,
+  MAX_SLOTS_PER_DAY,
+  slotTimeMatches,
 } from './supportCallLogic.js';
 import { computeSupportQuota } from './supportQuota.js';
 
@@ -17,7 +31,7 @@ const at = (min: number) => new Date(NOW.getTime() + min * 60_000);
 const session = (over: Partial<{ status: string; startsAt: Date; durationMinutes: number; capacity: number; hostAdminId: string | null }> = {}) => ({
   status: 'scheduled', startsAt: at(24 * 60), durationMinutes: 45, capacity: 1, hostAdminId: 'mentor-1', ...over,
 });
-const quota = (allocated: number, used = 0, reserved = 0) => categoryQuota({ allocated, used, remaining: Math.max(0, allocated - used) }, reserved);
+const quota = (allocated: number, used = 0, reserved = 0) => categoryQuota({ allocated, used, remaining: Math.max(0, allocated - used), unlocked: 0 }, reserved);
 
 describe('categories', () => {
   it('accepts exactly the six support_usage types', () => {
@@ -44,10 +58,10 @@ describe('categories', () => {
 
 describe('categoryQuota', () => {
   it('subtracts pending reservations from remaining', () => {
-    expect(quota(5, 2, 1)).toEqual({ allocated: 5, used: 2, reserved: 1, remaining: 2 });
+    expect(quota(5, 2, 1)).toEqual({ allocated: 5, used: 2, reserved: 1, remaining: 2, included: 5, unlocked: 0 });
   });
   it('never goes negative and handles a 0/0 category', () => {
-    expect(quota(0)).toEqual({ allocated: 0, used: 0, reserved: 0, remaining: 0 });
+    expect(quota(0)).toEqual({ allocated: 0, used: 0, reserved: 0, remaining: 0, included: 0, unlocked: 0 });
     expect(quota(1, 3, 2).remaining).toBe(0);
   });
 });
@@ -60,6 +74,10 @@ describe('canBook', () => {
   it('rejects a duplicate booking', () => expect(canBook({ ...base, alreadyBooked: true })).toMatchObject({ ok: false, status: 409, code: 'already_booked' }));
   it('rejects inactive members', () => expect(canBook({ ...base, memberStatus: 'pending' })).toMatchObject({ ok: false, code: 'member_inactive' }));
   it('rejects a category not in the plan (0/0)', () => expect(canBook({ ...base, quota: quota(0) })).toMatchObject({ ok: false, code: 'not_included' }));
+  it('treats a category with only coin-unlocked calls (plan no longer includes it) as not included', () => {
+    const q = categoryQuota({ allocated: 1, used: 0, remaining: 1, unlocked: 1 }, 0);
+    expect(canBook({ ...base, quota: q })).toMatchObject({ ok: false, code: 'not_included' });
+  });
   it('rejects when quota is used up', () => expect(canBook({ ...base, quota: quota(2, 2) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
   it('counts reservations against quota', () => expect(canBook({ ...base, quota: quota(2, 1, 1) })).toMatchObject({ ok: false, code: 'quota_exhausted' }));
   it('rejects a full session', () => expect(canBook({ ...base, activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' }));
@@ -141,5 +159,234 @@ describe('one_to_one rules', () => {
   it('capacity=1 session is full the moment one active booking exists', () => {
     // The second caller is rejected immediately — no partial seats for a 1:1 call.
     expect(canBook({ ...base, session: session({ capacity: 1 }), activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' });
+  });
+  it('a call is 1:1 when its session has one seat, whatever the category', () => {
+    // Same rule as the admin "1:1 only" filter and badge (capacity === 1).
+    expect(isOneToOneSession({ capacity: 1 })).toBe(true);
+    expect(isOneToOneSession({ capacity: 2 })).toBe(false);
+    expect(isOneToOneSession({ capacity: 10 })).toBe(false);
+  });
+});
+
+// A quota with `unlocked` coin calls on top of `included` plan calls.
+const paidQuota = (included: number, used = 0, reserved = 0, unlocked = 0) =>
+  categoryQuota({ allocated: included + unlocked, used, remaining: Math.max(0, included + unlocked - used), unlocked }, reserved);
+
+describe('quota states (free calls)', () => {
+  it('free quota remaining → Book Call', () => {
+    expect(callCardAction({ quota: paidQuota(3, 1), coinCost: 100, balance: 0, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'book', lockedReason: null });
+  });
+  it('completed (used) and pending (booked) calls both use up quota; cancelled ones do not', () => {
+    // 3 included: 1 attended/no-show (used) + 1 pending booking (reserved) → 1 left.
+    expect(paidQuota(3, 1, 1).remaining).toBe(1);
+    // A cancelled booking is neither used nor reserved, so it is simply absent.
+    expect(paidQuota(3, 1, 0).remaining).toBe(2);
+  });
+  it('free quota exhausted by completed + pending calls → no free booking', () => {
+    const q = paidQuota(2, 1, 1);
+    expect(q.remaining).toBe(0);
+    expect(canBook({ session: session(), now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active', quota: q }))
+      .toMatchObject({ ok: false, code: 'quota_exhausted' });
+  });
+  it('a coin-paid booking does not consume an included call', () => {
+    // 2 included both used, 1 coin booking pending → still 0 free left, included unchanged.
+    const q = paidQuota(2, 2, 1, 1);
+    expect(q).toMatchObject({ included: 2, unlocked: 1, remaining: 0 });
+  });
+});
+
+describe('callCardAction', () => {
+  const exhausted = paidQuota(2, 2);
+  it('locks a category the plan does not include, even with coins', () => {
+    expect(callCardAction({ quota: paidQuota(0), coinCost: 50, balance: 999, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'locked', lockedReason: 'not_included' });
+  });
+  it('locks when quota is used and no coin price is set', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: null, balance: 999, coinPurchaseAvailable: true }))
+      .toEqual({ action: 'locked', lockedReason: 'quota_exhausted' });
+  });
+  it('offers Unlock with TBT Coins when the balance covers the price', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 100, coinPurchaseAvailable: true }).action).toBe('unlock_with_coins');
+  });
+  it('offers Purchase TBT Coins when the balance is short', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 99, coinPurchaseAvailable: true }).action).toBe('purchase_coins');
+  });
+  it('stays locked when the balance is short and coins cannot be bought', () => {
+    expect(callCardAction({ quota: exhausted, coinCost: 100, balance: 0, coinPurchaseAvailable: false }).action).toBe('locked');
+  });
+});
+
+describe('canBookWithCoins', () => {
+  const base = {
+    session: session(), now: NOW, activeBookingCount: 0, alreadyBooked: false, memberStatus: 'active',
+    quota: paidQuota(2, 2), coinCost: 100 as number | null, expectedCoinCost: 100 as unknown, balance: 150,
+  };
+  it('allows an exhausted member with enough coins at the confirmed price', () => expect(canBookWithCoins(base)).toEqual({ ok: true }));
+  it('refuses to charge coins while free calls remain (attempting to exceed quota the free way is separate)', () =>
+    expect(canBookWithCoins({ ...base, quota: paidQuota(3, 2) })).toMatchObject({ ok: false, code: 'free_quota_available' }));
+  it('refuses a category not in the plan', () =>
+    expect(canBookWithCoins({ ...base, quota: paidQuota(0) })).toMatchObject({ ok: false, code: 'not_included' }));
+  it('refuses when the admin has not set a coin price', () =>
+    expect(canBookWithCoins({ ...base, coinCost: null })).toMatchObject({ ok: false, code: 'coin_unlock_unavailable' }));
+  it('refuses a price the member did not confirm', () => {
+    expect(canBookWithCoins({ ...base, expectedCoinCost: 80 })).toMatchObject({ ok: false, status: 409, code: 'coin_price_changed' });
+    expect(canBookWithCoins({ ...base, expectedCoinCost: undefined })).toMatchObject({ ok: false, code: 'coin_price_changed' });
+    expect(canBookWithCoins({ ...base, expectedCoinCost: '100' })).toMatchObject({ ok: false, code: 'coin_price_changed' });
+  });
+  it('sufficient vs insufficient balance', () => {
+    expect(canBookWithCoins({ ...base, balance: 100 })).toEqual({ ok: true });
+    expect(canBookWithCoins({ ...base, balance: 99 })).toMatchObject({ ok: false, status: 402, code: 'insufficient_coins' });
+    expect(canBookWithCoins({ ...base, balance: -20 })).toMatchObject({ ok: false, code: 'insufficient_coins' });
+  });
+  it('still enforces session, duplicate, membership and capacity rules', () => {
+    expect(canBookWithCoins({ ...base, alreadyBooked: true })).toMatchObject({ ok: false, code: 'already_booked' });
+    expect(canBookWithCoins({ ...base, memberStatus: 'paused' })).toMatchObject({ ok: false, code: 'member_inactive' });
+    expect(canBookWithCoins({ ...base, activeBookingCount: 1 })).toMatchObject({ ok: false, code: 'session_full' });
+    expect(canBookWithCoins({ ...base, session: session({ status: 'cancelled' }) })).toMatchObject({ ok: false, code: 'session_unavailable' });
+    expect(canBookWithCoins({ ...base, session: session({ startsAt: NOW }) })).toMatchObject({ ok: false, code: 'session_started' });
+  });
+});
+
+describe('coinRefundFor', () => {
+  it('refunds exactly the coins paid, nothing for free bookings', () => {
+    expect(coinRefundFor(120)).toBe(120);
+    expect(coinRefundFor(null)).toBe(0);
+    expect(coinRefundFor(undefined)).toBe(0);
+    expect(coinRefundFor(0)).toBe(0);
+  });
+});
+
+describe('slotStatus (admin availability view)', () => {
+  it('is available while a seat is free and booked once every seat is taken', () => {
+    expect(slotStatus(session({ capacity: 1 }), 0, NOW)).toBe('available');
+    expect(slotStatus(session({ capacity: 1 }), 1, NOW)).toBe('booked');
+    expect(slotStatus(session({ capacity: 3 }), 2, NOW)).toBe('available');
+    expect(slotStatus(session({ capacity: 3 }), 3, NOW)).toBe('booked');
+  });
+
+  it('reports cancelled, in-progress and completed slots regardless of seats', () => {
+    expect(slotStatus(session({ status: 'cancelled' }), 0, NOW)).toBe('cancelled');
+    expect(slotStatus(session({ startsAt: at(-10) }), 0, NOW)).toBe('in_progress');
+    expect(slotStatus(session({ startsAt: at(-45) }), 0, NOW)).toBe('completed');
+  });
+});
+
+describe('IST date helpers', () => {
+  it('validates real calendar dates only', () => {
+    expect(isDateKey('2026-10-21')).toBe(true);
+    expect(isDateKey('2026-02-30')).toBe(false);
+    expect(isDateKey('2026-1-2')).toBe(false);
+    expect(isDateKey(undefined)).toBe(false);
+  });
+
+  it('keys instants by their IST calendar date', () => {
+    expect(istDateKey(new Date('2026-10-20T18:29:00Z'))).toBe('2026-10-20'); // 23:59 IST
+    expect(istDateKey(new Date('2026-10-20T18:30:00Z'))).toBe('2026-10-21'); // 00:00 IST
+  });
+
+  it('bounds an IST date range in UTC, end-exclusive', () => {
+    const { start, end } = istRangeBounds('2026-10-21', '2026-10-21');
+    expect(start.toISOString()).toBe('2026-10-20T18:30:00.000Z');
+    expect(end.toISOString()).toBe('2026-10-21T18:30:00.000Z');
+  });
+});
+
+describe('validateSlotBatch', () => {
+  const ok = { durationMinutes: 30, now: NOW, existing: [] as { startsAt: Date; durationMinutes: number }[] };
+
+  it('accepts several future slots on different dates', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(120), at(26 * 60)] }).ok).toBe(true);
+  });
+
+  it('rejects an empty batch, past times and oversize batches', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [] })).toMatchObject({ ok: false, code: 'no_slots' });
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(-5)] })).toMatchObject({ ok: false, code: 'slot_in_past' });
+    expect(validateSlotBatch({ ...ok, startsAt: [NOW] })).toMatchObject({ ok: false, code: 'slot_in_past' });
+    const many = Array.from({ length: MAX_SLOTS_PER_PUBLISH + 1 }, (_, i) => at(60 + i * 60));
+    expect(validateSlotBatch({ ...ok, startsAt: many })).toMatchObject({ ok: false, code: 'too_many_slots' });
+  });
+
+  it('rejects duplicate or overlapping slots within the batch', () => {
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(60)] })).toMatchObject({ ok: false, code: 'slots_overlap' });
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(80)] })).toMatchObject({ ok: false, code: 'slots_overlap' });
+    // Back-to-back is fine: 60–90 then 90–120.
+    expect(validateSlotBatch({ ...ok, startsAt: [at(60), at(90)] }).ok).toBe(true);
+  });
+
+  it('rejects a slot that overlaps one the host already published', () => {
+    const existing = [{ startsAt: at(100), durationMinutes: 45 }];
+    expect(validateSlotBatch({ ...ok, existing, startsAt: [at(120)] })).toMatchObject({ ok: false, status: 409, code: 'slot_conflict' });
+    expect(validateSlotBatch({ ...ok, existing, startsAt: [at(145)] }).ok).toBe(true);
+  });
+
+  // NOW is 15:30 IST on 2026-10-20, so at(60)…at(450) are the same IST date and at(510) is the next day.
+  const sameDay = (n: number, from = 60) => Array.from({ length: n }, (_, i) => at(from + i * 60));
+  const asExisting = (starts: Date[]) => starts.map((startsAt) => ({ startsAt, durationMinutes: 30 }));
+
+  it(`allows up to ${MAX_SLOTS_PER_DAY} slots on one IST date`, () => {
+    expect(validateSlotBatch({ ...ok, startsAt: sameDay(MAX_SLOTS_PER_DAY) }).ok).toBe(true);
+  });
+
+  it(`rejects a batch that puts more than ${MAX_SLOTS_PER_DAY} slots on one date`, () => {
+    expect(validateSlotBatch({ ...ok, startsAt: sameDay(MAX_SLOTS_PER_DAY + 1) }))
+      .toMatchObject({ ok: false, status: 400, code: 'day_limit' });
+  });
+
+  it('counts the slots the host already has on that date', () => {
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(4)), startsAt: [at(330)] }).ok).toBe(true);
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(5)), startsAt: [at(390)] }))
+      .toMatchObject({ ok: false, status: 409, code: 'day_limit' });
+  });
+
+  it('applies the limit per IST date, not per batch', () => {
+    // 00:00 IST the next day is a fresh date.
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(5)), startsAt: sameDay(5, 510) }).ok).toBe(true);
+  });
+
+  it('lets an edit move a slot within a full day (the caller excludes the slot being edited)', () => {
+    expect(validateSlotBatch({ ...ok, existing: asExisting(sameDay(4)), startsAt: [at(420)] }).ok).toBe(true);
+  });
+});
+
+describe('canChangeSlotTime', () => {
+  const current = { startsAt: at(120), durationMinutes: 30 };
+
+  it('lets an unbooked slot move freely', () => {
+    expect(canChangeSlotTime({ activeBookings: 0, current, next: { startsAt: at(180), durationMinutes: 45 } }).ok).toBe(true);
+  });
+
+  it('never moves a booked slot under its members', () => {
+    expect(canChangeSlotTime({ activeBookings: 1, current, next: { startsAt: at(180), durationMinutes: 30 } }))
+      .toMatchObject({ ok: false, status: 409, code: 'slot_has_bookings' });
+    expect(canChangeSlotTime({ activeBookings: 1, current, next: { startsAt: at(120), durationMinutes: 60 } }))
+      .toMatchObject({ ok: false, code: 'slot_has_bookings' });
+  });
+
+  it('allows other edits on a booked slot when the time is unchanged', () => {
+    expect(canChangeSlotTime({ activeBookings: 2, current, next: { ...current } }).ok).toBe(true);
+  });
+});
+
+describe('canDeleteSlot', () => {
+  it('deletes only a slot nobody ever booked; anything else must be cancelled', () => {
+    expect(canDeleteSlot({ totalBookings: 0 }).ok).toBe(true);
+    expect(canDeleteSlot({ totalBookings: 1 })).toMatchObject({ ok: false, status: 409, code: 'slot_has_history' });
+  });
+});
+
+describe('slotTimeMatches', () => {
+  const t = new Date('2026-10-22T10:30:00Z');
+  it('accepts the time the member was shown, in any ISO offset', () => {
+    expect(slotTimeMatches('2026-10-22T10:30:00.000Z', t)).toBe(true);
+    expect(slotTimeMatches('2026-10-22T16:00:00+05:30', t)).toBe(true);
+  });
+  it('refuses a slot that moved, or a malformed time', () => {
+    expect(slotTimeMatches('2026-10-22T11:00:00Z', t)).toBe(false);
+    expect(slotTimeMatches('soon', t)).toBe(false);
+    expect(slotTimeMatches(123, t)).toBe(false);
+  });
+  it('skips the check for older clients that do not send it', () => {
+    expect(slotTimeMatches(undefined, t)).toBe(true);
   });
 });

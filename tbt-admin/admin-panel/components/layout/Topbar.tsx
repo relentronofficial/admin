@@ -1,7 +1,7 @@
 "use client";
 
 import { UserButton } from "@clerk/nextjs";
-import { Bell, BellRing, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList } from "lucide-react";
+import { Bell, BellRing, Settings, Check, CheckCheck, Megaphone, Users, ShoppingBag, Video, BookOpen, Info, ClipboardList, Menu } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 import {
@@ -149,7 +149,7 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 
 // ── Topbar ────────────────────────────────────────────────────────────────────
 
-export function Topbar() {
+export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
   const [pendingSubmissions, setPendingSubmissions] = useState(0);
@@ -223,7 +223,18 @@ export function Topbar() {
   const displayCount = unreadCount > 99 ? "99+" : unreadCount > 0 ? String(unreadCount) : null;
 
   return (
-    <header className="h-[54px] bg-[#111] border-b border-[#2a2a2a] px-7 flex items-center sticky top-0 z-[50] font-sans">
+    <header className="h-[54px] bg-[#111] border-b border-[#2a2a2a] px-4 md:px-7 flex items-center sticky top-0 z-[50] font-sans">
+      {/* Mobile only: opens the off-canvas sidebar. */}
+      {onMenuClick && (
+        <button
+          type="button"
+          onClick={onMenuClick}
+          aria-label="Open menu"
+          className="md:hidden mr-3 w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md flex items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all"
+        >
+          <Menu size={16} strokeWidth={2} />
+        </button>
+      )}
       {/* Breadcrumbs */}
       <div className="flex items-center gap-1.5">
         <span className="font-rajdhani font-bold text-[17px] text-[#e02020] tracking-tight">TBT</span>

@@ -48,7 +48,8 @@ import { useForm, Controller } from "react-hook-form";
 import CreatableSelect from "@/components/shared/CreatableSelect";
 import {
   useCities, useStates, useBusinessTypes,
-  useCreateCity, useCreateState, useCreateBusinessType,
+  useCreateCity, useCreateBusinessType,
+  useLocationStates, useLocationCities,
 } from "@/lib/hooks/useMasters";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -74,7 +75,6 @@ const memberUpdateSchema = z.object({
   phone: z.string().optional().or(z.literal("")),
   city: z.string().optional().or(z.literal("")),
   state: z.string().optional().or(z.literal("")),
-  businessType: z.string().optional().or(z.literal("")),
   pincode: z.string().optional().or(z.literal("")),
   businessName: z.string().optional().or(z.literal("")),
   businessEstablishedOn: z.string().optional().or(z.literal("")).nullable(),
@@ -104,6 +104,21 @@ const memberUpdateSchema = z.object({
   currentTier: z.number().int().min(1).default(1),
   password: z.string().min(8, "Password must be at least 8 characters").optional().or(z.literal("")),
   subscriptionEndsAt: z.string().optional().or(z.literal("")).nullable(),
+  hasWebsite: z.boolean().default(false),
+  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  skillBusinessFoundation: z.number().int().min(1).max(10).default(1),
+  skillContent: z.number().int().min(1).max(10).default(1),
+  skillFunnels: z.number().int().min(1).max(10).default(1),
+  skillAds: z.number().int().min(1).max(10).default(1),
+  skillSales: z.number().int().min(1).max(10).default(1),
+  skillOverallMarketing: z.number().int().min(1).max(10).default(1),
+  weeklyLearningHours: z.number().int().min(1).max(80).default(1), // hours per day (slider 1–24; ≤80 keeps legacy per-week values valid)
+  teamSize: z.string().optional().or(z.literal("")),
+  businessStartedFrom: z.string().optional().or(z.literal("")),
+  instagramStats: z.string().optional().or(z.literal("")),
+  facebookStats: z.string().optional().or(z.literal("")),
+  websiteUrl: z.string().optional().or(z.literal("")),
+  revenueGoalAfterTbt: z.string().optional().or(z.literal("")),
 });
 
 type MemberUpdateInput = z.infer<typeof memberUpdateSchema>;
@@ -141,6 +156,8 @@ export default function MembersListPage() {
   // CP-14: per-member course module override state
   const [editModuleOverride, setEditModuleOverride] = useState<boolean>(false);
   const [editAllowedModules, setEditAllowedModules] = useState<string[]>([]);
+  // CV-09: admin-assigned business category visibility
+  const [editBusinessCategories, setEditBusinessCategories] = useState<string[]>([]);
 
   const menuRef = useRef<HTMLDivElement>(null);
   const editKycRef = useRef<HTMLInputElement>(null);
@@ -188,14 +205,15 @@ export default function MembersListPage() {
     };
   }, [members]);
 
-  // Master-data lists power the City / State / BusinessType dropdowns
-  // in both the edit modal below and the filter drawer at the bottom.
-  const { data: cities, isLoading: citiesLoading } = useCities();
-  const { data: states, isLoading: statesLoading } = useStates();
+  // Master-data lists power the filter drawer facets.
+  const { data: cities } = useCities();
+  const { data: states } = useStates();
   const { data: businessTypes, isLoading: businessTypesLoading } = useBusinessTypes();
   const createCity = useCreateCity();
-  const createState = useCreateState();
   const createBusinessType = useCreateBusinessType();
+
+  // States list fetched early — independent of form, powers the edit modal dropdown.
+  const { data: locationStates, isLoading: locationStatesLoading } = useLocationStates();
 
   /**
    * Union master-data lists (authoritative) with distinct values found
@@ -275,8 +293,27 @@ export default function MembersListPage() {
 
   const watchChannels = watch("marketingChannels") || [];
   const watchHasSMM = watch("hasMarketingTeam");
+
+  // Cascading city dropdown — depends on the watched state field.
+  const skipCityClearRef = useRef(false);
+  const watchEditState = watch("state");
+  const editStateIsoCode = locationStates?.find((s) => s.name === watchEditState)?.id ?? "";
+  const { data: locationCities, isLoading: locationCitiesLoading } = useLocationCities(editStateIsoCode);
+
+  useEffect(() => {
+    if (skipCityClearRef.current) { skipCityClearRef.current = false; return; }
+    setValue("city", "");
+  }, [watchEditState]); // eslint-disable-line react-hooks/exhaustive-deps
   const watchHasVideo = watch("hasVideoEditing");
   const watchPlan = watch("membershipPlan");
+  const watchHasWebsite = watch("hasWebsite");
+  const watchSkillBF = watch("skillBusinessFoundation");
+  const watchSkillContent = watch("skillContent");
+  const watchSkillFunnels = watch("skillFunnels");
+  const watchSkillAds = watch("skillAds");
+  const watchSkillSales = watch("skillSales");
+  const watchSkillOM = watch("skillOverallMarketing");
+  const watchLearningHours = watch("weeklyLearningHours");
 
   const toggleChannel = (channel: string) => {
     if (watchChannels.includes(channel)) {
@@ -307,6 +344,8 @@ export default function MembersListPage() {
       setOriginalBatchId(editingMember.batchId || "");
       setApproveBatchId(editingMember.batchId || "");
       setEditProfilePhotoUrl(editingMember.profilePhotoUrl || "");
+      setEditBusinessCategories(Array.isArray((editingMember as any).businessCategories) ? (editingMember as any).businessCategories : []);
+      skipCityClearRef.current = true;
       reset({
         firstName: editingMember.firstName || "",
         lastName: editingMember.lastName || "",
@@ -316,7 +355,6 @@ export default function MembersListPage() {
         phone: editingMember.phone || "",
         city: editingMember.city || "",
         state: editingMember.state || "",
-        businessType: editingMember.businessType || "",
         pincode: editingMember.pincode || "",
         businessName: editingMember.businessName || "",
         businessEstablishedOn: editingMember.businessEstablishedOn ? new Date(editingMember.businessEstablishedOn).toISOString().split('T')[0] : "",
@@ -345,6 +383,21 @@ export default function MembersListPage() {
         batchId: editingMember.batchId || "",
         currentTier: editingMember.currentTier ?? 1,
         subscriptionEndsAt: "",
+        hasWebsite: editingMember.hasWebsite || false,
+        weeklyWebsiteOrders: editingMember.weeklyWebsiteOrders ?? null,
+        skillBusinessFoundation: editingMember.skillBusinessFoundation ?? 1,
+        skillContent: editingMember.skillContent ?? 1,
+        skillFunnels: editingMember.skillFunnels ?? 1,
+        skillAds: editingMember.skillAds ?? 1,
+        skillSales: editingMember.skillSales ?? 1,
+        skillOverallMarketing: editingMember.skillOverallMarketing ?? 1,
+        weeklyLearningHours: editingMember.weeklyLearningHours ?? 1,
+        teamSize: editingMember.teamSize || "",
+        businessStartedFrom: editingMember.businessStartedFrom || "",
+        instagramStats: editingMember.instagramStats || "",
+        facebookStats: editingMember.facebookStats || "",
+        websiteUrl: editingMember.websiteUrl || "",
+        revenueGoalAfterTbt: editingMember.revenueGoalAfterTbt || "",
       });
     }
   }, [editingMember, reset]);
@@ -415,8 +468,12 @@ export default function MembersListPage() {
         payload.profilePhotoUrl = editProfilePhotoUrl;
       }
       if (editKycDoc) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
-        payload.kycDocumentUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: editKycDoc, pathPrefix: "members/kyc" });
+          payload.kycDocumentUrl = publicUrl;
+        } catch {
+          toast.error("KYC document upload failed — other changes will still be saved");
+        }
       }
       // CP-14: send module override only if the admin explicitly changed it
       const originalMods = (editingMember as any).allowedModules;
@@ -427,6 +484,8 @@ export default function MembersListPage() {
       } else if (hadOverride) {
         payload.overrideModules = false;
       }
+      // CV-09: always send businessCategories (empty array = no restriction)
+      payload.businessCategories = editBusinessCategories;
       await updateMember.mutateAsync({ id: editingMember.id, data: payload });
       toast.success("Member updated successfully");
       setEditingMember(null);
@@ -690,6 +749,7 @@ export default function MembersListPage() {
                                     const mods = (member as any).allowedModules;
                                     setEditModuleOverride(Array.isArray(mods));
                                     setEditAllowedModules(Array.isArray(mods) ? mods : []);
+                                    setEditBusinessCategories(Array.isArray((member as any).businessCategories) ? (member as any).businessCategories : []);
                                     setActiveMenuId(null);
                                 }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-[12px] text-[#a0a0a0] hover:text-white hover:bg-[#2a2a2a] transition-colors font-bold uppercase tracking-wider font-rajdhani"
@@ -815,7 +875,14 @@ export default function MembersListPage() {
                     <div className="space-y-4 bg-[#0a0a0a]/30 p-5 rounded-xl border border-[#1f1f1f]">
                       <InfoItem label="Enterprise Name" value={viewingMember.businessName || 'N/A'} />
                       <InfoItem label="Business Type" value={viewingMember.productServiceType || 'N/A'} />
-                      <InfoItem label="Course Track" value={(viewingMember as any).businessType || 'Not set'} />
+                      <InfoItem
+                        label="Assigned Categories"
+                        value={
+                          Array.isArray((viewingMember as any).businessCategories) && (viewingMember as any).businessCategories.length > 0
+                            ? (viewingMember as any).businessCategories.join(", ")
+                            : "All courses (no restriction)"
+                        }
+                      />
                       <InfoItem label="Established" value={safeFormatDate(viewingMember.businessEstablishedOn)} />
                       <InfoItem label="Annual Turnover" value={viewingMember.annualTurnover || 'N/A'} />
                       <InfoItem label="GST Identifier" value={viewingMember.gstNumber || 'N/A'} />
@@ -986,23 +1053,6 @@ export default function MembersListPage() {
                     </div>
                     <div className="grid grid-cols-3 gap-5">
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
-                        <Controller
-                          name="city"
-                          control={control}
-                          render={({ field }) => (
-                            <CreatableSelect
-                              value={field.value ?? ""}
-                              onChange={field.onChange}
-                              options={cities ?? []}
-                              onCreate={(name) => createCity.mutateAsync(name)}
-                              isLoading={citiesLoading}
-                              placeholder="Search or add city…"
-                            />
-                          )}
-                        />
-                      </div>
-                      <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">State</label>
                         <Controller
                           name="state"
@@ -1011,10 +1061,27 @@ export default function MembersListPage() {
                             <CreatableSelect
                               value={field.value ?? ""}
                               onChange={field.onChange}
-                              options={states ?? []}
-                              onCreate={(name) => createState.mutateAsync(name)}
-                              isLoading={statesLoading}
-                              placeholder="Search or add state…"
+                              options={locationStates ?? []}
+                              isLoading={locationStatesLoading}
+                              placeholder="Search state…"
+                            />
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">City</label>
+                        <Controller
+                          name="city"
+                          control={control}
+                          render={({ field }) => (
+                            <CreatableSelect
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              options={locationCities ?? []}
+                              onCreate={(name) => createCity.mutateAsync(name)}
+                              isLoading={locationCitiesLoading}
+                              placeholder={editStateIsoCode ? "Search or add city…" : "Select a state first"}
+                              disabled={!editStateIsoCode}
                             />
                           )}
                         />
@@ -1048,6 +1115,7 @@ export default function MembersListPage() {
                           <option value="">Select...</option>
                           <option value="Product-based">Product-based</option>
                           <option value="Service-based">Service-based</option>
+                          <option value="Coaching">Coaching</option>
                           <option value="Both">Both</option>
                           <option value="Other">Other</option>
                         </select>
@@ -1059,18 +1127,6 @@ export default function MembersListPage() {
                           <input {...register("instagramLink")} className="w-full h-full bg-transparent pr-4 text-white text-sm outline-none" />
                         </div>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-5">
-                      <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Course Track</label>
-                        <select {...register("businessType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
-                          <option value="">— Not set —</option>
-                          <option value="Product">Product</option>
-                          <option value="Service">Service</option>
-                          <option value="Coaching">Coaching</option>
-                        </select>
-                      </div>
-                      <div />
                     </div>
                     <div className="grid grid-cols-2 gap-5">
                       <div>
@@ -1137,6 +1193,36 @@ export default function MembersListPage() {
                       <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Address</label>
                       <textarea {...register("businessAddress")} rows={3} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm resize-none" />
                     </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Total Members in Team</label>
+                        <input {...register("teamSize")} placeholder="e.g. 5" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Business Started From</label>
+                        <input {...register("businessStartedFrom")} placeholder="e.g. 2019 or Yet to Start" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Website URL</label>
+                        <input {...register("websiteUrl")} placeholder="https://yourbrand.com" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Revenue Goal After TBT</label>
+                        <input {...register("revenueGoalAfterTbt")} placeholder="e.g. 1Cr in 12 months" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Instagram Posts &amp; Followers</label>
+                        <input {...register("instagramStats")} placeholder="e.g. 120 posts, 4.2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Facebook Posts &amp; Followers</label>
+                        <input {...register("facebookStats")} placeholder="e.g. 80 posts, 2K followers" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm" />
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -1197,9 +1283,83 @@ export default function MembersListPage() {
                   </div>
                 </section>
 
-                {/* ── 04. Account Management ─────────────────────────────── */}
+                {/* ── 04. Skills & Growth ─────────────────────────────────── */}
                 <section>
-                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Account Management</h4>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">04. Skills & Growth</h4>
+                  <div className="space-y-6">
+                    <div>
+                      <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest mb-3 font-rajdhani">Does the member have a website?</p>
+                      <div className="flex gap-3">
+                        {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => {
+                              setValue("hasWebsite", val, { shouldDirty: true });
+                              if (!val) setValue("weeklyWebsiteOrders", null as any, { shouldDirty: true });
+                            }}
+                            className={cn("px-6 h-[40px] rounded-lg text-[13px] font-semibold border transition-colors",
+                              watchHasWebsite === val
+                                ? "bg-[#dc2626] text-white border-[#dc2626]"
+                                : "bg-[#1a1a1a] text-[#888] border-[#2a2a2a] hover:border-[#555]"
+                            )}
+                          >{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    {watchHasWebsite && (
+                      <div className="w-1/2">
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Weekly orders from website</label>
+                        <input type="number" min={0}
+                          {...register("weeklyWebsiteOrders", { valueAsNumber: true })}
+                          placeholder="e.g. 50"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm"
+                        />
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Rate skills (1–10)</p>
+                      <p className="text-[12px] text-[#555] mb-5">1 = Beginner · 10 = Expert</p>
+                      <div className="grid grid-cols-2 gap-x-10 gap-y-6">
+                        {([
+                          { name: "skillBusinessFoundation" as const, label: "Business Foundation", val: watchSkillBF },
+                          { name: "skillContent" as const, label: "Content", val: watchSkillContent },
+                          { name: "skillFunnels" as const, label: "Funnels", val: watchSkillFunnels },
+                          { name: "skillAds" as const, label: "Ads", val: watchSkillAds },
+                          { name: "skillSales" as const, label: "Sales", val: watchSkillSales },
+                          { name: "skillOverallMarketing" as const, label: "Overall Marketing", val: watchSkillOM },
+                        ] as const).map(({ name, label, val }) => (
+                          <div key={name}>
+                            <div className="flex justify-between items-center mb-2">
+                              <label className="text-[12px] text-[#aaa]">{label}</label>
+                              <span className="text-[14px] font-bold text-white tabular-nums">{val ?? 1}<span className="text-[#555] font-normal">/10</span></span>
+                            </div>
+                            <input type="range" min={1} max={10} step={1}
+                              {...register(name, { valueAsNumber: true })}
+                              className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                            />
+                            <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>Beginner</span><span>Expert</span></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <p className="text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">Hours per day for learning</p>
+                        <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 1} <span className="text-[#555] text-[13px] font-normal">{(watchLearningHours ?? 1) === 1 ? "hr/day" : "hrs/day"}</span></span>
+                      </div>
+                      <input type="range" min={1} max={24} step={1}
+                        {...register("weeklyLearningHours", { valueAsNumber: true })}
+                        className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
+                      />
+                      <div className="flex justify-between text-[11px] text-[#555] mt-1"><span>1 hr</span><span>12 hrs</span><span>24 hrs</span></div>
+                    </div>
+                  </div>
+                </section>
+
+                {/* ── 05. Account Management ─────────────────────────────── */}
+                <section>
+                  <h4 className="text-[11px] font-bold text-[#777] uppercase tracking-[3px] mb-6 border-b border-[#1f1f1f] pb-2">05. Account Management</h4>
                   <div className="space-y-5">
                     <div className="grid grid-cols-2 gap-5">
                       <div>
@@ -1362,6 +1522,38 @@ export default function MembersListPage() {
                       )}
                     </div>
                   </div>
+                </section>
+
+                {/* CV-09: Assigned Business Categories */}
+                <section className="px-8 py-6 border-b border-[#2a2a2a]">
+                  <h3 className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-4">
+                    Assigned Business Categories
+                  </h3>
+                  <p className="text-[#606060] text-xs mb-4">
+                    Controls which courses are visible to this member. Leave all unchecked to show all courses.
+                  </p>
+                  <div className="space-y-2">
+                    {(["Product", "Service", "Coaching"] as const).map((cat) => (
+                      <label key={cat} className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={editBusinessCategories.includes(cat)}
+                          onChange={(e) => {
+                            setEditBusinessCategories(prev =>
+                              e.target.checked ? [...prev, cat] : prev.filter((c) => c !== cat)
+                            );
+                          }}
+                          className="accent-[#dc2626] w-4 h-4"
+                        />
+                        <span className="text-sm text-[#f0f0f0]">
+                          {cat === "Product" ? "Product-Based Business" : cat === "Service" ? "Service-Based Business" : "Coaching Business"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {editBusinessCategories.length === 0 && (
+                    <p className="text-[11px] text-[#606060] mt-2">No restriction — member sees all courses.</p>
+                  )}
                 </section>
 
                 {/* CP-14: Course Module Access Override */}

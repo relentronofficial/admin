@@ -18,7 +18,7 @@ import {
   useUploadOnboardingDocument,
   useDeleteOnboardingDocument,
   useSubmitOnboarding,
-  usePresignProfilePhoto,
+  useUploadProfilePhoto,
 } from "@/lib/hooks/useOnboarding";
 import { useMyOnboardingMeetings } from "@/lib/hooks/useOnboardingMeetings";
 import { useMentorshipModules, useUpdateMentorshipModules } from "@/lib/hooks/useMentorship";
@@ -34,6 +34,16 @@ type FixedStep = "welcome" | "mentorship" | "profile" | "skills" | "documents" |
 type DynamicStep = `education:${string}`;
 type Step = FixedStep | DynamicStep;
 
+// Learning hours are hours PER DAY (1–24), stored in members.weekly_learning_hours
+// (the column predates the switch from per-week). Untouched → 1; a legacy
+// per-week value above 24 shows, and saves, as 24.
+const LEARNING_HOURS_MIN = 1;
+const LEARNING_HOURS_MAX = 24;
+const learningHoursPerDay = (v: unknown): number =>
+  typeof v === "number" && Number.isFinite(v)
+    ? Math.min(LEARNING_HOURS_MAX, Math.max(LEARNING_HOURS_MIN, Math.round(v)))
+    : LEARNING_HOURS_MIN;
+
 const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state"] as const;
 
 const DOCUMENT_TYPES = [
@@ -43,9 +53,10 @@ const DOCUMENT_TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline"];
+const MARKETING_CHANNELS = ["SEO", "Paid Ads", "Social Media", "Email", "Referral", "Offline", "None"];
 
 const ANNUAL_TURNOVER_OPTIONS = [
+  "No Revenue", "Under 1 Lakh", "Under 5 Lakhs",
   "Under 10L", "10L - 25L", "25L - 50L", "50L - 1Cr", "1Cr - 5Cr", "5Cr+",
 ];
 
@@ -179,6 +190,9 @@ function StepProgress({ step, stepOrder }: { step: Step; stepOrder: Step[] }) {
 
 // ─── Content blocks (education steps) ────────────────────────────────────────
 
+/** Origin of Bunny Stream's embed player (iframe.mediadelivery.net). */
+const BUNNY_PLAYER_ORIGIN = "https://iframe.mediadelivery.net";
+
 function ContentBlock({
   content,
   onCtaClick,
@@ -193,29 +207,53 @@ function ContentBlock({
   const isHls = content.videoUrl?.endsWith(".m3u8");
   const hasVideo = !!content.videoUrl;
   const watchedRef = useRef(alreadyWatched ?? false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  // Always call the latest onWatched (the message listener outlives renders).
+  const onWatchedRef = useRef(onWatched);
+  onWatchedRef.current = onWatched;
 
   // Keep watchedRef in sync if parent marks it done from another source
   useEffect(() => {
     if (alreadyWatched) watchedRef.current = true;
   }, [alreadyWatched]);
 
-  // Bunny iframe: listen for postMessage timeupdate / ended events
+  // Bunny Stream iframe (player.js protocol, same as the course player): the
+  // player sends nothing until the page subscribes with "addEventListener",
+  // and its events arrive as JSON strings from iframe.mediadelivery.net.
+  const subscribeToPlayer = () => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    for (const event of ["timeupdate", "ended"]) {
+      win.postMessage(JSON.stringify({ context: "player.js", method: "addEventListener", value: event }), BUNNY_PLAYER_ORIGIN);
+    }
+  };
+
   useEffect(() => {
     if (!hasVideo || isHls || watchedRef.current) return;
+    const markWatched = () => {
+      watchedRef.current = true;
+      onWatchedRef.current?.();
+    };
     const handler = (e: MessageEvent) => {
       if (watchedRef.current) return;
-      const msg = e.data;
-      const type: string = msg?.type ?? msg?.event ?? "";
+      if (e.origin && !e.origin.includes("mediadelivery.net")) return;
+      let msg: any = e.data;
+      if (typeof msg === "string") {
+        try { msg = JSON.parse(msg); } catch { return; }
+      }
+      const type: string = msg?.event ?? msg?.type ?? "";
+      if (type === "ready") {
+        subscribeToPlayer();
+        return;
+      }
       if (type === "ended") {
-        watchedRef.current = true;
-        onWatched?.();
+        markWatched();
         return;
       }
       if (type === "timeupdate") {
         const { seconds, duration } = msg?.value ?? {};
         if (typeof seconds === "number" && typeof duration === "number" && duration > 0 && seconds / duration >= 0.8) {
-          watchedRef.current = true;
-          onWatched?.();
+          markWatched();
         }
       }
     };
@@ -261,7 +299,13 @@ function ContentBlock({
                 onEnded={handleHlsEnded}
               />
             ) : (
-              <iframe src={content.videoUrl} className="w-full h-full" allow="autoplay; fullscreen" />
+              <iframe
+                ref={iframeRef}
+                src={content.videoUrl}
+                className="w-full h-full"
+                allow="autoplay; fullscreen"
+                onLoad={subscribeToPlayer}
+              />
             )}
           </div>
           {!videoUnlocked && (
@@ -306,11 +350,11 @@ function ContentStepSkeleton() {
 // ─── Step shell ───────────────────────────────────────────────────────────────
 
 function StepShell({
-  title, subtitle, children, onBack, onNext, nextLabel, nextDisabled, saving,
+  title, subtitle, children, onBack, onNext, nextLabel, nextDisabled, saving, hideNext,
 }: {
   title: string; subtitle?: string; children: React.ReactNode;
   onBack?: () => void; onNext: () => void;
-  nextLabel?: string; nextDisabled?: boolean; saving?: boolean;
+  nextLabel?: string; nextDisabled?: boolean; saving?: boolean; hideNext?: boolean;
 }) {
   return (
     <div className="p-6 md:p-8">
@@ -323,31 +367,33 @@ function StepShell({
         )}
         {!subtitle && <div className="mb-6" />}
         <div className="mb-10">{children}</div>
-        <div className="flex justify-between items-center pt-5 border-t" style={{ borderColor: BORDER }}>
-          {onBack ? (
+        {!hideNext && (
+          <div className="flex justify-between items-center pt-5 border-t" style={{ borderColor: BORDER }}>
+            {onBack ? (
+              <button
+                onClick={onBack}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                Back
+              </button>
+            ) : <span />}
             <button
-              onClick={onBack}
-              className="px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
-              style={{ color: "var(--color-text-secondary)" }}
+              onClick={onNext}
+              disabled={nextDisabled || saving}
+              className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40"
+              style={{
+                background: "var(--color-accent)",
+                boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+              }}
             >
-              Back
+              {saving && (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              )}
+              {saving ? "Saving…" : (nextLabel ?? "Continue")}
             </button>
-          ) : <span />}
-          <button
-            onClick={onNext}
-            disabled={nextDisabled || saving}
-            className="flex items-center gap-2 px-7 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-40"
-            style={{
-              background: "var(--color-accent)",
-              boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
-            }}
-          >
-            {saving && (
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-            )}
-            {saving ? "Saving…" : (nextLabel ?? "Continue")}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -474,7 +520,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const saveProgress = useSaveOnboardingProgress();
   const uploadDoc = useUploadOnboardingDocument();
   const deleteDoc = useDeleteOnboardingDocument();
-  const presignPhoto = usePresignProfilePhoto();
+  const uploadPhoto = useUploadProfilePhoto();
   const submit = useSubmitOnboarding();
 
   const { data: psycQuestions, isLoading: psycQuestionsLoading } = usePsychometricQuestions();
@@ -491,6 +537,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const mentorshipData = mentorshipQuery.data;
   const includeMentorship = !mentorshipData || mentorshipData.options.length > 0;
   const [mentorshipValue, setMentorshipValue] = useState<string[]>([]);
+  const mentorshipSavingRef = useRef(false);
   useEffect(() => {
     if (!mentorshipData) return;
     const available = new Set(mentorshipData.options.map((o) => o.moduleName));
@@ -544,6 +591,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [selectedStateCode, setSelectedStateCode] = useState<string>("");
+  const [noGst, setNoGst] = useState(false);
 
   useEffect(() => {
     apiClient.get("/api/location/states?countryCode=IN").then((res) => {
@@ -579,6 +627,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const validateProfileStep = (): boolean => {
     const errs: Record<string, string> = {};
     const str = (k: string) => (profile[k] ?? "").toString().trim();
+    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = "Please upload a photo";
     if (!str("firstName")) errs.firstName = "First name is required";
     if (!str("city")) errs.city = "City is required";
     if (!str("state")) errs.state = "State is required";
@@ -592,7 +641,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     if (!str("teamSize")) errs.teamSize = "Team size is required";
     if (!str("instagramStats")) errs.instagramStats = "Instagram stats are required";
     if (!str("facebookStats")) errs.facebookStats = "Facebook stats are required";
-    if (!str("gstNumber")) errs.gstNumber = "GST number is required";
     if (profile.preferredSessionMode == null) errs.preferredSessionMode = "Please select a session mode";
     if (profile.hasMarketingTeam == null) errs.hasMarketingTeam = "Please select an option";
     if (profile.hasVideoEditing == null) errs.hasVideoEditing = "Please select an option";
@@ -630,11 +678,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
     try {
       const { phone: _p, email: _e, challenge1, challenge2, challenge3, ...editable } = profile as any;
       const currentChallenges = [challenge1, challenge2, challenge3].filter(Boolean);
+      // An untouched skill slider shows 1/10; save that value so what the
+      // member saw is what gets stored (null was dropped below and never saved).
+      if (step === "skills") {
+        for (const { key } of SKILL_FIELDS) if (typeof editable[key] !== "number") editable[key] = 1;
+        // Same for the learning-hours slider: store the hours per day it shows.
+        editable.weeklyLearningHours = learningHoursPerDay(editable.weeklyLearningHours);
+      }
       const body = Object.fromEntries(
         Object.entries({ ...editable, currentChallenges })
           .filter(([, v]) => v !== null && v !== undefined && v !== "")
       );
       await saveProgress.mutateAsync(body);
+      // Keep the shown/saved per-day hours in state so the review step matches what was stored.
+      if (step === "skills") setProfileState((p) => ({ ...p, weeklyLearningHours: editable.weeklyLearningHours }));
       setStep(next);
     } catch (err: any) {
       const msg = err?.response?.data?.error || err?.message || "Couldn't save your progress. Please try again.";
@@ -659,33 +716,39 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const handlePhotoUpload = async (file: File) => {
     setPhotoUploading(true);
     try {
-      const { data } = await presignPhoto.mutateAsync({ filename: file.name, contentType: file.type });
-      await fetch(data.uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      setProfileState((p) => ({ ...p, profilePhotoUrl: data.publicUrl }));
+      const { data } = await uploadPhoto.mutateAsync(file);
+      setField("profilePhotoUrl", data.publicUrl);
       toast.success("Photo uploaded");
-    } catch {
-      toast.error("Photo upload failed. Please try again.");
+    } catch (err: any) {
+      toast.error(err?.message || "Photo upload failed. Please try again.");
     } finally {
       setPhotoUploading(false);
     }
   };
 
   const saveMentorshipAndAdvance = async () => {
+    // A second click before the disabled state renders must not send a second save.
+    if (mentorshipSavingRef.current) return;
     const saved = mentorshipData?.selection ?? null;
     const unchanged = saved !== null && !mentorshipData?.selectionRequired
       && saved.length === mentorshipValue.length && saved.every((m) => mentorshipValue.includes(m));
+    mentorshipSavingRef.current = true;
     try {
       if (!unchanged) await updateMentorship.mutateAsync(mentorshipValue);
       setStep(nextStep ?? "review");
     } catch (err: any) {
-      toast.error(err?.message || "Could not save your mentorship selection.");
+      // Stay on this step with the selection kept, so the member can retry.
+      toast.error(err?.message || "Could not save your mentorship selection.", { id: "mentorship-save" });
+    } finally {
+      mentorshipSavingRef.current = false;
     }
   };
 
   const handleSubmit = async () => {
     try {
-      await submit.mutateAsync();
-      toast.success("Onboarding submitted!");
+      const res = await submit.mutateAsync();
+      // A verified member editing their details is not sent back for review.
+      toast.success(res?.data?.verificationStatus === "verified" ? "Your details have been saved." : "Onboarding submitted!");
     } catch (err: any) {
       toast.error(err?.response?.data?.error || "Please complete all required fields first.");
     }
@@ -735,6 +798,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             title="Welcome to TBT"
             subtitle="Complete your profile in a few steps to unlock full platform access. This takes about 5–10 minutes — your progress is saved automatically."
             onNext={() => setStep(stepOrder[1] ?? "profile")}
+            hideNext={!!(ctaButtons && ctaButtons.length > 0)}
           >
             <div className="space-y-3">
               {[
@@ -756,7 +820,15 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   >
                     <Icon size={15} style={{ color: "var(--color-accent)" }} />
                   </div>
-                  <span className="text-sm font-medium text-foreground">{label}</span>
+                  <div className="flex flex-col">
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-[0.12em] mb-0.5"
+                      style={{ color: "var(--color-accent)" }}
+                    >
+                      Step {i + 1}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">{label}</span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -773,7 +845,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                       boxShadow: "0 4px 18px color-mix(in srgb, var(--color-accent) 35%, transparent)",
                     }}
                   >
-                    {btn.name}
+                    Now start onboarding
                   </button>
                 ))}
               </div>
@@ -802,7 +874,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               </div>
             ) : (
               <MentorshipModuleOptions
-                options={mentorshipData.options}
+                // Step 2 does not offer the Introduction module (shown elsewhere unchanged).
+                options={mentorshipData.options.filter((o) => o.moduleName !== "Introduction")}
                 value={mentorshipValue}
                 onChange={setMentorshipValue}
                 disabled={updateMentorship.isPending}
@@ -826,6 +899,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
             >
               {contentLoading ? <ContentStepSkeleton /> : content ? (
                 <ContentBlock
+                  // One instance per step: the watched state of one video must
+                  // never carry over to the next step's video.
+                  key={key}
                   content={content}
                   onCtaClick={videoWatched ? () => setStep(nextStep ?? "review") : undefined}
                   onWatched={() => markVideoWatched(key)}
@@ -855,7 +931,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <SectionHeader icon={Users} title="Personal Info" />
 
               {/* Profile photo */}
-              <div className="flex flex-col items-center gap-3 py-2">
+              <div className="flex flex-col items-center gap-3 py-2" data-field-error={errors.profilePhotoUrl ? true : undefined}>
                 <div
                   className="relative w-28 h-28 rounded-full overflow-hidden cursor-pointer group"
                   style={{
@@ -882,8 +958,9 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   </div>
                 </div>
                 <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo (optional)"}
+                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo"}
                 </p>
+                <FieldError error={errors.profilePhotoUrl} />
                 <input
                   ref={photoInputRef as React.RefObject<HTMLInputElement>}
                   type="file" accept="image/*" className="hidden" disabled={photoUploading}
@@ -991,15 +1068,6 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <input value={profile.businessName ?? ""} onChange={(e) => setField("businessName", e.target.value)} className={INPUT_CLS} style={inputStyle("businessName")} />
                   <FieldError error={errors.businessName} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Established On</label>
-                  <input
-                    type="date"
-                    value={profile.businessEstablishedOn ? (typeof profile.businessEstablishedOn === "string" ? profile.businessEstablishedOn.slice(0, 10) : new Date(profile.businessEstablishedOn).toISOString().slice(0, 10)) : ""}
-                    onChange={(e) => setField("businessEstablishedOn", e.target.value)}
-                    className={INPUT_CLS} style={inputStyle("businessEstablishedOn")}
-                  />
-                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1009,35 +1077,27 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     <option value="" disabled>Select…</option>
                     <option value="Product-based">Product-based</option>
                     <option value="Service-based">Service-based</option>
-                    <option value="Both">Both</option>
-                    <option value="Other">Other</option>
+                    <option value="Coaching">Coaching</option>
                   </select>
                   <FieldError error={errors.productServiceType} />
                 </div>
                 <div data-field-error={errors.businessStartedFrom ? true : undefined}>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Business Started From *</label>
-                  <input value={profile.businessStartedFrom ?? ""} onChange={(e) => setField("businessStartedFrom", e.target.value)} placeholder="e.g. 2019 or Yet to Start" className={INPUT_CLS} style={inputStyle("businessStartedFrom")} />
+                  {/* Stored as text: a picked date is saved as YYYY-MM-DD. Older free-text values
+                      (e.g. "2019") are kept as they are until a date is picked. */}
+                  <input
+                    type="date"
+                    value={/^\d{4}-\d{2}-\d{2}/.test(profile.businessStartedFrom ?? "") ? String(profile.businessStartedFrom).slice(0, 10) : ""}
+                    onChange={(e) => setField("businessStartedFrom", e.target.value)}
+                    className={INPUT_CLS} style={inputStyle("businessStartedFrom")}
+                  />
+                  {profile.businessStartedFrom && !/^\d{4}-\d{2}-\d{2}/.test(profile.businessStartedFrom) && (
+                    <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>Saved: {profile.businessStartedFrom}</p>
+                  )}
                   <FieldError error={errors.businessStartedFrom} />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Course Track</label>
-                  <select
-                    value={profile.businessType ?? ""}
-                    onChange={(e) => setField("businessType", e.target.value || null)}
-                    className={INPUT_CLS}
-                    style={inputStyle("businessType")}
-                  >
-                    <option value="">Select your track…</option>
-                    <option value="Product">Product — Build &amp; sell products</option>
-                    <option value="Service">Service — Offer your expertise</option>
-                    <option value="Coaching">Coaching — Coach &amp; mentor others</option>
-                  </select>
-                </div>
-                <div />
-              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div data-field-error={errors.teamSize ? true : undefined}>
@@ -1203,8 +1263,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <SectionHeader icon={Shield} title="Compliance & Challenges" />
 
               <div data-field-error={errors.gstNumber ? true : undefined}>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number *</label>
-                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value)} placeholder="22AAAAA0000A1Z5" className={INPUT_CLS} style={inputStyle("gstNumber")} />
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number</label>
+                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value)} placeholder="22AAAAA0000A1Z5" disabled={noGst} className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`} style={inputStyle("gstNumber")} />
+                <label className="mt-2 inline-flex items-center gap-2 text-xs font-medium cursor-pointer" style={{ color: "var(--color-text-subtle)" }}>
+                  <input
+                    type="checkbox"
+                    checked={noGst}
+                    onChange={(e) => {
+                      setNoGst(e.target.checked);
+                      if (e.target.checked) setField("gstNumber", "");
+                    }}
+                    style={{ accentColor: "var(--color-accent)" }}
+                  />
+                  No GST
+                </label>
                 <FieldError error={errors.gstNumber} />
               </div>
 
@@ -1293,23 +1365,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {/* Learning hours */}
               <div>
                 <div className="flex justify-between items-center mb-3">
-                  <span className="text-sm font-semibold text-foreground">Hours per week for learning</span>
+                  <span className="text-sm font-semibold text-foreground">Hours per day for learning</span>
                   <div className="flex items-baseline gap-0.5">
                     <span className="text-2xl font-bold tabular-nums leading-none" style={{ color: "var(--color-accent)" }}>
-                      {typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
+                      {learningHoursPerDay(profile.weeklyLearningHours)}
                     </span>
-                    <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>hrs</span>
+                    <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>{learningHoursPerDay(profile.weeklyLearningHours) === 1 ? "hr" : "hrs"}</span>
                   </div>
                 </div>
                 <input
-                  type="range" min={5} max={80} step={5}
-                  value={typeof profile.weeklyLearningHours === "number" ? profile.weeklyLearningHours : 5}
+                  type="range" min={LEARNING_HOURS_MIN} max={LEARNING_HOURS_MAX} step={1}
+                  value={learningHoursPerDay(profile.weeklyLearningHours)}
                   onChange={(e) => setField("weeklyLearningHours", Number(e.target.value))}
                   className="w-full h-2 rounded-full appearance-none cursor-pointer"
                   style={{ accentColor: "var(--color-accent)" }}
                 />
                 <div className="flex justify-between text-xs mt-1.5" style={{ color: "var(--color-text-subtle)" }}>
-                  <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+                  <span>1 hr</span><span>12 hrs</span><span>24 hrs</span>
                 </div>
               </div>
             </div>
@@ -1574,9 +1646,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                       style={{ borderBottom: i < arr.length - 1 ? `1px solid ${BORDER}` : undefined }}
                     >
                       <span className="text-xs capitalize shrink-0 pt-0.5" style={{ color: "var(--color-text-subtle)" }}>
-                        {key.replace(/([A-Z])/g, " $1")}
+                        {key === "weeklyLearningHours" ? "learning Hours Per Day" : key.replace(/([A-Z])/g, " $1")}
                       </span>
-                      <span className="text-foreground text-right break-all">{String(value)}</span>
+                      <span className="text-foreground text-right break-all">
+                        {key === "weeklyLearningHours" ? `${value} ${value === 1 ? "hr" : "hrs"}` : String(value)}
+                      </span>
                     </div>
                   ))}
                 {((profile.marketingChannels as string[]) || []).length > 0 && (

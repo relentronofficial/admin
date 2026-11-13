@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { phoneDigitsForMessaging } from './phoneNumber.js';
 
 // ── Low-balance side-channel ────────────────────────────────────────────────
 //
@@ -45,10 +46,14 @@ function detectAndAlertLowBalance(status: number, body: string): boolean {
   //     shape observed 2026-07-16)
   //   * "insufficient balance" case-insensitive (safety net for BSPs that
   //     use a different code but the same wording)
+  //   * HTTP 403 with "Subscription is expired" — @zacx returns this when the
+  //     monthly/annual plan lapses (observed 2026-11-02). Different root cause
+  //     from low balance but requires the same operator action (top up / renew).
   const isLowBalance =
     status === 402 ||
     body.includes('INSUFFICIENT_BALANCE') ||
-    /insufficient\s+balance/i.test(body);
+    /insufficient\s+balance/i.test(body) ||
+    (status === 403 && /subscription.*expired/i.test(body));
   if (!isLowBalance) return false;
 
   const now = Date.now();
@@ -67,11 +72,10 @@ function detectAndAlertLowBalance(status: number, body: string): boolean {
   return true;
 }
 
+// International numbers keep their own country code (phoneDigitsForMessaging);
+// a bare 10-digit number is a legacy Indian mobile.
 function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length === 12 && digits.startsWith('91')) return digits;
-  if (digits.length === 10) return `91${digits}`;
-  return digits;
+  return phoneDigitsForMessaging(phone);
 }
 
 export async function sendOtpWhatsapp(phone: string, otp: string): Promise<boolean> {

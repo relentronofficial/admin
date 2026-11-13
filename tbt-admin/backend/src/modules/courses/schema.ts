@@ -9,6 +9,8 @@ export const createCourseSchema = z.object({
   totalLessons: z.number(),
   instructor: z.string(),
   module: z.enum(['Product', 'Service', 'Coach']).nullable().optional(),
+  applicableBusinessTypes: z.array(z.string()).nullable().optional(),
+  batchVisibilityIds: z.array(z.string()).nullable().optional(),
 });
 
 export const updateCourseSchema = createCourseSchema.partial();

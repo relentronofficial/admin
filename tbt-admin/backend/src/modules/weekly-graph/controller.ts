@@ -17,7 +17,7 @@ import {
   type GraphMilestoneRow,
   type GraphWeekRow,
 } from '../../lib/weeklyGraphConfig.js';
-import { ensureProgramGraphConfig, loadProgramGraphRows } from '../../lib/weeklyGraphConfigData.js';
+import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 
 type P = { programId: string };
@@ -59,7 +59,7 @@ async function listActivities(prisma: any, programId: string) {
     `SELECT id::text, title, day_number AS "dayNumber", sort_order AS "sortOrder", is_required AS "isRequired",
             is_active AS "isActive", member_id::text AS "memberId", graph_week_id::text AS "weekId",
             graph_milestone_id::text AS "milestoneId", is_milestone AS "isMilestone", milestone_label AS "milestoneLabel"
-     FROM tasks WHERE program_id = $1::uuid AND batch_id IS NULL
+     FROM tasks WHERE program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL
      ORDER BY day_number, sort_order, title`,
     programId,
   );
@@ -71,13 +71,18 @@ export async function getConfigHandler(req: FastifyRequest<{ Params: P }>, reply
   const program = await loadProgram(req, reply);
   if (!program) return;
   const prisma = req.server.prisma;
+  // Backfill any default milestones added after this program was first initialized.
+  await backfillNewDefaultMilestones(prisma, program.id).catch(() => {});
   const [rows, activities] = await Promise.all([loadProgramGraphRows(prisma, program.id), listActivities(prisma, program.id)]);
   const saved = rows.weeks.length > 0 || rows.milestones.length > 0;
+  // Default weeks span the longest any member of the program runs — the same span
+  // the member graph uses (loadProgramWeekSpanDays), not just the program's length.
+  const spanDays = rows.weeks.length ? 0 : Math.max(program.durationDays, await loadProgramWeekSpanDays(prisma, program.id));
   return ok(reply, {
     program,
     saved,
     // Until the first edit, show what members currently see (built-in defaults, no ids yet).
-    weeks: rows.weeks.length ? rows.weeks : defaultWeeks(program.durationDays).map((w, i) => ({ id: null, ...w, sortOrder: i, isActive: true })),
+    weeks: rows.weeks.length ? rows.weeks : defaultWeeks(spanDays).map((w, i) => ({ id: null, ...w, sortOrder: i, isActive: true })),
     milestones: rows.milestones.length ? rows.milestones : DEFAULT_GRAPH_MILESTONES.map((m, i) => ({ id: null, ...m, sortOrder: i, isActive: true })),
     activities,
   });
@@ -151,7 +156,10 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
   const prisma = req.server.prisma;
   const week = (await weekRows(prisma, program.id)).find((w) => w.id === req.params.id);
   if (!week) return fail(reply, 404, 'Week not found in this program');
-  // Never orphan history: a week that activities or member records use can only be disabled.
+  // Never orphan history: graph_week_id / week_id are ON DELETE SET NULL, so a plain
+  // delete would drop the week's activities (whose days no other week covers) and its
+  // member records off the graph. A week in use is only deleted together with an
+  // explicit target week (?moveTo=<weekId>) that takes over its activities and records.
   const [use] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT
        (SELECT COUNT(*)::int FROM tasks WHERE graph_week_id = $2::uuid) AS linked,
@@ -160,8 +168,31 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
        (SELECT COUNT(*)::int FROM member_graph_milestone_records WHERE week_id = $2::uuid) AS records`,
     program.id, week.id, week.startDay, week.endDay,
   );
-  if (use.linked + use.by_day + use.records > 0) {
-    return fail(reply, 409, `"${week.label}" has ${use.linked + use.by_day} activities and ${use.records} member records. Disable it instead of deleting.`);
+  const activities = use.linked + use.by_day;
+  const moveTo = (req.query as any)?.moveTo;
+  if (activities + use.records > 0 && !moveTo) {
+    return fail(reply, 409, `"${week.label}" has ${activities} activities and ${use.records} member records. Choose a week to move them to before deleting.`);
+  }
+  if (activities + use.records > 0) {
+    const target = (await weekRows(prisma, program.id)).find((w) => w.id === moveTo);
+    if (!target || target.id === week.id) return fail(reply, 400, 'Choose another week of this program to move the activities and member records to');
+    // One transaction: the activities and records get the target week (their days are
+    // unchanged, so members' checklists are untouched), then the now-unused week goes.
+    await prisma.$transaction(async (tx: any) => {
+      await tx.$executeRawUnsafe(
+        `UPDATE tasks SET graph_week_id = $3::uuid
+         WHERE graph_week_id = $2::uuid
+            OR (program_id = $1::uuid AND batch_id IS NULL AND graph_week_id IS NULL AND day_number BETWEEN $4 AND $5)`,
+        program.id, week.id, target.id, week.startDay, week.endDay,
+      );
+      await tx.$executeRawUnsafe(
+        `UPDATE member_graph_milestone_records SET week_id = $2::uuid WHERE week_id = $1::uuid`,
+        week.id, target.id,
+      );
+      await tx.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
+    });
+    changed(req, program.id, 'graph_week_deleted');
+    return ok(reply, { deleted: week.id, movedTo: target.id, activities, records: use.records });
   }
   await prisma.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
   changed(req, program.id, 'graph_week_deleted');
@@ -186,10 +217,10 @@ export async function createMilestoneHandler(req: FastifyRequest<{ Params: P }>,
     return fail(reply, 409, `A milestone named "${v.value.label}" already exists`);
   }
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active)
-     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE program_id = $1::uuid), $4)
-     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"`,
-    program.id, v.value.label, v.value.kind, v.value.isActive,
+    `INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active, threshold_amount)
+     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE program_id = $1::uuid), $4, $5)
+     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
+    program.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
   changed(req, program.id, 'graph_milestone_created');
   return ok(reply, rows[0]);
@@ -207,10 +238,10 @@ export async function updateMilestoneHandler(req: FastifyRequest<{ Params: PI }>
   if (!v.ok) return fail(reply, 400, v.error);
   if (hasDuplicateLabel(all, v.value.label, current.id)) return fail(reply, 409, `A milestone named "${v.value.label}" already exists`);
   const rows = await prisma.$queryRawUnsafe<any[]>(
-    `UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, updated_at = NOW()
+    `UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, threshold_amount = $6, updated_at = NOW()
      WHERE id = $2::uuid AND program_id = $1::uuid
-     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"`,
-    program.id, current.id, v.value.label, v.value.kind, v.value.isActive,
+     RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
+    program.id, current.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
   // Keep the legacy free-text label on linked activities in step (used by milestone bonus points).
   if (v.value.label !== current.label) {
@@ -304,7 +335,7 @@ export async function updateActivityHandler(req: FastifyRequest<{ Params: PI }>,
   const [task] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT id::text, title, day_number AS "dayNumber", is_required AS "isRequired", is_active AS "isActive",
             graph_week_id::text AS "weekId", graph_milestone_id::text AS "milestoneId"
-     FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL`,
+     FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
     program.id, UUID.test(req.params.id) ? req.params.id : '00000000-0000-0000-0000-000000000000',
   );
   if (!task) return fail(reply, 404, 'Activity not found in this program');
@@ -327,6 +358,48 @@ export async function updateActivityHandler(req: FastifyRequest<{ Params: PI }>,
   );
   changed(req, program.id, 'graph_activity_updated');
   return ok(reply, { id: task.id });
+}
+
+export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>, reply: FastifyReply) {
+  if (!(await requireEditor(req, reply))) return;
+  const program = await loadProgram(req, reply);
+  if (!program) return;
+  const prisma = req.server.prisma;
+  const [task] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
+    program.id, UUID.test(req.params.id) ? req.params.id : '00000000-0000-0000-0000-000000000000',
+  );
+  if (!task) return fail(reply, 404, 'Activity not found in this program');
+  // Never lose member work: task_submissions cascade on a task delete, so only
+  // an activity without submissions is really deleted. The NOT EXISTS keeps that
+  // check and the delete in one statement.
+  const deleted = await prisma.$queryRawUnsafe<any[]>(
+    `DELETE FROM tasks t WHERE t.id = $2::uuid AND t.program_id = $1::uuid AND t.batch_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM task_submissions s WHERE s.task_id = t.id)
+     RETURNING t.id::text AS id`,
+    program.id, task.id,
+  );
+  if (deleted.length > 0) {
+    changed(req, program.id, 'graph_activity_deleted');
+    return ok(reply, { deleted: task.id });
+  }
+  const [use] = await prisma.$queryRawUnsafe<any[]>(
+    `SELECT COUNT(*)::int AS submissions FROM task_submissions WHERE task_id = $1::uuid`, task.id,
+  );
+  const submissions = use?.submissions ?? 0;
+  // With submissions, deleting needs the admin's explicit confirmation (?archive=true):
+  // the activity is archived — hidden from admins and members, inactive — and its
+  // row and every submission, review and point are kept.
+  if ((req.query as any)?.archive !== 'true') {
+    return fail(reply, 409, `"${task.title}" has ${submissions} submissions. Deleting it archives the activity and keeps its submissions.`);
+  }
+  await prisma.$executeRawUnsafe(
+    `UPDATE tasks SET deleted_at = NOW(), is_active = false, updated_at = NOW()
+     WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
+    program.id, task.id,
+  );
+  changed(req, program.id, 'graph_activity_archived');
+  return ok(reply, { archived: task.id, submissions });
 }
 
 // ── Member milestone records (admin-verified achievements) ───────────────────

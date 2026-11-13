@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { nexa } from "./fonts/nexa";
 
 export default function GlobalError({
   error,
@@ -17,7 +18,8 @@ export default function GlobalError({
 
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: "#0f0f0f", fontFamily: "system-ui, sans-serif" }}>
+      {/* Replaces the root layout, so it applies Nexa itself. */}
+      <body className={nexa.className} style={{ margin: 0, background: "#0f0f0f" }}>
         <div
           style={{
             minHeight: "100vh",

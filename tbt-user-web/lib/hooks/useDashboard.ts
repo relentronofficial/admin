@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { dashboardService } from "@/lib/api/services/dashboard.service";
+import { chatGroupKeys } from "./useChatGroups";
 
 export const useDashboardStats = () =>
   useQuery({
@@ -32,7 +33,7 @@ export const useContinueLearning = () =>
       const res = await dashboardService.getContinueLearning();
       return res.data;
     },
-    staleTime: 0,
+    staleTime: 60 * 1000,
   });
 
 export const useWatchHistory = (params: { page?: number; limit?: number; filter?: 'all' | 'in_progress' | 'completed' } = {}) =>
@@ -51,6 +52,37 @@ export const useRemoveFromHistory = () => {
     mutationFn: (episodeId: string) => dashboardService.removeFromHistory(episodeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "dashboard", "watch-history"] });
+    },
+  });
+};
+
+export const useSavedVideos = (params: { limit?: number } = {}) =>
+  useQuery({
+    queryKey: ["user", "saved-videos", params],
+    queryFn: async () => {
+      const res = await dashboardService.getSavedVideos(params);
+      return res;
+    },
+    staleTime: 30 * 1000,
+  });
+
+export const useSaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ episodeId, episodeType }: { episodeId: string; episodeType: 'course' | 'workshop' }) =>
+      dashboardService.saveVideo(episodeId, episodeType),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
+    },
+  });
+};
+
+export const useUnsaveVideo = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (episodeId: string) => dashboardService.unsaveVideo(episodeId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "saved-videos"] });
     },
   });
 };
@@ -170,6 +202,17 @@ export const useConversationMessages = (id: string | null) =>
     staleTime: 30_000,
   });
 
+export const useMarkConversationRead = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => dashboardService.markConversationRead(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "conversations", "unread-count"] });
+    },
+  });
+};
+
 export const useStartConversation = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -200,6 +243,137 @@ export const useSendChatMessage = () =>
         mediaType,
         replyToId,
       }),
+  });
+
+// Message actions on the member's own conversations. The thread is refetched
+// only after the server confirms the change.
+const useConversationMessageAction = <V extends { conversationId: string }>(
+  fn: (v: V) => Promise<unknown>,
+  alsoRefresh?: (v: V) => string[],
+) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    // Returning the refetch keeps the mutation pending until the thread shows the change.
+    onSuccess: (_d, v) =>
+      Promise.all([
+        ...[v.conversationId, ...(alsoRefresh?.(v) ?? [])].map((id) =>
+          queryClient.invalidateQueries({ queryKey: ["user", "conversations", id, "messages"] })),
+        queryClient.invalidateQueries({ queryKey: ["user", "conversations"], exact: true }),
+      ]),
+  });
+};
+
+export const useEditChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; body: string }) =>
+    dashboardService.editChatMessage(v.conversationId, v.messageId, v.body));
+
+export const useDeleteChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; forEveryone: boolean }) =>
+    dashboardService.deleteChatMessage(v.conversationId, v.messageId, v.forEveryone));
+
+export const useReactChatMessage = () =>
+  useConversationMessageAction((v: { conversationId: string; messageId: string; emoji: string }) =>
+    dashboardService.reactChatMessage(v.conversationId, v.messageId, v.emoji));
+
+export const useForwardChatMessage = () => {
+  const queryClient = useQueryClient();
+  const forward = useConversationMessageAction(
+    (v: { conversationId: string; messageId: string; toConversationIds: string[]; toGroupIds?: string[] }) =>
+      dashboardService.forwardChatMessage(v.conversationId, v.messageId, v.toConversationIds, v.toGroupIds ?? []),
+    (v) => v.toConversationIds,
+  );
+  // Group targets: refresh those threads and the group list (last message / order).
+  return {
+    ...forward,
+    mutate: (v: Parameters<typeof forward.mutate>[0], opts?: Parameters<typeof forward.mutate>[1]) =>
+      forward.mutate(v, {
+        ...opts,
+        onSuccess: (...args) => {
+          for (const gid of v.toGroupIds ?? []) queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(gid) });
+          if (v.toGroupIds?.length) queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
+          opts?.onSuccess?.(...args);
+        },
+      }),
+  };
+};
+
+export const useStarChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { conversationId: string; messageId: string }) =>
+      dashboardService.starChatMessage(v.conversationId, v.messageId),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["user", "dm-starred"] }),
+  });
+};
+
+export const useDmStarredMessages = () =>
+  useQuery({
+    queryKey: ["user", "dm-starred"],
+    queryFn: async () => {
+      const res: any = await dashboardService.listDmStarredMessages();
+      return (res?.data ?? []) as Array<{
+        id: string;
+        starredAt: string;
+        body: string | null;
+        mediaUrl: string | null;
+        mediaType: string | null;
+        createdAt: string;
+        conversationId: string;
+        senderType: string;
+        sender: { firstName: string | null; lastName: string | null; profilePhotoUrl: string | null };
+        otherPartyName: string;
+      }>;
+    },
+    staleTime: 60_000,
+  });
+
+export const usePinChatMessage = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { conversationId: string; messageId: string; unpin?: boolean }) =>
+      v.unpin
+        ? dashboardService.unpinChatMessage(v.conversationId, v.messageId)
+        : dashboardService.pinChatMessage(v.conversationId, v.messageId),
+    onSuccess: (_d, v) =>
+      queryClient.invalidateQueries({ queryKey: ["user", "dm-pinned", v.conversationId] }),
+  });
+};
+
+export const useDmPinnedMessage = (conversationId: string) =>
+  useQuery({
+    queryKey: ["user", "dm-pinned", conversationId],
+    queryFn: async () => {
+      const res: any = await dashboardService.getPinnedChatMessage(conversationId);
+      return (res?.data ?? null) as {
+        id: string;
+        body: string | null;
+        mediaUrl: string | null;
+        mediaType: string | null;
+        createdAt: string;
+        pinnedAt: string | null;
+        senderType: string;
+      } | null;
+    },
+    enabled: !!conversationId,
+    staleTime: 30_000,
+  });
+
+export const useDmMessageInfo = (conversationId: string, messageId: string | null) =>
+  useQuery({
+    queryKey: ["user", "dm-msg-info", conversationId, messageId],
+    queryFn: async () => {
+      const res: any = await dashboardService.getDmMessageInfo(conversationId, messageId!);
+      return (res?.data ?? null) as {
+        messageId: string;
+        sentAt: string;
+        readAt: string | null;
+        sentByMe: boolean;
+      } | null;
+    },
+    enabled: !!conversationId && !!messageId,
+    staleTime: 30_000,
   });
 
 export const useArchiveConversation = () => {

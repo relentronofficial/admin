@@ -1,14 +1,15 @@
 name: CI/CD
 
+# MAIN PUSH → BUILD → TEST → PRODUCTION DEPLOY (all three services in parallel)
+# MANUAL STAGING → use deploy-staging.yml (workflow_dispatch, independent)
+
 on:
   push:
-    branches: [main, production, develop]
+    branches: [main, develop]
   pull_request:
-    branches: [main, production, develop]
-  # One-click deploy: Actions → CI/CD → "Run workflow" → pick a branch.
-  # main → staging, production → production. A manual run deploys every part
-  # (backend + user-web) instead of only what the last push changed, and still
-  # runs every build/typecheck/test gate first.
+    branches: [main, develop]
+  # One-click redeploy: Actions → CI/CD → Run workflow → pick main.
+  # Forces all three production services to redeploy regardless of path filters.
   workflow_dispatch:
 
 env:
@@ -108,12 +109,26 @@ jobs:
           NEXT_PUBLIC_APP_URL: https://app.tamilbusinesstribe.com
         run: npm run typecheck
 
-  # ── Deploy staging backend (main branch only) ────────────────────────────
-  deploy-backend-staging:
-    needs: build-and-test
+  # ── Test the deploy guard script (all branches) ──────────────────────────
+  test-deploy-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: verify-user-web-target.sh tests (mock backend)
+        run: bash .github/scripts/verify-user-web-target.test.sh
+
+  # ── Build backend Docker image (main branch only) ─────────────────────────
+  # Builds the Docker image in GitHub Actions and pushes directly to Artifact
+  # Registry. The production deploy uses this pre-built image via --image,
+  # skipping Cloud Build entirely. The backend has no baked-in NEXT_PUBLIC_*
+  # vars — the same image is valid for any environment.
+  build-backend:
+    needs: [build-and-test]
     if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true'
     runs-on: ubuntu-latest
-    environment: staging
+    outputs:
+      image: ${{ steps.push.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -125,45 +140,27 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
 
-      # Additive-only schema sync. Never `db push --accept-data-loss`: it dropped
-      # every table/column created by the startup DDL (src/plugins/prisma.ts) on
-      # each deploy. The guard (scripts/schema-guard.ts) fails this step — and so
-      # the deploy — on any destructive or unreviewed change, before touching the DB.
-      # NOTE: this staging job targets the PRODUCTION database (PROD_DATABASE_URL).
-      - name: Apply database schema (staging) — additive only, guarded
-        working-directory: tbt-admin/backend
-        env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+      - name: Build and push backend Docker image
+        id: push
         run: |
-          set -euo pipefail
-          npm install --ignore-scripts
-          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
-          npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
-          if [ -s schema-apply.sql ]; then
-            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
-          fi
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend"
+          TAG="$REPO:commit-${{ github.sha }}"
+          docker build -t "$TAG" tbt-admin/backend
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
 
-      - name: Deploy to Cloud Run (staging)
-        run: |
-          gcloud run deploy tbt-backend-staging \
-            --source tbt-admin/backend \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,SUPABASE_URL=stg-SUPABASE_URL:latest,SUPABASE_ANON_KEY=stg-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=stg-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-WABA_FROM_NUMBER:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
-            --set-env-vars="NODE_ENV=production,WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }},USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }},ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }},BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net,CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A,MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }},MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
-            --port=8000 \
-            --quiet
-
-  # ── Deploy production backend (production branch only) ────────────────────
+  # ── Deploy production backend (main branch only) ─────────────────────────
+  # Uses the pre-built image from build-backend — no Cloud Build triggered.
+  # Runs schema migration first, then deploys. Runs in parallel with user-web
+  # and admin deploys.
   deploy-backend-production:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/production' && needs.build-and-test.outputs.backend_changed == 'true'
+    needs: [build-and-test, build-backend]
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.backend_changed == 'true' && needs.build-backend.result == 'success'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -182,38 +179,97 @@ jobs:
         with:
           node-version: '24'
 
-      # Additive-only schema sync — see the staging job above for why.
+      # Additive-only schema sync via Cloud SQL Auth Proxy (runs against the
+      # production Cloud SQL instance). The guard (scripts/schema-guard.ts) fails
+      # this step — and so the deploy — on any destructive or unreviewed change.
+      - name: Start Cloud SQL Auth Proxy (production schema migration)
+        run: |
+          curl -sLo cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port=5433 \
+            tbt-lms-platform:asia-south1:tbt-db-production &
+          sleep 3
+          echo "Cloud SQL Auth Proxy started"
+
       - name: Apply database schema (production) — additive only, guarded
         working-directory: tbt-admin/backend
         env:
-          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.PROD_DIRECT_URL }}
+          CLOUDSQL_DB_PASSWORD: ${{ secrets.CLOUDSQL_DB_PASSWORD }}
         run: |
           set -euo pipefail
+          CLOUDSQL_URL=$(python3 -c "
+          import os, urllib.parse
+          pw = os.environ['CLOUDSQL_DB_PASSWORD']
+          print(f'postgresql://postgres:{urllib.parse.quote(pw, safe=\"\")}@127.0.0.1:5433/tbt_production')
+          ")
           npm install --ignore-scripts
-          npx prisma migrate diff --from-url "$DIRECT_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx prisma migrate diff --from-url "$CLOUDSQL_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
           npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
           if [ -s schema-apply.sql ]; then
-            npx prisma db execute --url "$DIRECT_URL" --file schema-apply.sql
+            npx prisma db execute --url "$CLOUDSQL_URL" --file schema-apply.sql
           fi
 
       - name: Deploy to Cloud Run (production)
         run: |
           gcloud run deploy tbt-backend \
-            --source tbt-admin/backend \
+            --image ${{ needs.build-backend.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
-            --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,SUPABASE_URL=prod-SUPABASE_URL:latest,SUPABASE_ANON_KEY=prod-SUPABASE_ANON_KEY:latest,SUPABASE_SERVICE_KEY=prod-SUPABASE_SERVICE_KEY:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,BUNNY_STORAGE_ACCESS_KEY=prod-BUNNY_STORAGE_ACCESS_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-ADMIN_INTAKE_NUMBER:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
-            --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=https://app.tamilbusinesstribe.com|ADMIN_WEB_URL=https://v0-tbt-ott-admin.vercel.app|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|BUNNY_STORAGE_HOSTNAME=sg.storage.bunnycdn.com|BUNNY_STORAGE_ZONE=tamil-business-tribe|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-admin-464464507912.asia-south1.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
+            --set-secrets="DATABASE_URL=prod-DATABASE_URL:latest,DIRECT_URL=prod-DIRECT_URL:latest,CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=prod-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,BUNNY_STORAGE_ACCESS_KEY=prod-BUNNY_STORAGE_ACCESS_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-ADMIN_INTAKE_NUMBER:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
+            --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=https://app.tamilbusinesstribe.com|ADMIN_WEB_URL=https://tbt-admin-464464507912.asia-south1.run.app|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|BUNNY_STORAGE_HOSTNAME=sg.storage.bunnycdn.com|BUNNY_STORAGE_ZONE=tamil-business-tribe|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-admin-464464507912.asia-south1.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
+            --add-cloudsql-instances=tbt-lms-platform:asia-south1:tbt-db-production \
             --min-instances=1 \
+            --max-instances=5 \
             --quiet
 
-  # ── Deploy staging user-web (main branch only) ───────────────────────────
-  deploy-user-web-staging:
-    needs: build-user-web
+      - name: Tag production release for rollback protection
+        if: success()
+        run: |
+          IMAGE="${{ needs.build-backend.outputs.image }}"
+          REPO=$(echo "$IMAGE" | cut -d'@' -f1)
+          gcloud artifacts docker tags add "$IMAGE" "${REPO}:prod-release-${{ github.run_number }}" \
+            --project=$GCP_PROJECT
+          echo "Rollback tag: prod-release-${{ github.run_number }}"
+
+      - name: Prune old prod-release tags (keep newest 10)
+        if: success()
+        run: |
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend"
+          readarray -t TAGS < <(
+            gcloud artifacts docker images list "$REPO" \
+              --include-tags \
+              --project=$GCP_PROJECT \
+              --format="value(tags)" 2>/dev/null \
+            | tr ',' '\n' | grep '^prod-release-' | sort -t- -k3 -n
+          )
+          COUNT=${#TAGS[@]}
+          if [ "$COUNT" -gt 10 ]; then
+            DELETE_COUNT=$((COUNT - 10))
+            echo "Pruning $DELETE_COUNT old prod-release tag(s) (keeping newest 10)"
+            for i in $(seq 0 $((DELETE_COUNT - 1))); do
+              TAG="${TAGS[$i]}"
+              gcloud artifacts docker tags delete "${REPO}:${TAG}" --quiet --project=$GCP_PROJECT 2>/dev/null || true
+              echo "  Deleted: $TAG"
+            done
+          else
+            echo "$COUNT prod-release tag(s) — no pruning needed"
+          fi
+
+  # ── Build user-web Docker image (main branch only) ───────────────────────
+  # Builds the Docker image in GitHub Actions and pushes directly to Artifact
+  # Registry. Skips Cloud Build entirely — same approach as build-backend.
+  # NEXT_PUBLIC_* vars are written to .ci-build-env, which the Dockerfile
+  # sources at build time (line 37: `. ./.ci-build-env && npm run build`).
+  build-user-web-image:
+    needs: [build-user-web]
     if: github.ref == 'refs/heads/main' && needs.build-user-web.outputs.changed == 'true'
     runs-on: ubuntu-latest
-    environment: staging
+    env:
+      API_URL: https://tbt-backend-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://app.tamilbusinesstribe.com
+    outputs:
+      image: ${{ steps.push.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -225,50 +281,59 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
       - name: Read Clerk publishable key from GCP Secret Manager
         run: |
-          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      - name: Deploy user-web to Cloud Run (staging)
+      - name: Write build-time env for the Dockerfile
         run: |
-          gcloud run deploy tbt-user-web-staging \
-            --source tbt-user-web \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --port=3000 \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --min-instances=0 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }},NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login,NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
-            --set-env-vars="NODE_ENV=production" \
-            --quiet
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel@latest
-
-      - name: Deploy user-web to Vercel (staging preview)
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
+      - name: Build and push user-web Docker image
+        id: push
         run: |
-          vercel deploy --yes \
-            --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
-            --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
-            --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
-            --build-env NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community \
-            --build-env NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community \
-            --build-env NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-user-web"
+          TAG="$REPO:commit-${{ github.sha }}"
+          docker build -t "$TAG" tbt-user-web
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
 
-  # ── Deploy production user-web (production branch only) ──────────────────
+  # ── Deploy production user-web (main branch only) ─────────────────────────
+  # Runs in parallel with the backend deploy — does NOT wait for it.
+  # Cloud Run is the primary host (app.tamilbusinesstribe.com). Uses the
+  # pre-built image from build-user-web-image — no Cloud Build triggered.
+  # The new revision is deployed with no traffic first; the bundle is verified
+  # against the production backend before traffic is routed.
   deploy-user-web-production:
-    needs: build-user-web
-    if: github.ref == 'refs/heads/production' && needs.build-user-web.outputs.changed == 'true'
+    needs: [build-user-web-image, test-deploy-scripts]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && needs.build-user-web-image.result == 'success' && needs.test-deploy-scripts.result == 'success' }}
     runs-on: ubuntu-latest
     environment: production
+    env:
+      SERVICE: tbt-user-web
+      API_URL: https://tbt-backend-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://app.tamilbusinesstribe.com
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the backend this build will use
+        run: |
+          bash .github/scripts/verify-user-web-target.sh config production "$API_URL"
+          bash .github/scripts/verify-user-web-target.sh cors "$API_URL" "$SITE_ORIGIN"
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -283,31 +348,46 @@ jobs:
           CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      - name: Deploy user-web to Cloud Run (production)
+      - name: Deploy user-web to Cloud Run (production) — no traffic yet
         run: |
-          gcloud run deploy tbt-user-web \
-            --source tbt-user-web \
+          gcloud run deploy $SERVICE \
+            --image ${{ needs.build-user-web-image.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --port=3000 \
             --allow-unauthenticated \
             --memory=512Mi \
             --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }},NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login,NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community,NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A" \
+            --max-instances=16 \
             --set-env-vars="NODE_ENV=production" \
+            --no-traffic \
+            --tag=candidate \
             --quiet
 
+      - name: Verify the new revision calls only the production backend
+        run: |
+          CANDIDATE_URL=$(gcloud run services describe $SERVICE --region $GCP_REGION --project $GCP_PROJECT --format=json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
+          bash .github/scripts/verify-user-web-target.sh bundle "$CANDIDATE_URL" "$API_URL"
+
+      - name: Route traffic to the new revision
+        run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet
+
+      # Optional mirror to Vercel. Cloud Run is the primary host, so a Vercel
+      # failure must not fail the deploy.
       - name: Install Vercel CLI
+        continue-on-error: true
         run: npm install -g vercel@latest
 
-      - name: Deploy user-web to Vercel (production)
+      - name: Deploy user-web to Vercel (production, non-blocking mirror)
+        continue-on-error: true
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_USER_WEB_PROJECT_ID }}
         run: |
           vercel deploy --prod --yes \
-            --build-env NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
+            --build-env NEXT_PUBLIC_API_URL="$API_URL" \
             --build-env NEXT_PUBLIC_APP_URL=https://app.tamilbusinesstribe.com \
             --build-env NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${{ env.CLERK_PK }}" \
             --build-env NEXT_PUBLIC_CLERK_SIGN_IN_URL=/login \
@@ -315,12 +395,16 @@ jobs:
             --build-env NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/community \
             --build-env NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A
 
-  # ── Deploy staging admin panel (main branch only) ────────────────────────
-  deploy-admin-staging:
-    needs: build-and-test
+  # ── Build admin Docker image (main branch only) ───────────────────────────
+  # Builds the Docker image in GitHub Actions and pushes directly to Artifact
+  # Registry. NEXT_PUBLIC_* build args are passed via --build-arg.
+  # Runs in parallel with build-user-web-image and build-backend.
+  build-admin-image:
+    needs: [build-and-test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: staging
+    outputs:
+      image: ${{ steps.push.outputs.image }}
     steps:
       - uses: actions/checkout@v4
 
@@ -332,30 +416,38 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
       - name: Read Clerk publishable key from GCP Secret Manager
         run: |
-          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          CLERK_PK=$(gcloud secrets versions access latest --secret="prod-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
           echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
 
-      - name: Deploy admin panel to Cloud Run (staging)
+      - name: Build and push admin Docker image
+        id: push
         run: |
-          gcloud run deploy tbt-admin-staging \
-            --source tbt-admin/admin-panel \
-            --region $GCP_REGION \
-            --project $GCP_PROJECT \
-            --port=3000 \
-            --allow-unauthenticated \
-            --memory=512Mi \
-            --min-instances=0 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
-            --set-secrets="CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest" \
-            --set-env-vars="NODE_ENV=production|NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}|NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app" \
-            --quiet
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-admin"
+          TAG="$REPO:commit-${{ github.sha }}"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app \
+            --build-arg "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$CLERK_PK" \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-in \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard \
+            --build-arg NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard \
+            -t "$TAG" tbt-admin/admin-panel
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
 
-  # ── Deploy production admin panel (production branch only) ───────────────
+  # ── Deploy production admin panel (main branch only) ─────────────────────
+  # Runs in parallel with backend and user-web deploys. Uses the pre-built
+  # image from build-admin-image — no Cloud Build triggered.
   deploy-admin-production:
-    needs: build-and-test
-    if: github.ref == 'refs/heads/production'
+    needs: [build-and-test, build-admin-image]
+    if: github.ref == 'refs/heads/main' && needs.build-admin-image.result == 'success'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -377,14 +469,13 @@ jobs:
       - name: Deploy admin panel to Cloud Run (production)
         run: |
           gcloud run deploy tbt-admin \
-            --source tbt-admin/admin-panel \
+            --image ${{ needs.build-admin-image.outputs.image }} \
             --region $GCP_REGION \
             --project $GCP_PROJECT \
             --port=3000 \
             --allow-unauthenticated \
             --memory=512Mi \
-            --min-instances=1 \
-            --set-build-env-vars="NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app,NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}" \
-            --set-secrets="CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest" \
+            --min-instances=0 \
+            --set-secrets="CLERK_SECRET_KEY=prod-CLERK_SECRET_KEY:latest,GITHUB_TOKEN=prod-GITHUB_TOKEN:latest" \
             --set-env-vars="NODE_ENV=production|NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ env.CLERK_PK }}|NEXT_PUBLIC_API_URL=https://tbt-backend-464464507912.asia-south1.run.app" \
             --quiet

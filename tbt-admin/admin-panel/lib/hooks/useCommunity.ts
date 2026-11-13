@@ -20,6 +20,9 @@ export interface CommunityPost {
   isAnnouncement: boolean;
   isMentor: boolean;
   isApproved: boolean;
+  rejectionReason: string | null;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
   likesCount: number;
   commentsCount: number;
   status: string;
@@ -72,6 +75,23 @@ export const useApproveCommunityPost = () => {
       const res: any = await apiClient.put(
         `/api/community/admin/posts/${id}/approve`,
         { isApproved },
+      );
+      return res?.data;
+    },
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["community", "posts"] }),
+  });
+};
+
+// ── Reject ────────────────────────────────────────────────────────
+
+export const useRejectCommunityPost = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason?: string }) => {
+      const res: any = await apiClient.post(
+        `/api/community/admin/posts/${id}/reject`,
+        { reason: reason ?? "" },
       );
       return res?.data;
     },

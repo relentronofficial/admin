@@ -21,6 +21,9 @@ import {
   updateCourseSectionHandler, deleteCourseSectionHandler, reorderCourseSectionsHandler,
   listCourseModulesHandler, createCourseModuleHandler,
   updateCourseModuleHandler, deleteCourseModuleHandler, reorderCourseModulesHandler,
+  listCourseFaqsAdminHandler, createCourseFaqHandler, updateCourseFaqHandler,
+  deleteCourseFaqHandler, reorderCourseFaqsHandler,
+  listEpisodeFormSubmissionsHandler,
 } from './controller.js';
 
 export async function courseRoutes(fastify: FastifyInstance) {
@@ -74,6 +77,13 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/:id/modules/:moduleId', updateCourseModuleHandler);
   fastify.delete('/:id/modules/:moduleId', deleteCourseModuleHandler);
 
+  // Course Page FAQs (global — not per-course)
+  fastify.get('/faqs', listCourseFaqsAdminHandler);
+  fastify.post('/faqs', createCourseFaqHandler);
+  fastify.put('/faqs/reorder', reorderCourseFaqsHandler);
+  fastify.put('/faqs/:faqId', updateCourseFaqHandler);
+  fastify.delete('/faqs/:faqId', deleteCourseFaqHandler);
+
   // Episodes
   fastify.get('/:id/episodes', listCourseEpisodesHandler);
   fastify.post('/:id/episodes', createCourseEpisodeHandler);
@@ -87,6 +97,9 @@ export async function courseRoutes(fastify: FastifyInstance) {
   fastify.put('/episodes/:eid/resources/reorder', reorderEpisodeResourcesHandler);
   fastify.put('/episodes/:eid/resources/:rid', updateEpisodeResourceHandler);
   fastify.delete('/episodes/:eid/resources/:rid', deleteEpisodeResourceHandler);
+
+  // Episode form submissions (admin read-only)
+  fastify.get('/episodes/:eid/form-submissions', listEpisodeFormSubmissionsHandler);
 
   // Per-episode tasks
   fastify.get('/episodes/:eid/tasks', listEpisodeTasksHandler);

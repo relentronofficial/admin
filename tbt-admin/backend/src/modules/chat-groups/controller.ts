@@ -1483,35 +1483,40 @@ export async function memberUnstarMessageHandler(
  */
 export async function memberListStarredHandler(req: FastifyRequest, reply: FastifyReply) {
   const memberId = (req as any).memberId as string;
-  const rows = await req.server.prisma.$queryRawUnsafe<
-    Array<RawMessageRow & { starred_at: Date; group_name: string; group_id_out: string }>
-  >(
-    `SELECT m.*, s.starred_at, g.name AS group_name, g.id AS group_id_out
-     FROM chat_group_starred_messages s
-     JOIN chat_group_messages m ON m.id = s.message_id
-     JOIN chat_groups g ON g.id = m.group_id
-     WHERE s.member_id = $1::uuid
-       AND m.deleted_for_everyone = false
-       AND g.is_deleted = false
-       AND EXISTS (
-         SELECT 1 FROM chat_group_members cgm
-         WHERE cgm.group_id = g.id AND cgm.member_id = $1::uuid AND cgm.left_at IS NULL
-       )
-     ORDER BY s.starred_at DESC
-     LIMIT 200`,
-    memberId,
-  );
+  try {
+    const rows = await req.server.prisma.$queryRawUnsafe<
+      Array<RawMessageRow & { starred_at: Date; group_name: string; group_id_out: string }>
+    >(
+      `SELECT m.*, s.starred_at, g.name AS group_name, g.id AS group_id_out
+       FROM chat_group_starred_messages s
+       JOIN chat_group_messages m ON m.id = s.message_id
+       JOIN chat_groups g ON g.id = m.group_id
+       WHERE s.member_id = $1::uuid
+         AND m.deleted_for_everyone = false
+         AND g.is_deleted = false
+         AND EXISTS (
+           SELECT 1 FROM chat_group_members cgm
+           WHERE cgm.group_id = g.id AND cgm.member_id = $1::uuid AND cgm.left_at IS NULL
+         )
+       ORDER BY s.starred_at DESC
+       LIMIT 200`,
+      memberId,
+    );
 
-  const hydrated = await hydrateSenders(req, rows);
-  return ok(
-    reply,
-    hydrated.map((h, i) => ({
-      ...messageJson(h),
-      starredAt: rows[i].starred_at,
-      groupName: rows[i].group_name,
-      groupId: rows[i].group_id_out,
-    })),
-  );
+    const hydrated = await hydrateSenders(req, rows);
+    return ok(
+      reply,
+      hydrated.map((h, i) => ({
+        ...messageJson(h),
+        starredAt: rows[i].starred_at,
+        groupName: rows[i].group_name,
+        groupId: rows[i].group_id_out,
+      })),
+    );
+  } catch (err) {
+    req.log.error({ err }, 'list chat group starred messages failed');
+    return fail(reply, 503, 'SERVER_ERROR', 'Could not load starred messages. Please try again.');
+  }
 }
 
 export async function adminPinMessageHandler(

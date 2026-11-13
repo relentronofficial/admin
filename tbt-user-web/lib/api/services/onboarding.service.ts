@@ -67,4 +67,15 @@ export const onboardingService = {
 
   presignProfilePhoto: (data: { filename: string; contentType: string }) =>
     apiClient.post<never, ApiResponse<{ uploadUrl: string; publicUrl: string }>>("/api/onboarding/photo/presign", data),
+
+  // Uploads through the backend (like uploadDocument): a direct browser PUT to R2 is blocked by CORS.
+  uploadProfilePhoto: async (file: File): Promise<ApiResponse<{ publicUrl: string }>> => {
+    const params = new URLSearchParams({ filename: file.name });
+    const buffer = await file.arrayBuffer();
+    return apiClient.post<never, ApiResponse<{ publicUrl: string }>>(
+      `/api/onboarding/photo/upload?${params}`,
+      buffer,
+      { headers: { "Content-Type": file.type }, maxBodyLength: Infinity },
+    );
+  },
 };

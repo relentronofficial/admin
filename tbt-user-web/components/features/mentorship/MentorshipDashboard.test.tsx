@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, act, within } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import MentorshipDashboard from "./MentorshipDashboard";
 
@@ -8,17 +8,48 @@ const state: Record<string, any> = {};
 vi.mock("@/lib/hooks/useMentorship", () => ({
   useMentorshipStats: () => state.stats,
   useMentorshipRevenue: () => state.revenue,
+  // History is only requested for the longer periods (enabled=false on Daily).
+  useMentorshipRevenueHistory: (enabled: boolean) => { state.historyRequested ||= enabled; return enabled ? state.history : { data: undefined, isLoading: false, isError: false }; },
   useUpsertMentorshipRevenue: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMentorshipSocial: () => ({ data: null }),
   useUpsertMentorshipSocial: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // Instagram integration hooks (not under test here, provide stubs)
+  useInstagramStatus: () => ({ data: null, isLoading: false }),
+  useInstagramConnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useInstagramDisconnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useInstagramSync: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
-vi.mock("@/lib/hooks/useBatchProgram", () => ({
+const toastMock = vi.hoisted(() => {
+  const info = vi.fn();
+  return { info, success: vi.fn(), error: vi.fn() };
+});
+vi.mock("react-hot-toast", () => ({
+  toast: Object.assign((...a: unknown[]) => toastMock.info(...a), { success: toastMock.success, error: toastMock.error }),
+}));
+vi.mock("@/lib/hooks/useBatchProgram", async (importOriginal) => ({
+  // the real message mapper; only the data/purchase hooks are mocked
+  extraLifelineMessage: (await importOriginal<typeof import("@/lib/hooks/useBatchProgram")>()).extraLifelineMessage,
   useMyBatchProgram: () => state.batch,
   useMyWeeklyGraph: () => state.graph,
+  useBuyExtraLifeline: () => state.buy,
 }));
 vi.mock("@/lib/hooks/useDashboard", () => ({ useContinueLearning: () => ({ data: [], isLoading: false }) }));
+// The dashboard reads course lifelines via useCourseLifelines.
+// Tests configure the return value via state.courseLifs (default: no data → no hearts).
+vi.mock("@/lib/hooks/useCourses", () => ({
+  useCourseLifelines: () => state.courseLifs ?? { data: undefined },
+  useCourse: () => ({ data: undefined }),
+}));
+// WeeklyActivityGraphContent calls useQueryClient() directly — provide a lightweight stub.
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const mod = await importOriginal<typeof import("@tanstack/react-query")>();
+  return { ...mod, useQueryClient: () => ({ invalidateQueries: vi.fn(), setQueryData: vi.fn() }) };
+});
 vi.mock("@/lib/context/SiteConfigContext", () => ({ useSiteConfig: () => ({ uiStrings: null }) }));
-vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota }));
+// Daily Time Spent popup data (the popup itself is tested in DailyTimeSpentModal.test.tsx).
+vi.mock("@/lib/hooks/useActivityHistory", () => ({ useActivityHistory: () => ({ data: undefined, isLoading: true, isError: false, refetch: vi.fn() }) }));
+vi.mock("@/lib/hooks/useUser", () => ({ useUserSupportQuota: () => state.quota, useCreditPricing: () => ({ data: state.pricing }) }));
+vi.mock("@/lib/hooks/useSupportCalls", () => ({ useSupportCallsSummary: () => state.callSummary }));
 
 const bucket = (allocated: number, used: number) => ({ allocated, used, remaining: Math.max(0, allocated - used) });
 
@@ -28,7 +59,7 @@ function baseData() {
       data: {
         dailyTimeSpentHrs: 3.15, dailyTimeGoalHrs: 4, weeklyReportSubmitted: true, streakDays: 37,
         totalEpisodes: 12, completedEpisodes: 2, tasksCompleted: 32, tasksTotal: 75,
-        leaderboardRank: 45, daysElapsed: 126, totalDays: 174, programName: "TBT – eComm Mastery",
+        leaderboardRank: 45, daysElapsed: 126, activeDays: 126, totalDays: 174, programName: "TBT – eComm Mastery",
       },
       isLoading: false, isError: false, refetch: vi.fn(),
     },
@@ -41,17 +72,31 @@ function baseData() {
       isLoading: false, isError: false, refetch: vi.fn(),
     },
     batch: { data: { lifelinesTotal: 3, lifelinesUsed: 1 }, isLoading: false },
+    // Course lifelines (useCourseLifelines mock). Mirrors the original batch default (3 total, 1 used).
+    // Hearts-describe tests override via withLifelines(); "no lifeline data" tests set data: null.
+    courseLifs: { data: { freeTotal: 3, freeUsed: 1, purchasedTotal: 0, purchasedUsed: 0, remaining: 2, coinCost: 50 } } as { data: { freeTotal: number; freeUsed: number; purchasedTotal: number; purchasedUsed: number; remaining: number; coinCost: number } | null | undefined },
+    buy: { buy: vi.fn(async () => ({ outcome: "success" })), busy: false },
+    pricing: [{ credit_type: "lifeline", price_inr: 199 }],
+    // No summary yet → cards show counts only (the summary is an optional overlay).
+    callSummary: { data: undefined },
     // Member with a batch whose graph has one completed and one upcoming activity.
     graph: {
       data: {
         totalDays: 14, currentDay: 3, currentWeek: 1, hasActivities: true,
         weeks: [
-          { weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, total: 1, completed: 1, requiredTotal: 1, requiredCompleted: 1, completionPercent: 100, progressLevel: 3,
+          { weekNumber: 1, startDay: 1, endDay: 7, isCurrent: true, total: 1, completed: 1, requiredTotal: 1, requiredCompleted: 1, completionPercent: 100, progressLevel: null,
             activities: [{ taskId: "t1", title: "Set up store", dayNumber: 2, isRequired: true, status: "completed", completed: true }] },
           { weekNumber: 2, startDay: 8, endDay: 14, isCurrent: false, total: 1, completed: 0, requiredTotal: 1, requiredCompleted: 0, completionPercent: 0, progressLevel: null,
             activities: [{ taskId: "t2", title: "First ad", dayNumber: 9, isRequired: true, status: "upcoming", completed: false }] },
         ],
         summary: { total: 2, completed: 1, completionPercent: 50 },
+        // The Y axis always comes from the API (program config or the backend's defaults).
+        config: {
+          source: "default",
+          milestones: ["Ads", "Website", "Funnels", "1 lakh", "1 crore"].map((label, i) => ({
+            id: null, label, kind: i < 3 ? "activity" : "revenue", reached: false, dayNumber: null, threshold: null, reachedBy: null, reachedWeek: null,
+          })),
+        },
       },
       isLoading: false, isError: false,
     },
@@ -66,13 +111,31 @@ function baseData() {
         updatedAt: null,
       },
     },
+    historyRequested: false,
+    // GET /api/user/mentorship/revenue/history: two saved weeks (W41 only weekly totals, W42 = the week above)
+    history: {
+      data: {
+        currentWeek: { weekNumber: 42, year: 2026 },
+        weeks: [
+          { weekNumber: 41, year: 2026, revenueGenerated: 300000, numberOfOrders: 400, dailyRevenue: null, dailyOrders: null },
+          { weekNumber: 42, year: 2026, revenueGenerated: 457856, numberOfOrders: 575,
+            dailyRevenue: [50000, 60000, null, 70000, 90000, 100000, 87856], dailyOrders: [60, 70, null, 85, 110, 130, 120] },
+        ],
+      },
+      isLoading: false, isError: false,
+    },
   };
 }
 
 const headings = () => screen.getAllByRole("heading").map((h) => h.textContent?.trim());
 const tile = (label: string) => screen.getByText(label).closest("div")!.parentElement!.textContent!.replace(/\s+/g, "");
 
-beforeEach(() => Object.assign(state, baseData()));
+beforeEach(() => {
+  Object.assign(state, baseData());
+  toastMock.info.mockClear();
+  toastMock.success.mockClear();
+  toastMock.error.mockClear();
+});
 afterEach(cleanup);
 
 describe("MentorshipDashboard", () => {
@@ -80,15 +143,16 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     expect(headings()).toEqual([
       "TBT – eComm Mastery",
-      "Customer Journey",
       "Expert Support Calls",
+      "Customer Journey",
+      "Weekly Activity Graph",
       "Your Revenue Stats",
       "Weekly Revenue & Order Trajectory",
+      "Social Media Organic Growth",
     ]);
     // Summary KPI strip sits between the header and Customer Journey
     const html = document.body.innerHTML;
     expect(html.indexOf("Daily Time Spent")).toBeLessThan(html.indexOf("Customer Journey"));
-    expect(screen.queryByText(/Social Media/i)).toBeNull();
     // Entry form is collapsed by default
     expect(screen.queryByText("Daily Inputs")).toBeNull();
   });
@@ -97,13 +161,30 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     const h = headings();
     expect(h.indexOf("Weekly Activity Graph")).toBe(h.indexOf("Customer Journey") + 1);
-    // Milestone axis + week labels only; no per-activity detail.
-    const graph = screen.getByRole("img", { name: "Weekly Activity Graph" });
+    // Milestone axis and week labels from the API.
+    const graph = screen.getByRole("group", { name: "Weekly Activity Graph" });
     for (const label of ["Ads", "Website", "Funnels", "1 lakh", "1 crore", "W1", "W2"]) {
       expect(graph.textContent).toContain(label);
     }
-    expect(graph.querySelectorAll("circle")).toHaveLength(1); // W2 has not started
-    expect(document.body.innerHTML).not.toContain("Set up store");
+    // Both activities from the API are shown on their weeks (not linked to a
+    // milestone → on the baseline), with their real status; with no progress
+    // level, no milestone point and no growth line are fabricated.
+    expect(within(graph).getAllByRole("button").map((b) => b.getAttribute("aria-label")))
+      .toEqual(["W1, No milestone, Approved", "W2, No milestone, Planned — not completed yet"]);
+    expect(graph.querySelector('[data-testid="progress-line"]')).toBeNull();
+    expect(graph.querySelector('[data-testid="milestone-point"]')).toBeNull();
+  });
+
+  it("the Daily Time Spent card opens the date-wise history popup (click or keyboard); no popup before", () => {
+    render(<MentorshipDashboard />);
+    expect(screen.queryByRole("dialog", { name: "Daily Time Spent" })).toBeNull();
+    const card = screen.getByRole("button", { name: /^Daily Time Spent:/ });
+    fireEvent.click(card);
+    expect(screen.getByRole("dialog", { name: "Daily Time Spent" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Daily Time Spent" })).toBeNull();
+    fireEvent.keyDown(card, { key: "Enter" });
+    expect(screen.getByRole("dialog", { name: "Daily Time Spent" })).toBeTruthy();
   });
 
   it("shows no graph for a member without a batch", () => {
@@ -114,28 +195,27 @@ describe("MentorshipDashboard", () => {
 
   it("shows API values in the header, journey and support-call cards", () => {
     render(<MentorshipDashboard />);
-    expect(screen.getByText("Weekly Report Submitted")).toBeTruthy();
-    expect(screen.getByText(/37 Days/)).toBeTruthy();
+    expect(screen.getByText(/Weekly Report Submitted/)).toBeTruthy();
     expect(tile("Modules")).toContain("2/12");
     expect(tile("Tasks")).toContain("32/75");
     expect(tile("Daily Usage")).toContain("3.15h");
     expect(tile("Support Days")).toContain("48dleft");     // 174 - 126
     expect(tile("Tier Access")).toContain("126/174d");
     expect(tile("Leaderboard")).toContain("#45");
-    expect(tile("Sales Calls")).toContain("2/7");
-    expect(tile("Content Calls")).toContain("4/5");
-    expect(tile("Marketing Calls")).toContain("4/7");
-    expect(tile("Mentor 1-On-1")).toContain("3/4");
-    expect(tile("Live Group Q&A")).toContain("3/12");
+    expect(tile("☎ Sales Calls")).toContain("2/7");
+    expect(tile("▶ Content Calls")).toContain("4/5");
+    expect(tile("📢 Marketing Calls")).toContain("4/7");
+    expect(tile("♟ Mentor 1-On-1")).toContain("3/4");
+    expect(tile("👥 Live Group Q&A")).toContain("3/12");
     // Totals include all six call types (sales + content were previously omitted)
-    expect(screen.getByText("42 Total Calls")).toBeTruthy();          // 7+7+5+7+4+12
-    expect(screen.getByText("24/42 Quota Remaining")).toBeTruthy();   // 42 - 18 used
+    expect(screen.getByText(/18\/42.*Completed/)).toBeTruthy();       // 7+7+5+7+4+12
+    expect(screen.getByText(/24.*Quota Remaining/)).toBeTruthy();     // 42 - 18 used
   });
 
   it("renders saved revenue numbers and derived metrics", () => {
     render(<MentorshipDashboard />);
-    expect(screen.getByText("₹4,57,856")).toBeTruthy();
-    expect(screen.getByText("575 Orders")).toBeTruthy();
+    expect(screen.queryAllByText("₹4,57,856").length).toBeGreaterThan(0);
+    expect(screen.queryAllByText("575 Orders").length).toBeGreaterThan(0);
     expect(screen.getByText("₹45,856")).toBeTruthy();
     expect(screen.getByText("128 Leads")).toBeTruthy();
     expect(screen.getByText("Avg Order Value: ₹796")).toBeTruthy(); // derived 457856 / 575
@@ -144,6 +224,7 @@ describe("MentorshipDashboard", () => {
 
   it("plots the saved daily series with week labels from the report's ISO week", () => {
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(screen.getByText("Mon(12)")).toBeTruthy();
     expect(screen.getByText("Sun(18)")).toBeTruthy();
     const peak = screen.getByTestId("peak-callout").textContent!;
@@ -169,6 +250,7 @@ describe("MentorshipDashboard", () => {
       },
     };
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
 
     // Cards
     expect(screen.getByText("₹4,99,900")).toBeTruthy();
@@ -182,22 +264,99 @@ describe("MentorshipDashboard", () => {
     expect(screen.getByTestId("peak-callout").textContent).toContain("₹96,300");
     expect(screen.getByTestId("peak-callout").textContent).toContain("117 Orders");
 
-    // Cumulative chart ends at the weekly total shown on the revenue card (₹499,900 → "₹500K" top tick)
-    fireEvent.click(screen.getByText("Cumulative"));
-    const ticks = [...document.querySelectorAll(`${chart} text`)].map((t) => t.textContent);
-    expect(ticks).toContain("₹500K");
   });
 
-  it("keeps the peak on the best daily value in cumulative mode", () => {
+  it("period dropdown replaces Daily/Cumulative: Daily, Weekly, Monthly, Yearly, Overall; Overall by default", () => {
     render(<MentorshipDashboard />);
-    fireEvent.click(screen.getByText("Cumulative"));
+    expect(screen.queryByText("Cumulative")).toBeNull();
+    const select = screen.getByRole("combobox", { name: "Chart period" }) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Daily", "Weekly", "Monthly", "Yearly", "Overall"]);
+    expect(select.value).toBe("overall");
+    expect(state.historyRequested).toBe(true); // Overall spans all saved weeks, needs history
+  });
+
+  it("Weekly: one point per week from the saved history (daily sums, or the weekly total when no days were saved)", () => {
+    render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "weekly" } });
+    expect(state.historyRequested).toBe(true);
+    const svg = 'svg[aria-label="Weekly revenue and order trajectory"]';
+    expect(document.querySelectorAll(`${svg} circle`).length).toBe(2); // W41, W42 saved; W31–W40 are gaps
+    expect(screen.getByText("W42")).toBeTruthy();
     const peak = screen.getByTestId("peak-callout").textContent!;
-    expect(peak).toContain("PEAK DAY (SAT)");
-    expect(peak).toContain("₹1,00,000");
+    expect(peak).toContain("PEAK WEEK (W42)");
+    expect(peak).toContain("₹4,57,856"); // 50000+60000+70000+90000+100000+87856
+    expect(peak).toContain("575 Orders");
+    expect(screen.getByText("Weekly Revenue (₹)")).toBeTruthy();
+    expect(screen.getByText(/Comparative trendline for W31 – W42/)).toBeTruthy();
+  });
+
+  it("Monthly and Yearly group the same saved values by calendar month / year; Overall spans every saved week", () => {
+    render(<MentorshipDashboard />);
+    const select = screen.getByRole("combobox", { name: "Chart period" });
+    fireEvent.change(select, { target: { value: "monthly" } });
+    let peak = screen.getByTestId("peak-callout").textContent!;
+    expect(peak).toContain("PEAK MONTH (OCT 2026)");
+    expect(peak).toContain("₹7,57,856"); // W41 total (Thu 8 Oct) + W42 days, all in October
+    expect(peak).toContain("975 Orders");
+    expect(screen.getByText(/Comparative trendline for Nov 2025 – Oct 2026/)).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: "yearly" } });
+    peak = screen.getByTestId("peak-callout").textContent!;
+    expect(peak).toContain("PEAK YEAR (2026)");
+    expect(peak).toContain("₹7,57,856");
+
+    fireEvent.change(select, { target: { value: "overall" } });
+    expect(document.querySelectorAll('svg[aria-label="Weekly revenue and order trajectory"] circle').length).toBe(2);
+    expect(screen.getByText(/Comparative trendline for W41 – W42/)).toBeTruthy();
+
+    fireEvent.change(select, { target: { value: "daily" } });
+    expect(screen.getByText("Mon(12)")).toBeTruthy(); // back to this week's days
+  });
+
+  it("longer periods: loading, error and no-history states are shown, never invented values", () => {
+    const { rerender } = render(<MentorshipDashboard />);
+    const select = screen.getByRole("combobox", { name: "Chart period" });
+    state.history = { data: undefined, isLoading: true, isError: false };
+    fireEvent.change(select, { target: { value: "yearly" } });
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    state.history = { data: undefined, isLoading: false, isError: true };
+    rerender(<MentorshipDashboard />);
+    expect(screen.getByText("Couldn't load your revenue history")).toBeTruthy();
+    state.history = { data: { currentWeek: { weekNumber: 42, year: 2026 }, weeks: [] }, isLoading: false, isError: false };
+    rerender(<MentorshipDashboard />);
+    expect(screen.getByText("No revenue saved for this period yet")).toBeTruthy();
+    expect(screen.queryByTestId("peak-callout")).toBeNull();
+  });
+
+  it("shows a hover tooltip for the day under the pointer, from the saved data", () => {
+    render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
+    const svg = document.querySelector('svg[aria-label="Weekly revenue and order trajectory"]') as SVGSVGElement;
+    // jsdom has no layout: give the chart its default 700px box (1 SVG unit = 1px).
+    svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 700, height: 200, right: 700, bottom: 200, x: 0, y: 0, toJSON() {} }) as DOMRect;
+    const capture = svg.querySelector('rect[fill="transparent"]') as SVGRectElement;
+    const dayX = (i: number) => 58 + (i / 6) * (700 - 74);
+    const hover = (i: number) => capture.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, clientX: dayX(i) }));
+    const tip = () => screen.getByTestId("chart-tooltip").textContent ?? "";
+
+    expect(screen.queryByTestId("chart-tooltip")).toBeNull();
+    act(() => { hover(1); }); // Tue 13 Oct: ₹60,000 / 70 orders
+    expect(tip()).toContain("Tue (13)");
+    expect(tip()).toContain("₹60,000");
+    expect(tip()).toContain("70 orders");
+    act(() => { hover(2); }); // Wed — nothing saved, never shown as 0
+    expect(tip()).toContain("No revenue saved");
+    expect(tip()).toContain("No orders saved");
+
+
+    act(() => { capture.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, clientX: 900 })); });
+    act(() => { fireEvent.pointerLeave(capture); });
+    expect(screen.queryByTestId("chart-tooltip")).toBeNull();
   });
 
   it("updates the displayed metrics when the underlying data changes", () => {
     const { rerender } = render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(tile("Tasks")).toContain("32/75");
     state.stats = { ...state.stats, data: { ...state.stats.data, tasksCompleted: 40, leaderboardRank: 12 } };
     state.quota = { ...state.quota, data: { ...state.quota.data, salesSupport: bucket(7, 5) } };
@@ -205,7 +364,7 @@ describe("MentorshipDashboard", () => {
     rerender(<MentorshipDashboard />);
     expect(tile("Tasks")).toContain("40/75");
     expect(tile("Leaderboard")).toContain("#12");
-    expect(tile("Sales Calls")).toContain("5/7");
+    expect(tile("☎ Sales Calls")).toContain("5/7");
     expect(screen.getByText("600 Orders")).toBeTruthy();
     expect(screen.getByTestId("peak-callout").textContent).toContain("PEAK DAY (FRI)");
   });
@@ -213,6 +372,7 @@ describe("MentorshipDashboard", () => {
   it("shows empty states — not zeros or sample values — when no revenue is saved", () => {
     state.revenue = { data: null };
     render(<MentorshipDashboard />);
+    fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
     expect(screen.getByText("No revenue numbers saved for this week yet.")).toBeTruthy();
     expect(screen.getByText("No daily revenue saved for this week yet")).toBeTruthy();
     expect(screen.queryByTestId("peak-callout")).toBeNull();
@@ -229,5 +389,184 @@ describe("MentorshipDashboard", () => {
     render(<MentorshipDashboard />);
     expect(screen.getByText("Couldn't load your mentorship stats.")).toBeTruthy();
     expect(screen.queryByText("Customer Journey")).toBeNull();
+  });
+
+  it("each call card shows its next action from the server: Book Call, Unlock with TBT Coins, Purchase TBT Coins or locked", () => {
+    const q = (allocated: number, used: number, reserved = 0) => ({ allocated, used, reserved, remaining: Math.max(0, allocated - used - reserved), included: allocated, unlocked: 0 });
+    state.callSummary = {
+      data: {
+        coinBalance: 80,
+        coinPurchaseAvailable: true,
+        categories: [
+          { category: "sales_support", quota: q(7, 2), coinCost: 100, action: "book", lockedReason: null },
+          { category: "tech_support", quota: q(7, 7), coinCost: 50, action: "unlock_with_coins", lockedReason: null },
+          { category: "content_support", quota: q(5, 4, 1), coinCost: 100, action: "purchase_coins", lockedReason: null },
+          { category: "ad_support", quota: q(7, 7), coinCost: null, action: "locked", lockedReason: "quota_exhausted" },
+          { category: "one_to_one", quota: q(0, 0), coinCost: 100, action: "locked", lockedReason: "not_included" },
+          { category: "group_call", quota: q(12, 3), coinCost: null, action: "book", lockedReason: null },
+        ],
+      },
+    };
+    render(<MentorshipDashboard />);
+    const card = (name: RegExp) => screen.getByRole("button", { name });
+    expect(card(/^☎ Sales Calls/).textContent).toContain("5 free · Book Call");
+    expect(card(/^⚙ Tech Calls/).textContent).toContain("50 coins · Unlock Extra Call");
+    expect(card(/^▶ Content Calls/).textContent).toContain("Buy Coins to Unlock");
+    expect(card(/^📢 Marketing Calls/).textContent).toContain("Limit reached · Tap for options");
+    expect(card(/^♟ Mentor 1-On-1/).textContent).toContain("Not in your plan");
+    expect(card(/^♟ Mentor 1-On-1/).getAttribute("data-call-action")).toBe("locked");
+    expect(card(/^👥 Live Group Q&A/).textContent).toContain("9 free · Book Call");
+  });
+});
+
+describe("MentorshipDashboard — lifeline hearts", () => {
+  /** The red lifeline pill: filled ❤️ = remaining, white 🤍 = used, and the + buy button. */
+  const pill = () => {
+    const el = [...document.querySelectorAll("span")].find((s) => /❤️|🤍/.test(s.textContent ?? "") && s.style.background !== "")!;
+    return {
+      el,
+      filled: (el.textContent!.match(/❤️/g) ?? []).length,
+      used: (el.textContent!.match(/🤍/g) ?? []).length,
+      plus: [...el.querySelectorAll<HTMLButtonElement>("button[data-lifeline-buy]")],
+    };
+  };
+  const plusCount = () => document.querySelectorAll("button[data-lifeline-buy]").length;
+  const withLifelines = (total: number, used: number) => {
+    state.courseLifs = {
+      data: {
+        freeTotal: total,
+        freeUsed: used,
+        purchasedTotal: 0,
+        purchasedUsed: 0,
+        remaining: Math.max(0, total - used),
+        coinCost: 50,
+      },
+    };
+  };
+  /** Backend stats.programVideos — the single source of truth for the "+". */
+  const withVideos = (pv: { total: number; completed: number } | null | undefined) => {
+    state.stats = { ...state.stats, data: { ...state.stats.data, programVideos: pv } };
+    if (pv === undefined) delete state.stats.data.programVideos;
+  };
+  const ALL_DONE = { total: 10, completed: 10 };
+
+  it("hearts keep showing the lifeline balance (filled = remaining, faded = used)", () => {
+    for (const used of [0, 1, 2, 3]) {
+      withLifelines(3, used);
+      render(<MentorshipDashboard />);
+      expect(pill()).toMatchObject({ filled: 3 - used, used });
+      cleanup();
+    }
+  });
+
+  it("no required videos completed: no +", () => {
+    withVideos({ total: 10, completed: 0 });
+    render(<MentorshipDashboard />);
+    expect(plusCount()).toBe(0);
+  });
+
+  it("some required videos completed: no +", () => {
+    withVideos({ total: 10, completed: 9 });
+    render(<MentorshipDashboard />);
+    expect(plusCount()).toBe(0);
+  });
+
+  it("all required videos completed: exactly ONE +", () => {
+    withVideos(ALL_DONE);
+    render(<MentorshipDashboard />);
+    expect(pill().plus).toHaveLength(1);
+    expect(plusCount()).toBe(1);
+  });
+
+  it("missing / null completion data keeps the + hidden", () => {
+    for (const pv of [undefined, null]) {
+      withVideos(pv);
+      render(<MentorshipDashboard />);
+      expect(plusCount()).toBe(0);
+      cleanup();
+    }
+  });
+
+  it("zero eligible required videos keeps the + hidden", () => {
+    withVideos({ total: 0, completed: 0 });
+    render(<MentorshipDashboard />);
+    expect(plusCount()).toBe(0);
+  });
+
+  it("the + follows video completion, not the lifeline balance", () => {
+    // all three hearts used, videos not finished → no +
+    withLifelines(3, 3);
+    withVideos({ total: 10, completed: 4 });
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 0, used: 3 });
+    expect(plusCount()).toBe(0);
+    cleanup();
+    // videos finished with hearts still unused → one +
+    withLifelines(3, 0);
+    withVideos(ALL_DONE);
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 3, used: 0 });
+    expect(plusCount()).toBe(1);
+  });
+
+  it("repeated renders never add more + buttons", () => {
+    withVideos(ALL_DONE);
+    const { rerender } = render(<MentorshipDashboard />);
+    for (let i = 0; i < 4; i++) rerender(<MentorshipDashboard />);
+    expect(plusCount()).toBe(1);
+  });
+
+  it("no lifeline data (no course lifelines): no hearts and no +, even with all videos done", () => {
+    withVideos(ALL_DONE);
+    state.courseLifs = { data: null };
+    render(<MentorshipDashboard />);
+    expect(plusCount()).toBe(0);
+    expect(document.body.textContent).not.toMatch(/❤️|🤍/);
+  });
+
+  it("labels the + with the admin-configured Extra Lifeline price", () => {
+    withVideos(ALL_DONE);
+    state.pricing = [{ credit_type: "tech_support", price_inr: 999 }, { credit_type: "lifeline", price_inr: "249.00" }];
+    render(<MentorshipDashboard />);
+    expect(screen.getByRole("button", { name: "Buy an extra lifeline for ₹249" })).toBeTruthy();
+  });
+
+  it("clicking + starts one purchase and shows its message (purchase flow unchanged)", async () => {
+    withVideos(ALL_DONE);
+    state.buy = { buy: vi.fn(async () => ({ outcome: "error", stage: "order", code: "PRICE_NOT_CONFIGURED" })), busy: false };
+    render(<MentorshipDashboard />);
+    fireEvent.click(pill().plus[0]);
+    expect(state.buy.buy).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(toastMock.error).toHaveBeenCalled());
+    expect(toastMock.error.mock.calls[0][0]).toContain("ref: PRICE_NOT_CONFIGURED");
+  });
+
+  it("a successful purchase shows the success message", async () => {
+    withVideos(ALL_DONE);
+    state.buy = { buy: vi.fn(async () => ({ outcome: "success" })), busy: false };
+    render(<MentorshipDashboard />);
+    fireEvent.click(pill().plus[0]);
+    await vi.waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Extra lifeline added!", expect.anything()));
+  });
+
+  it("a cancelled checkout shows the cancel message and nothing else", async () => {
+    withVideos(ALL_DONE);
+    state.buy = { buy: vi.fn(async () => ({ outcome: "cancelled" })), busy: false };
+    render(<MentorshipDashboard />);
+    fireEvent.click(pill().plus[0]);
+    await vi.waitFor(() => expect(toastMock.info).toHaveBeenCalledWith("Payment cancelled — no lifeline added.", expect.anything()));
+    expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it("while a purchase is in progress the + is disabled, busy and shows a spinner", () => {
+    withVideos(ALL_DONE);
+    state.buy = { buy: vi.fn(), busy: true };
+    render(<MentorshipDashboard />);
+    const btn = pill().plus[0];
+    expect(btn.disabled).toBe(true);
+    expect(btn.getAttribute("aria-busy")).toBe("true");
+    expect(btn.querySelector(".animate-spin")).toBeTruthy();
+    fireEvent.click(btn);
+    expect(state.buy.buy).not.toHaveBeenCalled();
   });
 });

@@ -138,7 +138,18 @@ export function SiteConfigProvider({
       if (initialConfig.theme) applyTheme(initialConfig.theme, useUIStore.getState().theme);
       if (initialConfig.faviconUrl) setFavicon(initialConfig.faviconUrl);
       setIsLoading(false);
-      return;
+
+      // The server-rendered config comes from the Next.js data cache
+      // (layout.tsx, revalidate: 300), so an admin change — e.g. a new
+      // Courses Page Banner — could stay invisible for 5+ minutes, even
+      // across hard refreshes. Re-read the live config once per app load,
+      // bypassing the browser HTTP cache, and adopt it if it differs.
+      let cancelled = false;
+      fetchJson<SiteConfig>("/api/pub/config/site", { cache: "no-store" }).then((fresh) => {
+        if (cancelled || !fresh) return;
+        setConfig((prev) => (JSON.stringify(prev) === JSON.stringify(fresh) ? prev : fresh));
+      });
+      return () => { cancelled = true; };
     }
 
     // Fallback: client-side bootstrap (used when server data unavailable, e.g. local dev cold start)

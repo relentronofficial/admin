@@ -1,12 +1,45 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Loader2, Star, Users } from "lucide-react";
+import { ArrowLeft, FileText, Loader2, MessageSquare, Star, Users } from "lucide-react";
 import { useStarredMessages } from "@/lib/hooks/useChatGroups";
+import { useDmStarredMessages } from "@/lib/hooks/useDashboard";
 import type { StarredMessage } from "@/lib/api/services/chatGroups.service";
 
+type DmStarred = {
+  id: string;
+  starredAt: string;
+  body: string | null;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  createdAt: string;
+  conversationId: string;
+  senderType: string;
+  sender: { firstName: string | null; lastName: string | null; profilePhotoUrl: string | null };
+  otherPartyName: string;
+};
+
+type UnifiedItem =
+  | { kind: "group"; item: StarredMessage }
+  | { kind: "dm"; item: DmStarred };
+
 export default function StarredMessagesPage() {
-  const { data: starred = [], isLoading } = useStarredMessages();
+  const { data: groupStarred = [], isLoading: groupLoading } = useStarredMessages();
+  const { data: dmStarred = [], isLoading: dmLoading } = useDmStarredMessages();
+  const isLoading = groupLoading || dmLoading;
+
+  const starred: UnifiedItem[] = useMemo(() => {
+    const all: UnifiedItem[] = [
+      ...groupStarred.map((item): UnifiedItem => ({ kind: "group", item })),
+      ...(dmStarred as DmStarred[]).map((item): UnifiedItem => ({ kind: "dm", item })),
+    ];
+    return all.sort(
+      (a, b) =>
+        new Date(b.item.starredAt ?? b.item.createdAt).getTime() -
+        new Date(a.item.starredAt ?? a.item.createdAt).getTime(),
+    );
+  }, [groupStarred, dmStarred]);
 
   return (
     <div className="max-w-3xl mx-auto py-6 px-4 sm:px-0">
@@ -39,17 +72,92 @@ export default function StarredMessagesPage() {
           <Star size={32} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm text-muted-foreground">No starred messages yet.</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Star a message in any group chat to save it for later.
+            Star a message in any chat to save it here.
           </p>
         </div>
       ) : (
         <div className="space-y-2">
-          {starred.map((m) => (
-            <StarredRow key={m.id} message={m} />
-          ))}
+          {starred.map((entry) =>
+            entry.kind === "group" ? (
+              <StarredRow key={`group-${entry.item.id}`} message={entry.item} />
+            ) : (
+              <DmStarredRow key={`dm-${entry.item.id}`} message={entry.item} />
+            ),
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+function DmStarredRow({ message }: { message: DmStarred }) {
+  const senderName =
+    message.senderType === "member"
+      ? [message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(" ") || "You"
+      : message.otherPartyName || "TBT Team";
+  const when = new Date(message.starredAt || message.createdAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const preview = message.body || (message.mediaType ? `📎 ${message.mediaType}` : "…");
+
+  return (
+    <Link
+      href={`/messages?conversation=${message.conversationId}`}
+      className="block rounded-xl p-3 transition-colors hover:bg-[var(--color-surface-overlay)]"
+      style={{
+        background: "var(--color-bg-surface)",
+        border: "1px solid var(--color-border-subtle)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <div
+          className="w-6 h-6 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center"
+          style={{ background: "var(--color-surface-overlay)" }}
+        >
+          {message.sender?.profilePhotoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={message.sender.profilePhotoUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <MessageSquare size={11} className="text-muted-foreground" />
+          )}
+        </div>
+        <span className="text-[11px] font-semibold text-foreground truncate">
+          {message.otherPartyName || "TBT Team"}
+        </span>
+        <span className="text-[10px] text-muted-foreground">· {when}</span>
+        <Star size={11} className="fill-current ml-auto" style={{ color: "#f59e0b" }} />
+      </div>
+      <div className="flex items-start gap-2 pl-8">
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] font-bold" style={{ color: "var(--color-accent)" }}>
+            {senderName}
+          </div>
+          {message.mediaUrl && message.mediaType === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={message.mediaUrl}
+              alt=""
+              className="mt-1 max-w-[240px] max-h-[180px] rounded-lg object-cover"
+            />
+          ) : message.mediaUrl && message.mediaType === "document" ? (
+            <div
+              className="mt-1 inline-flex items-center gap-2 px-2 py-1.5 rounded-lg"
+              style={{
+                background: "var(--color-bg-primary)",
+                border: "1px solid var(--color-border-subtle)",
+              }}
+            >
+              <FileText size={12} className="text-muted-foreground" />
+              <span className="text-xs text-foreground">Attachment</span>
+            </div>
+          ) : null}
+          <p className="text-sm text-foreground mt-0.5 line-clamp-3 break-words">{preview}</p>
+        </div>
+      </div>
+    </Link>
   );
 }
 

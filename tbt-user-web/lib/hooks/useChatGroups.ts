@@ -230,3 +230,23 @@ export function usePinnedMessages(id: string) {
     staleTime: 30 * 1000,
   });
 }
+
+export function useTogglePinChatGroupMessage(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { messageId: string; isPinned: boolean }) =>
+      v.isPinned
+        ? chatGroupsService.unpinMessage(groupId, v.messageId)
+        : chatGroupsService.pinMessage(groupId, v.messageId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: chatGroupKeys.pinned(groupId) }),
+  });
+}
+
+export function useChatGroupMessageInfo(groupId: string, messageId: string | null) {
+  return useQuery({
+    queryKey: ["chat-group-msg-info", groupId, messageId],
+    queryFn: async () => (await chatGroupsService.getMessageInfo(groupId, messageId!)).data ?? null,
+    enabled: !!groupId && !!messageId,
+    staleTime: 30_000,
+  });
+}

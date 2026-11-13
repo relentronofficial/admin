@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { Bookmark, Pencil, Trophy } from "lucide-react";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { useLeaderboard } from "@/lib/hooks/useGamification";
 import { memberDisplayName } from "@/lib/hooks/useCommunity";
 import { MemberAvatar } from "./MemberAvatar";
+import { WinsModal } from "./WinsModal";
 
 const cardStyle = {
   background: "var(--color-bg-surface)",
@@ -28,9 +30,11 @@ const APP_HOST = (() => {
 export function CommunitySidebar({ onCompose }: { onCompose: () => void }) {
   const { config } = useSiteConfig();
   const siteName = config?.siteName ?? "TBT";
+  const [winsOpen, setWinsOpen] = useState(false);
 
   return (
     <aside className="space-y-4">
+      <WinsModal open={winsOpen} onClose={() => setWinsOpen(false)} />
       {/* Group card */}
       <section className="rounded-2xl p-5 space-y-4" style={cardStyle}>
         <div className="space-y-1">
@@ -64,20 +68,32 @@ export function CommunitySidebar({ onCompose }: { onCompose: () => void }) {
         </div>
       </section>
 
-      <LeaderboardCard />
+      <LeaderboardCard onExpand={() => setWinsOpen(true)} />
     </aside>
   );
 }
 
-function LeaderboardCard() {
+function LeaderboardCard({ onExpand }: { onExpand: () => void }) {
   const { data, isLoading, isError } = useLeaderboard("month", 5);
   const rows = data ?? [];
 
   return (
     <section className="rounded-2xl p-5 space-y-3" style={cardStyle}>
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-foreground">Leaderboard</h2>
-        <span className="text-[11px] text-muted-foreground">Last 30 days</span>
+        <button
+          onClick={onExpand}
+          className="flex items-center gap-1.5 font-bold text-foreground text-sm hover:opacity-70 transition-opacity"
+        >
+          <Trophy size={14} style={{ color: "#FFD700" }} />
+          Leaderboard
+        </button>
+        <button
+          onClick={onExpand}
+          className="text-[11px] transition-opacity hover:opacity-70"
+          style={{ color: "var(--color-accent)" }}
+        >
+          See all →
+        </button>
       </div>
 
       {isLoading ? (

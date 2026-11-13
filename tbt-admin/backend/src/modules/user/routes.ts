@@ -3,6 +3,7 @@ import {
   getMeHandler,
   updateMeHandler,
   updateAvatarHandler,
+  uploadAvatarHandler,
   avatarPresignHandler,
   assignmentImagePresignHandler,
   assignmentFilePresignHandler,
@@ -65,12 +66,16 @@ import {
   sendMemberChatMessageHandler,
   getConversationUnreadCountHandler,
   archiveConversationHandler,
+  markConversationReadHandler,
   getWorkshopChallengesHandler,
   getWorkshopOverviewHandler,
   completeChallengeHandler,
   completeWorkshopEpisodeHandler,
   getWatchHistoryHandler,
   removeFromHistoryHandler,
+  getSavedVideosHandler,
+  saveVideoHandler,
+  unsaveVideoHandler,
   getMyDevicesHandler,
   getWorkshopCertificateHandler,
   joinLiveCallHandler,
@@ -108,14 +113,21 @@ import {
   bookSupportCallHandler,
   cancelSupportCallBookingHandler,
   joinSupportCallHandler,
+  buyExtraSupportCallsHandler,
   getMyStreakPointsHandler,
   getMyStreakHandler,
   activityHeartbeatHandler,
+  activityHistoryHandler,
   startEpisodeTimerHandler,
   getEpisodeTimerSessionHandler,
   heartbeatEpisodeTimerHandler,
   getEpisodeLifelinesHandler,
   useEpisodeLifelineHandler,
+  getCourseLifelinesHandler,
+  consumeCourseLifelineHandler,
+  purchaseCourseLifelinesHandler,
+  submitEpisodeFormHandler,
+  getMyEpisodeFormSubmissionHandler,
   getPsychometricQuestionsHandler,
   submitPsychometricHandler,
   getMyPsychometricResultHandler,
@@ -124,15 +136,41 @@ import {
   razorpayWebhookHandler,
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
+  listCoinPackagesHandler,
+  getCoinBalanceHandler,
+  getSupportCallsSummaryHandler,
   getMentorshipStatsHandler,
   getMentorshipModulesHandler,
   updateMentorshipModulesHandler,
   getMentorshipRevenueHandler,
+  getMentorshipRevenueHistoryHandler,
   upsertMentorshipRevenueHandler,
   getMentorshipSocialHandler,
   upsertMentorshipSocialHandler,
+  getInstagramAuthUrlHandler,
+  handleInstagramCallbackHandler,
+  getInstagramStatusHandler,
+  disconnectInstagramHandler,
+  syncInstagramNowHandler,
 } from './controller.js';
 import { getUserCreditPricingHandler, createCreditPurchaseHandler, getMyCreditPurchasesHandler } from '../credits/controller.js';
+import { createLifelineOrderHandler, verifyLifelinePaymentHandler } from './lifelinePurchase.js';
+import {
+  editConversationMessageHandler,
+  deleteConversationMessageHandler,
+  reactConversationMessageHandler,
+  forwardConversationMessageHandler,
+} from './conversationMessageActions.js';
+import {
+  starConversationMessageHandler,
+  listDmStarredMessagesHandler,
+  pinConversationMessageHandler,
+  unpinConversationMessageHandler,
+  getPinnedConversationMessageHandler,
+  getDmMessageInfoHandler,
+} from './dmMessageActions.js';
+
+const AVATAR_BODY_LIMIT = 10 * 1024 * 1024; // profile page allows up to 5 MB; headroom for the raw body
 
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes in this module require member authentication.
@@ -143,24 +181,36 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.patch('/me', updateMeHandler);
   fastify.patch('/me/avatar', updateAvatarHandler);
   fastify.post('/me/avatar-presign', avatarPresignHandler);
+  // Photo bytes go through the backend (raw image body); scoped so the image parser applies only here.
+  fastify.register(async (scope) => {
+    scope.addContentTypeParser(/^image\//, { parseAs: 'buffer', bodyLimit: AVATAR_BODY_LIMIT }, (_req, body, done) => done(null, body));
+    scope.post('/me/avatar/upload', { bodyLimit: AVATAR_BODY_LIMIT }, uploadAvatarHandler);
+  });
   fastify.get('/me/connections', getMyConnectionsHandler);
   fastify.get('/me/posts', getMyPostsHandler);
   fastify.get('/support-quota', getSupportQuotaHandler);
 
   // ── Expert Support Call booking (SUPPORT_CALLS_SPECKIT.md) ─────────────────
   fastify.get('/support-calls', listSupportCallsHandler);
+  fastify.get('/support-calls/summary', getSupportCallsSummaryHandler);
   fastify.post('/support-calls/sessions/:id/book', bookSupportCallHandler);
   fastify.post('/support-calls/bookings/:id/cancel', cancelSupportCallBookingHandler);
   fastify.get('/support-calls/bookings/:id/join', joinSupportCallHandler);
+  fastify.post('/support-calls/buy', buyExtraSupportCallsHandler);
 
   // ── Mentorship Dashboard ───────────────────────────────────────────────────
   fastify.get('/mentorship/stats',   getMentorshipStatsHandler);
   fastify.get('/mentorship/modules', getMentorshipModulesHandler);
   fastify.put('/mentorship/modules', updateMentorshipModulesHandler);
   fastify.get('/mentorship/revenue', getMentorshipRevenueHandler);
+  fastify.get('/mentorship/revenue/history', getMentorshipRevenueHistoryHandler);
   fastify.put('/mentorship/revenue', upsertMentorshipRevenueHandler);
   fastify.get('/mentorship/social',  getMentorshipSocialHandler);
   fastify.put('/mentorship/social',  upsertMentorshipSocialHandler);
+  fastify.get('/mentorship/instagram/auth-url',  getInstagramAuthUrlHandler);
+  fastify.get('/mentorship/instagram/status',    getInstagramStatusHandler);
+  fastify.delete('/mentorship/instagram/disconnect', disconnectInstagramHandler);
+  fastify.post('/mentorship/instagram/sync',     syncInstagramNowHandler);
 
   // ── Credits ───────────────────────────────────────────────────────────────
   fastify.get('/credits/pricing', getUserCreditPricingHandler);
@@ -195,12 +245,16 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/streak-points', getMyStreakPointsHandler);
   fastify.get('/streak', getMyStreakHandler);
   fastify.post('/activity/heartbeat', activityHeartbeatHandler);
+  fastify.get('/activity/history', activityHistoryHandler);
 
   // ── Dashboard ──────────────────────────────────────────────────────────────
   fastify.get('/dashboard/stats', getDashboardStatsHandler);
   fastify.get('/dashboard/continue-learning', getContinueLearningHandler);
   fastify.get('/dashboard/watch-history', getWatchHistoryHandler);
   fastify.delete('/dashboard/watch-history/:episodeId', removeFromHistoryHandler);
+  fastify.get('/saved-videos', getSavedVideosHandler);
+  fastify.post('/saved-videos', saveVideoHandler);
+  fastify.delete('/saved-videos/:episodeId', unsaveVideoHandler);
 
   // ── Events ────────────────────────────────────────────────────────────────
   fastify.get('/events', listUserEventsHandler);
@@ -281,6 +335,12 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/episodes/:id/timer/heartbeat', heartbeatEpisodeTimerHandler);
   fastify.get('/episodes/:id/lifelines', getEpisodeLifelinesHandler);
   fastify.post('/episodes/:id/lifelines/use', useEpisodeLifelineHandler);
+  // ── Course-scoped lifeline pool ───────────────────────────────────────────
+  fastify.get('/courses/:id/lifelines', getCourseLifelinesHandler);
+  fastify.post('/courses/:id/lifelines/consume', consumeCourseLifelineHandler);
+  fastify.post('/courses/:id/lifelines/purchase', purchaseCourseLifelinesHandler);
+  fastify.post('/episodes/:id/form-submissions', submitEpisodeFormHandler);
+  fastify.get('/episodes/:id/form-submissions/mine', getMyEpisodeFormSubmissionHandler);
 
   // ── Products & Resources ──────────────────────────────────────────────────
   fastify.get('/products', getUserProductsHandler);
@@ -296,6 +356,17 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.get('/conversations/:id/messages',          getMemberConversationMessagesHandler);
   fastify.post('/conversations/:id/messages',         sendMemberChatMessageHandler);
   fastify.patch('/conversations/:id/archive',         archiveConversationHandler);
+  fastify.post('/conversations/:id/read',             markConversationReadHandler);
+  fastify.put('/conversations/:id/messages/:messageId',               editConversationMessageHandler);
+  fastify.delete('/conversations/:id/messages/:messageId',            deleteConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/react',        reactConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/forward',      forwardConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/star',         starConversationMessageHandler);
+  fastify.get('/messages/starred',                                    listDmStarredMessagesHandler);
+  fastify.get('/conversations/:id/pinned',                            getPinnedConversationMessageHandler);
+  fastify.post('/conversations/:id/messages/:messageId/pin',          pinConversationMessageHandler);
+  fastify.delete('/conversations/:id/messages/:messageId/pin',        unpinConversationMessageHandler);
+  fastify.get('/conversations/:id/messages/:messageId/info',          getDmMessageInfoHandler);
 
   // ── Device Tracking ───────────────────────────────────────────────────────
   fastify.get('/my-devices', getMyDevicesHandler);
@@ -319,13 +390,22 @@ export async function userRoutes(fastify: FastifyInstance) {
   fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
 
   // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
+  fastify.get('/coins/balance', getCoinBalanceHandler);
+  fastify.get('/coins/packages', listCoinPackagesHandler);
   fastify.post('/coins/razorpay/create-order', createCoinOrderHandler);
   fastify.post('/coins/razorpay/verify', verifyCoinPaymentHandler);
+
+  // ── Extra Lifeline Purchase via Razorpay ───────────────────────────────────
+  fastify.post('/lifelines/razorpay/create-order', createLifelineOrderHandler);
+  fastify.post('/lifelines/razorpay/verify', verifyLifelinePaymentHandler);
 }
 
 // Webhook — registered separately (no authenticateUser hook).
 // Parses application/json but preserves the raw body string for HMAC.
 export async function userWebhookRoutes(fastify: FastifyInstance) {
+  // Instagram OAuth callback — unauthenticated, browser redirect from Meta
+  fastify.get('/mentorship/instagram/callback', handleInstagramCallbackHandler);
+
   fastify.register(async (child) => {
     // Remove the inherited parser before adding our own so Fastify doesn't
     // throw FST_ERR_CTP_ALREADY_PRESENT (child scopes inherit parent parsers).

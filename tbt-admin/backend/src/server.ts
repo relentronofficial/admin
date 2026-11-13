@@ -11,7 +11,6 @@ import redisPlugin from './plugins/redis.js';
 import clerkPlugin from './plugins/clerk.js';
 import jwtPlugin from './plugins/jwt.js';
 import socketPlugin from './plugins/socket.js';
-import supabasePlugin from './plugins/supabase.js';
 
 // Routes
 import { authRoutes } from './modules/auth/routes.js';
@@ -25,8 +24,11 @@ import { adsRoutes } from './modules/ads/routes.js';
 import { videoFeedbackRoutes } from './modules/video-feedback/routes.js';
 import { supportEntitlementsRoutes } from './modules/support-entitlements/routes.js';
 import { weeklyGraphRoutes } from './modules/weekly-graph/routes.js';
+import { moduleFaqsRoutes } from './modules/module-faqs/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
 import { psychometricRoutes } from './modules/psychometric/routes.js';
+import { psychometricPlatformAdminRoutes } from './modules/psychometric-platform/routes.js';
+import { psychometricMemberRoutes } from './modules/psychometric-platform/memberRoutes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
 import { devopsRoutes } from './modules/devops/routes.js';
 import { communityRoutes } from './modules/community/routes.js';
@@ -69,6 +71,7 @@ import { startBatchReportJobs } from './jobs/batchReports.js';
 import { startCourseReportJobs } from './jobs/courseReports.js';
 import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
 import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
+import { startLifelineReconcileJob } from './jobs/lifelineReconcile.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
 import { runWeeklyCourseReports } from './lib/courseReports.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
@@ -77,7 +80,7 @@ import { createAdminNotification } from './lib/adminNotifications.js';
 async function bootstrap() {
   const fastify = Fastify({
     trustProxy: true,   // read real client IP from X-Forwarded-For (GCP load balancer)
-    pluginTimeout: 120000, // 120s — startup migrations run 70+ SQL statements; allow time after schema resets
+    pluginTimeout: 210000, // 210s — startup DDL already took ~2 min in production; stays under Cloud Run's 240s startup probe
     logger: {
       level: 'info',
       transport: env.NODE_ENV === 'development' ? {
@@ -107,7 +110,6 @@ async function bootstrap() {
     await fastify.register(redisPlugin);
     await fastify.register(clerkPlugin);
     await fastify.register(jwtPlugin);
-    await fastify.register(supabasePlugin);
     await fastify.register(socketPlugin);
 
     // ── WhatsApp low-balance alert wiring ──────────────────────────
@@ -218,9 +220,12 @@ async function bootstrap() {
     await fastify.register(videoFeedbackRoutes, { prefix: '/api/video-feedback' });
     await fastify.register(supportEntitlementsRoutes, { prefix: '/api/support-entitlements' });
     await fastify.register(weeklyGraphRoutes, { prefix: '/api/weekly-graph' });
+    await fastify.register(moduleFaqsRoutes, { prefix: '/api/module-faqs' });
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
     await fastify.register(paymentRoutes, { prefix: '/api/payments' });
     await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
+    await fastify.register(psychometricPlatformAdminRoutes, { prefix: '/api/psychometric-platform' });
+    await fastify.register(psychometricMemberRoutes, { prefix: '/api/user/psychometric-assessment' });
     await fastify.register(devopsRoutes, { prefix: '/api/devops' });
 
     // Cron endpoints (no auth — protected by CRON_SECRET header)
@@ -443,6 +448,15 @@ async function bootstrap() {
       // Support-ticket escalation sweep (every 2 minutes — see
       // helpdeskEscalation.ts for why this deviates from the hourly norm).
       startHelpdeskEscalationJob(fastify.prisma, (fastify as any).io ?? null, {
+        info: (msg) => fastify.log.info(msg),
+        warn: (msg) => fastify.log.warn(msg),
+        error: (obj, msg) => fastify.log.error(obj, msg),
+      }).catch(() => { /* logged internally */ });
+
+      // Extra Lifeline reconciliation (every 15 minutes — credits captured
+      // Razorpay payments that verify/webhook never credited; see
+      // lifelineReconcile.ts). Off with LIFELINE_RECONCILE_DISABLED=true.
+      startLifelineReconcileJob(fastify.prisma, {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),

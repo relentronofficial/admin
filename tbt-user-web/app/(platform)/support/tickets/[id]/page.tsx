@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Loader2, Paperclip, Send } from "lucide-react";
+import { ArrowLeft, Clock, Loader2, Paperclip, Send } from "lucide-react";
 
 import {
   usePostTicketReply,
@@ -100,6 +100,54 @@ function MetaChip({ color, label }: { color: string; label: string }) {
   );
 }
 
+// ── Resolve-by countdown ────────────────────────────────────────────────────
+
+function ResolveByTimer({ deadline, status }: { deadline: string; status: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (status === "resolved" || status === "closed") return;
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [status]);
+
+  const by = new Date(deadline);
+  const formatted = by.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+  if (status === "resolved" || status === "closed") {
+    return (
+      <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: "var(--color-success, #22c55e)" }}>
+        <Clock size={12} /> Resolve deadline was {formatted} · Resolved ✓
+      </div>
+    );
+  }
+
+  const diff = by.getTime() - Date.now();
+  let label: string;
+  let color: string;
+  if (diff <= 0) {
+    const over = Math.abs(diff);
+    const h = Math.floor(over / 3_600_000);
+    const m = Math.floor((over % 3_600_000) / 60_000);
+    label = h > 0 ? `Overdue by ${h}h ${m}m` : `Overdue by ${m}m`;
+    color = "#ef4444";
+  } else {
+    const days = Math.floor(diff / 86_400_000);
+    const h = Math.floor((diff % 86_400_000) / 3_600_000);
+    const m = Math.floor((diff % 3_600_000) / 60_000);
+    if (days > 0) { label = `${days}d ${h}h left`; color = "var(--color-success, #22c55e)"; }
+    else if (h >= 4) { label = `${h}h ${m}m left`; color = "var(--color-success, #22c55e)"; }
+    else if (h >= 1) { label = `${h}h ${m}m left`; color = "#facc15"; }
+    else { label = `${m}m left`; color = "#ef4444"; }
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color }}>
+      <Clock size={12} className="flex-shrink-0" />
+      Support will respond by {formatted} · {label}
+    </div>
+  );
+}
+
 // ── Ticket header card ──────────────────────────────────────────────────────
 
 function TicketHeaderCard({ ticket }: { ticket: SupportTicket }) {
@@ -126,6 +174,11 @@ function TicketHeaderCard({ ticket }: { ticket: SupportTicket }) {
           <MetaChip color="#25D366" label={`REPLY VIA ${ticket.preferredContact.toUpperCase()}`} />
         )}
       </div>
+      {ticket.resolveDeadline && (
+        <div className="mt-3">
+          <ResolveByTimer deadline={ticket.resolveDeadline} status={ticket.status} />
+        </div>
+      )}
     </div>
   );
 }
@@ -339,7 +392,7 @@ export default function TicketDetailPage() {
   const isClosed = ticket.status === "closed";
 
   return (
-    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-8rem)]">
+    <div className="max-w-3xl mx-auto flex flex-col h-[calc(100dvh-8rem)]">
       {/* Header */}
       <div className="flex items-center gap-2 mb-3 flex-shrink-0">
         <Link

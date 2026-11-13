@@ -2,6 +2,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // REQUIRED for Docker/Cloud Run — Dockerfile copies .next/standalone; removing this breaks the container
   output: "standalone",
   eslint: { ignoreDuringBuilds: true },
   images: {
@@ -29,5 +30,4 @@ export default withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
   sourcemaps: { deleteSourcemapsAfterUpload: true },
   disableLogger: true,
-  automaticVercelMonitors: true,
 });

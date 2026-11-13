@@ -85,3 +85,32 @@ describe("buildRoadmapLevels", () => {
     expect(roadmapSummary(levels(["a1", "a2"]))).toEqual({ completed: 1, total: 3 });
   });
 });
+
+describe("buildRoadmapLevels — sections without lessons", () => {
+  const secs = [
+    { id: "s1", title: "Ads", sortOrder: 1 },
+    { id: "s2", title: "Website", sortOrder: 2 },
+    { id: "s3", title: "Funnels", sortOrder: 3 },
+  ];
+  const lessons = [{ id: "a1", title: "a1", sectionId: "s1", locked: false }, { id: "c1", title: "c1", sectionId: "s3", locked: true }];
+
+  it("without the sections list, empty sections are skipped (sidebar grouping)", () => {
+    expect(buildRoadmapLevels(buildSectionGroups(lessons, secs, []), []).map((l) => l.title)).toEqual(["Ads", "Funnels"]);
+  });
+
+  it("with the sections list, every section is a level in order; an empty one is locked and blocks later levels", () => {
+    const l = buildRoadmapLevels(buildSectionGroups(lessons, secs, ["a1"]), ["a1"], secs);
+    expect(l.map((x) => [x.number, x.title, x.state])).toEqual([
+      [1, "Ads", "completed"],
+      [2, "Website", "locked"],
+      [3, "Funnels", "locked"],
+    ]);
+    expect(l[1]).toMatchObject({ total: 0, completed: 0, target: null });
+    expect(roadmapSummary(l)).toEqual({ completed: 1, total: 3 });
+  });
+
+  it("keeps the unsectioned General group last", () => {
+    const withLoose = [...lessons, { id: "x1", title: "x1", sectionId: null, locked: true }];
+    expect(buildRoadmapLevels(buildSectionGroups(withLoose, secs, []), [], secs).map((x) => x.title)).toEqual(["Ads", "Website", "Funnels", "General"]);
+  });
+});

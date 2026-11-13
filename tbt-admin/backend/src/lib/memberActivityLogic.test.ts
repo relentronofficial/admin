@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { summarizeDailyActivity, isActiveHeartbeat, isoWeekLabel, clampDays, type DailyActivityRow } from './memberActivityLogic.js';
+import { buildUsageHistory, summarizeDailyActivity, isActiveHeartbeat, isoWeekLabel, clampDays, type DailyActivityRow } from './memberActivityLogic.js';
 
 const row = (date: string, activeMinutes: number, mediaMinutes = 0): DailyActivityRow => ({
   date, activeMinutes, mediaMinutes, firstActiveAt: `${date}T03:30:00.000Z`, lastActiveAt: `${date}T10:00:00.000Z`,
@@ -83,5 +83,58 @@ describe('helpers', () => {
     expect(clampDays('0')).toBe(30);
     expect(clampDays('9999')).toBe(366);
     expect(clampDays('90')).toBe(90);
+  });
+});
+
+describe('buildUsageHistory (member Daily Time Spent popup)', () => {
+  const row = (date: string, activeMinutes: number, mediaMinutes = 0): DailyActivityRow =>
+    ({ date, activeMinutes, mediaMinutes, firstActiveAt: null, lastActiveAt: null });
+
+  it('new member with no usage: every day from onboarding to today, all 0, nothing invented', () => {
+    const h = buildUsageHistory([], { today: '2026-11-11', onboardingDate: '2026-11-09', trackingStartDate: '2026-10-01' });
+    expect(h.days.map((d) => [d.date, d.activeMinutes])).toEqual([['2026-11-11', 0], ['2026-11-10', 0], ['2026-11-09', 0]]);
+    expect(h).toMatchObject({ totalMinutes: 0, averageDailyMinutes: 0, activeDays: 0, trackedDays: 3, rangeStart: '2026-11-09', trackedFrom: '2026-11-09' });
+  });
+
+  it('newest first, zero-use days included, totals and average over tracked days', () => {
+    // One row per day already merges every session/device of that day (one bit per minute).
+    const h = buildUsageHistory([row('2026-11-01', 85), row('2026-11-02', 130), row('2026-11-04', 45)],
+      { today: '2026-11-05', onboardingDate: '2026-11-01', trackingStartDate: '2026-10-01' });
+    expect(h.days.map((d) => d.activeMinutes)).toEqual([0, 45, 0, 130, 85]);
+    expect(h.days[0].date).toBe('2026-11-05');
+    expect(h).toMatchObject({ totalMinutes: 260, trackedDays: 5, activeDays: 3, averageDailyMinutes: 52 });
+  });
+
+  it('days before tracking went live are not tracked (unknown), never reported as 0', () => {
+    const h = buildUsageHistory([row('2026-10-02', 30)], { today: '2026-10-03', onboardingDate: '2026-09-28', trackingStartDate: '2026-10-01' });
+    expect(h.rangeStart).toBe('2026-09-28');
+    expect(h.trackedFrom).toBe('2026-10-01');
+    expect(h.days.map((d) => d.date)).toEqual(['2026-10-03', '2026-10-02', '2026-10-01']);
+    expect(h.averageDailyMinutes).toBe(10);
+  });
+
+  it('activity recorded before the onboarding date is included (the range starts there)', () => {
+    const h = buildUsageHistory([row('2026-11-01', 20), row('2026-11-03', 10)], { today: '2026-11-03', onboardingDate: '2026-11-02', trackingStartDate: '2026-10-01' });
+    expect(h.onboardingDate).toBe('2026-11-02');
+    expect(h.rangeStart).toBe('2026-11-01');
+    expect(h.totalMinutes).toBe(30);
+  });
+
+  it('no onboarding date: starts at the first recorded day; no rows: just today', () => {
+    expect(buildUsageHistory([row('2026-11-09', 5)], { today: '2026-11-11', onboardingDate: null, trackingStartDate: '2026-10-01' }).rangeStart).toBe('2026-11-09');
+    const none = buildUsageHistory([], { today: '2026-11-11', onboardingDate: null, trackingStartDate: null });
+    expect(none).toMatchObject({ trackedFrom: null, days: [], totalMinutes: 0 });
+  });
+
+  it('dates are the stored program-timezone (IST) days — a row is never moved across midnight', () => {
+    const h = buildUsageHistory([row('2026-11-10', 1), row('2026-11-11', 1439)], { today: '2026-11-11', onboardingDate: '2026-11-10', trackingStartDate: '2026-10-01' });
+    expect(h.days.map((d) => [d.date, d.activeMinutes])).toEqual([['2026-11-11', 1439], ['2026-11-10', 1]]);
+  });
+
+  it('long histories are capped at maxDays (flagged), and future rows are ignored', () => {
+    const h = buildUsageHistory([row('2026-11-12', 99)], { today: '2026-11-11', onboardingDate: '2020-01-01', trackingStartDate: '2020-01-01', maxDays: 400 });
+    expect(h.days).toHaveLength(400);
+    expect(h.truncated).toBe(true);
+    expect(h.totalMinutes).toBe(0);
   });
 });

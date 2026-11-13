@@ -26,7 +26,7 @@ export function MiniPlayer() {
   const pct = total > 0 ? Math.min(100, (position / total) * 100) : 0;
 
   return (
-    <div className="fixed bottom-3 left-3 right-3 z-40 flex justify-center pointer-events-none">
+    <div className="fixed left-3 right-3 z-40 flex justify-center pointer-events-none" style={{ bottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}>
       <div
         className="pointer-events-auto w-full max-w-4xl rounded-2xl overflow-hidden"
         style={{

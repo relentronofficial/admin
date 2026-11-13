@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcrypt';
 import { createMemberSchema, updateMemberSchema } from './schema.js';
 import { invalidateCache } from '../../lib/cache.js';
-import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
+import { invalidateMemberModuleAccess, saveMemberAdminOverride } from '../../lib/memberModuleAccess.js';
 import { parseModuleList } from '../../lib/mentorshipModules.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
@@ -17,7 +17,12 @@ import {
   getMemberDailyRows,
   getMemberLastActiveAt,
 } from '../../lib/memberActivity.js';
-import { summarizeDailyActivity, clampDays } from '../../lib/memberActivityLogic.js';
+import { summarizeDailyActivity, clampDays, isoWeekLabel } from '../../lib/memberActivityLogic.js';
+import { QUALIFYING_ACTIVITY_SOURCES, localDayKey, dayKeyOf } from '../../lib/activityDays.js';
+import { computeMemberStats } from '../../lib/tbtStats.js';
+import { buildSkillRatingsQuery, mergeSkillRatings, profileExtrasSelect, writeProfileExtras, type ProfileExtrasInput } from '../../lib/memberProfileExtras.js';
+import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
+import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
 // GET /api/members/:id/daily-activity?days=30  (Clerk admin auth via route hook)
@@ -108,48 +113,10 @@ async function ensureMasterEntry(
   }
 }
 
-async function writeSkillFields(prisma: any, memberId: string, fields: {
-  hasWebsite?: boolean | null;
-  weeklyWebsiteOrders?: number | null;
-  skillBusinessFoundation?: number | null;
-  skillContent?: number | null;
-  skillFunnels?: number | null;
-  skillAds?: number | null;
-  skillSales?: number | null;
-  skillOverallMarketing?: number | null;
-  weeklyLearningHours?: number | null;
-  teamSize?: string | null;
-  businessStartedFrom?: string | null;
-  instagramStats?: string | null;
-  facebookStats?: string | null;
-  websiteUrl?: string | null;
-  revenueGoalAfterTbt?: string | null;
-}) {
-  const sets: string[] = [];
-  const vals: unknown[] = [];
-  let pi = 1;
-  const add = (col: string, v: unknown) => { sets.push(`${col} = $${pi++}`); vals.push(v); };
-  if (fields.hasWebsite !== undefined) add('has_website', fields.hasWebsite);
-  if (fields.weeklyWebsiteOrders !== undefined) add('weekly_website_orders', fields.weeklyWebsiteOrders);
-  if (fields.skillBusinessFoundation !== undefined) add('skill_business_foundation', fields.skillBusinessFoundation);
-  if (fields.skillContent !== undefined) add('skill_content', fields.skillContent);
-  if (fields.skillFunnels !== undefined) add('skill_funnels', fields.skillFunnels);
-  if (fields.skillAds !== undefined) add('skill_ads', fields.skillAds);
-  if (fields.skillSales !== undefined) add('skill_sales', fields.skillSales);
-  if (fields.skillOverallMarketing !== undefined) add('skill_overall_marketing', fields.skillOverallMarketing);
-  if (fields.weeklyLearningHours !== undefined) add('weekly_learning_hours', fields.weeklyLearningHours);
-  if (fields.teamSize !== undefined) add('team_size', fields.teamSize);
-  if (fields.businessStartedFrom !== undefined) add('business_started_from', fields.businessStartedFrom);
-  if (fields.instagramStats !== undefined) add('instagram_stats', fields.instagramStats);
-  if (fields.facebookStats !== undefined) add('facebook_stats', fields.facebookStats);
-  if (fields.websiteUrl !== undefined) add('website_url', fields.websiteUrl);
-  if (fields.revenueGoalAfterTbt !== undefined) add('revenue_goal_after_tbt', fields.revenueGoalAfterTbt);
-  if (sets.length === 0) return;
-  vals.push(memberId);
-  await prisma.$executeRawUnsafe(
-    `UPDATE members SET ${sets.join(', ')} WHERE id = $${pi}::uuid`,
-    ...vals,
-  );
+// Skills / growth fields live in member_profile_extras (members is at the
+// column limit), so they are saved through lib/memberProfileExtras.ts.
+async function writeSkillFields(prisma: any, memberId: string, fields: ProfileExtrasInput) {
+  await writeProfileExtras(prisma, memberId, fields);
 }
 
 /**
@@ -177,16 +144,6 @@ function toBool(v: unknown): boolean | undefined {
   if (v === true || v === 'true' || v === '1') return true;
   if (v === false || v === 'false' || v === '0') return false;
   return undefined;
-}
-
-/**
- * Parse an ISO date string. Returns undefined on invalid input rather
- * than throwing — the caller wants "no filter" behaviour, not a 500.
- */
-function toDate(v: unknown): Date | undefined {
-  if (typeof v !== 'string' || !v) return undefined;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
 export function buildMembersWhereClause(query: any): any {
@@ -299,15 +256,10 @@ export function buildMembersWhereClause(query: any): any {
     .filter((n) => Number.isFinite(n));
   if (tiers.length) where.currentTier = { in: tiers };
 
-  // Join date range. Prisma treats `gte`/`lte` independently so we can
-  // set either bound alone.
-  const fromDate = toDate(joinedFrom);
-  const toDateVal = toDate(joinedTo);
-  if (fromDate || toDateVal) {
-    where.createdAt = {};
-    if (fromDate) where.createdAt.gte = fromDate;
-    if (toDateVal) where.createdAt.lte = toDateVal;
-  }
+  // Join date range: a plain date is a whole IST calendar day (see
+  // memberJoinedRange). Either bound may be set alone.
+  const joined = memberJoinedRange(joinedFrom, joinedTo);
+  if (Object.keys(joined).length) where.createdAt = joined;
 
   const marketingTeam = toBool(hasMarketingTeam);
   if (marketingTeam !== undefined) where.hasMarketingTeam = marketingTeam;
@@ -350,13 +302,16 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
     request.server.prisma.member.count({ where: where as any }),
   ]);
 
-  // CP-14: augment with allowed_modules (raw SQL column)
+  // CP-14: augment with module settings (raw SQL side table; no row = both null)
   if (members.length > 0) {
     const ids = members.map(m => m.id);
     const modRows = await request.server.prisma.$queryRawUnsafe<Array<{ id: string; allowed_modules: any; mentorship_modules: any }>>(
-      `SELECT id::text, allowed_modules, mentorship_modules FROM members WHERE id = ANY($1::uuid[])`,
+      `SELECT member_id::text AS id, allowed_modules, mentorship_modules FROM member_module_settings WHERE member_id = ANY($1::uuid[])`,
       ids,
-    ).catch(() => []);
+    ).catch((err: unknown) => {
+      request.log.error({ err }, 'member module settings lookup failed');
+      return [];
+    });
     const modMap = new Map(modRows.map(r => [r.id, r.allowed_modules]));
     const selMap = new Map(modRows.map(r => [r.id, r.mentorship_modules]));
     for (const m of members as any[]) {
@@ -366,6 +321,16 @@ export async function listMembersHandler(request: FastifyRequest, reply: Fastify
       // Member-chosen mentorship modules (read-only for admins; null = not chosen yet)
       m.mentorshipModules = parseModuleList(selMap.get(m.id));
     }
+
+    // Skill ratings live in member_profile_extras. The edit modal is filled from
+    // these rows, so without them it showed 1/10 and saving overwrote the
+    // member's real ratings.
+    const skillRows = await request.server.prisma.$queryRawUnsafe<any[]>(buildSkillRatingsQuery(), ids)
+      .catch((err: unknown) => {
+        request.log.error({ err }, 'member skill ratings lookup failed');
+        return null;
+      });
+    if (skillRows) mergeSkillRatings(members as any[], skillRows);
   }
 
   return reply.send({ success: true, data: members, meta: { total, page, limit }, error: null });
@@ -613,7 +578,7 @@ export async function getMemberHandler(request: FastifyRequest, reply: FastifyRe
         },
       }),
       request.server.prisma.$queryRawUnsafe<any[]>(
-        `SELECT has_website AS "hasWebsite", weekly_website_orders AS "weeklyWebsiteOrders", skill_business_foundation AS "skillBusinessFoundation", skill_content AS "skillContent", skill_funnels AS "skillFunnels", skill_ads AS "skillAds", skill_sales AS "skillSales", skill_overall_marketing AS "skillOverallMarketing", weekly_learning_hours AS "weeklyLearningHours", team_size AS "teamSize", business_started_from AS "businessStartedFrom", instagram_stats AS "instagramStats", facebook_stats AS "facebookStats", website_url AS "websiteUrl", revenue_goal_after_tbt AS "revenueGoalAfterTbt" FROM members WHERE id = $1::uuid`,
+        `SELECT m.team_size AS "teamSize", ${profileExtrasSelect('x')}, COALESCE(mbp.business_categories, '[]'::jsonb) AS "businessCategories" FROM members m LEFT JOIN member_profile_extras x ON x.member_id = m.id LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`,
         id,
       ),
       request.server.prisma.$queryRawUnsafe<Array<{ total: bigint }>>(
@@ -660,6 +625,7 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       revenueGoalAfterTbt,
       overrideModules,
       allowedModules,
+      businessCategories,
       ...restBody
     } = body as any;
 
@@ -777,19 +743,25 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
 
     // CP-14: per-member course module override
     if (overrideModules !== undefined || allowedModules !== undefined) {
-      let newValue: string | null;
-      if (overrideModules === false) {
-        newValue = null; // remove override — fall back to program default
-      } else {
-        newValue = JSON.stringify(Array.isArray(allowedModules) ? allowedModules : []);
-      }
-      await request.server.prisma.$executeRawUnsafe(
-        `UPDATE members SET allowed_modules = $1::jsonb WHERE id = $2::uuid`,
-        newValue,
+      // false removes the override — fall back to the program default
+      await saveMemberAdminOverride(
+        request.server.prisma,
         id,
+        overrideModules === false ? null : (Array.isArray(allowedModules) ? allowedModules : []),
       );
-      void invalidateCache(request.server.redis ?? null, `courses:personalization:${id}`);
     }
+    // CV-06: persist admin-assigned business category visibility gate
+    if (businessCategories !== undefined) {
+      await request.server.prisma.$executeRawUnsafe(
+        `INSERT INTO member_business_profiles (member_id, business_categories)
+         VALUES ($1::uuid, $2::jsonb)
+         ON CONFLICT (member_id) DO UPDATE SET business_categories = EXCLUDED.business_categories`,
+        id,
+        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
+      );
+      void invalidateCache(request.server.redis ?? null, `courses:personalization:v3:${id}`);
+    }
+
     // Override and batch (program ceiling) both feed the mentorship module verdict.
     void invalidateMemberModuleAccess(request.server.redis ?? null, id);
 
@@ -823,7 +795,11 @@ export async function updateMemberHandler(request: FastifyRequest, reply: Fastif
       });
     }
 
-    return reply.send({ success: true, data: member, meta: { previousBatchProgressDays }, error: null });
+    const responseExtra: Record<string, unknown> = {};
+    if (businessCategories !== undefined) {
+      responseExtra.businessCategories = Array.isArray(businessCategories) ? businessCategories : [];
+    }
+    return reply.send({ success: true, data: { ...member, ...responseExtra }, meta: { previousBatchProgressDays }, error: null });
   } catch (err: any) {
     if (err.name === 'ZodError') {
       return reply.status(400).send({
@@ -1691,6 +1667,12 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       status: _ignoredStatus, verificationStatus: _ignoredVerificationStatus,
       onboardingCompleted: _ignoredOnboardingCompleted, onboardingReviewedAt: _ignoredOnboardingReviewedAt,
       onboardingReviewedBy: _ignoredOnboardingReviewedBy,
+      // Raw SQL columns — not in Prisma schema; written separately via writeSkillFields / saveMemberAdminOverride
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours, teamSize, businessStartedFrom, instagramStats, facebookStats,
+      websiteUrl, revenueGoalAfterTbt,
+      overrideModules, allowedModules, businessCategories,
       ...rest
     } = body;
 
@@ -1738,6 +1720,36 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
     }
 
     const updated = await request.server.prisma.member.update({ where: { id }, data });
+
+    // Write raw SQL skill/growth fields (not in Prisma schema)
+    await writeSkillFields(request.server.prisma, id, {
+      hasWebsite, weeklyWebsiteOrders,
+      skillBusinessFoundation, skillContent, skillFunnels, skillAds, skillSales, skillOverallMarketing,
+      weeklyLearningHours, teamSize, businessStartedFrom, instagramStats, facebookStats,
+      websiteUrl, revenueGoalAfterTbt,
+    });
+
+    // CP-14: per-member course module override
+    if (overrideModules !== undefined || allowedModules !== undefined) {
+      await saveMemberAdminOverride(
+        request.server.prisma,
+        id,
+        overrideModules === false ? null : (Array.isArray(allowedModules) ? allowedModules : []),
+      );
+      void invalidateMemberModuleAccess(request.server.redis ?? null, id);
+    }
+
+    // CV-06: persist admin-assigned business category visibility gate
+    if (businessCategories !== undefined) {
+      await request.server.prisma.$executeRawUnsafe(
+        `INSERT INTO member_business_profiles (member_id, business_categories)
+         VALUES ($1::uuid, $2::jsonb)
+         ON CONFLICT (member_id) DO UPDATE SET business_categories = EXCLUDED.business_categories`,
+        id,
+        JSON.stringify(Array.isArray(businessCategories) ? businessCategories : []),
+      );
+      void invalidateCache(request.server.redis ?? null, `courses:personalization:v3:${id}`);
+    }
 
     // Create subscription if a paid plan + end date are provided
     const approvedPlan = data.membershipPlan;
@@ -2087,5 +2099,167 @@ export async function upsertMemberRevenueAdminHandler(request: FastifyRequest, r
   );
 
   const r = rows[0];
+  // Same refresh the member's own revenue save sends: their open dashboard refetches
+  // the graph and the revenue figures (socket batch:graph_updated to user:<id>).
+  void notifyWeeklyGraphChanged(request.server, { memberIds: [id] }, 'revenue_updated');
   return reply.send({ success: true, data: mapAdminRevenueRow(r, weekNumber, year), error: null });
+}
+
+// ── AL-01 Points & Activity Log ───────────────────────────────────────────────
+// GET /api/members/:id/tbt-activity-log?view=daily&from=YYYY-MM-DD&to=YYYY-MM-DD&sourceGroup=all
+const LEARNING_SOURCES_SQL = QUALIFYING_ACTIVITY_SOURCES.map((s) => `'${s}'`).join(', ');
+const COIN_SOURCES_LIST = ['coin_purchase', 'admin_grant', 'early_completion', 'lifeline_spend', 'support_call_unlock', 'support_call_purchase'];
+const COIN_SOURCES_SQL = COIN_SOURCES_LIST.map((s) => `'${s}'`).join(', ');
+
+const IST_TZ = 'Asia/Kolkata';
+
+function fmtDateLabel(d: string): string {
+  return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(`${d}T00:00:00Z`),
+  );
+}
+
+export async function getMemberTbtActivityLogHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { id } = req.params as { id: string };
+  const {
+    view = 'daily',
+    from: fromParam,
+    to: toParam,
+    sourceGroup = 'all',
+  } = req.query as { view?: string; from?: string; to?: string; sourceGroup?: string };
+
+  const prisma = req.server.prisma;
+  const member = await prisma.member.findUnique({ where: { id }, select: { id: true } }).catch(() => null);
+  if (!member) {
+    return reply.status(404).send({ success: false, data: null, error: { code: 'NOT_FOUND', message: 'Member not found' } });
+  }
+
+  // Date range clamped to 366 days; default last 30 days in IST
+  const todayIST = localDayKey(new Date(), IST_TZ);
+  const toDate = toParam && /^\d{4}-\d{2}-\d{2}$/.test(toParam) ? toParam : todayIST;
+  const defaultFrom = new Date(Date.parse(`${toDate}T00:00:00Z`) - 29 * 86_400_000).toISOString().slice(0, 10);
+  let fromDate = fromParam && /^\d{4}-\d{2}-\d{2}$/.test(fromParam) ? fromParam : defaultFrom;
+
+  const toMs = Date.parse(`${toDate}T00:00:00Z`);
+  const fromMs = Date.parse(`${fromDate}T00:00:00Z`);
+  if (toMs - fromMs > 366 * 86_400_000) {
+    fromDate = new Date(toMs - 366 * 86_400_000).toISOString().slice(0, 10);
+  }
+  const effectiveFrom = fromDate <= toDate ? fromDate : toDate;
+  const effectiveTo   = fromDate <= toDate ? toDate : fromDate;
+
+  // Backfill legacy rows and get current streak
+  const stats = await computeMemberStats(prisma, id);
+
+  // Source group filter
+  const sourceFilter =
+    sourceGroup === 'learning' ? `AND source IN (${LEARNING_SOURCES_SQL})`
+    : sourceGroup === 'coins'  ? `AND source IN (${COIN_SOURCES_SQL})`
+    : '';
+
+  type LogRow = { id: string; points: bigint; source: string; activity_date: Date | string };
+  const rawRows = await prisma.$queryRawUnsafe<LogRow[]>(
+    `SELECT id, points, source, activity_date
+     FROM tbt_activity_log
+     WHERE member_id = $1::uuid
+       AND activity_date >= $2::date
+       AND activity_date <= $3::date
+       ${sourceFilter}
+     ORDER BY activity_date DESC, created_at DESC`,
+    id, effectiveFrom, effectiveTo,
+  );
+
+  // Summary totals
+  let totalEarned = 0, totalSpent = 0;
+  const activeDaySet = new Set<string>();
+  for (const row of rawRows) {
+    const pts = Number(row.points);
+    if (pts > 0) totalEarned += pts;
+    else if (pts < 0) totalSpent += Math.abs(pts);
+    if ((QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(row.source)) {
+      activeDaySet.add(dayKeyOf(row.activity_date));
+    }
+  }
+
+  const summary = {
+    totalPoints: totalEarned - totalSpent,
+    totalEarned,
+    totalSpent,
+    activeDays: activeDaySet.size,
+    currentStreak: stats.currentStreak,
+    rangeLabel: `${fmtDateLabel(effectiveFrom)} – ${fmtDateLabel(effectiveTo)}`,
+  };
+
+  // Period bucketing
+  interface Bucket {
+    periodKey: string;
+    label: string;
+    earned: number;
+    spent: number;
+    activeLearningEvents: number;
+    sourceCounts: Map<string, number>;
+  }
+  const bucketsMap = new Map<string, Bucket>();
+
+  const getBucketInfo = (dateStr: string): { key: string; label: string } => {
+    if (view === 'weekly') {
+      const { label, monday } = isoWeekLabel(dateStr);
+      const mondayStr = new Date(monday * 86_400_000).toISOString().slice(0, 10);
+      const sundayStr = new Date((monday + 6) * 86_400_000).toISOString().slice(0, 10);
+      return { key: label, label: `${fmtDateLabel(mondayStr)} – ${fmtDateLabel(sundayStr)}` };
+    }
+    if (view === 'monthly') {
+      const [y, m] = dateStr.split('-').map(Number);
+      const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      return { key: `${y}-${String(m).padStart(2, '0')}`, label: `${names[m - 1]} ${y}` };
+    }
+    // daily
+    const dt = new Date(`${dateStr}T00:00:00Z`);
+    const dayLabel = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(dt);
+    return { key: dateStr, label: dayLabel };
+  };
+
+  for (const row of rawRows) {
+    const dateStr = dayKeyOf(row.activity_date);
+    const { key, label } = getBucketInfo(dateStr);
+    let bucket = bucketsMap.get(key);
+    if (!bucket) {
+      bucket = { periodKey: key, label, earned: 0, spent: 0, activeLearningEvents: 0, sourceCounts: new Map() };
+      bucketsMap.set(key, bucket);
+    }
+    const pts = Number(row.points);
+    if (pts > 0) bucket.earned += pts;
+    else if (pts < 0) bucket.spent += Math.abs(pts);
+    if ((QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(row.source)) bucket.activeLearningEvents++;
+    bucket.sourceCounts.set(row.source, (bucket.sourceCounts.get(row.source) ?? 0) + 1);
+  }
+
+  const periodRows = [...bucketsMap.values()].map((b) => ({
+    periodKey: b.periodKey,
+    label: b.label,
+    earned: b.earned,
+    spent: b.spent,
+    net: b.earned - b.spent,
+    activeLearningEvents: b.activeLearningEvents,
+    topSources: [...b.sourceCounts.entries()].sort((a, z) => z[1] - a[1]).slice(0, 3).map(([s]) => s),
+  }));
+
+  // Source breakdown
+  const sourceMap = new Map<string, { events: number; points: number }>();
+  for (const row of rawRows) {
+    let entry = sourceMap.get(row.source);
+    if (!entry) { entry = { events: 0, points: 0 }; sourceMap.set(row.source, entry); }
+    entry.events++;
+    entry.points += Number(row.points);
+  }
+  const sources = [...sourceMap.entries()]
+    .map(([source, { events, points }]) => ({
+      source,
+      events,
+      points,
+      isLearning: (QUALIFYING_ACTIVITY_SOURCES as readonly string[]).includes(source),
+    }))
+    .sort((a, b) => Math.abs(b.points) - Math.abs(a.points));
+
+  return reply.send({ success: true, data: { summary, rows: periodRows, sources }, error: null });
 }

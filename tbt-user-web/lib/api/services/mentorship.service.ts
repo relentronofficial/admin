@@ -16,11 +16,19 @@ export type MentorshipStats = {
   activeDays?: number;
   totalDays: number;
   programName: string | null;
+  /**
+   * Required program videos: visible episodes of published courses in the
+   * member's program modules, and how many the member completed
+   * (course_episode_progress). null/absent when it can't be determined.
+   */
+  programVideos?: { total: number; completed: number } | null;
 };
 
 export type MentorshipRevenue = {
   weekNumber: number;
   year: number;
+  /** Sum of revenue_generated across all submitted weeks. Null if none ever submitted. */
+  totalAllTime: number | null;
   revenueGenerated: number | null;
   revenuePrev: number | null;
   numberOfOrders: number | null;
@@ -54,6 +62,7 @@ export type MentorshipSocial = {
   bioLinkClicks: number | null;
   bioLinkClicksPrev: number | null;
   updatedAt: string | null;
+  instagramAutoSync?: boolean;
 };
 
 export type MentorshipModuleOption = {
@@ -80,12 +89,32 @@ export type MentorshipModules = {
 export type UpsertRevenueBody = Partial<Omit<MentorshipRevenue, "weekNumber" | "year" | "updatedAt">>;
 export type UpsertSocialBody = Partial<Omit<MentorshipSocial, "weekNumber" | "year" | "updatedAt">>;
 
+/** Every week the member saved (oldest first) — for the chart's longer periods. */
+export type MentorshipRevenueHistory = {
+  currentWeek: { weekNumber: number; year: number };
+  weeks: {
+    weekNumber: number;
+    year: number;
+    revenueGenerated: number | null;
+    numberOfOrders: number | null;
+    dailyRevenue: (number | string | null)[] | null;
+    dailyOrders: (number | string | null)[] | null;
+  }[];
+};
+
+export type InstagramStatus =
+  | { connected: false; enabled?: boolean }
+  | { connected: true; username: string; syncedAt: string | null; expiresAt: string | null; enabled: boolean };
+
 export const mentorshipService = {
   getStats: () =>
     apiClient.get<never, ApiResponse<MentorshipStats>>("/api/user/mentorship/stats"),
 
   getRevenue: () =>
-    apiClient.get<never, ApiResponse<MentorshipRevenue | null>>("/api/user/mentorship/revenue"),
+    apiClient.get<never, ApiResponse<MentorshipRevenue>>("/api/user/mentorship/revenue"),
+
+  getRevenueHistory: () =>
+    apiClient.get<never, ApiResponse<MentorshipRevenueHistory>>("/api/user/mentorship/revenue/history"),
 
   upsertRevenue: (data: UpsertRevenueBody) =>
     apiClient.put<never, ApiResponse<MentorshipRevenue>>("/api/user/mentorship/revenue", data),
@@ -101,4 +130,16 @@ export const mentorshipService = {
 
   updateModules: (modules: string[]) =>
     apiClient.put<never, ApiResponse<MentorshipModules>>("/api/user/mentorship/modules", { modules }),
+
+  getInstagramStatus: () =>
+    apiClient.get<never, ApiResponse<InstagramStatus>>("/api/user/mentorship/instagram/status"),
+
+  getInstagramAuthUrl: () =>
+    apiClient.get<never, ApiResponse<{ url: string }>>("/api/user/mentorship/instagram/auth-url"),
+
+  disconnectInstagram: () =>
+    apiClient.delete<never, ApiResponse<{ disconnected: boolean }>>("/api/user/mentorship/instagram/disconnect"),
+
+  syncInstagram: () =>
+    apiClient.post<never, ApiResponse<{ synced: boolean }>>("/api/user/mentorship/instagram/sync"),
 };

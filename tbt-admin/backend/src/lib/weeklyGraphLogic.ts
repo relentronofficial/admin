@@ -10,12 +10,14 @@
 import { getWeekNumber } from './weekChecklistLogic.js';
 import {
   defaultWeeks,
+  effectiveRevenueThreshold,
   milestoneIndexForLabel,
   resolveGraphConfig,
   taskProgressCap,
   type GraphConfig,
   type MilestoneKind,
 } from './weeklyGraphConfig.js';
+import type { RevenueEntry } from './weeklyGraphRevenue.js';
 
 export type ActivityStatus =
   | 'completed'       // approved submission, or ticked on a day the admin approved
@@ -67,6 +69,11 @@ export interface GraphActivity {
   isRequired: boolean;
   status: ActivityStatus;
   completed: boolean;
+  /** The configured milestone this activity is linked to (tasks.graph_milestone_id or the legacy label), else null. */
+  milestoneId: string | null;
+  milestoneLabel: string | null;
+  /** Axis row of that milestone (1 = first milestone); 0 = not linked (drawn on the baseline). Position only, never achievement. */
+  level: number;
 }
 
 export interface GraphWeek {
@@ -91,6 +98,10 @@ export interface GraphWeek {
   weekId: string | null;
   /** Display label, e.g. "W1" or an admin-configured name */
   label: string;
+  /** Member-reported revenue counted in this week's days; null when nothing was reported for them. */
+  revenue: number | null;
+  /** Running total of reported revenue up to this week's end; null for future weeks or when nothing was ever reported. */
+  cumulativeRevenue: number | null;
 }
 
 export interface WeeklyGraph {
@@ -101,7 +112,47 @@ export interface WeeklyGraph {
   weeks: GraphWeek[];
   summary: { total: number; completed: number; completionPercent: number | null };
   /** The Y axis, bottom to top (progressLevel n = milestones[n - 1]); source tells defaults from admin config. */
-  config: { source: 'program' | 'default'; milestones: Array<{ id: string | null; label: string; kind: MilestoneKind }> };
+  config: { source: 'program' | 'default'; milestones: GraphMilestoneStatus[] };
+  /**
+   * The revenue the revenue milestones are measured against: the same
+   * revenue_generated figure "Your Revenue Stats" shows, entered by the member
+   * per ISO week. totalToDate is null when nothing was ever reported.
+   */
+  revenue: { source: 'self_reported'; totalToDate: number | null };
+}
+
+/**
+ * One configured milestone with this member's explicit evidence for it.
+ * `reached` is never derived from a week's plotted height (progressLevel) or
+ * task share — only from:
+ *   • an admin-approved task linked to this activity milestone
+ *     (tasks.graph_milestone_id, or the legacy is_milestone + milestone_label),
+ *     within the same task cap the graph uses (tasks never prove revenue); or
+ *   • the member's reported revenue: a revenue milestone is reached once the
+ *     running total of reported revenue is at or above its amount — the
+ *     admin-set threshold, or the amount its label names when none is set
+ *     (effectiveRevenueThreshold; never from tasks); or
+ *   • an admin/mentor-recorded achievement (member_graph_milestone_records).
+ * A built-in default milestone (id null — program settings never saved) can have
+ * no recorded achievement, so only reported revenue can reach it.
+ */
+export interface GraphMilestoneStatus {
+  id: string | null;
+  label: string;
+  kind: MilestoneKind;
+  reached: boolean;
+  /** Revenue milestones: the admin-set cumulative revenue threshold (₹); null = none set. Always null for activity milestones. */
+  threshold: number | null;
+  /** What reached it: an approved linked task, reported revenue, or an admin/mentor record. null when not reached. */
+  reachedBy: 'activity' | 'revenue' | 'record' | null;
+  /** weekNumber (1-based position on the X axis) where it was reached; null when not reached or reached outside the shown weeks. */
+  reachedWeek: number | null;
+  /**
+   * Batch-program day of the linked task: the earliest approved one when
+   * reached through a task, else the earliest linked one. null when no task is
+   * linked, and always null for revenue milestones (no task proves revenue).
+   */
+  dayNumber: number | null;
 }
 
 /**
@@ -117,11 +168,12 @@ function percent(part: number, whole: number): number | null {
 }
 
 // ── Milestone axis ───────────────────────────────────────────────────────────
-// The member graph's Y axis is Ads → Website → Funnels → 1 lakh → 1 crore.
+// The member graph's Y axis is Ads → Website → Funnels → 1 lakh → 5 Lakhs → 1 crore.
 // Only the first three are activity milestones that task completion can
-// evidence. The revenue milestones (levels 4–5) are never reached from tasks:
-// approved tasks do not prove revenue, and the only revenue data stored
-// (member_revenue_reports) is self-reported and unverified.
+// evidence. Revenue milestones are never reached from tasks (approved tasks do
+// not prove revenue): only from the member's own reported revenue
+// (member_revenue_reports — self-reported, the "Your Revenue Stats" figure)
+// against the admin's threshold, or from an admin/mentor record.
 
 /** Highest axis level task progress can reach (Funnels). */
 export const MAX_TASK_PROGRESS_LEVEL = 3;
@@ -154,6 +206,32 @@ export function weekProgressLevel(
   const share = (week.completed / week.total) * cap;
   const level = Math.max(share, Math.min(week.completedMilestoneLevel, cap));
   return Math.round(Math.min(level, cap) * 100) / 100;
+}
+
+/**
+ * Height a cumulative reported revenue reaches on the milestone axis, from the
+ * revenue milestones' admin-set thresholds (`thresholds[m]`, null for a
+ * milestone without one; axis level = m + 1):
+ *  - below the first threshold → 0 (revenue never lifts the line on its own
+ *    before the first revenue milestone is actually reached);
+ *  - at or above a threshold → that milestone's level, then moving
+ *    proportionally toward the next higher threshold — e.g. ₹3 lakhs between
+ *    ₹1 lakh and ₹5 lakhs sits halfway between those two rows;
+ *  - at or above the highest threshold → the highest reached level.
+ * Thresholds that do not increase along the axis are skipped for the
+ * in-between step, so a misconfigured order can never lower the point.
+ */
+export function revenueProgressLevel(running: number, thresholds: Array<number | null>): number {
+  let reached = -1;
+  thresholds.forEach((t, m) => {
+    if (t !== null && running >= t) reached = m;
+  });
+  if (reached < 0) return 0;
+  const base = thresholds[reached]!;
+  const next = thresholds.findIndex((t, m) => m > reached && t !== null && t > base);
+  if (next < 0) return reached + 1;
+  const fraction = (running - base) / (thresholds[next]! - base);
+  return Math.round((reached + 1 + fraction * (next - reached)) * 100) / 100;
 }
 
 /**
@@ -204,12 +282,21 @@ export function buildWeeklyGraph(params: {
   config?: GraphConfig;
   /** This member's admin-recorded milestone achievements. */
   records?: GraphRecordInput[];
+  /** This member's reported revenue placed on program days (weeklyGraphRevenue.ts). Omitted/null → no revenue data. */
+  revenue?: RevenueEntry[] | null;
+  /**
+   * Program never configured: the day span its default weeks cover — the same
+   * span the admin Weekly Graph page shows (loadProgramWeekSpanDays), so both
+   * list the same weeks. Omitted → this member's own days only.
+   */
+  defaultSpanDays?: number;
 }): WeeklyGraph {
   const { memberId, submissions, dayProgress, totalDays, currentDay } = params;
   const config = params.config ?? resolveGraphConfig({ weeks: [], milestones: [] });
   const milestones = config.milestones;
   // Task completion can lift a point only through the activity milestones below
-  // the first revenue milestone; revenue levels come only from admin records.
+  // the first revenue milestone; revenue levels come from reported revenue
+  // against an admin threshold, or from admin records.
   const cap = taskProgressCap(milestones);
 
   const tasks = params.tasks
@@ -230,18 +317,16 @@ export function buildWeeklyGraph(params: {
 
   const lastDay = Math.max(totalDays, ...tasks.map((t) => t.dayNumber), 0);
 
-  // X axis: the program's configured weeks (active, admin order) — or the
-  // default 7-day weeks. Days past every configured week (e.g. a member's
-  // extended days) keep default 7-day weeks so no activity silently vanishes.
+  // X axis: exactly the program's configured weeks (active, admin order) — or,
+  // for a program never configured, the default 7-day weeks. No week is ever
+  // generated past the configured range: activities on days outside every
+  // configured week are not shown until the admin adds a week for them.
   type Slot = { id: string | null; label: string; startDay: number; endDay: number };
   let slots: Slot[];
   if (config.weeks) {
     slots = config.weeks.map((w) => ({ ...w }));
-    for (let start = config.coveredUntilDay + 1, n = slots.length + 1; start <= lastDay; start += 7, n++) {
-      slots.push({ id: null, label: `W${n}`, startDay: start, endDay: Math.min(start + 6, lastDay) });
-    }
   } else {
-    slots = defaultWeeks(lastDay).map((w) => ({ id: null, ...w }));
+    slots = defaultWeeks(Math.max(lastDay, params.defaultSpanDays ?? 0)).map((w) => ({ id: null, ...w }));
   }
 
   const today = Math.min(Math.max(currentDay, 1), Math.max(lastDay, 1));
@@ -252,6 +337,8 @@ export function buildWeeklyGraph(params: {
     });
   }
   if (currentIdx < 0) currentIdx = 0;
+  // Trim future weeks — only show columns up to the member's current active week.
+  slots = slots.slice(0, currentIdx + 1);
   const currentWeek = currentIdx + 1;
 
   const weeks: GraphWeek[] = slots.map((w, i) => ({
@@ -265,8 +352,14 @@ export function buildWeeklyGraph(params: {
     progressLevel: null,
     weekId: w.id,
     label: w.label,
+    revenue: null,
+    cumulativeRevenue: null,
   }));
   const milestoneLevelByWeek = new Array<number>(weeks.length).fill(0);
+  const milestoneReached = new Array<boolean>(milestones.length).fill(false);
+  const milestoneDay = new Array<number | null>(milestones.length).fill(null);
+  const reachedBy = new Array<GraphMilestoneStatus['reachedBy']>(milestones.length).fill(null);
+  const reachedWeekIdx = new Array<number>(milestones.length).fill(-1);
 
   /** Which displayed week an activity belongs to, or -1 when it is hidden (its week is disabled). */
   const weekIndexFor = (t: GraphTaskInput): number => {
@@ -274,11 +367,14 @@ export function buildWeeklyGraph(params: {
     const configuredRange = !!config.weeks && t.dayNumber <= config.coveredUntilDay;
     return slots.findIndex((w) => (!configuredRange || w.id !== null) && w.startDay <= t.dayNumber && t.dayNumber <= w.endDay);
   };
-  /** Axis level an activity's milestone link stands for (activity milestones within the task cap only). */
-  const taskMilestoneLevel = (t: GraphTaskInput): number => {
-    const idx = t.graphMilestoneId
+  /** Index of the configured milestone an activity is linked to, or -1. */
+  const linkedMilestoneIndex = (t: GraphTaskInput): number =>
+    t.graphMilestoneId
       ? milestones.findIndex((m) => m.id === t.graphMilestoneId)
       : t.isMilestone ? milestoneIndexForLabel(milestones, t.milestoneLabel) : -1;
+  /** Axis level an activity's milestone link stands for (activity milestones within the task cap only). */
+  const taskMilestoneLevel = (t: GraphTaskInput): number => {
+    const idx = linkedMilestoneIndex(t);
     return idx >= 0 && milestones[idx].kind === 'activity' && idx + 1 <= cap ? idx + 1 : 0;
   };
 
@@ -294,11 +390,29 @@ export function buildWeeklyGraph(params: {
     });
     const completed = status === 'completed';
     const week = weeks[w];
-    week.activities.push({ taskId: t.id, title: t.title, dayNumber: t.dayNumber, isRequired: t.isRequired, status, completed });
+    const link = linkedMilestoneIndex(t);
+    week.activities.push({
+      taskId: t.id, title: t.title, dayNumber: t.dayNumber, isRequired: t.isRequired, status, completed,
+      milestoneId: link >= 0 ? milestones[link].id : null,
+      milestoneLabel: link >= 0 ? milestones[link].label : null,
+      level: link >= 0 ? link + 1 : 0,
+    });
     week.total += 1;
     if (completed) {
       week.completed += 1;
       milestoneLevelByWeek[w] = Math.max(milestoneLevelByWeek[w], taskMilestoneLevel(t));
+    }
+    // Explicit milestone link (tasks are in day order, so the first hit is the earliest).
+    const linked = taskMilestoneLevel(t) - 1;
+    if (linked >= 0 && !milestoneReached[linked]) {
+      if (completed) {
+        milestoneReached[linked] = true;
+        milestoneDay[linked] = t.dayNumber;
+        reachedBy[linked] = 'activity';
+        reachedWeekIdx[linked] = w;
+      } else if (milestoneDay[linked] === null) {
+        milestoneDay[linked] = t.dayNumber;
+      }
     }
     if (t.isRequired) {
       week.requiredTotal += 1;
@@ -306,24 +420,76 @@ export function buildWeeklyGraph(params: {
     }
   }
 
-  // Admin-recorded achievements lift their week to the recorded milestone —
-  // the only way a point ever reaches a revenue milestone.
+  // Reported revenue (the "Your Revenue Stats" figure). A week's point reaches a
+  // revenue milestone once the running total up to that week's end is at or
+  // above the milestone's amount: its admin-set threshold, or, when none is set,
+  // the amount its label names (effectiveRevenueThreshold — the same rule the
+  // website uses to place the revenue points). No data → no revenue level and
+  // no revenue milestone reached; a row with neither is never reached from revenue.
+  const revenue = (params.revenue ?? []).filter((e) => Number.isFinite(e.amount));
+  const hasRevenue = revenue.length > 0;
+  const revenueLevelByWeek = new Array<number>(weeks.length).fill(0);
+  const thresholds = milestones.map((m) => effectiveRevenueThreshold(m));
+  // What the response reports as `threshold`: only what the admin set (unchanged).
+  const configuredThresholds = milestones.map((m) =>
+    m.kind === 'revenue' && typeof m.threshold === 'number' && m.threshold > 0 ? m.threshold : null,
+  );
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  weeks.forEach((w, i) => {
+    const inWeek = revenue.filter((e) => e.dayNumber >= w.startDay && e.dayNumber <= w.endDay);
+    w.revenue = inWeek.length ? round2(inWeek.reduce((s, e) => s + e.amount, 0)) : null;
+    if (!hasRevenue || w.startDay > today) return;
+    const running = round2(revenue.filter((e) => e.dayNumber <= w.endDay).reduce((s, e) => s + e.amount, 0));
+    w.cumulativeRevenue = running;
+    thresholds.forEach((t, m) => {
+      if (t === null || running < t) return;
+      revenueLevelByWeek[i] = Math.max(revenueLevelByWeek[i], m + 1);
+      if (!milestoneReached[m]) {
+        milestoneReached[m] = true;
+        reachedBy[m] = 'revenue';
+        reachedWeekIdx[m] = i;
+      }
+    });
+    revenueLevelByWeek[i] = Math.max(revenueLevelByWeek[i], revenueProgressLevel(running, thresholds));
+  });
+  const totalToDate = hasRevenue ? round2(revenue.reduce((s, e) => s + e.amount, 0)) : null;
+  // Revenue reported for days outside every shown week still counts toward the total.
+  thresholds.forEach((t, m) => {
+    if (t !== null && totalToDate !== null && totalToDate >= t && !milestoneReached[m]) {
+      milestoneReached[m] = true;
+      reachedBy[m] = 'revenue';
+    }
+  });
+
+  // Admin/mentor-recorded achievements (manual override, e.g. revenue verified
+  // offline) lift their week to the recorded milestone and reach it whatever
+  // week they were recorded in.
   const recordLevelByWeek = new Array<number>(weeks.length).fill(0);
   for (const r of params.records ?? []) {
     const w = weeks.findIndex((wk) => wk.weekId !== null && wk.weekId === r.weekId);
     const m = milestones.findIndex((ms) => ms.id !== null && ms.id === r.milestoneId);
-    if (w >= 0 && m >= 0) recordLevelByWeek[w] = Math.max(recordLevelByWeek[w], m + 1);
+    if (m < 0) continue;
+    if (w >= 0) recordLevelByWeek[w] = Math.max(recordLevelByWeek[w], m + 1);
+    if (!milestoneReached[m]) {
+      milestoneReached[m] = true;
+      reachedBy[m] = 'record';
+      reachedWeekIdx[m] = w;
+    }
   }
 
   let total = 0;
   let completed = 0;
   weeks.forEach((w, i) => {
     w.completionPercent = percent(w.completed, w.total);
+    // A week that hasn't started has no task or revenue progress yet — but an
+    // admin/mentor record the admin saved for it is confirmed data and is
+    // plotted in its week (it used to be dropped here: progressLevel null).
     w.progressLevel = w.startDay > today
-      ? null
+      ? (recordLevelByWeek[i] > 0 ? recordLevelByWeek[i] : null)
       : Math.max(
           weekProgressLevel({ total: w.total, completed: w.completed, completedMilestoneLevel: milestoneLevelByWeek[i] }, cap),
           recordLevelByWeek[i],
+          revenueLevelByWeek[i],
         );
     total += w.total;
     completed += w.completed;
@@ -336,6 +502,19 @@ export function buildWeeklyGraph(params: {
     hasActivities: total > 0,
     weeks,
     summary: { total, completed, completionPercent: percent(completed, total) },
-    config: { source: config.source, milestones: milestones.map((m) => ({ id: m.id, label: m.label, kind: m.kind })) },
+    config: {
+      source: config.source,
+      milestones: milestones.map((m, i) => ({
+        id: m.id,
+        label: m.label,
+        kind: m.kind,
+        reached: milestoneReached[i],
+        dayNumber: m.kind === 'activity' ? milestoneDay[i] : null,
+        threshold: configuredThresholds[i],
+        reachedBy: reachedBy[i],
+        reachedWeek: reachedWeekIdx[i] >= 0 ? reachedWeekIdx[i] + 1 : null,
+      })),
+    },
+    revenue: { source: 'self_reported', totalToDate },
   };
 }

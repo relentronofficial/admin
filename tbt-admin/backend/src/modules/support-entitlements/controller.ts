@@ -4,15 +4,25 @@ import {
   computeSupportQuota,
   SUPPORT_USAGE_COUNTS_SQL,
   APPROVED_CREDIT_PURCHASES_SQL,
+  COIN_UNLOCKED_BOOKINGS_SQL,
 } from '../../lib/supportQuota.js';
 import {
   SUPPORT_CALL_CATEGORIES,
   canManageSupportSession,
   canMarkAttendance,
+  canChangeSlotTime,
+  canDeleteSlot,
+  coinRefundFor,
+  isDateKey,
   isFullAccessRole,
   isSupportCallCategory,
+  istRangeBounds,
+  MAX_SLOTS_PER_PUBLISH,
+  slotStatus,
+  validateSlotBatch,
+  type RuleResult,
 } from '../../lib/supportCallLogic.js';
-import { mapSession, SESSION_COLUMNS } from '../../lib/supportCallData.js';
+import { loadAllCallCoinCosts, mapSession, refundCallCoins, SESSION_COLUMNS } from '../../lib/supportCallData.js';
 import { getActingAdmin } from '../../lib/adminRole.js';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 
@@ -175,7 +185,7 @@ export async function getMemberSupportQuotaHandler(
 
     const plan = (member.membershipPlan as string | null) ?? 'free';
 
-    const [entRows, usageRows, lifelineRows, purchasedRows] = await Promise.all([
+    const [entRows, usageRows, lifelineRows, purchasedRows, coinRows] = await Promise.all([
       req.server.prisma.$queryRawUnsafe<any[]>(
         `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
                 COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -190,9 +200,10 @@ export async function getMemberSupportQuotaHandler(
           )
         : Promise.resolve([]),
       req.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
+      req.server.prisma.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
     ]);
 
-    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows);
+    const data = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows);
 
     return reply.send({ success: true, data, error: null });
   } catch (err: any) {
@@ -207,7 +218,8 @@ export async function getMemberSupportQuotaHandler(
 
 const SESSION_ADMIN_COLUMNS = `${SESSION_COLUMNS}, s.meeting_url, s.created_by,
   (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status <> 'cancelled') AS active_count,
-  (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status = 'booked') AS booked_count`;
+  (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id AND x.status = 'booked') AS booked_count,
+  (SELECT COUNT(*)::int FROM support_call_bookings x WHERE x.session_id = s.id) AS total_count`;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -232,15 +244,26 @@ const createSessionSchema = z.object({
 });
 const updateSessionSchema = createSessionSchema.partial();
 
+// Publish several admin-chosen slots in one go; they share every field but the start.
+const publishSlotsSchema = createSessionSchema.omit({ startsAt: true }).extend({
+  startsAt: z
+    .array(z.string().datetime({ offset: true, message: 'A slot time is invalid' }))
+    .min(1, 'Add at least one time slot')
+    .max(MAX_SLOTS_PER_PUBLISH, `Publish at most ${MAX_SLOTS_PER_PUBLISH} slots at a time`),
+});
+
 const attendanceSchema = z.object({ status: z.enum(['attended', 'no_show']) });
 
 function sfail(reply: FastifyReply, status: number, error: string) {
   return reply.status(status).send({ success: false, data: null, error });
 }
 
-function adminSessionDto(r: any) {
+const ruleFail = (reply: FastifyReply, r: Exclude<RuleResult, { ok: true }>) => sfail(reply, r.status, r.message);
+
+function adminSessionDto(r: any, now = new Date()) {
   const s = mapSession(r);
   const active = Number(r.active_count ?? 0);
+  const total = Number(r.total_count ?? 0);
   return {
     ...s,
     startsAt: s.startsAt.toISOString(),
@@ -248,7 +271,42 @@ function adminSessionDto(r: any) {
     activeBookings: active,
     pendingAttendance: Number(r.booked_count ?? 0),
     seatsLeft: Math.max(0, s.capacity - active),
+    totalBookings: total,
+    slotStatus: slotStatus(s, active, now),
+    canDelete: canDeleteSlot({ totalBookings: total }).ok,
   };
+}
+
+/** Tells open member calendars to refetch a category. Carries no member or meeting data. */
+function broadcastSlotsChanged(req: FastifyRequest, category: string) {
+  (req.server as any).io?.emit('support_calls:changed', { category });
+}
+
+type Db = { $queryRawUnsafe: (q: string, ...v: any[]) => Promise<any> };
+
+/**
+ * The host's live (scheduled, not yet ended) slots, used to refuse overlapping
+ * availability. A slot without a host account is scoped to its category.
+ */
+async function loadHostSlots(
+  db: Db,
+  host: { hostAdminId: string | null; category: string },
+  excludeId?: string,
+): Promise<{ startsAt: Date; durationMinutes: number }[]> {
+  const vals: any[] = [host.hostAdminId ?? host.category];
+  const scope = host.hostAdminId ? `s.host_admin_id = $1::uuid` : `s.host_admin_id IS NULL AND s.category = $1`;
+  let exclude = '';
+  if (excludeId) {
+    vals.push(excludeId);
+    exclude = `AND s.id <> $2::uuid`;
+  }
+  const rows = (await db.$queryRawUnsafe(
+    `SELECT s.starts_at, s.duration_minutes FROM support_call_sessions s
+     WHERE ${scope} AND s.status = 'scheduled'
+       AND s.starts_at + make_interval(mins => s.duration_minutes) > NOW() ${exclude}`,
+    ...vals,
+  )) as any[];
+  return rows.map((r) => ({ startsAt: new Date(r.starts_at), durationMinutes: Number(r.duration_minutes) }));
 }
 
 type ActingAdmin = { id: string; fullName: string; role: string };
@@ -267,7 +325,7 @@ async function requireSessionManager(req: FastifyRequest, reply: FastifyReply): 
 export async function listSupportSessionsHandler(req: FastifyRequest, reply: FastifyReply) {
   const acting = await requireSessionManager(req, reply);
   if (!acting) return;
-  const { category, scope = 'upcoming' } = req.query as { category?: string; scope?: string };
+  const { category, scope = 'upcoming', from, to } = req.query as { category?: string; scope?: string; from?: string; to?: string };
   const conds: string[] = [];
   const vals: any[] = [];
   if (category) {
@@ -279,15 +337,26 @@ export async function listSupportSessionsHandler(req: FastifyRequest, reply: Fas
     vals.push(acting.id);
     conds.push(`s.host_admin_id = $${vals.length}::uuid`);
   }
-  if (scope === 'upcoming') conds.push(`s.starts_at + make_interval(mins => s.duration_minutes) > NOW()`);
-  if (scope === 'past') conds.push(`s.starts_at + make_interval(mins => s.duration_minutes) <= NOW()`);
+  // Optional IST date range (YYYY-MM-DD, inclusive) for the availability calendar.
+  const ranged = from !== undefined || to !== undefined;
+  if (ranged) {
+    if (!isDateKey(from) || !isDateKey(to) || from > to) return sfail(reply, 400, 'from and to must be dates (YYYY-MM-DD), from <= to');
+    const { start, end } = istRangeBounds(from, to);
+    if (end.getTime() - start.getTime() > 93 * 86_400_000) return sfail(reply, 400, 'Date range is limited to 93 days');
+    vals.push(start, end);
+    conds.push(`s.starts_at >= $${vals.length - 1} AND s.starts_at < $${vals.length}`);
+  } else {
+    if (scope === 'upcoming') conds.push(`s.starts_at + make_interval(mins => s.duration_minutes) > NOW()`);
+    if (scope === 'past') conds.push(`s.starts_at + make_interval(mins => s.duration_minutes) <= NOW()`);
+  }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
-  const order = scope === 'past' ? 'DESC' : 'ASC';
+  const order = !ranged && scope === 'past' ? 'DESC' : 'ASC';
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s ${where} ORDER BY s.starts_at ${order} LIMIT 200`,
+    `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s ${where} ORDER BY s.starts_at ${order} LIMIT ${ranged ? 1000 : 200}`,
     ...vals,
   );
-  return reply.send({ success: true, data: rows.map(adminSessionDto), error: null });
+  const now = new Date();
+  return reply.send({ success: true, data: rows.map((r) => adminSessionDto(r, now)), error: null });
 }
 
 async function resolveHost(
@@ -304,30 +373,82 @@ async function resolveHost(
   return { hostAdminId: host.id as string | null, hostName: hostName ?? host.fullName };
 }
 
-// POST /api/support-entitlements/sessions
+// POST /api/support-entitlements/sessions — publish one slot.
 export async function createSupportSessionHandler(req: FastifyRequest, reply: FastifyReply) {
   const acting = await requireSessionManager(req, reply);
   if (!acting) return;
   const parsed = createSessionSchema.safeParse(req.body);
   if (!parsed.success) return sfail(reply, 400, parsed.error.issues[0]?.message ?? 'Invalid session');
-  const d = parsed.data;
-  const startsAt = new Date(d.startsAt);
-  if (startsAt.getTime() <= Date.now()) return sfail(reply, 400, 'Start time must be in the future');
-  if (d.category === 'one_to_one' && d.capacity !== 1) return sfail(reply, 400, 'Mentor 1-On-1 sessions have exactly 1 seat');
-  const host = await resolveHost(req, acting, d.hostAdminId, d.hostName);
-  if (!host) return sfail(reply, 400, 'Host admin not found');
+  const created = await publishSlots(req, reply, acting, { ...parsed.data, startsAt: [parsed.data.startsAt] });
+  if (!created) return reply;
+  return reply.status(201).send({ success: true, data: created[0], error: null });
+}
 
-  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `INSERT INTO support_call_sessions
-       (category, title, description, host_admin_id, host_name, starts_at, duration_minutes, capacity, meeting_url, created_by)
-     VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8, $9, $10)
-     RETURNING id`,
-    d.category, d.title, d.description, host.hostAdminId, host.hostName, startsAt, d.durationMinutes, d.capacity, d.meetingUrl, req.user,
-  );
-  const created = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s WHERE s.id = $1::uuid`, rows[0].id,
-  );
-  return reply.status(201).send({ success: true, data: adminSessionDto(created[0]), error: null });
+// POST /api/support-entitlements/sessions/bulk — publish several admin-chosen slots at once.
+// All or nothing: one invalid or overlapping time rejects the batch before anything is written.
+export async function publishSupportSlotsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const acting = await requireSessionManager(req, reply);
+  if (!acting) return;
+  const parsed = publishSlotsSchema.safeParse(req.body);
+  if (!parsed.success) return sfail(reply, 400, parsed.error.issues[0]?.message ?? 'Invalid slots');
+  const created = await publishSlots(req, reply, acting, parsed.data);
+  if (!created) return reply;
+  return reply.status(201).send({ success: true, data: created, error: null });
+}
+
+/** Shared by single and bulk publish. Replies with the error and returns null when refused. */
+async function publishSlots(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  acting: ActingAdmin,
+  d: z.infer<typeof publishSlotsSchema>,
+) {
+  if (d.category === 'one_to_one' && d.capacity !== 1) {
+    sfail(reply, 400, 'Mentor 1-On-1 sessions have exactly 1 seat');
+    return null;
+  }
+  const host = await resolveHost(req, acting, d.hostAdminId, d.hostName);
+  if (!host) {
+    sfail(reply, 400, 'Host admin not found');
+    return null;
+  }
+  const starts = d.startsAt.map((v) => new Date(v)).sort((a, b) => a.getTime() - b.getTime());
+
+  const result = await req.server.prisma.$transaction(async (tx) => {
+    // Serialise publishes for this host so two admins can't add overlapping slots at once.
+    await tx.$executeRawUnsafe(
+      `SELECT pg_advisory_xact_lock(hashtext($1))`,
+      `support_slots:${host.hostAdminId ?? `category:${d.category}`}`,
+    );
+    const rule = validateSlotBatch({
+      startsAt: starts,
+      durationMinutes: d.durationMinutes,
+      now: new Date(),
+      existing: await loadHostSlots(tx, { hostAdminId: host.hostAdminId, category: d.category }),
+    });
+    if (!rule.ok) return { error: rule };
+    const ids: string[] = [];
+    for (const startsAt of starts) {
+      const rows = await tx.$queryRawUnsafe<any[]>(
+        `INSERT INTO support_call_sessions
+           (category, title, description, host_admin_id, host_name, starts_at, duration_minutes, capacity, meeting_url, created_by)
+         VALUES ($1, $2, $3, $4::uuid, $5, $6, $7, $8, $9, $10)
+         RETURNING id`,
+        d.category, d.title, d.description, host.hostAdminId, host.hostName, startsAt, d.durationMinutes, d.capacity, d.meetingUrl, req.user,
+      );
+      ids.push(rows[0].id);
+    }
+    const created = await tx.$queryRawUnsafe<any[]>(
+      `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s WHERE s.id = ANY($1::uuid[]) ORDER BY s.starts_at ASC`, ids,
+    );
+    return { created };
+  });
+  if (result.error) {
+    ruleFail(reply, result.error);
+    return null;
+  }
+  broadcastSlotsChanged(req, d.category);
+  return (result.created ?? []).map((r) => adminSessionDto(r));
 }
 
 /** Loads a session the acting admin may manage; replies 404 (also for other mentors' sessions). */
@@ -342,8 +463,13 @@ async function loadManagedSession(
     sfail(reply, 404, 'Session not found');
     return null;
   }
+  // Lock first, then read in a separate statement: under READ COMMITTED a
+  // FOR UPDATE that waited for a concurrent booking re-checks the row but keeps
+  // the old snapshot for the booking-count subqueries, so a single combined
+  // statement could still see 0 bookings and delete or move a just-booked slot.
+  if (lock) await db.$queryRawUnsafe(`SELECT id FROM support_call_sessions WHERE id = $1::uuid FOR UPDATE`, id);
   const rows = (await db.$queryRawUnsafe(
-    `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s WHERE s.id = $1::uuid ${lock ? 'FOR UPDATE' : ''}`, id,
+    `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s WHERE s.id = $1::uuid`, id,
   )) as any[];
   const row = rows[0];
   if (!row || !canManageSupportSession(acting.role, acting.id, { hostAdminId: row.host_admin_id })) {
@@ -377,6 +503,10 @@ export async function updateSupportSessionHandler(req: FastifyRequest<{ Params: 
     }
     const startsAt = d.startsAt ? new Date(d.startsAt) : null;
     if (startsAt && startsAt.getTime() <= Date.now()) return sfail(reply, 400, 'Start time must be in the future');
+    const currentTime = { startsAt: new Date(current.startsAt), durationMinutes: current.durationMinutes };
+    const next = { startsAt: startsAt ?? currentTime.startsAt, durationMinutes: d.durationMinutes ?? current.durationMinutes };
+    const timeRule = canChangeSlotTime({ activeBookings: current.activeBookings, current: currentTime, next });
+    if (!timeRule.ok) return ruleFail(reply, timeRule);
 
     let hostAdminId = current.hostAdminId;
     let hostName = d.hostName !== undefined ? d.hostName : current.hostName;
@@ -385,6 +515,17 @@ export async function updateSupportSessionHandler(req: FastifyRequest<{ Params: 
       if (!host) return sfail(reply, 400, 'Host admin not found');
       hostAdminId = host.hostAdminId;
       hostName = host.hostName;
+    }
+    const moved =
+      next.startsAt.getTime() !== currentTime.startsAt.getTime() || next.durationMinutes !== currentTime.durationMinutes;
+    if (moved || hostAdminId !== current.hostAdminId || category !== current.category) {
+      const clash = validateSlotBatch({
+        startsAt: [next.startsAt],
+        durationMinutes: next.durationMinutes,
+        now: new Date(),
+        existing: await loadHostSlots(tx, { hostAdminId, category }, current.id),
+      });
+      if (!clash.ok) return ruleFail(reply, clash);
     }
 
     await tx.$executeRawUnsafe(
@@ -398,14 +539,16 @@ export async function updateSupportSessionHandler(req: FastifyRequest<{ Params: 
       d.description !== undefined ? d.description : current.description,
       hostAdminId,
       hostName,
-      startsAt ?? new Date(current.startsAt),
-      d.durationMinutes ?? current.durationMinutes,
+      next.startsAt,
+      next.durationMinutes,
       capacity,
       d.meetingUrl !== undefined ? d.meetingUrl : current.meetingUrl,
     );
     const updated = await tx.$queryRawUnsafe<any[]>(
       `SELECT ${SESSION_ADMIN_COLUMNS} FROM support_call_sessions s WHERE s.id = $1::uuid`, current.id,
     );
+    broadcastSlotsChanged(req, current.category);
+    if (category !== current.category) broadcastSlotsChanged(req, category);
     return reply.send({ success: true, data: adminSessionDto(updated[0]), error: null });
   });
 }
@@ -428,37 +571,83 @@ export async function cancelSupportSessionHandler(req: FastifyRequest<{ Params: 
     const affected = await tx.$queryRawUnsafe<any[]>(
       `UPDATE support_call_bookings SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
        WHERE session_id = $1::uuid AND status = 'booked'
-       RETURNING member_id`,
+       RETURNING id, member_id, coin_cost`,
       row.id,
     );
-    return { row, memberIds: affected.map((a) => a.member_id as string) };
+    // Coin-paid bookings get their coins back together with the cancellation.
+    const refunds: Record<string, number> = {};
+    for (const a of affected) {
+      const coins = await refundCallCoins(tx, a.member_id, a.id, coinRefundFor(a.coin_cost == null ? null : Number(a.coin_cost)));
+      if (coins > 0) refunds[a.member_id] = coins;
+    }
+    return { row, memberIds: affected.map((a) => a.member_id as string), refunds };
   });
   if (!result) return reply;
 
-  const { row, memberIds } = result;
+  const { row, memberIds, refunds } = result;
+  broadcastSlotsChanged(req, row.category);
   if (memberIds.length) {
     const when = new Date(row.starts_at).toLocaleString('en-IN', {
       timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
     });
     const title = 'Support call cancelled';
     const message = `"${row.title}" on ${when} IST was cancelled. The call has been returned to your quota.`;
+    const messageFor = (memberId: string) =>
+      refunds[memberId]
+        ? `"${row.title}" on ${when} IST was cancelled. Your ${refunds[memberId]} TBT coins have been refunded.`
+        : message;
     try {
-      await req.server.prisma.appNotification.create({
-        data: {
-          title, message, type: 'support_call_cancelled', actionUrl: '/courses',
-          recipients: { create: memberIds.map((memberId) => ({ memberId })) },
-        },
-      });
+      const freeIds = memberIds.filter((id) => !refunds[id]);
+      if (freeIds.length) {
+        await req.server.prisma.appNotification.create({
+          data: {
+            title, message, type: 'support_call_cancelled', actionUrl: '/courses',
+            recipients: { create: freeIds.map((memberId) => ({ memberId })) },
+          },
+        });
+      }
+      for (const memberId of Object.keys(refunds)) {
+        await req.server.prisma.appNotification.create({
+          data: {
+            title, message: messageFor(memberId), type: 'support_call_cancelled', actionUrl: '/courses',
+            recipients: { create: [{ memberId }] },
+          },
+        });
+      }
       const io = (req.server as any).io;
       for (const memberId of memberIds) {
-        io?.to(`user:${memberId}`).emit('notification', { type: 'support_call_cancelled', title, message, actionUrl: '/courses' });
-        await sendPushToMember(req.server.prisma, memberId, title, message, { type: 'support_call_cancelled' }).catch(() => {});
+        const text = messageFor(memberId);
+        io?.to(`user:${memberId}`).emit('notification', { type: 'support_call_cancelled', title, message: text, actionUrl: '/courses' });
+        await sendPushToMember(req.server.prisma, memberId, title, text, { type: 'support_call_cancelled' }).catch(() => {});
       }
     } catch (err) {
       req.server.log.error({ err, sessionId: row.id }, 'support call cancel notification failed');
     }
   }
   return reply.send({ success: true, data: { id: row.id, status: 'cancelled', cancelledBookings: memberIds.length }, error: null });
+}
+
+// DELETE /api/support-entitlements/sessions/:id — removes a slot nobody ever booked.
+// A slot with any booking (even cancelled) is kept for history and must be cancelled.
+export async function deleteSupportSessionHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const acting = await requireSessionManager(req, reply);
+  if (!acting) return;
+  const removed = await req.server.prisma.$transaction(async (tx) => {
+    const row = await loadManagedSession(reply, tx, req.params.id, acting, true);
+    if (!row) return null;
+    // Bookings lock this session row first, and the count above was read after we
+    // got the lock, so a booking committed while we waited is included.
+    const rule = canDeleteSlot({ totalBookings: Number(row.total_count ?? 0) });
+    if (!rule.ok) {
+      ruleFail(reply, rule);
+      return null;
+    }
+    await tx.$executeRawUnsafe(`DELETE FROM support_call_sessions WHERE id = $1::uuid`, row.id);
+    return row;
+  });
+  if (!removed) return reply;
+  broadcastSlotsChanged(req, removed.category);
+  return reply.send({ success: true, data: { id: removed.id, deleted: true }, error: null });
 }
 
 // GET /api/support-entitlements/sessions/:id/bookings
@@ -468,7 +657,7 @@ export async function listSupportSessionBookingsHandler(req: FastifyRequest<{ Pa
   const row = await loadManagedSession(reply, req.server.prisma, req.params.id, acting);
   if (!row) return;
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT b.id, b.status, b.booked_at, b.cancelled_at, b.member_id,
+    `SELECT b.id, b.status, b.booked_at, b.cancelled_at, b.member_id, b.coin_cost,
             m.first_name, m.last_name, m.phone, m.email
      FROM support_call_bookings b JOIN members m ON m.id = b.member_id
      WHERE b.session_id = $1::uuid
@@ -486,6 +675,7 @@ export async function listSupportSessionBookingsHandler(req: FastifyRequest<{ Pa
       memberName: [r.first_name, r.last_name].filter(Boolean).join(' '),
       phone: r.phone,
       email: r.email,
+      coinCost: r.coin_cost == null ? null : Number(r.coin_cost),
     })),
     error: null,
   });
@@ -533,4 +723,41 @@ export async function markSupportBookingHandler(req: FastifyRequest<{ Params: { 
     );
     return reply.send({ success: true, data: { id: r.booking_id, status, usageId: usage[0].id }, error: null });
   });
+}
+
+// ── Coin price per extra support call ────────────────────────────────────────
+// GET  /api/support-entitlements/coin-pricing            — every category, null = coin unlock off
+// PUT  /api/support-entitlements/coin-pricing/:category  — { coinCost: positive int | null }; admin/super_admin only
+
+const coinPricingSchema = z.object({ coinCost: z.number().int().positive().max(1_000_000).nullable() });
+
+export async function listCallCoinPricingHandler(req: FastifyRequest, reply: FastifyReply) {
+  const acting = await getActingAdmin(req);
+  if (!acting) return sfail(reply, 403, 'Admin account not found');
+  const costs = await loadAllCallCoinCosts(req.server.prisma);
+  return reply.send({
+    success: true,
+    data: SUPPORT_CALL_CATEGORIES.map((category) => ({ category, coinCost: costs[category] ?? null })),
+    error: null,
+  });
+}
+
+export async function updateCallCoinPricingHandler(req: FastifyRequest<{ Params: { category: string } }>, reply: FastifyReply) {
+  const acting = await getActingAdmin(req);
+  if (!acting || !isFullAccessRole(acting.role)) {
+    return sfail(reply, 403, 'Only Admin and Super Admin accounts can change call prices.');
+  }
+  const { category } = req.params;
+  if (!isSupportCallCategory(category)) return sfail(reply, 404, 'Unknown support call category');
+  const parsed = coinPricingSchema.safeParse(req.body);
+  if (!parsed.success) return sfail(reply, 400, 'Coin cost must be a whole number above 0, or empty to turn coin unlock off');
+  const { coinCost } = parsed.data;
+  // Existing paid bookings keep the price they were paid at (support_call_bookings.coin_cost).
+  await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO support_call_coin_pricing (category, coin_cost, updated_by, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (category) DO UPDATE SET coin_cost = EXCLUDED.coin_cost, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    category, coinCost, acting.id,
+  );
+  return reply.send({ success: true, data: { category, coinCost }, error: null });
 }

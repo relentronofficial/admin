@@ -23,6 +23,14 @@ export const userService = {
   updateAvatar: (avatarUrl: string) =>
     apiClient.patch<never, ApiResponse<{ avatarUrl: string }>>("/api/user/me/avatar", { avatarUrl }),
 
+  // Sends the photo through the backend, which stores it and saves it on the member.
+  uploadAvatar: async (file: File) =>
+    apiClient.post<never, ApiResponse<{ avatarUrl: string }>>(
+      `/api/user/me/avatar/upload?${new URLSearchParams({ filename: file.name })}`,
+      await file.arrayBuffer(),
+      { headers: { "Content-Type": file.type }, maxBodyLength: Infinity },
+    ),
+
   getNotificationPrefs: () =>
     apiClient.get<never, ApiResponse<{ email: boolean; push: boolean; sms: boolean }>>("/api/user/notifications/preferences"),
 

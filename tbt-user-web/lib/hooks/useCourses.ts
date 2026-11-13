@@ -2,7 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { coursesService, type ListCoursesParams } from "@/lib/api/services/courses.service";
-export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, RazorpayOrderResult, CoinOrderResult } from "@/lib/api/services/courses.service";
+import { invalidateCoinBalance } from "./useCoins";
+export type { EpisodeResource, EpisodeTask, EpisodeTaskSubmission, TaskCompletionMode, TaskSubmissionStatus, StreakPointsSummary, StreakPointsHistoryEntry, EpisodeTimerSession, EpisodeLifelineState, CourseLifelineState, RazorpayOrderResult, CoinOrderResult } from "@/lib/api/services/courses.service";
 
 export const useCourses = (params: ListCoursesParams = {}) =>
   useQuery({
@@ -22,7 +23,7 @@ export const useCourse = (id: string) =>
       return res.data;
     },
     enabled: !!id,
-    staleTime: 60 * 1000,
+    staleTime: 0,
   });
 
 export const useMyEnrollments = () =>
@@ -58,10 +59,12 @@ export const useLessonProgress = (courseId: string) =>
 export const useMarkLessonComplete = (courseId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number }) =>
-      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds),
-    onMutate: async ({ lessonId, isCompleted }) => {
-      if (!isCompleted) return;
+    // optimistic: false — don't show the lesson as completed until the server confirms it
+    // (automatic 90% completion; a refused or failed save must never show the green tick).
+    mutationFn: ({ lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds, interactionResponse }: { lessonId: string; watchedSeconds?: number; deltaSeconds?: number; isCompleted?: boolean; videoDuration?: number; timerStartedAt?: number; timerSeconds?: number; optimistic?: boolean; interactionResponse?: string }) =>
+      coursesService.markLessonComplete(courseId, lessonId, watchedSeconds, deltaSeconds, isCompleted, videoDuration, timerStartedAt, timerSeconds, interactionResponse),
+    onMutate: async ({ lessonId, isCompleted, optimistic }) => {
+      if (!isCompleted || optimistic === false) return;
       await queryClient.cancelQueries({ queryKey: ["user", "progress", courseId] });
       const previous = queryClient.getQueryData(["user", "progress", courseId]);
       queryClient.setQueryData(["user", "progress", courseId], (old: any) => {
@@ -94,6 +97,7 @@ export const useMarkLessonComplete = (courseId: string) => {
         // awardVideoStreakPoints fires fire-and-forget on the backend — bust
         // the cache so the profile streak-points section reflects the award.
         queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
+        void invalidateCoinBalance(queryClient); // course XP is credited as TBT coins
       }
     },
   });
@@ -109,6 +113,7 @@ export const useSubmitCourseQuiz = (courseId: string, episodeId: string) => {
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
       queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
       queryClient.invalidateQueries({ queryKey: ["user", "streak-points"] });
+      void invalidateCoinBalance(queryClient);
     },
   });
 };
@@ -199,6 +204,7 @@ export const useVerifyCoinPayment = () => {
       coursesService.verifyCoinPayment(params),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      void invalidateCoinBalance(queryClient);
     },
   });
 };
@@ -311,6 +317,7 @@ export const useSubmitEpisodeTask = (episodeId: string | null | undefined) => {
       // Submitting a lesson task counts toward the daily streak.
       queryClient.invalidateQueries({ queryKey: ["user", "streak"] });
       queryClient.invalidateQueries({ queryKey: ["user", "mentorship-stats"] }); // Tier Access active days
+      void invalidateCoinBalance(queryClient); // course_task points
     },
   });
 };
@@ -387,6 +394,75 @@ export const useUseEpisodeLifeline = (episodeId: string | null | undefined) => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["episode-lifelines", episodeId] });
       queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      void invalidateCoinBalance(queryClient);
+    },
+  });
+};
+
+export const useCourseFaqs = () =>
+  useQuery({
+    queryKey: ["pub", "course-faqs"],
+    queryFn: async () => {
+      const apiClient = (await import("@/lib/api/client")).default;
+      const res: any = await apiClient.get("/api/pub/course-faqs");
+      return (res.data ?? []) as Array<{ id: string; question: string; answerType: 'text' | 'video'; answerText: string | null; answerVideoUrl: string | null }>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+
+export const useSubmitEpisodeForm = (episodeId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      coursesService.submitEpisodeForm(episodeId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["episode-form-submission", episodeId] });
+    },
+  });
+};
+
+export const useMyEpisodeFormSubmission = (episodeId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["episode-form-submission", episodeId],
+    queryFn: async () => {
+      const res = await coursesService.getMyEpisodeFormSubmission(episodeId!);
+      return res.data ?? null;
+    },
+    enabled: !!episodeId,
+  });
+
+// ── Course-scoped lifeline pool ───────────────────────────────────────────────
+export const useCourseLifelines = (courseId: string | null | undefined) =>
+  useQuery({
+    queryKey: ["course-lifelines", courseId],
+    queryFn: async () => {
+      const res = await coursesService.getCourseLifelines(courseId!);
+      return res.data ?? null;
+    },
+    enabled: !!courseId,
+    staleTime: 0,
+  });
+
+export const useConsumeCourseLifeline = (courseId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => coursesService.consumeCourseLifeline(courseId!),
+    onSuccess: (res) => {
+      queryClient.setQueryData(["course-lifelines", courseId], (res as any)?.data ?? null);
+    },
+  });
+};
+
+export const usePurchaseCourseLifelines = (courseId: string | null | undefined) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { quantity: number; expectedCoinCostEach: number }) =>
+      coursesService.purchaseCourseLifelines(courseId!, body),
+    onSuccess: (res) => {
+      const data = (res as any)?.data;
+      if (data?.lifelines) queryClient.setQueryData(["course-lifelines", courseId], data.lifelines);
+      void invalidateCoinBalance(queryClient);
     },
   });
 };

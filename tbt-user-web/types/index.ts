@@ -61,6 +61,10 @@ export interface Course {
   durationHours?: number | null;
   durationDisplay?: string | null;
   taskDurationDisplay?: string | null;
+  /** Catalog: sum of every visible video's length; null if any length is unknown. */
+  videoSeconds?: number | null;
+  /** Catalog: estimated minutes of the course's active tasks; null when it has none. */
+  taskMinutes?: number | null;
   isPublished: boolean;
   isFeatured: boolean;
   createdAt: string;
@@ -95,6 +99,8 @@ export interface Lesson {
   videoType?: 'hls' | 'iframe';
   duration?: number | null;
   durationSeconds?: number | null;
+  /** Estimated minutes of this lesson's active tasks (tasks.estimated_minutes); null when none. */
+  taskMinutes?: number | null;
   order: number;
   isFree: boolean;
   locked?: boolean;
@@ -430,6 +436,11 @@ export interface UiStrings {
   mentorshipModulesRetry?: string;
   mentorshipModulesSaved?: string;
   mentorshipModulesNotSelected?: string;
+  // Episode dynamic content + form builder (2026-10-23)
+  episodeSideContentHeading?: string;
+  episodeFormHeading?: string;
+  episodeFormSubmittedMessage?: string;
+  episodeFormSubmitLabel?: string;
 }
 
 // ─── Batch Program ───────────────────────────────────────────────────────────
@@ -976,6 +987,8 @@ export interface SupportTicket {
   /** Member-safe subset of the ticket's activity log (see toMemberSafeActivity
    * on the backend) — action + timestamp only, no actor identity. */
   activityLog?: SupportTicketActivity[];
+  /** Resolve-by deadline set by admin when raising this ticket. Shown as a countdown. */
+  resolveDeadline?: string | null;
 }
 
 // ─── Community ────────────────────────────────────────────────────────────────

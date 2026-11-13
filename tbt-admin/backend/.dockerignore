@@ -1,5 +1,16 @@
 ﻿node_modules
 dist
 .env
+.env.*
 *.log
+*.test.ts
+test/
+tests/
+coverage/
+.nyc_output/
+prisma/migrations/
+scripts/
+results/
 .git
+.gitignore
+*.md

@@ -29,7 +29,7 @@ export const coursesService = {
   getLessonProgress: (courseId: string) =>
     apiClient.get<never, ApiResponse<LessonProgress[]>>(`/api/user/enrollments/${courseId}/progress`),
 
-  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean, videoDuration?: number, timerStartedAt?: number, timerSeconds?: number) =>
+  markLessonComplete: (courseId: string, lessonId: string, watchedSeconds?: number, deltaSeconds?: number, isCompleted?: boolean, videoDuration?: number, timerStartedAt?: number, timerSeconds?: number, interactionResponse?: string) =>
     apiClient.post<never, ApiResponse<LessonProgress>>(`/api/user/enrollments/${courseId}/progress/${lessonId}`, {
       watchedSeconds,
       deltaSeconds,
@@ -37,6 +37,7 @@ export const coursesService = {
       videoDuration,
       timerStartedAt,
       timerSeconds,
+      interactionResponse,
     }),
 
   submitQuiz: (courseId: string, episodeId: string, answers: Record<string, string>) =>
@@ -102,13 +103,28 @@ export const coursesService = {
     apiClient.get<never, ApiResponse<EpisodeTimerSession | null>>(`/api/user/episodes/${episodeId}/timer/session`),
 
   heartbeatEpisodeTimer: (episodeId: string, completed?: boolean) =>
-    apiClient.post<never, ApiResponse<{ status: string; remainingSeconds: number }>>(`/api/user/episodes/${episodeId}/timer/heartbeat`, { completed }),
+    apiClient.post<never, ApiResponse<{ status: string; remainingSeconds: number; lifelines?: CourseLifelineState | null }>>(`/api/user/episodes/${episodeId}/timer/heartbeat`, { completed }),
 
   getEpisodeLifelines: (episodeId: string) =>
     apiClient.get<never, ApiResponse<EpisodeLifelineState>>(`/api/user/episodes/${episodeId}/lifelines`),
 
   useEpisodeLifeline: (episodeId: string, type: 'free' | 'coin') =>
     apiClient.post<never, ApiResponse<{ freeRemaining: number; totalUsed: number; coinsDeducted?: number; remainingCoins?: number }>>(`/api/user/episodes/${episodeId}/lifelines/use`, { type }),
+
+  getCourseLifelines: (courseId: string) =>
+    apiClient.get<never, ApiResponse<CourseLifelineState>>(`/api/user/courses/${courseId}/lifelines`),
+
+  consumeCourseLifeline: (courseId: string) =>
+    apiClient.post<never, ApiResponse<CourseLifelineState>>(`/api/user/courses/${courseId}/lifelines/consume`),
+
+  purchaseCourseLifelines: (courseId: string, body: { quantity: number; expectedCoinCostEach: number }) =>
+    apiClient.post<never, ApiResponse<{ purchased: number; coinsSpent: number; newBalance: number; lifelines: CourseLifelineState }>>(`/api/user/courses/${courseId}/lifelines/purchase`, body),
+
+  submitEpisodeForm: (episodeId: string, data: Record<string, unknown>) =>
+    apiClient.post<never, ApiResponse<{ id: string; submittedAt: string }>>(`/api/user/episodes/${episodeId}/form-submissions`, { data }),
+
+  getMyEpisodeFormSubmission: (episodeId: string) =>
+    apiClient.get<never, ApiResponse<{ id: string; data: Record<string, unknown>; submittedAt: string } | null>>(`/api/user/episodes/${episodeId}/form-submissions/mine`),
 
   createRazorpayOrder: (courseId: string) =>
     apiClient.post<never, ApiResponse<RazorpayOrderResult>>(`/api/user/courses/${courseId}/razorpay/create-order`),
@@ -216,6 +232,15 @@ export interface EpisodeLifelineState {
   purchasedUsed: number;
   totalUsed: number;
   freeRemaining: number;
+}
+
+export interface CourseLifelineState {
+  freeTotal: number;
+  freeUsed: number;
+  purchasedTotal: number;
+  purchasedUsed: number;
+  remaining: number;
+  coinCost: number;
 }
 
 export interface EpisodeTask {

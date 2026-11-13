@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -34,17 +34,36 @@ import {
   Megaphone,
   MessageSquareText,
   UserCheck,
+  HelpCircle,
   Shield,
   ShoppingCart,
   Coins,
   CreditCard,
   Terminal,
   PhoneCall,
+  Brain,
+  LayoutGrid,
+  KeyRound,
+  FolderKanban,
+  ListChecks,
+  RefreshCcw,
+  Grid3x3,
+  Volume2,
+  SlidersHorizontal,
+  ChevronDown,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
 
-const navGroups: { label: string | null; items: { name: string; href: string; icon: any }[] }[] = [
+type NavItem = { name: string; href: string; icon: any };
+// `collapsible` groups render as a dropdown: the label toggles the items open
+// and closed. Groups without it keep the plain label + always-visible items.
+// `basePath` marks pages that belong to the group without a menu item of their
+// own (e.g. the /psychometric index), so the group still opens and highlights there.
+type NavGroup = { label: string | null; collapsible?: boolean; basePath?: string; items: NavItem[] };
+
+const navGroups: NavGroup[] = [
   {
     label: null,
     items: [
@@ -59,10 +78,12 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
   {
     label: "Content",
+    collapsible: true,
     items: [
       { name: "Hero Carousel", href: "/hero-carousel", icon: Tv2 },
       { name: "Content Sections", href: "/content-sections", icon: Layers },
       { name: "Courses", href: "/courses", icon: BookOpen },
+      { name: "Modules FAQ", href: "/module-faqs", icon: HelpCircle },
       { name: "Payments", href: "/payments", icon: CreditCard },
       { name: "Workshops", href: "/workshops", icon: Clapperboard },
       { name: "Podcasts", href: "/podcasts", icon: Headphones },
@@ -73,6 +94,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
   {
     label: "Communication",
+    collapsible: true,
     items: [
       { name: "Community",     href: "/community",         icon: Users },
       { name: "Notifications", href: "/app-notifications", icon: Bell },
@@ -84,7 +106,31 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
     ],
   },
   {
+    // Psychometric Admin (ported from the standalone Psychometric platform —
+    // its own API and admin sign-in), plus TBT's built-in onboarding quiz.
+    label: "Psychometric",
+    collapsible: true,
+    basePath: "/psychometric",
+    items: [
+      { name: "Dashboard", href: "/psychometric/dashboard", icon: LayoutGrid },
+      { name: "Users", href: "/psychometric/users", icon: Users },
+      { name: "Access Codes", href: "/psychometric/shared-ids", icon: KeyRound },
+      { name: "Question Types", href: "/psychometric/question-types", icon: FolderKanban },
+      { name: "Questions", href: "/psychometric/questions", icon: HelpCircle },
+      { name: "Question Sets", href: "/psychometric/question-sets", icon: Layers },
+      { name: "Answer Options", href: "/psychometric/answer-options", icon: ListChecks },
+      { name: "Results", href: "/psychometric/results", icon: BarChart3 },
+      { name: "Retest Requests", href: "/psychometric/retest-requests", icon: RefreshCcw },
+      { name: "Reports", href: "/psychometric/reports", icon: FileText },
+      { name: "Settings", href: "/psychometric/settings", icon: SlidersHorizontal },
+      { name: "Business Matrix", href: "/psychometric/business-matrix", icon: Grid3x3 },
+      { name: "Voice / Audio", href: "/psychometric/voice", icon: Volume2 },
+      { name: "Onboarding Quiz", href: "/onboarding-quiz", icon: Brain },
+    ],
+  },
+  {
     label: "Settings",
+    collapsible: true,
     items: [
       { name: "Site Config", href: "/settings/site", icon: Settings },
       { name: "Navigation", href: "/settings/navigation", icon: Navigation },
@@ -98,6 +144,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
   {
     label: "Billing",
+    collapsible: true,
     items: [
       { name: "Credits", href: "/credits", icon: ShoppingCart },
       { name: "Grant Coins", href: "/grant-coins", icon: Coins },
@@ -105,6 +152,7 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
   {
     label: "Support",
+    collapsible: true,
     items: [
       { name: "Support", href: "/support", icon: MessageSquare },
       { name: "Support Calls", href: "/support-calls", icon: PhoneCall },
@@ -133,10 +181,38 @@ const navGroups: { label: string | null; items: { name: string; href: string; ic
   },
 ];
 
-// Every page renders its own <DashboardLayout>, so the Sidebar remounts on each
-// navigation and a fresh <nav> starts at scrollTop 0. Keep the position outside
-// the component (module scope survives client navigation; sessionStorage
-// survives a reload) and restore it before paint.
+const isItemActive = (pathname: string | null, href: string) =>
+  !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+
+const isGroupActive = (pathname: string | null, group: NavGroup) =>
+  (!!group.basePath && isItemActive(pathname, group.basePath)) ||
+  group.items.some((i) => isItemActive(pathname, i.href));
+
+// Open dropdowns are remembered per browser. Every page renders its own
+// DashboardLayout, so the sidebar remounts on navigation and would otherwise
+// forget which groups the admin had opened.
+const OPEN_GROUPS_KEY = "tbt_admin_sidebar_open_groups";
+
+function readSavedOpenGroups(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(OPEN_GROUPS_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOpenGroups(groups: string[]) {
+  try {
+    localStorage.setItem(OPEN_GROUPS_KEY, JSON.stringify(groups));
+  } catch {
+    /* storage unavailable (private mode etc.) — dropdowns just won't be remembered */
+  }
+}
+
+// The nav's scroll position is lost on the same remount, which jumped the
+// sidebar back to the top after clicking an item low in the list. Module scope
+// survives client navigation; sessionStorage survives a reload.
 const SCROLL_KEY = "tbt_admin_sidebar_scroll";
 let savedScrollTop: number | null = null;
 
@@ -150,38 +226,70 @@ function readSavedScrollTop(): number {
   return savedScrollTop;
 }
 
+function saveScrollTop(top: number) {
+  savedScrollTop = top;
+  try {
+    sessionStorage.setItem(SCROLL_KEY, String(top));
+  } catch {
+    /* storage unavailable — module scope still covers client navigation */
+  }
+}
+
+// Runs before paint on the client, so the restored dropdowns and scroll
+// position never flash in at their defaults first.
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
-export function Sidebar() {
+interface SidebarProps {
+  /** Mobile only: whether the off-canvas sidebar is open. Ignored from md up. */
+  mobileOpen?: boolean;
+  onClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const activeGroup = navGroups.find((g) => g.collapsible && isGroupActive(pathname, g))?.label ?? null;
+  // Server render and first client render use only the active group, so they
+  // match; saved groups are merged in after mount.
+  const [openGroups, setOpenGroups] = useState<string[]>(activeGroup ? [activeGroup] : []);
+  const [groupsRestored, setGroupsRestored] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   useIsomorphicLayoutEffect(() => {
+    setOpenGroups((prev) => Array.from(new Set([...prev, ...readSavedOpenGroups()])));
+    setGroupsRestored(true);
+  }, []);
+
+  // Restore scroll only once the saved dropdowns are open again — before that
+  // the list is shorter and the browser would clamp the position. Then bring
+  // the active item into view only if it sits outside the visible area.
+  useIsomorphicLayoutEffect(() => {
     const nav = navRef.current;
-    if (!nav) return;
+    if (!groupsRestored || !nav) return;
     nav.scrollTop = readSavedScrollTop();
 
-    // Only move if the active item is out of view (e.g. a deep link or reload).
-    const active = nav.querySelector<HTMLElement>("[data-active='true']");
-    if (active) {
-      const top = active.offsetTop - nav.offsetTop;
-      const bottom = top + active.offsetHeight;
-      if (top < nav.scrollTop) nav.scrollTop = top;
-      else if (bottom > nav.scrollTop + nav.clientHeight) nav.scrollTop = bottom - nav.clientHeight;
+    const active = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (active && active.offsetParent !== null) {
+      const navRect = nav.getBoundingClientRect();
+      const itemRect = active.getBoundingClientRect();
+      if (itemRect.top < navRect.top) nav.scrollTop -= navRect.top - itemRect.top;
+      else if (itemRect.bottom > navRect.bottom) nav.scrollTop += itemRect.bottom - navRect.bottom;
     }
-    savedScrollTop = nav.scrollTop;
-  }, [pathname]);
+    saveScrollTop(nav.scrollTop);
+  }, [groupsRestored, pathname]);
 
-  const handleNavScroll = () => {
-    const nav = navRef.current;
-    if (!nav) return;
-    savedScrollTop = nav.scrollTop;
-    try {
-      sessionStorage.setItem(SCROLL_KEY, String(nav.scrollTop));
-    } catch {
-      // storage unavailable — module-scope value still covers client navigation
-    }
+  // Navigating to a child page always opens its parent group.
+  useEffect(() => {
+    if (activeGroup) setOpenGroups((prev) => (prev.includes(activeGroup) ? prev : [...prev, activeGroup]));
+  }, [activeGroup]);
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups((prev) => {
+      const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
+      saveOpenGroups(next);
+      return next;
+    });
   };
+
   const { data: me } = useMe();
   const displayName = me?.fullName || "Admin";
   const initial = displayName.charAt(0).toUpperCase();
@@ -190,57 +298,108 @@ export function Sidebar() {
     : "Admin";
 
   return (
-    <aside className="w-[220px] bg-[#111] border-r border-[#2a2a2a] flex flex-col fixed inset-y-0 left-0 z-[100] font-sans">
-      <div className="flex items-center justify-center px-5 py-4 border-b border-[#2a2a2a]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-9 w-auto object-contain" />
-      </div>
+    <>
+      {/* Mobile backdrop — tapping it closes the sidebar. */}
+      {mobileOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[99] md:hidden" onClick={onClose} aria-hidden="true" />
+      )}
 
-      <nav ref={navRef} onScroll={handleNavScroll} className="flex-1 py-3 overflow-y-auto">
-        {navGroups.map((group, gi) => (
-          <div key={gi} className="mb-1">
-            {group.label && (
-              <p className="px-5 py-1.5 text-[9px] font-bold uppercase tracking-[2px] text-[#777]">
-                {group.label}
-              </p>
-            )}
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname?.startsWith(item.href) ?? false;
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  data-active={isActive}
-                  className={cn(
-                    "flex items-center gap-2.5 px-5 py-2 text-[13px] font-normal transition-all border-l-2",
-                    isActive
-                      ? "text-[#e02020] border-[#e02020] bg-[rgba(224,32,32,0.08)]"
-                      : "text-[#a0a0a0] border-transparent hover:bg-[#1f1f1f] hover:text-[#f0f0f0]"
-                  )}
-                >
-                  <Icon
-                    size={15}
-                    className={cn("opacity-70", isActive && "opacity-100")}
-                    strokeWidth={isActive ? 2.5 : 2}
-                  />
-                  <span className="tracking-wide">{item.name}</span>
-                </Link>
-              );
-            })}
+      <aside
+        className={cn(
+          "w-[220px] bg-[#111] border-r border-[#2a2a2a] flex flex-col fixed inset-y-0 left-0 z-[100] font-sans",
+          "transition-transform duration-200 md:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        )}
+      >
+        <div className="relative flex items-center justify-center px-5 py-4 border-b border-[#2a2a2a]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/tbt_logo.png" alt="Tamil Business Tribe" className="h-9 w-auto object-contain" />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close menu"
+            className="md:hidden absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#a0a0a0] hover:text-[#f0f0f0]"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <nav
+          ref={navRef}
+          onScroll={(e) => saveScrollTop(e.currentTarget.scrollTop)}
+          className="flex-1 py-3 overflow-y-auto"
+        >
+          {navGroups.map((group, gi) => {
+            const isOpen = !group.collapsible || (!!group.label && openGroups.includes(group.label));
+            const panelId = `sidebar-group-${gi}`;
+            return (
+              <div key={gi} className="mb-1">
+                {group.label && !group.collapsible && (
+                  <p className="px-5 py-1.5 text-[9px] font-bold uppercase tracking-[2px] text-[#777]">
+                    {group.label}
+                  </p>
+                )}
+                {group.label && group.collapsible && (
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.label!)}
+                    aria-expanded={isOpen}
+                    aria-controls={panelId}
+                    className={cn(
+                      "w-full flex items-center justify-between px-5 py-2 md:py-1.5 text-[9px] font-bold uppercase tracking-[2px] transition-colors",
+                      isGroupActive(pathname, group) ? "text-[#e02020]" : "text-[#777] hover:text-[#a0a0a0]"
+                    )}
+                  >
+                    <span>{group.label}</span>
+                    <ChevronDown
+                      size={12}
+                      strokeWidth={2.5}
+                      className={cn("transition-transform duration-200", !isOpen && "-rotate-90")}
+                    />
+                  </button>
+                )}
+                <div id={panelId} hidden={!isOpen}>
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = isItemActive(pathname, item.href);
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        onClick={onClose}
+                        aria-current={isActive ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-2.5 px-5 py-2 text-[13px] font-normal transition-all border-l-2",
+                          isActive
+                            ? "text-[#e02020] border-[#e02020] bg-[rgba(224,32,32,0.08)]"
+                            : "text-[#a0a0a0] border-transparent hover:bg-[#1f1f1f] hover:text-[#f0f0f0]"
+                        )}
+                      >
+                        <Icon
+                          size={15}
+                          className={cn("opacity-70", isActive && "opacity-100")}
+                          strokeWidth={isActive ? 2.5 : 2}
+                        />
+                        <span className="tracking-wide">{item.name}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        <div className="p-3.5 border-t border-[#2a2a2a] flex items-center gap-2.5 bg-[#111]">
+          <div className="w-8 h-8 rounded-full bg-[#1f1f1f] border border-[#333] flex items-center justify-center text-xs font-bold text-[#e02020] uppercase shadow-sm flex-shrink-0">
+            {initial}
           </div>
-        ))}
-      </nav>
-
-      <div className="p-3.5 border-t border-[#2a2a2a] flex items-center gap-2.5 bg-[#111]">
-        <div className="w-8 h-8 rounded-full bg-[#1f1f1f] border border-[#333] flex items-center justify-center text-xs font-bold text-[#e02020] uppercase shadow-sm flex-shrink-0">
-          {initial}
+          <div className="leading-tight min-w-0">
+            <div className="text-[13px] font-medium text-[#f0f0f0] truncate">{displayName}</div>
+            <div className="text-[11px] text-[#888] mt-0.5 uppercase tracking-tighter truncate">{roleLabel}</div>
+          </div>
         </div>
-        <div className="leading-tight min-w-0">
-          <div className="text-[13px] font-medium text-[#f0f0f0] truncate">{displayName}</div>
-          <div className="text-[11px] text-[#888] mt-0.5 uppercase tracking-tighter truncate">{roleLabel}</div>
-        </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

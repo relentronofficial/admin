@@ -78,3 +78,14 @@ export function useSubmitEpisodeFeedback() {
     },
   });
 }
+
+/** General-purpose weekly report submit — courseId supplied at call time. */
+export function useSubmitWeeklyReport() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SubmitFeedbackBody) => courseReportsService.submitFeedback(body),
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: ["course-reports", "feedback", vars.courseId] });
+    },
+  });
+}

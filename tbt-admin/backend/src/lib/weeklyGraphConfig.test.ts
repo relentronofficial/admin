@@ -26,8 +26,8 @@ const task = (id: string, dayNumber: number, extra: Partial<GraphTaskInput> = {}
 });
 const week = (id: string, label: string, startDay: number, endDay: number, sortOrder: number, isActive = true): GraphWeekRow =>
   ({ id, label, startDay, endDay, sortOrder, isActive });
-const milestone = (id: string, label: string, kind: 'activity' | 'revenue', sortOrder: number, isActive = true): GraphMilestoneRow =>
-  ({ id, label, kind, sortOrder, isActive });
+const milestone = (id: string, label: string, kind: 'activity' | 'revenue', sortOrder: number, isActive = true, threshold: number | null = null): GraphMilestoneRow =>
+  ({ id, label, kind, sortOrder, isActive, threshold });
 
 const DEFAULT_MS = [
   milestone('m-ads', 'Ads', 'activity', 0),
@@ -39,8 +39,8 @@ const DEFAULT_MS = [
 const FOUR_WEEKS = [week('w1', 'W1', 1, 7, 0), week('w2', 'W2', 8, 14, 1), week('w3', 'W3', 15, 21, 2), week('w4', 'W4', 22, 28, 3)];
 
 describe('defaults', () => {
-  it('keeps the current five labels, three activity then two revenue', () => {
-    expect(DEFAULT_GRAPH_MILESTONES.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
+  it('keeps the default six labels, three activity then three revenue', () => {
+    expect(DEFAULT_GRAPH_MILESTONES.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '5 Lakhs', '1 crore']);
     expect(taskProgressCap(DEFAULT_GRAPH_MILESTONES)).toBe(3);
   });
 
@@ -106,8 +106,8 @@ describe('server-side validation', () => {
   });
 
   it('milestones: label and kind', () => {
-    expect(validateMilestoneInput({ label: '₹5 Lakhs', kind: 'revenue' })).toEqual({ ok: true, value: { label: '₹5 Lakhs', kind: 'revenue', isActive: true } });
-    expect(validateMilestoneInput({ label: 'Sales Automation' })).toEqual({ ok: true, value: { label: 'Sales Automation', kind: 'activity', isActive: true } });
+    expect(validateMilestoneInput({ label: '₹5 Lakhs', kind: 'revenue' })).toEqual({ ok: true, value: { label: '₹5 Lakhs', kind: 'revenue', isActive: true, threshold: null } });
+    expect(validateMilestoneInput({ label: 'Sales Automation' })).toEqual({ ok: true, value: { label: 'Sales Automation', kind: 'activity', isActive: true, threshold: null } });
     expect(validateMilestoneInput({ label: 'X', kind: 'profit' }).ok).toBe(false);
     expect(validateMilestoneInput({ label: '   ' }).ok).toBe(false);
   });
@@ -160,18 +160,18 @@ describe('member graph from the program configuration', () => {
   });
 
   it('uses configured week labels, order and ids; the Y axis comes from the config', () => {
-    const g = build({ config: config([week('w2', 'Launch', 8, 14, 0), week('w1', 'Setup', 1, 7, 1)]), totalDays: 14 });
+    const g = build({ config: config([week('w2', 'Launch', 8, 14, 0), week('w1', 'Setup', 1, 7, 1)]), totalDays: 14, currentDay: 7 });
     expect(g.weeks.map((w) => [w.label, w.weekId])).toEqual([['Launch', 'w2'], ['Setup', 'w1']]);
     expect(g.config.source).toBe('program');
     expect(g.config.milestones.map((m) => m.label)).toEqual(['Ads', 'Website', 'Funnels', '1 lakh', '1 crore']);
   });
 
   it('adding W5 makes the new week appear in the graph', () => {
-    const before = build({ totalDays: 28 });
-    const after = build({ totalDays: 28, config: config([...FOUR_WEEKS, week('w5', 'W5', 29, 35, 4)]) });
+    const before = build({ totalDays: 28, currentDay: 28 });
+    const after = build({ totalDays: 35, currentDay: 35, config: config([...FOUR_WEEKS, week('w5', 'W5', 29, 35, 4)]) });
     expect(before.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
     expect(after.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect(after.weeks[4].progressLevel).toBeNull(); // not started yet
+    expect(after.weeks[4].progressLevel).toBe(0); // current week, no tasks
   });
 
   it('renaming a week or milestone keeps the activity and its approved progress (links are ids)', () => {
@@ -197,7 +197,7 @@ describe('member graph from the program configuration', () => {
     const submissions = [{ taskId: 't1', dayNumber: 3, status: 'approved' }];
     const disabled = [week('w1', 'W1', 1, 7, 0, false), ...FOUR_WEEKS.slice(1)];
     const g = build({ tasks, submissions, config: config(disabled) });
-    expect(g.weeks.map((w) => w.label)).toEqual(['W2', 'W3', 'W4']);
+    expect(g.weeks.map((w) => w.label)).toEqual(['W2', 'W3']);
     expect(g.weeks.flatMap((w) => w.activities.map((a) => a.taskId))).toEqual(['t2']);
     // Re-enabling brings the approved activity straight back
     const back = build({ tasks, submissions });
@@ -236,20 +236,23 @@ describe('member graph from the program configuration', () => {
     expect(g.weeks[0].progressLevel).toBe(4);
   });
 
-  it('records for disabled/unknown milestones or weeks, or future weeks, are not plotted', () => {
+  it('records for disabled/unknown milestones are not plotted; a record in a future week is plotted in that week', () => {
     const ms = DEFAULT_MS.map((m) => (m.id === 'm-1c' ? { ...m, isActive: false } : m));
     const g = build({ config: config(FOUR_WEEKS, ms), currentDay: 10, records: [
       { milestoneId: 'm-1c', weekId: 'w1' }, { milestoneId: 'nope', weekId: 'w1' }, { milestoneId: 'm-1l', weekId: 'w4' },
     ] });
+    expect(g.weeks).toHaveLength(2); // currentDay:10 → W2 → only W1 and W2 shown
     expect(g.weeks[0].progressLevel).toBe(0);
-    expect(g.weeks[3].progressLevel).toBeNull();
+    // W4 is not shown — the record for it is simply not plotted
   });
 
-  it('days past the configured weeks (extended members) get default weeks, never dropped', () => {
-    const g = build({ tasks: [task('late', 31)], totalDays: 35 });
-    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4', 'W5']);
-    expect(g.weeks[4]).toMatchObject({ weekId: null, startDay: 29, endDay: 35 });
-    expect(g.weeks[4].activities.map((a) => a.taskId)).toEqual(['late']);
+  it('shows exactly the configured weeks: none is generated past the configured range', () => {
+    // Program length (35 days) runs past the configured W1–W4 (days 1–28).
+    const g = build({ tasks: [task('in-range', 20), task('late', 31)], totalDays: 35, currentDay: 28 });
+    expect(g.weeks.map((w) => w.label)).toEqual(['W1', 'W2', 'W3', 'W4']);
+    expect(g.weeks.every((w) => w.weekId !== null)).toBe(true);
+    // An activity on a day no configured week covers is not shown until a week is added for it.
+    expect(g.weeks.flatMap((w) => w.activities.map((a) => a.taskId))).toEqual(['in-range']);
   });
 
   it('another member\'s assigned activity never appears, whatever the configuration', () => {
@@ -290,5 +293,88 @@ describe('deploy safety (schema guard)', () => {
     expect(result.blocked).toEqual([]);
     expect(result.apply.join('\n')).not.toMatch(/DROP/);
     expect(result.skipped.length).toBeGreaterThanOrEqual(5);
+  });
+});
+
+// Regression: the member graph's progression line is drawn through each started
+// week's progressLevel (user-web weeklyGraphProgression.ts), so these levels must
+// follow the member's real activity statuses in an admin-configured program.
+describe('weekly progress for the progression line (admin-configured program)', () => {
+  const config = resolveGraphConfig({ weeks: FOUR_WEEKS, milestones: DEFAULT_MS });
+  // Admin-configured activities: two per week, the first of W1 linked to Ads and of W2 to Funnels.
+  const tasks = [
+    task('a1', 2, { graphMilestoneId: 'm-ads' }), task('b1', 3),
+    task('a2', 9, { graphMilestoneId: 'm-fun' }), task('b2', 10),
+    task('a3', 16, { graphMilestoneId: 'm-web' }), task('b3', 17),
+    task('a4', 23), task('b4', 24),
+  ];
+  const build = (over: { submissions?: any[]; dayProgress?: any[]; currentDay?: number } = {}) =>
+    buildWeeklyGraph({
+      memberId: ME, tasks, totalDays: 28, currentDay: over.currentDay ?? 25, config,
+      submissions: over.submissions ?? [], dayProgress: over.dayProgress ?? [],
+    });
+  const approved = (taskId: string, dayNumber: number) => ({ taskId, dayNumber, status: 'approved' });
+  const statusOf = (g: ReturnType<typeof build>, id: string) => g.weeks.flatMap((w) => w.activities).find((a) => a.taskId === id)!.status;
+  const levels = (g: ReturnType<typeof build>) => g.weeks.map((w) => w.progressLevel);
+
+  const pattern = {
+    submissions: [
+      approved('a1', 2),                       // W1: Ads milestone approved, b1 incomplete
+      approved('a2', 9), approved('b2', 10),   // W2: everything approved, incl. the Funnels milestone
+      { taskId: 'a3', dayNumber: 16, status: 'pending' }, // W3: draft proof only
+      approved('a4', 23),                      // W4 (current): half approved
+    ],
+    dayProgress: [
+      { dayNumber: 17, status: 'pending_approval', completedTaskIds: ['b3'] }, // W3: submitted, awaiting approval
+    ],
+  };
+
+  it('completed, incomplete, pending approval and missed activities keep their own statuses', () => {
+    const g = build(pattern);
+    expect(statusOf(g, 'a1')).toBe('completed');
+    expect(statusOf(g, 'b1')).toBe('not_started'); // missed: day passed, nothing recorded
+    expect(statusOf(g, 'a3')).toBe('in_progress'); // draft saved, not submitted
+    expect(statusOf(g, 'b3')).toBe('submitted');   // awaiting approval
+    expect(statusOf(g, 'b4')).toBe('not_started');
+  });
+
+  it('weekly levels go up with approved work and down when a week is not approved', () => {
+    const g = build(pattern);
+    expect(levels(g)).toEqual([1.5, 3, 0, 1.5]);
+    // W1 → W2 rises, W2 → W3 falls to the baseline (pending/awaiting never count), W3 → W4 rises again.
+    const [w1, w2, w3, w4] = levels(g) as number[];
+    expect(w2).toBeGreaterThan(w1);
+    expect(w3).toBeLessThan(w2);
+    expect(w4).toBeGreaterThan(w3);
+  });
+
+  it('an activity approved later lifts its own week, not the week it was approved in', () => {
+    const later = build({
+      ...pattern,
+      submissions: [...pattern.submissions.filter((s) => s.taskId !== 'a3'), approved('a3', 16)],
+    });
+    expect(statusOf(later, 'a3')).toBe('completed');
+    expect(later.weeks[2].progressLevel).toBe(2); // W3 now reaches its Website link
+    expect(later.weeks[3].progressLevel).toBe(1.5); // W4 unchanged
+    // An approved day accepts the ticked, awaiting task too.
+    const dayApproved = build({ ...pattern, dayProgress: [{ dayNumber: 17, status: 'approved', completedTaskIds: ['b3'] }] });
+    expect(statusOf(dayApproved, 'b3')).toBe('completed');
+    expect(dayApproved.weeks[2].progressLevel).toBe(1.5);
+  });
+
+  it('a rejected submission pulls its week back down; future weeks get no point', () => {
+    const g = build({ ...pattern, submissions: [...pattern.submissions.filter((s) => s.taskId !== 'a2'), { taskId: 'a2', dayNumber: 9, status: 'rejected' }], currentDay: 12 });
+    expect(statusOf(g, 'a2')).toBe('needs_revision');
+    expect(g.weeks).toHaveLength(2); // currentDay:12 → W2 → only W1 and W2 shown; future weeks not rendered
+    expect(g.weeks[1].progressLevel).toBe(1.5); // only b2 approved, no Funnels lift
+  });
+
+  it("another member's assignment never affects this member's line", () => {
+    const g = buildWeeklyGraph({
+      memberId: ME, tasks: [...tasks, task('x1', 3, { memberId: OTHER })], totalDays: 28, currentDay: 25, config,
+      submissions: pattern.submissions, dayProgress: pattern.dayProgress,
+    });
+    expect(g.weeks[0].activities.map((a) => a.taskId)).not.toContain('x1');
+    expect(levels(g)).toEqual([1.5, 3, 0, 1.5]);
   });
 });

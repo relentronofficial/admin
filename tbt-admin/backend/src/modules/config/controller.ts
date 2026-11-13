@@ -16,7 +16,10 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   }
   const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
     'SELECT task_timer_seconds, free_lifelines_per_session, hidden_menu_keys, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-  ).catch(() => []);
+  ).catch((err) => {
+    req.log.error({ err }, '[config/site] extra site_configs columns query failed');
+    return [] as Array<{ task_timer_seconds: number; free_lifelines_per_session: number; hidden_menu_keys: unknown; early_completion_bonus_xp: number; courses_banner_url: string | null }>;
+  });
   const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
     'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
@@ -30,7 +33,7 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
       navOrder: Array.isArray(navOrderRows[0]?.nav_order) ? (navOrderRows[0].nav_order as string[]) : null,
       taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
+      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 5,
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
       earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
       coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
@@ -85,7 +88,7 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
   }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 3, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 5, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────
@@ -214,7 +217,7 @@ export async function updateResourcesPageConfigHandler(req: FastifyRequest, repl
 
 export async function listModuleConfigsHandler(req: FastifyRequest, reply: FastifyReply) {
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active
+    `SELECT module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active, business_type_keys
      FROM module_config ORDER BY sort_order`
   ).catch(() => []);
   return reply.send({
@@ -229,6 +232,7 @@ export async function listModuleConfigsHandler(req: FastifyRequest, reply: Fasti
       accentColor: r.accent_color ?? null,
       sortOrder: Number(r.sort_order ?? 0),
       isActive: r.is_active !== false,
+      businessTypeKeys: Array.isArray(r.business_type_keys) ? r.business_type_keys : [],
     })),
     error: null,
   });
@@ -236,10 +240,11 @@ export async function listModuleConfigsHandler(req: FastifyRequest, reply: Fasti
 
 export async function updateModuleConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   const { name } = req.params as { name: string };
-  const { displayName, tagline, description, bannerUrl, iconUrl, accentColor, sortOrder, isActive } = req.body as any;
+  const { displayName, tagline, description, bannerUrl, iconUrl, accentColor, sortOrder, isActive, businessTypeKeys } = req.body as any;
+  const keysJson = Array.isArray(businessTypeKeys) ? JSON.stringify(businessTypeKeys.map(String)) : null;
   await req.server.prisma.$executeRawUnsafe(
-    `INSERT INTO module_config (module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::boolean, true), now())
+    `INSERT INTO module_config (module_name, display_name, tagline, description, banner_url, icon_url, accent_color, sort_order, is_active, business_type_keys, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::boolean, true), COALESCE($10::jsonb, '[]'::jsonb), now())
      ON CONFLICT (module_name) DO UPDATE SET
        display_name = EXCLUDED.display_name,
        tagline = EXCLUDED.tagline,
@@ -249,6 +254,7 @@ export async function updateModuleConfigHandler(req: FastifyRequest, reply: Fast
        accent_color = EXCLUDED.accent_color,
        sort_order = EXCLUDED.sort_order,
        is_active = COALESCE($9::boolean, module_config.is_active),
+       business_type_keys = COALESCE($10::jsonb, module_config.business_type_keys),
        updated_at = now()`,
     name,
     displayName ?? null,
@@ -259,6 +265,7 @@ export async function updateModuleConfigHandler(req: FastifyRequest, reply: Fast
     accentColor ?? null,
     Number(sortOrder ?? 0),
     typeof isActive === 'boolean' ? isActive : null,
+    keysJson,
   );
   // Also drops the mentorship selection options; per-member verdicts expire within 60 s.
   void invalidateModuleOptions(req.server.redis ?? null);

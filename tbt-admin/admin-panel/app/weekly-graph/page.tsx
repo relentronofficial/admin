@@ -23,6 +23,7 @@ import {
   useDeleteGraphMilestone,
   useReorderGraphMilestones,
   useSaveGraphActivity,
+  useDeleteGraphActivity,
   useGraphMemberRecords,
   useSaveGraphMemberRecord,
   useDeleteGraphMemberRecord,
@@ -45,6 +46,7 @@ const BTN_GHOST = cn(BTN, "bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] h
 const ICON_BTN = "p-1.5 rounded-md text-[#a0a0a0] hover:text-white hover:bg-[#222] disabled:opacity-40";
 
 const errMsg = (e: any, fallback: string) => e?.message || fallback;
+const formatInr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
 export default function WeeklyGraphPage() {
   // The only selection on the page. The program comes from the member.
@@ -110,7 +112,7 @@ export default function WeeklyGraphPage() {
                 <div>
                   <p className="text-[#f0f0f0] font-semibold flex items-center gap-2"><Sparkles size={16} className="text-[#f59e0b]" /> Using the built-in defaults</p>
                   <p className="text-[13px] text-[#a0a0a0] mt-1">
-                    Members of {config.program.name} currently see 7-day weeks and the five default milestones below. Start customizing to save them as editable items.
+                    Members of {config.program.name} currently see 7-day weeks and the default milestones below. Start customizing to save them as editable items.
                   </p>
                 </div>
                 <button
@@ -249,9 +251,38 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
     try { await save.mutateAsync({ id: w.id, isActive: !w.isActive }); toast.success(w.isActive ? "Week disabled" : "Week enabled"); }
     catch (e) { toast.error(errMsg(e, "Could not update the week")); }
   };
+  // A week in use (activities / member records) is deleted only after choosing the week
+  // that takes them over — the server moves them, then deletes the week, in one step.
+  const [moving, setMoving] = useState<{ week: GraphWeekItem; activities: number; records: number } | null>(null);
+  const [moveTo, setMoveTo] = useState("");
+  const [moveError, setMoveError] = useState<string | null>(null);
   const remove = async (w: GraphWeekItem) => {
-    if (!window.confirm(`Delete "${w.label}" permanently? Weeks with activities or member records can only be disabled.`)) return;
-    try { await del.mutateAsync(w.id!); toast.success("Week deleted"); } catch (e) { toast.error(errMsg(e, "Could not delete the week")); }
+    if (!window.confirm(`Delete "${w.label}" permanently?`)) return;
+    try { await del.mutateAsync({ id: w.id! }); toast.success("Week deleted"); }
+    catch (e: any) {
+      if (e?.response?.status === 409) {
+        const m = String(e?.message ?? "").match(/has (\d+) activities and (\d+) member records/);
+        const others = local.filter((x) => x.id && x.id !== w.id);
+        const idx = local.findIndex((x) => x.id === w.id);
+        // Default: the week just before it, else the one after.
+        const preferred = [...local.slice(0, idx)].reverse().find((x) => x.id) ?? local.slice(idx + 1).find((x) => x.id) ?? others[0];
+        setMoveTo(preferred?.id ?? "");
+        setMoveError(null);
+        setMoving({ week: w, activities: Number(m?.[1] ?? 0), records: Number(m?.[2] ?? 0) });
+      } else {
+        toast.error(errMsg(e, "Could not delete the week"));
+      }
+    }
+  };
+  const moveAndDelete = async () => {
+    if (!moving || !moveTo) return;
+    setMoveError(null);
+    try {
+      await del.mutateAsync({ id: moving.week.id!, moveTo });
+      const target = local.find((x) => x.id === moveTo)?.label ?? "the chosen week";
+      toast.success(`Week deleted — its activities and member records now belong to ${target}`);
+      setMoving(null);
+    } catch (e) { setMoveError(errMsg(e, "Could not delete the week")); }
   };
 
   return (
@@ -292,6 +323,37 @@ function WeeksSection({ config, programId }: { config: WeeklyGraphConfig; progra
           onClose={() => setEditing(null)}
           onSave={async (v) => { await save.mutateAsync(v); toast.success(editing === "new" ? "Week added" : "Week saved"); setEditing(null); }}
         />
+      )}
+      {moving && (
+        <Modal title={`Delete ${moving.week.label}`} onClose={() => { if (!del.isPending) setMoving(null); }}>
+          <p className="text-[13px] text-[#f0f0f0]">
+            {moving.week.label} (day {moving.week.startDay}–{moving.week.endDay}) has {moving.activities} {moving.activities === 1 ? "activity" : "activities"}
+            {" "}and {moving.records} member {moving.records === 1 ? "record" : "records"}.
+          </p>
+          <p className="text-[13px] text-[#a0a0a0]">
+            Choose the week that takes them over. Activities keep their days (members&apos; checklists don&apos;t change); on the graph they appear in the chosen week. Nothing is deleted except {moving.week.label}.
+          </p>
+          {moving.records > 0 && (
+            <p className="text-[13px] text-[#f59e0b]">
+              {moving.records} member milestone {moving.records === 1 ? "record is" : "records are"} kept and moved to the chosen week — they will show in that week on those members&apos; graphs.
+            </p>
+          )}
+          <label className="block">
+            <span className={LABEL}>Move to week</span>
+            <select className={cn(INPUT, "mt-1")} value={moveTo} onChange={(e) => setMoveTo(e.target.value)} disabled={del.isPending}>
+              {local.filter((x) => x.id && x.id !== moving.week.id).map((x) => (
+                <option key={x.id!} value={x.id!}>{x.label} · day {x.startDay}–{x.endDay}{x.isActive ? "" : " (disabled)"}</option>
+              ))}
+            </select>
+          </label>
+          {moveError && <p className="text-[13px] text-[#ef4444]">{moveError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className={BTN_GHOST} onClick={() => setMoving(null)} disabled={del.isPending}>Cancel</button>
+            <button type="button" className={BTN_PRIMARY} onClick={moveAndDelete} disabled={del.isPending || !moveTo}>
+              {del.isPending && <Loader2 size={14} className="animate-spin" />} Move and delete
+            </button>
+          </div>
+        </Modal>
       )}
     </section>
   );
@@ -352,7 +414,7 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
 
   return (
     <section className={CARD}>
-      <SectionHeader title="Milestones (Y axis, bottom → top)" hint="Activity milestones are reached by approved tasks. Revenue milestones are reached only when an admin records them for a member.">
+      <SectionHeader title="Milestones (Y axis, bottom → top)" hint="Activity milestones are reached by approved tasks. A revenue milestone is reached when the member's reported revenue (Your Revenue Stats, running total since the batch started) reaches its threshold, or when an admin records it.">
         <OrderBar dirty={dirty} saving={reorder.isPending} onCancel={cancel}
           onSave={() => reorder.mutateAsync(local.map((m) => m.id!)).then(() => toast.success("Milestone order saved"), (e) => toast.error(errMsg(e, "Could not save the order")))} />
         {!dirty && <button className={BTN_PRIMARY} onClick={() => setEditing("new")}><Plus size={14} /> Add milestone</button>}
@@ -361,7 +423,7 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
         <p className="mx-5 mb-3 text-[12px] text-[#f59e0b]">An activity milestone sits above a revenue milestone — tasks can&apos;t reach it (only an admin record can). Drag it below the revenue milestones if that isn&apos;t intended.</p>
       )}
       {local.length === 0 ? (
-        <p className="px-5 pb-5 text-[13px] text-[#606060]">No milestones — members will see the five defaults until you add one.</p>
+        <p className="px-5 pb-5 text-[13px] text-[#606060]">No milestones — members will see the defaults until you add one.</p>
       ) : (
         <table className="w-full text-[13px]">
           <thead><tr className="border-y border-[#2a2a2a] bg-[#1a1a1a]">
@@ -372,7 +434,13 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
               <tr key={m.id ?? `d${i}`} {...rowProps(i, config.saved)} className={cn("border-b border-[#222]", dragOver === i && "bg-[#dc2626]/10", !m.isActive && "opacity-60")}>
                 <td className="px-4 py-2 w-8 text-[#606060]">{config.saved && <GripVertical size={14} className="cursor-grab" />}</td>
                 <td className="px-4 py-2 text-[#f0f0f0] font-semibold">{m.label}</td>
-                <td className="px-4 py-2 text-[#a0a0a0]">{m.kind === "revenue" ? "Revenue (admin-recorded)" : "Activity"}</td>
+                <td className="px-4 py-2 text-[#a0a0a0]">
+                  {m.kind !== "revenue"
+                    ? "Activity"
+                    : m.threshold != null
+                      ? `Revenue ≥ ${formatInr(m.threshold)}`
+                      : "Revenue — no threshold (admin-recorded only)"}
+                </td>
                 <td className="px-4 py-2"><StatusPill active={m.isActive} /></td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Edit"} onClick={() => setEditing(m)}><Edit2 size={14} /></button>
@@ -397,17 +465,22 @@ function MilestonesSection({ config, programId }: { config: WeeklyGraphConfig; p
 }
 
 function MilestoneForm({ initial, isNew, onClose, onSave }: {
-  initial: GraphMilestoneItem; isNew: boolean; onClose: () => void; onSave: (v: { id: string | null; label: string; kind: GraphMilestoneKind }) => Promise<void>;
+  initial: GraphMilestoneItem; isNew: boolean; onClose: () => void;
+  onSave: (v: { id: string | null; label: string; kind: GraphMilestoneKind; threshold: number | null }) => Promise<void>;
 }) {
   const [label, setLabel] = useState(initial.label);
   const [kind, setKind] = useState<GraphMilestoneKind>(initial.kind);
+  const [threshold, setThreshold] = useState(initial.threshold != null ? String(initial.threshold) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!label.trim()) return setError("Label is required");
+    // The server validates the amount too; blank = no threshold (reached only by an admin record).
+    const amount = kind === "revenue" && threshold.trim() !== "" ? Number(threshold) : null;
+    if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) return setError("Threshold must be an amount greater than 0");
     setSaving(true); setError(null);
-    try { await onSave({ id: isNew ? null : initial.id, label: label.trim(), kind }); }
+    try { await onSave({ id: isNew ? null : initial.id, label: label.trim(), kind, threshold: amount }); }
     catch (err) { setError(errMsg(err, "Could not save the milestone")); }
     finally { setSaving(false); }
   };
@@ -419,9 +492,29 @@ function MilestoneForm({ initial, isNew, onClose, onSave }: {
           <label className={LABEL}>Type</label>
           <select className={cn(INPUT, "mt-1")} value={kind} onChange={(e) => setKind(e.target.value as GraphMilestoneKind)}>
             <option value="activity">Activity — reached by approved tasks</option>
-            <option value="revenue">Revenue — reached only by an admin record</option>
+            <option value="revenue">Revenue — reached by the member&apos;s reported revenue or an admin record</option>
           </select>
         </div>
+        {kind === "revenue" && (
+          <div>
+            <label className={LABEL} htmlFor="milestone-threshold">Revenue threshold (₹)</label>
+            <input
+              id="milestone-threshold"
+              className={cn(INPUT, "mt-1")}
+              type="number"
+              inputMode="decimal"
+              min={1}
+              step="any"
+              value={threshold}
+              placeholder="e.g. 100000"
+              onChange={(e) => setThreshold(e.target.value)}
+            />
+            <p className="text-[12px] text-[#606060] mt-1">
+              Reached when the member&apos;s total reported revenue (Your Revenue Stats) since the batch started is at or above this amount.
+              Leave blank to reach it only by an admin record.
+            </p>
+          </div>
+        )}
         {!isNew && <p className="text-[12px] text-[#606060]">Renaming keeps every linked activity and member record.</p>}
         <FormActions saving={saving} onCancel={onClose} error={error} />
       </form>
@@ -433,7 +526,12 @@ function MilestoneForm({ initial, isNew, onClose, onSave }: {
 
 function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; programId: string }) {
   const save = useSaveGraphActivity(programId);
+  const del = useDeleteGraphActivity(programId);
   const [editing, setEditing] = useState<GraphActivityItem | "new" | null>(null);
+  const [deleting, setDeleting] = useState<GraphActivityItem | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set when the server refused the delete (409: the activity has member submissions).
+  const [blockedSubmissions, setBlockedSubmissions] = useState<number | null>(null);
   const weekName = (a: GraphActivityItem) =>
     config.weeks.find((w) => (a.weekId ? w.id === a.weekId : w.startDay <= a.dayNumber && a.dayNumber <= w.endDay))?.label ?? `Day ${a.dayNumber}`;
   const msName = (a: GraphActivityItem) => config.milestones.find((m) => m.id && m.id === a.milestoneId)?.label ?? (a.isMilestone ? a.milestoneLabel : null);
@@ -442,6 +540,40 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
     if (a.isActive && !window.confirm(`Disable "${a.title}"? It is hidden from members. Submissions and reviews are kept.`)) return;
     try { await save.mutateAsync({ id: a.id, isActive: !a.isActive }); toast.success(a.isActive ? "Activity disabled" : "Activity enabled"); }
     catch (e) { toast.error(errMsg(e, "Could not update the activity")); }
+  };
+  const deleteBusy = del.isPending || save.isPending;
+  const openDelete = (a: GraphActivityItem) => { setDeleteError(null); setBlockedSubmissions(null); setDeleting(a); };
+  const closeDelete = () => { if (!deleteBusy) { setDeleting(null); setDeleteError(null); setBlockedSubmissions(null); } };
+  const confirmDelete = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try { await del.mutateAsync({ id: deleting.id }); toast.success("Activity deleted"); setDeleting(null); }
+    catch (e: any) {
+      if (e?.response?.status === 409) {
+        // The activity has submissions: ask again, stating how many, before archiving it.
+        setBlockedSubmissions(Number(String(e?.message ?? "").match(/has (\d+) submission/)?.[1] ?? 0));
+      } else {
+        setDeleteError(errMsg(e, "Could not delete the activity"));
+      }
+    }
+  };
+  // Explicit second confirmation: the server archives the activity and keeps every submission.
+  const deleteKeepingSubmissions = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try {
+      const res: any = await del.mutateAsync({ id: deleting.id, archive: true });
+      const kept = Number(res?.submissions ?? blockedSubmissions ?? 0);
+      toast.success(`Activity deleted — ${kept} ${kept === 1 ? "submission" : "submissions"} kept`);
+      setDeleting(null); setBlockedSubmissions(null);
+    } catch (e) { setDeleteError(errMsg(e, "Could not delete the activity")); }
+  };
+  // Same operation as the row's eye button, run only on the admin's click.
+  const disableInstead = async () => {
+    if (!deleting?.id) return;
+    setDeleteError(null);
+    try { await save.mutateAsync({ id: deleting.id, isActive: false }); toast.success("Activity disabled"); setDeleting(null); setBlockedSubmissions(null); }
+    catch (e) { setDeleteError(errMsg(e, "Could not disable the activity")); }
   };
 
   return (
@@ -471,6 +603,7 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
                   <td className="px-4 py-2 text-right whitespace-nowrap">
                     <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Edit"} onClick={() => setEditing(a)}><Edit2 size={14} /></button>
                     <button className={ICON_BTN} disabled={!config.saved} title={a.isActive ? "Disable" : "Enable"} onClick={() => toggle(a)}>{a.isActive ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                    <button className={ICON_BTN} disabled={!config.saved} title={needsSaved(config) ?? "Delete"} aria-label={`Delete ${a.title}`} onClick={() => openDelete(a)}><Trash2 size={14} /></button>
                   </td>
                 </tr>
               ))}
@@ -485,6 +618,37 @@ function ActivitiesSection({ config, programId }: { config: WeeklyGraphConfig; p
           onClose={() => setEditing(null)}
           onSave={async (v) => { await save.mutateAsync(v); toast.success(editing === "new" ? "Activity added" : "Activity saved"); setEditing(null); }}
         />
+      )}
+      {deleting && blockedSubmissions === null && (
+        <Modal title="Delete activity" onClose={closeDelete}>
+          <p className="text-[13px] text-[#a0a0a0]">Are you sure you want to delete this activity?</p>
+          <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
+          {deleteError && <p className="text-[13px] text-[#ef4444]">{deleteError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={del.isPending}>Cancel</button>
+            <button type="button" className={BTN_PRIMARY} onClick={confirmDelete} disabled={del.isPending}>{del.isPending && <Loader2 size={14} className="animate-spin" />} Delete</button>
+          </div>
+        </Modal>
+      )}
+      {deleting && blockedSubmissions !== null && (
+        <Modal title="Delete activity with submissions" onClose={closeDelete}>
+          <p className="text-[13px] text-[#f0f0f0]">{deleting.title}</p>
+          <p className="text-[13px] text-[#f0f0f0]">
+            This activity has {blockedSubmissions} member {blockedSubmissions === 1 ? "submission" : "submissions"}.
+          </p>
+          <p className="text-[13px] text-[#a0a0a0]">
+            Deleting it removes the activity from this list, from members&apos; checklists and from the weekly graph.
+            The {blockedSubmissions === 1 ? "submission is" : `${blockedSubmissions} submissions are`} kept — with their reviews and points — and are not erased.
+          </p>
+          {deleteError && <p className="text-[13px] text-[#ef4444]">{deleteError}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className={BTN_GHOST} onClick={closeDelete} disabled={deleteBusy}>Cancel</button>
+            {deleting.isActive && (
+              <button type="button" className={BTN_GHOST} onClick={disableInstead} disabled={deleteBusy}>{save.isPending && <Loader2 size={14} className="animate-spin" />} Disable instead</button>
+            )}
+            <button type="button" className={BTN_PRIMARY} onClick={deleteKeepingSubmissions} disabled={deleteBusy}>{del.isPending && <Loader2 size={14} className="animate-spin" />} Delete activity</button>
+          </div>
+        </Modal>
       )}
     </section>
   );

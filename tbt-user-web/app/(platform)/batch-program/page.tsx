@@ -817,14 +817,14 @@ export default function BatchProgramPage() {
         <div className="flex items-center justify-between">
           <button
             onClick={() => setCalMonth((m) => subMonths(m, 1))}
-            className="p-1 rounded-lg hover:opacity-70 transition-opacity"
+            className="p-2 rounded-lg hover:opacity-70 transition-opacity"
           >
             <ChevronLeft size={16} />
           </button>
           <p className="text-xs font-semibold">{format(calMonth, "MMMM yyyy")}</p>
           <button
             onClick={() => setCalMonth((m) => addMonths(m, 1))}
-            className="p-1 rounded-lg hover:opacity-70 transition-opacity"
+            className="p-2 rounded-lg hover:opacity-70 transition-opacity"
           >
             <ChevronRight size={16} />
           </button>

@@ -3,8 +3,10 @@
 // Expert Support Call sessions (SUPPORT_CALLS_SPECKIT.md). Admins/super admins
 // manage every session; mentor accounts see and manage only the sessions they
 // host (enforced by the backend — the UI just hides the host picker).
+// Availability: the admin publishes the exact dates/times they are free
+// (Assign Slots); each time is one bookable slot on the member calendar.
 import { useMemo, useState } from "react";
-import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX } from "lucide-react";
+import { PhoneCall, Plus, Loader2, X, Users, Edit2, Ban, Link2, CheckCircle2, UserX, Trash2, CalendarDays, Coins } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useMe } from "@/lib/hooks/useAdmin";
@@ -13,24 +15,26 @@ import {
   useCreateSupportSession,
   useUpdateSupportSession,
   useCancelSupportSession,
+  useDeleteSupportSession,
   useSupportSessionBookings,
   useMarkSupportBooking,
   useSupportCallHosts,
+  useGetCallCoinPricing,
+  useUpdateCallCoinPrice,
+  SUPPORT_CALLS_DEMO,
   type SupportCallCategory,
   type SupportSession,
   type SupportSessionInput,
 } from "@/lib/hooks/useTbt";
 import { cn } from "@/lib/utils";
-
-const CATEGORIES: { id: SupportCallCategory; label: string; icon: string }[] = [
-  { id: "sales_support", label: "Sales Calls", icon: "☎" },
-  { id: "tech_support", label: "Tech Calls", icon: "⚙" },
-  { id: "content_support", label: "Content Calls", icon: "▶" },
-  { id: "ad_support", label: "Marketing Calls", icon: "📢" },
-  { id: "one_to_one", label: "Mentor 1-On-1", icon: "♟" },
-  { id: "group_call", label: "Live Group Q&A", icon: "👥" },
-];
-const CATEGORY_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, `${c.icon} ${c.label}`])) as Record<string, string>;
+import { SLOT_STATUS_BADGE, slotStatusLabel } from "@/lib/utils/supportSlots";
+import {
+  CATEGORY_LABEL,
+  PublishAvailabilityModal,
+  SUPPORT_CALL_CATEGORIES as CATEGORIES,
+  matchesCallType,
+  type CallTypeFilter,
+} from "@/components/support-calls/SlotAvailability";
 
 const BOOKING_BADGE: Record<string, { label: string; color: string; bg: string }> = {
   booked: { label: "Booked", color: "#a78bfa", bg: "rgba(167,139,250,0.15)" },
@@ -87,6 +91,8 @@ function SessionFormModal({
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
   const busy = create.isPending || update.isPending;
   const isOneToOne = form.category === "one_to_one";
+  // A booked slot never moves under its members: cancel and republish instead.
+  const timeLocked = !!initial && initial.activeBookings > 0;
 
   const submit = async () => {
     if (busy) return;
@@ -97,8 +103,9 @@ function SessionFormModal({
       title: form.title.trim(),
       description: form.description.trim() || null,
       hostName: form.hostName.trim() || null,
-      startsAt: fromIstInput(form.startsAt),
-      durationMinutes: Number(form.durationMinutes),
+      // Only send the time when it changed, so other edits never touch it.
+      ...(!initial || form.startsAt !== toIstInput(initial.startsAt) ? { startsAt: fromIstInput(form.startsAt) } : {}),
+      ...(!initial || Number(form.durationMinutes) !== initial.durationMinutes ? { durationMinutes: Number(form.durationMinutes) } : {}),
       capacity: isOneToOne ? 1 : Number(form.capacity),
       meetingUrl: form.meetingUrl.trim() || null,
       ...(canPickHost ? { hostAdminId: form.hostAdminId || null } : {}),
@@ -182,11 +189,12 @@ function SessionFormModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-1">
               <label className={LABEL}>Starts (IST)</label>
-              <input type="datetime-local" className={INPUT} value={form.startsAt} onChange={(e) => set("startsAt", e.target.value)} />
+              <input type="datetime-local" className={INPUT} value={form.startsAt} disabled={timeLocked}
+                onChange={(e) => set("startsAt", e.target.value)} />
             </div>
             <div>
               <label className={LABEL}>Duration (min)</label>
-              <input type="number" min={5} max={480} className={INPUT} value={form.durationMinutes}
+              <input type="number" min={5} max={480} className={INPUT} value={form.durationMinutes} disabled={timeLocked}
                 onChange={(e) => set("durationMinutes", Number(e.target.value))} />
             </div>
             <div>
@@ -195,6 +203,11 @@ function SessionFormModal({
                 disabled={isOneToOne} onChange={(e) => set("capacity", Number(e.target.value))} />
             </div>
           </div>
+          {timeLocked && (
+            <p className="text-[11px] text-[#f59e0b] -mt-2">
+              Members have booked this slot, so its time and length are locked. To reschedule, cancel the slot (booked members are notified and get their call back) and publish a new time.
+            </p>
+          )}
           <div>
             <label className={LABEL}>Meeting link (private)</label>
             <input className={INPUT} value={form.meetingUrl} placeholder="https://…" onChange={(e) => set("meetingUrl", e.target.value)} />
@@ -270,6 +283,11 @@ function BookingsModal({ session, onClose }: { session: SupportSession; onClose:
                     <div className="text-[11px] text-[#888]">{[b.phone, b.email].filter(Boolean).join(" · ")}</div>
                   </div>
                   <div className="flex items-center gap-2">
+                    {b.coinCost != null && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-[#eab308] bg-[rgba(234,179,8,0.15)]">
+                        {b.coinCost} coins{b.status === "cancelled" ? " · refunded" : ""}
+                      </span>
+                    )}
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: badge.color, background: badge.bg }}>
                       {badge.label}
                     </span>
@@ -302,22 +320,137 @@ function BookingsModal({ session, onClose }: { session: SupportSession; onClose:
   );
 }
 
+function CoinPricingTab() {
+  const { data: prices = [], isLoading, isError, refetch } = useGetCallCoinPricing();
+  const updatePrice = useUpdateCallCoinPrice();
+
+  // Local edits keyed by category
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+
+  const priceMap = useMemo(() => {
+    const m: Record<string, number | null> = {};
+    for (const p of prices) m[p.category] = p.coinCost;
+    return m;
+  }, [prices]);
+
+  const displayValue = (category: string) =>
+    edits[category] !== undefined ? edits[category] : (priceMap[category] ?? "");
+
+  const handleSave = async (category: string) => {
+    const raw = edits[category];
+    if (raw === undefined) return; // unchanged
+    const parsed = raw === "" ? null : parseInt(raw, 10);
+    if (raw !== "" && (isNaN(parsed!) || parsed! < 0)) {
+      return toast.error("Coin cost must be a non-negative number");
+    }
+    setSaving((s) => ({ ...s, [category]: true }));
+    try {
+      await updatePrice.mutateAsync({ category, coinCost: parsed });
+      setEdits((e) => { const n = { ...e }; delete n[category]; return n; });
+      toast.success("Price updated");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not update price");
+    } finally {
+      setSaving((s) => ({ ...s, [category]: false }));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16">
+        <Loader2 size={18} className="animate-spin" /> Loading pricing…
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#ef4444]">
+        Could not load pricing. <button className="underline" onClick={() => refetch()}>Retry</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[12px] text-[#888]">
+        Set the TBT coin cost for purchasing one extra call slot in each category. Leave blank or set to 0 to disable coin purchases for that category.
+      </p>
+      <div className="space-y-2">
+        {CATEGORIES.map((cat) => {
+          const isDirty = edits[cat.id] !== undefined;
+          const isSaving = !!saving[cat.id];
+          return (
+            <div key={cat.id} className="bg-[#181818] border border-[#2a2a2a] rounded-xl px-5 py-4 flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-lg">{cat.icon}</span>
+                <span className="text-[14px] font-semibold text-[#f0f0f0]">{cat.label}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Coins size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#eab308]" />
+                  <input
+                    type="number"
+                    min={0}
+                    max={99999}
+                    placeholder="Disabled"
+                    className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 pl-8 pr-4 text-sm text-white outline-none focus:border-[#dc2626] w-36"
+                    value={displayValue(cat.id)}
+                    onChange={(e) => setEdits((prev) => ({ ...prev, [cat.id]: e.target.value }))}
+                  />
+                </div>
+                <span className="text-[12px] text-[#606060]">coins / call</span>
+                <button
+                  disabled={!isDirty || isSaving}
+                  onClick={() => handleSave(cat.id)}
+                  className="bg-[#dc2626] hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-[12px] font-bold uppercase tracking-wider flex items-center gap-1.5"
+                >
+                  {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
+                  Save
+                </button>
+                {isDirty && !isSaving && (
+                  <button
+                    onClick={() => setEdits((e) => { const n = { ...e }; delete n[cat.id]; return n; })}
+                    className="text-[12px] text-[#606060] hover:text-[#a0a0a0] px-2"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function SupportCallsPage() {
   const { data: me } = useMe();
   const canPickHost = me?.role === "admin" || me?.role === "super_admin";
+  const [activeView, setActiveView] = useState<"sessions" | "pricing">("sessions");
   const [category, setCategory] = useState<string>("");
   const [scope, setScope] = useState<"upcoming" | "past" | "all">("upcoming");
-  const [callType, setCallType] = useState<"all" | "one_to_one" | "group">("all");
+  const [callType, setCallType] = useState<CallTypeFilter>("all");
   const [editing, setEditing] = useState<SupportSession | null | "new">(null);
   const [viewing, setViewing] = useState<SupportSession | null>(null);
+  // null = closed; "" = open with today; a date = open on that IST date.
+  const [publishDate, setPublishDate] = useState<string | null>(null);
   const params = useMemo(() => ({ ...(category ? { category } : {}), scope }), [category, scope]);
   const { data: sessions = [], isLoading, isError, error, refetch } = useListSupportSessions(params);
   const cancel = useCancelSupportSession();
-  const filteredSessions = useMemo(() => {
-    if (callType === "all") return sessions;
-    if (callType === "one_to_one") return sessions.filter((s) => s.capacity === 1);
-    return sessions.filter((s) => s.capacity > 1);
-  }, [sessions, callType]);
+  const remove = useDeleteSupportSession();
+  const filteredSessions = useMemo(() => sessions.filter((s) => matchesCallType(s, callType)), [sessions, callType]);
+
+  const doDelete = async (s: SupportSession) => {
+    if (!window.confirm(`Remove the ${fmtIst(s.startsAt)} slot? Nobody has booked it, so it is deleted.`)) return;
+    try {
+      await remove.mutateAsync(s.id);
+      toast.success("Slot removed");
+    } catch (err: any) {
+      toast.error(err?.message || "Could not remove the slot");
+    }
+  };
 
   const doCancel = async (s: SupportSession) => {
     const msg = s.activeBookings > 0
@@ -345,63 +478,101 @@ export default function SupportCallsPage() {
                 <PhoneCall size={20} /> Support Calls
               </h1>
               <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">
-                Publish Expert Support Call sessions members can book from their course page.
+                Publish the dates and times you are available. Members book them from their calendar.
               </p>
             </div>
           </div>
           {!forbidden && (
-            <button
-              onClick={() => setEditing("new")}
-              className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
-            >
-              <Plus size={15} /> New Session
-            </button>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => setPublishDate("")}
+                className="bg-[#dc2626] hover:bg-red-700 text-white px-5 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
+              >
+                <CalendarDays size={15} /> Assign Slots
+              </button>
+              <button
+                onClick={() => setEditing("new")}
+                className="bg-[#1f1f1f] hover:bg-[#2a2a2a] border border-[#333] text-white px-4 py-2.5 rounded-lg text-[13px] font-bold uppercase tracking-wider flex items-center gap-2"
+              >
+                <Plus size={15} /> New Session
+              </button>
+            </div>
           )}
         </div>
 
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1">
-            {(["upcoming", "past", "all"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setScope(s)}
-                className={cn(
-                  "px-4 py-2 rounded-lg text-[13px] font-semibold capitalize transition-all",
-                  scope === s ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#1f1f1f]",
-                )}
-              >
-                {s}
-              </button>
-            ))}
+        {SUPPORT_CALLS_DEMO && (
+          <div className="rounded-lg border border-[rgba(234,179,8,0.35)] bg-[rgba(234,179,8,0.08)] px-4 py-2.5 text-[12px] text-[#eab308]">
+            Showing sample data (NEXT_PUBLIC_SUPPORT_CALLS_DEMO=1). Names and contacts are fictional and nothing is saved.
           </div>
-          <select className={cn(INPUT, "w-auto h-10")} value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
-          </select>
-          <select className={cn(INPUT, "w-auto h-10")} value={callType} onChange={(e) => setCallType(e.target.value as typeof callType)}>
-            <option value="all">All call types</option>
-            <option value="one_to_one">1:1 only</option>
-            <option value="group">Group only</option>
-          </select>
+        )}
+
+        <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1 w-fit">
+          {([["sessions", "Sessions"], ["pricing", "Coin Pricing"]] as const).map(([view, label]) => (
+            <button
+              key={view}
+              onClick={() => setActiveView(view)}
+              className={cn(
+                "px-4 py-2 rounded-lg text-[13px] font-semibold transition-all",
+                activeView === view ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#1f1f1f]",
+              )}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
-        {isLoading ? (
-          <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16"><Loader2 size={18} className="animate-spin" /> Loading sessions…</div>
-        ) : forbidden ? (
+        {activeView === "pricing" && canPickHost && <CoinPricingTab />}
+        {activeView === "pricing" && !canPickHost && (
           <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#888]">
-            Support call sessions are available to Admin, Super Admin and Mentor accounts.
+            Coin pricing configuration is only available to Admin and Super Admin accounts.
           </div>
-        ) : isError ? (
-          <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#ef4444]">
-            Could not load sessions. <button className="underline" onClick={() => refetch()}>Retry</button>
-          </div>
-        ) : filteredSessions.length === 0 ? (
-          <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#606060]">
-            No {scope === "all" ? "" : scope} sessions{category ? ` for ${CATEGORY_LABEL[category]}` : ""}{callType !== "all" ? ` (${callType === "one_to_one" ? "1:1" : "group"} filter active)` : ""}.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredSessions.map((s) => {
+        )}
+
+        {activeView === "sessions" && (
+          <>
+            <div className="flex flex-wrap gap-3 items-center">
+              <div className="flex gap-1 bg-[#141414] border border-[#1f1f1f] rounded-xl p-1">
+                {(["upcoming", "past", "all"] as const).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setScope(s)}
+                    className={cn(
+                      "px-4 py-2 rounded-lg text-[13px] font-semibold capitalize transition-all",
+                      scope === s ? "bg-[#dc2626] text-white" : "text-[#606060] hover:text-[#a0a0a0] hover:bg-[#1f1f1f]",
+                    )}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <select className={cn(INPUT, "w-auto h-10")} value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">All categories</option>
+                {CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+              </select>
+              <select className={cn(INPUT, "w-auto h-10")} value={callType} onChange={(e) => setCallType(e.target.value as typeof callType)}>
+                <option value="all">All call types</option>
+                <option value="one_to_one">1:1 only</option>
+                <option value="group">Group only</option>
+              </select>
+            </div>
+
+            {forbidden ? (
+              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#888]">
+                Support call sessions are available to Admin, Super Admin and Mentor accounts.
+              </div>
+            ) : isLoading ? (
+              <div className="flex items-center justify-center gap-2 text-[#888] text-sm py-16"><Loader2 size={18} className="animate-spin" /> Loading sessions…</div>
+            ) : isError ? (
+              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#ef4444]">
+                Could not load sessions. <button className="underline" onClick={() => refetch()}>Retry</button>
+              </div>
+            ) : filteredSessions.length === 0 ? (
+              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-10 text-center text-sm text-[#606060]">
+                No {scope === "all" ? "" : scope} sessions{category ? ` for ${CATEGORY_LABEL[category]}` : ""}{callType !== "all" ? ` (${callType === "one_to_one" ? "1:1" : "group"} filter active)` : ""}.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredSessions.map((s) => {
               const cancelled = s.status === "cancelled";
               const upcoming = new Date(s.startsAt).getTime() > Date.now();
               const isOneToOne = s.capacity === 1;
@@ -414,11 +585,12 @@ export default function SupportCallsPage() {
                         {isOneToOne && (
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#818cf8", background: "rgba(129,140,248,0.15)" }}>1:1</span>
                         )}
-                        {cancelled && (
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: BOOKING_BADGE.cancelled.color, background: BOOKING_BADGE.cancelled.bg }}>
-                            Cancelled
-                          </span>
-                        )}
+                        <span
+                          className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ color: SLOT_STATUS_BADGE[s.slotStatus]?.color, background: SLOT_STATUS_BADGE[s.slotStatus]?.bg }}
+                        >
+                          {slotStatusLabel(s)}
+                        </span>
                         {!s.hasMeetingUrl && !cancelled && (
                           <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ color: "#f59e0b", background: "rgba(245,158,11,0.15)" }}>No meeting link</span>
                         )}
@@ -443,9 +615,14 @@ export default function SupportCallsPage() {
                             <Edit2 size={13} /> Edit
                           </button>
                         )}
-                        {!cancelled && (
+                        {!cancelled && s.slotStatus !== "completed" && (
                           <button onClick={() => doCancel(s)} disabled={cancel.isPending} className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-[#ef4444] hover:text-red-400 disabled:opacity-50">
                             <Ban size={13} /> Cancel
+                          </button>
+                        )}
+                        {s.canDelete && (
+                          <button onClick={() => doDelete(s)} disabled={remove.isPending} className="flex items-center gap-1.5 text-[11px] font-bold uppercase text-[#ef4444] hover:text-red-400 disabled:opacity-50">
+                            <Trash2 size={13} /> Remove
                           </button>
                         )}
                         {s.meetingUrl && (
@@ -458,8 +635,10 @@ export default function SupportCallsPage() {
                   </div>
                 </div>
               );
-            })}
-          </div>
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -471,6 +650,13 @@ export default function SupportCallsPage() {
         />
       )}
       {viewing && <BookingsModal session={viewing} onClose={() => setViewing(null)} />}
+      {publishDate !== null && (
+        <PublishAvailabilityModal
+          initialDate={publishDate || null}
+          canPickHost={canPickHost}
+          onClose={() => setPublishDate(null)}
+        />
+      )}
     </DashboardLayout>
   );
 }

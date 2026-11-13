@@ -26,7 +26,7 @@ export default function ModuleConfigPage() {
     // Ensure all known modules have a form entry
     for (const name of MODULE_NAMES) {
       if (!init[name]) {
-        init[name] = { moduleName: name, displayName: '', tagline: '', description: '', bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: MODULE_NAMES.indexOf(name) + 1, isActive: true };
+        init[name] = { moduleName: name, displayName: '', tagline: '', description: '', bannerUrl: null, iconUrl: null, accentColor: null, sortOrder: MODULE_NAMES.indexOf(name) + 1, isActive: true, businessTypeKeys: [] };
       }
     }
     setForms(init);
@@ -194,6 +194,24 @@ export default function ModuleConfigPage() {
                       </label>
                       <p className="text-[#606060] text-xs mt-1">
                         When off, members can no longer pick this module during onboarding, and members who picked it lose access to its courses until it is turned back on.
+                      </p>
+                    </div>
+                  )}
+
+                  {MENTORSHIP_MODULES.has(moduleName) && (
+                    <div className="mb-4">
+                      <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">
+                        Business Type Keys
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white outline-none focus:border-[#dc2626] w-full resize-none text-sm"
+                        placeholder="One value per line — e.g. E-commerce, Product Based, D2C"
+                        value={(form.businessTypeKeys ?? []).join('\n')}
+                        onChange={e => set(moduleName, 'businessTypeKeys', e.target.value.split('\n').map(s => s.trim()).filter(Boolean))}
+                      />
+                      <p className="text-[#606060] text-xs mt-1">
+                        Members whose Business Type (from their profile) matches any value here are automatically assigned to this module. Case-insensitive.
                       </p>
                     </div>
                   )}

@@ -23,6 +23,7 @@ import apiClient from "@/lib/api/client";
 import { useMe } from "@/lib/hooks/useUser";
 import { StreakButton } from "./StreakButton";
 import { TierAccessIndicator } from "./TierAccessIndicator";
+import { CoinBalanceIndicator } from "./CoinBalanceIndicator";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
 import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
@@ -46,7 +47,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-80 rounded-2xl overflow-hidden z-50 flex flex-col"
+      className="absolute right-0 top-full mt-2 w-[min(320px,calc(100vw-24px))] rounded-2xl overflow-hidden z-50 flex flex-col"
       style={{
         background: "var(--color-notif-bg)",
         border: "1px solid var(--color-border-medium)",
@@ -213,21 +214,25 @@ function ProfileButton() {
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white overflow-hidden flex-shrink-0"
-        style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
+        className="-m-2 p-2 rounded-full flex items-center justify-center flex-shrink-0"
         aria-label="Account menu"
       >
-        {avatarUrl && !avatarError ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={avatarUrl}
-            alt=""
-            width={28}
-            height={28}
-            className="w-full h-full object-cover"
-            onError={() => setAvatarError(true)}
-          />
-        ) : initials}
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white overflow-hidden pointer-events-none"
+          style={{ background: (me as any)?.avatarGradient || "var(--color-accent, #dc2626)" }}
+        >
+          {avatarUrl && !avatarError ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={avatarUrl}
+              alt=""
+              width={28}
+              height={28}
+              className="w-full h-full object-cover"
+              onError={() => setAvatarError(true)}
+            />
+          ) : initials}
+        </div>
       </button>
 
       {open && (
@@ -294,6 +299,198 @@ function ProfileButton() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Mobile drawer (extracted to allow useMe() call) ──────────────────────────
+
+interface DrawerContentProps {
+  sidebarOpen: boolean;
+  setSidebarOpen: (v: boolean) => void;
+  pathname: string;
+  navMenu: { id: string; href: string; label: string }[];
+  hiddenMenuKeys: string[];
+  homeHref: string;
+  siteName: string;
+  lightLogoSrc: string;
+  darkLogoSrc: string;
+}
+
+const PLATFORM_LINKS = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/learning", label: "My Learning" },
+  { href: "/batch-program", label: "Batch Program" },
+  { href: "/Resources", label: "Resources" },
+  { href: "/history", label: "Watch History" },
+  { href: "/profile", label: "Profile" },
+] as const;
+
+function DrawerContent({
+  sidebarOpen, setSidebarOpen, pathname, navMenu, hiddenMenuKeys,
+  homeHref, siteName, lightLogoSrc, darkLogoSrc,
+}: DrawerContentProps) {
+  const { data: me } = useMe();
+  const queryClient = useQueryClient();
+  const router = useRouter();
+  const [avatarError, setAvatarError] = useState(false);
+  const avatarUrl = (me as any)?.avatarUrl ?? null;
+  useEffect(() => { setAvatarError(false); }, [avatarUrl]);
+
+  const handleLogout = async () => {
+    setSidebarOpen(false);
+    await apiClient.post("/api/user-auth/logout").catch(() => {});
+    queryClient.clear();
+    router.replace("/login");
+  };
+
+  const initials = me
+    ? (`${me.firstName?.[0] ?? ""}${me.lastName?.[0] ?? ""}`.toUpperCase() || (me as any).name?.[0]?.toUpperCase() || "?")
+    : "?";
+
+  const memberName = me ? ((me as any).name || `${me.firstName ?? ""} ${me.lastName ?? ""}`.trim() || "Member") : "";
+  const memberPlan = (me as any)?.membershipPlan;
+
+  // Nav items already rendered from admin navMenu
+  const navHrefs = new Set(navMenu.map((n) => n.href));
+  // Only show platform links that aren't already in the admin nav
+  const extraLinks = PLATFORM_LINKS.filter((l) => !navHrefs.has(l.href));
+
+  return (
+    <div
+      className={cn(
+        "fixed top-0 left-0 h-full w-[85vw] max-w-[320px] z-50 flex flex-col border-r transition-transform duration-300 ease-out lg:hidden",
+        sidebarOpen ? "translate-x-0" : "-translate-x-full"
+      )}
+      style={{
+        background: "var(--color-drawer-bg)",
+        borderColor: "var(--color-border-subtle)",
+        boxShadow: "4px 0 40px rgba(0,0,0,0.7)",
+      }}
+    >
+      {/* Drawer header */}
+      <div
+        className="h-16 flex items-center justify-between px-4 border-b flex-shrink-0"
+        style={{ borderColor: "var(--color-border-subtle)" }}
+      >
+        <Link href={homeHref} onClick={() => setSidebarOpen(false)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain block dark:hidden" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={darkLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain hidden dark:block" />
+        </Link>
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors duration-200"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Profile mini card */}
+      {me && (
+        <div
+          className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0"
+          style={{ borderColor: "var(--color-border-subtle)" }}
+        >
+          <div
+            className="w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-bold text-white overflow-hidden flex-shrink-0"
+            style={{ background: (me as any)?.avatarGradient || "var(--color-accent)" }}
+          >
+            {avatarUrl && !avatarError ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt="" className="w-full h-full object-cover" onError={() => setAvatarError(true)} />
+            ) : initials}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground truncate">{memberName}</p>
+            {memberPlan && memberPlan !== "free" && (
+              <span
+                className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 15%, transparent)", color: "var(--color-accent)" }}
+              >
+                {memberPlan}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Nav items */}
+      <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+        {navMenu.map(({ id, href, label }) => {
+          const active =
+            pathname === href ||
+            pathname.startsWith(`${href}/`) ||
+            (href === "/workshops" && pathname.startsWith("/workshop"));
+          return (
+            <Link
+              key={id}
+              href={href}
+              onClick={() => setSidebarOpen(false)}
+              className={cn(
+                "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <GlowBg active={active} />
+              <span className="relative z-10">{label}</span>
+            </Link>
+          );
+        })}
+
+        {/* Extra platform pages not in admin nav */}
+        {extraLinks.length > 0 && (
+          <>
+            <div className="my-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }} />
+            {extraLinks.map(({ href, label }) => {
+              const active = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <GlowBg active={active} />
+                  <span className="relative z-10">{label}</span>
+                </Link>
+              );
+            })}
+          </>
+        )}
+
+        {/* Support */}
+        {!hiddenMenuKeys.includes("support") && !navHrefs.has("/support") && (
+          <>
+            {extraLinks.length === 0 && <div className="my-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }} />}
+            <Link
+              href="/support"
+              onClick={() => setSidebarOpen(false)}
+              className={cn(
+                "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
+                pathname === "/support" || pathname.startsWith("/support/") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
+              <span className="relative z-10">Support</span>
+            </Link>
+          </>
+        )}
+
+        {/* Sign out */}
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
+          <button
+            onClick={handleLogout}
+            className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)] transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }
@@ -435,90 +632,17 @@ export function Navbar() {
       )}
 
       {/* ── Mobile drawer ────────────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "fixed top-0 left-0 h-full w-72 z-50 flex flex-col border-r transition-transform duration-300 ease-out lg:hidden",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-        style={{
-          background: "var(--color-drawer-bg)",
-          borderColor: "var(--color-border-subtle)",
-          boxShadow: "4px 0 40px rgba(0,0,0,0.7)",
-        }}
-      >
-        {/* Drawer header */}
-        <div
-          className="h-16 flex items-center justify-between px-4 border-b flex-shrink-0"
-          style={{ borderColor: "var(--color-border-subtle)" }}
-        >
-          <Link
-            href={homeHref}
-            onClick={() => setSidebarOpen(false)}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lightLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain block dark:hidden" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={darkLogoSrc} alt={siteName} width={120} height={28} className="h-7 w-auto object-contain hidden dark:block" />
-          </Link>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors duration-200"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
-        {/* Drawer nav items */}
-        <nav className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
-          {navMenu.map(({ id, href, label }) => {
-            const active =
-              pathname === href ||
-              pathname.startsWith(`${href}/`) ||
-              (href === "/workshops" && pathname.startsWith("/workshop"));
-            return (
-              <Link
-                key={id}
-                href={href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                  active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <GlowBg active={active} />
-                <span className="relative z-10">{label}</span>
-              </Link>
-            );
-          })}
-
-          {/* Utility links (separated) */}
-          <div
-            className="my-2 border-t"
-            style={{ borderColor: "var(--color-border-subtle)" }}
-          />
-          {(() => {
-            const supportActive = pathname === "/support" || pathname.startsWith("/support/");
-            return (
-              <>
-                {!hiddenMenuKeys.includes("support") && (
-                  <Link
-                    href="/support"
-                    onClick={() => setSidebarOpen(false)}
-                    className={cn(
-                      "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                      supportActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    <GlowBg active={supportActive} />
-                    <span className="relative z-10">Support</span>
-                  </Link>
-                )}
-              </>
-            );
-          })()}
-        </nav>
-
-      </div>
+      <DrawerContent
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        pathname={pathname}
+        navMenu={navMenu}
+        hiddenMenuKeys={hiddenMenuKeys}
+        homeHref={homeHref}
+        siteName={siteName}
+        lightLogoSrc={lightLogoSrc}
+        darkLogoSrc={darkLogoSrc}
+      />
 
       {/* ── Floating top navbar ───────────────────────────────────────────── */}
       <header
@@ -582,10 +706,10 @@ export function Navbar() {
         {/* Right icons */}
         <div className="flex items-center gap-0.5 sm:gap-1 ml-auto lg:ml-0">
 
-          {/* Learning streak (dropdown) */}
-          {/* Streak and Tier Access: two independent indicators with a clear gap. */}
-          <div className="flex items-center gap-1 sm:gap-2 sm:mr-1">
+          {/* Streak, Coins, Tier — hidden on mobile to prevent navbar overflow */}
+          <div className="hidden lg:flex items-center gap-1 sm:gap-2 sm:mr-1">
             {!hiddenMenuKeys.includes("streak") && <StreakButton />}
+            <CoinBalanceIndicator />
             <TierAccessIndicator />
           </div>
 

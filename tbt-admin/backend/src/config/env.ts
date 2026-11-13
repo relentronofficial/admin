@@ -8,9 +8,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DATABASE_URL: z.string().url(),
   DIRECT_URL: z.string().url(),
-  SUPABASE_URL: z.string().url(),
-  SUPABASE_ANON_KEY: z.string(),
-  SUPABASE_SERVICE_KEY: z.string(),
+  SUPABASE_URL: z.string().url().optional().or(z.literal('')),
+  SUPABASE_ANON_KEY: z.string().optional().or(z.literal('')),
+  SUPABASE_SERVICE_KEY: z.string().optional().or(z.literal('')),
   CLERK_SECRET_KEY: z.string(),
   CLERK_PUBLISHABLE_KEY: z.string(),
   CLERK_JWKS_URL: z.string().url().optional().or(z.literal('')),
@@ -39,6 +39,8 @@ const envSchema = z.object({
   FIREBASE_PRIVATE_KEY: z.string().optional().or(z.literal('')),
   FIREBASE_CLIENT_EMAIL: z.string().email().optional().or(z.literal('')),
   RESEND_API_KEY: z.string().optional().or(z.literal('')),
+  // Sender for the signup OTP email (lib/otpEmail.ts); its domain must be verified in Resend.
+  OTP_EMAIL_FROM: z.string().optional().or(z.literal('')),
   TWILIO_ACCOUNT_SID: z.string().optional().or(z.literal('')),
   TWILIO_AUTH_TOKEN: z.string().optional().or(z.literal('')),
   TWILIO_PHONE_NUMBER: z.string().optional().or(z.literal('')),
@@ -89,6 +91,14 @@ const envSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional().or(z.literal('')),
   RAZORPAY_KEY_SECRET: z.string().optional().or(z.literal('')),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional().or(z.literal('')),
+  // Instagram Graph API — optional; all Instagram features disabled when absent
+  INSTAGRAM_APP_ID: z.string().optional().or(z.literal('')),
+  INSTAGRAM_APP_SECRET: z.string().optional().or(z.literal('')),
+  // Must exactly match what's registered in the Meta App dashboard
+  // e.g. https://tbt-backend-464464507912.asia-south1.run.app/api/user/mentorship/instagram/callback
+  INSTAGRAM_REDIRECT_URI: z.string().url().optional().or(z.literal('')),
+  // 'true' stops the Extra Lifeline reconciliation job from starting (jobs/lifelineReconcile.ts).
+  LIFELINE_RECONCILE_DISABLED: z.string().optional().or(z.literal('')),
   // GitHub token for WhatsApp-intake → autonomous dev pipeline (creates Issues from WA messages)
   GITHUB_TOKEN: z.string().optional().or(z.literal('')),
   // @zacx BSP webhook signing secret (whsec_... format) — verifies incoming webhook payloads

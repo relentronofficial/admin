@@ -1,0 +1,348 @@
+name: Deploy to Staging
+
+# Manual staging deployment — independent of the production workflow.
+# Use this to deploy any verified commit to staging for testing.
+#
+# Usage: Actions → "Deploy to Staging" → Run workflow
+#   commit_sha  — the SHA to deploy (leave blank for latest main)
+#   services    — backend, user-web, or both
+#
+# The commit must exist on the main branch. Build and typecheck run
+# against the selected commit before any deploy step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: 'Commit SHA to deploy (blank = latest main)'
+        required: false
+        default: ''
+      services:
+        description: 'Which services to deploy to staging'
+        required: true
+        default: 'backend'
+        type: choice
+        options:
+          - backend
+          - user-web
+          - both
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  GCP_PROJECT: tbt-lms-platform
+  GCP_REGION: asia-south1
+
+jobs:
+  # ── Resolve the target commit ─────────────────────────────────────────────
+  resolve-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Resolve target commit
+        id: resolve
+        run: |
+          INPUT="${{ github.event.inputs.commit_sha }}"
+          if [ -z "$INPUT" ]; then
+            SHA=$(git rev-parse HEAD)
+            echo "No commit specified — using latest main: $SHA"
+          else
+            # Verify the SHA exists and is reachable from main
+            if ! git cat-file -e "${INPUT}^{commit}" 2>/dev/null; then
+              echo "::error::Commit ${INPUT} does not exist in this repository."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$INPUT" HEAD; then
+              echo "::error::Commit ${INPUT} is not on the main branch."
+              exit 1
+            fi
+            SHA=$(git rev-parse "$INPUT")
+            echo "Deploying specified commit: $SHA"
+          fi
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+  # ── Build & test against the selected commit ──────────────────────────────
+  build-and-test:
+    needs: resolve-commit
+    if: inputs.services == 'backend' || inputs.services == 'both'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tbt-admin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: tbt-admin/package-lock.json
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Validate Prisma schema
+        working-directory: tbt-admin/backend
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+        run: npx prisma validate
+
+      - name: Backend unit tests
+        run: npm test
+
+  build-user-web:
+    needs: resolve-commit
+    if: inputs.services == 'user-web' || inputs.services == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: tbt-user-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: tbt-user-web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: tbt-user-web
+        env:
+          NEXT_PUBLIC_API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
+          NEXT_PUBLIC_APP_URL: https://tbt-user-web-staging-464464507912.asia-south1.run.app
+        run: npm run typecheck
+
+  # ── Build backend Docker image for staging ───────────────────────────────
+  # Builds at the resolved commit SHA and pushes to Artifact Registry directly,
+  # skipping Cloud Build. If the same SHA was already built for production, the
+  # Docker layer cache makes this fast (most layers are shared).
+  build-backend-staging:
+    needs: [resolve-commit, build-and-test]
+    if: ${{ !cancelled() && needs.build-and-test.result == 'success' && (inputs.services == 'backend' || inputs.services == 'both') }}
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Build and push backend Docker image
+        id: push
+        run: |
+          SHA="${{ needs.resolve-commit.outputs.sha }}"
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-backend"
+          TAG="$REPO:commit-${SHA}"
+          docker build -t "$TAG" tbt-admin/backend
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
+
+  # ── Deploy backend to staging ─────────────────────────────────────────────
+  deploy-backend-staging:
+    needs: [resolve-commit, build-and-test, build-backend-staging]
+    if: ${{ !cancelled() && needs.build-backend-staging.result == 'success' && (inputs.services == 'backend' || inputs.services == 'both') }}
+    runs-on: ubuntu-latest
+    environment: staging
+    outputs:
+      image: ${{ needs.build-backend-staging.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # Staging schema check runs against the production Cloud SQL instance
+      # (same schema target as prod — staging DB only holds test data).
+      - name: Start Cloud SQL Auth Proxy (staging schema check)
+        run: |
+          curl -sLo cloud-sql-proxy \
+            https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy --port=5433 \
+            tbt-lms-platform:asia-south1:tbt-db-production &
+          sleep 3
+
+      - name: Apply database schema (staging) — additive only, guarded
+        working-directory: tbt-admin/backend
+        env:
+          CLOUDSQL_DB_PASSWORD: ${{ secrets.CLOUDSQL_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CLOUDSQL_URL=$(python3 -c "
+          import os, urllib.parse
+          pw = os.environ['CLOUDSQL_DB_PASSWORD']
+          print(f'postgresql://postgres:{urllib.parse.quote(pw, safe=\"\")}@127.0.0.1:5433/tbt_production')
+          ")
+          npm install --ignore-scripts
+          npx prisma migrate diff --from-url "$CLOUDSQL_URL" --to-schema-datamodel prisma/schema.prisma --script > schema-diff.sql
+          npx tsx scripts/schema-guard.ts schema-diff.sql schema-apply.sql
+          if [ -s schema-apply.sql ]; then
+            npx prisma db execute --url "$CLOUDSQL_URL" --file schema-apply.sql
+          fi
+
+      - name: Deploy to Cloud Run (staging)
+        run: |
+          gcloud run deploy tbt-backend-staging \
+            --image ${{ needs.build-backend-staging.outputs.image }} \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --set-secrets="DATABASE_URL=stg-DATABASE_URL:latest,DIRECT_URL=stg-DIRECT_URL:latest,CLERK_SECRET_KEY=stg-CLERK_SECRET_KEY:latest,CLERK_PUBLISHABLE_KEY=stg-CLERK_PUBLISHABLE_KEY:latest,CLOUDFLARE_R2_ACCOUNT_ID=prod-CLOUDFLARE_R2_ACCOUNT_ID:latest,CLOUDFLARE_R2_ACCESS_KEY_ID=prod-CLOUDFLARE_R2_ACCESS_KEY_ID:latest,CLOUDFLARE_R2_SECRET_ACCESS_KEY=prod-CLOUDFLARE_R2_SECRET_ACCESS_KEY:latest,CLOUDFLARE_R2_BUCKET_NAME=prod-CLOUDFLARE_R2_BUCKET_NAME:latest,BUNNY_STREAM_LIBRARY_ID=prod-BUNNY_STREAM_LIBRARY_ID:latest,BUNNY_STREAM_API_KEY=prod-BUNNY_STREAM_API_KEY:latest,UPSTASH_REDIS_URL=prod-UPSTASH_REDIS_URL:latest,UPSTASH_REDIS_TOKEN=prod-UPSTASH_REDIS_TOKEN:latest,UPSTASH_REDIS_REST_URL=prod-UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=prod-UPSTASH_REDIS_REST_TOKEN:latest,JWT_ACCESS_SECRET=prod-JWT_ACCESS_SECRET:latest,MSG91_AUTH_KEY=prod-MSG91_AUTH_KEY:latest,MSG91_SENDER_ID=prod-MSG91_SENDER_ID:latest,MSG91_TEMPLATE_ID=prod-MSG91_TEMPLATE_ID:latest,WABA_ACCESS_TOKEN=prod-WABA_ACCESS_TOKEN:latest,WABA_PHONE_NUMBER_ID=prod-WABA_PHONE_NUMBER_ID:latest,WABA_FROM_NUMBER=prod-WABA_FROM_NUMBER:latest,WABA_TEMPLATE_NAME=prod-WABA_TEMPLATE_NAME:latest,WABA_TEMPLATE_LANGUAGE=prod-WABA_TEMPLATE_LANGUAGE:latest,WABA_API_BASE_URL=prod-WABA_API_BASE_URL:latest,ADMIN_WHATSAPP_NUMBER=prod-WABA_FROM_NUMBER:latest,SENTRY_DSN=prod-SENTRY_DSN:latest,LIVEKIT_WS_URL=prod-LIVEKIT_WS_URL:latest,LIVEKIT_API_KEY=prod-LIVEKIT_API_KEY:latest,LIVEKIT_API_SECRET=prod-LIVEKIT_API_SECRET:latest,RAZORPAY_KEY_SECRET=prod-RAZORPAY_KEY_SECRET:latest,RAZORPAY_WEBHOOK_SECRET=prod-RAZORPAY_WEBHOOK_SECRET:latest" \
+            --set-env-vars="^|^NODE_ENV=production|WABA_WEBHOOK_SECRET=${{ secrets.WABA_WEBHOOK_SECRET }}|USER_WEB_URL=${{ secrets.STG_USER_WEB_URL }}|ADMIN_WEB_URL=${{ secrets.STG_ADMIN_WEB_URL }}|BUNNY_CDN_URL=tamil-business-tribe-cdn.b-cdn.net|CORS_EXTRA_ORIGINS=https://tbt-user-web-464464507912.asia-south1.run.app,https://tbt-user-web-staging-464464507912.asia-south1.run.app,https://tbt-user-web-staging-nt77kcmmiq-el.a.run.app|RAZORPAY_KEY_ID=rzp_live_RDQWFy37zMYb8A|MENTORSHIP_DEMO_MEMBER_ID=${{ secrets.MENTORSHIP_DEMO_MEMBER_ID }}|MENTORSHIP_DEMO_EMAIL=${{ secrets.MENTORSHIP_DEMO_EMAIL }}" \
+            --add-cloudsql-instances=tbt-lms-platform:asia-south1:tbt-db-staging \
+            --port=8000 \
+            --max-instances=2 \
+            --quiet
+
+  # ── Build user-web Docker image for staging ──────────────────────────────
+  # Builds at the resolved commit SHA with staging env baked in and pushes to
+  # Artifact Registry. Tagged with -staging suffix to avoid collision with the
+  # production image (which has different baked-in NEXT_PUBLIC_* values).
+  build-user-web-staging:
+    needs: [resolve-commit, build-user-web]
+    if: ${{ !cancelled() && needs.build-user-web.result == 'success' && (inputs.services == 'user-web' || inputs.services == 'both') }}
+    runs-on: ubuntu-latest
+    env:
+      API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://tbt-user-web-staging-464464507912.asia-south1.run.app
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+
+      - name: Read Clerk publishable key from GCP Secret Manager
+        run: |
+          CLERK_PK=$(gcloud secrets versions access latest --secret="stg-CLERK_PUBLISHABLE_KEY" --project=$GCP_PROJECT)
+          echo "CLERK_PK=$CLERK_PK" >> $GITHUB_ENV
+
+      - name: Write build-time env for the Dockerfile
+        run: |
+          cat > tbt-user-web/.ci-build-env <<EOF
+          NEXT_PUBLIC_API_URL='$API_URL'
+          NEXT_PUBLIC_APP_URL='$SITE_ORIGIN'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY='$CLERK_PK'
+          NEXT_PUBLIC_CLERK_SIGN_IN_URL='/login'
+          NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL='/community'
+          NEXT_PUBLIC_RAZORPAY_KEY_ID='rzp_live_RDQWFy37zMYb8A'
+          EOF
+
+      - name: Build and push user-web Docker image (staging)
+        id: push
+        run: |
+          SHA="${{ needs.resolve-commit.outputs.sha }}"
+          REPO="asia-south1-docker.pkg.dev/$GCP_PROJECT/cloud-run-source-deploy/tbt-user-web"
+          TAG="$REPO:commit-${SHA}-staging"
+          docker build -t "$TAG" tbt-user-web
+          docker push "$TAG"
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$TAG" | cut -d'@' -f2)
+          echo "image=$REPO@$DIGEST" >> $GITHUB_OUTPUT
+          echo "Built: $REPO@$DIGEST"
+
+  # ── Deploy user-web to staging ────────────────────────────────────────────
+  deploy-user-web-staging:
+    needs: [resolve-commit, build-user-web-staging, deploy-backend-staging]
+    if: ${{ !cancelled() && needs.build-user-web-staging.result == 'success' && (inputs.services == 'user-web' || inputs.services == 'both') && needs.deploy-backend-staging.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment: staging
+    env:
+      SERVICE: tbt-user-web-staging
+      API_URL: https://tbt-backend-staging-464464507912.asia-south1.run.app
+      SITE_ORIGIN: https://tbt-user-web-staging-464464507912.asia-south1.run.app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-commit.outputs.sha }}
+
+      - name: Check the backend this build will use
+        run: |
+          bash .github/scripts/verify-user-web-target.sh config staging "$API_URL" "$SITE_ORIGIN"
+          bash .github/scripts/verify-user-web-target.sh wake "$API_URL"
+          bash .github/scripts/verify-user-web-target.sh cors "$API_URL" "$SITE_ORIGIN"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy user-web to Cloud Run (staging) — no traffic yet
+        run: |
+          gcloud run deploy $SERVICE \
+            --image ${{ needs.build-user-web-staging.outputs.image }} \
+            --region $GCP_REGION \
+            --project $GCP_PROJECT \
+            --port=3000 \
+            --allow-unauthenticated \
+            --memory=512Mi \
+            --min-instances=0 \
+            --max-instances=2 \
+            --set-env-vars="NODE_ENV=production" \
+            --no-traffic \
+            --tag=candidate \
+            --quiet
+
+      - name: Verify the new revision calls only the staging backend
+        run: |
+          CANDIDATE_URL=$(gcloud run services describe $SERVICE --region $GCP_REGION --project $GCP_PROJECT --format=json \
+            | jq -r '.status.traffic[] | select(.tag == "candidate") | .url')
+          bash .github/scripts/verify-user-web-target.sh bundle "$CANDIDATE_URL" "$API_URL"
+
+      - name: Route traffic to the new revision
+        run: gcloud run services update-traffic $SERVICE --to-latest --region $GCP_REGION --project $GCP_PROJECT --quiet

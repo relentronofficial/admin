@@ -254,7 +254,7 @@ export default function CreatableSelect({
                     ) : (
                       <Plus size={12} />
                     )}
-                    Add "{query.trim()}"
+                    Add &quot;{query.trim()}&quot;
                   </button>
                 )}
               </>

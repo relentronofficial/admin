@@ -17,6 +17,15 @@ export const dashboardService = {
   removeFromHistory: (episodeId: string) =>
     apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/dashboard/watch-history/${episodeId}`),
 
+  getSavedVideos: (params: { limit?: number } = {}) =>
+    apiClient.get<never, ApiResponse<any[]>>("/api/user/saved-videos", { params }),
+
+  saveVideo: (episodeId: string, episodeType: 'course' | 'workshop') =>
+    apiClient.post<never, ApiResponse<{ saved: boolean }>>("/api/user/saved-videos", { episodeId, episodeType }),
+
+  unsaveVideo: (episodeId: string) =>
+    apiClient.delete<never, ApiResponse<{ removed: boolean }>>(`/api/user/saved-videos/${episodeId}`),
+
   getNotificationUnreadCount: () =>
     apiClient.get<never, ApiResponse<{ count: number }>>("/api/user/notifications/unread-count"),
 
@@ -63,8 +72,41 @@ export const dashboardService = {
   ) =>
     apiClient.post(`/api/user/conversations/${id}/messages`, { body, ...(extras ?? {}) }),
 
+  markConversationRead: (id: string) =>
+    apiClient.post(`/api/user/conversations/${id}/read`, {}),
+
   archiveConversation: (id: string, hidden: boolean) =>
     apiClient.patch(`/api/user/conversations/${id}/archive`, { hidden }),
+
+  editChatMessage: (id: string, messageId: string, body: string) =>
+    apiClient.put(`/api/user/conversations/${id}/messages/${messageId}`, { body }),
+
+  deleteChatMessage: (id: string, messageId: string, forEveryone: boolean) =>
+    apiClient.delete(`/api/user/conversations/${id}/messages/${messageId}`, { params: forEveryone ? { forEveryone: "true" } : {} }),
+
+  reactChatMessage: (id: string, messageId: string, emoji: string) =>
+    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/react`, { emoji }),
+
+  forwardChatMessage: (id: string, messageId: string, toConversationIds: string[], toGroupIds: string[] = []) =>
+    apiClient.post(`/api/user/conversations/${id}/messages/${messageId}/forward`, { toConversationIds, toGroupIds }),
+
+  starChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.post(`/api/user/conversations/${conversationId}/messages/${messageId}/star`),
+
+  listDmStarredMessages: () =>
+    apiClient.get(`/api/user/messages/starred`),
+
+  pinChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.post(`/api/user/conversations/${conversationId}/messages/${messageId}/pin`),
+
+  unpinChatMessage: (conversationId: string, messageId: string) =>
+    apiClient.delete(`/api/user/conversations/${conversationId}/messages/${messageId}/pin`),
+
+  getPinnedChatMessage: (conversationId: string) =>
+    apiClient.get(`/api/user/conversations/${conversationId}/pinned`),
+
+  getDmMessageInfo: (conversationId: string, messageId: string) =>
+    apiClient.get(`/api/user/conversations/${conversationId}/messages/${messageId}/info`),
 
   getMyDevices: () =>
     apiClient.get<never, ApiResponse<DeviceSession[]>>("/api/user/my-devices"),

@@ -64,14 +64,17 @@ const memberSchema = z.object({
   videoEditingDetails: z.string().optional(),
   notes: z.string().optional(),
   hasWebsite: z.boolean().default(false),
-  weeklyWebsiteOrders: z.number().int().min(0).optional().nullable(),
+  weeklyWebsiteOrders: z.preprocess(
+    v => (v === null || v === undefined || (typeof v === "number" && isNaN(v as number))) ? null : Number(v),
+    z.number().int().min(0).nullable().optional()
+  ),
   skillBusinessFoundation: z.number().int().min(1).max(10).default(1),
   skillContent: z.number().int().min(1).max(10).default(1),
   skillFunnels: z.number().int().min(1).max(10).default(1),
   skillAds: z.number().int().min(1).max(10).default(1),
   skillSales: z.number().int().min(1).max(10).default(1),
   skillOverallMarketing: z.number().int().min(1).max(10).default(1),
-  weeklyLearningHours: z.number().int().min(5).max(80).default(5),
+  weeklyLearningHours: z.number().int().min(1).max(80).default(1), // hours per day (slider 1–24; ≤80 keeps legacy per-week values valid)
   teamSize: z.string().optional(),
   businessStartedFrom: z.string().optional(),
   instagramStats: z.string().optional(),
@@ -137,7 +140,7 @@ export default function AddMemberPage() {
       skillAds: 1,
       skillSales: 1,
       skillOverallMarketing: 1,
-      weeklyLearningHours: 5,
+      weeklyLearningHours: 1,
     }
   });
 
@@ -196,14 +199,23 @@ export default function AddMemberPage() {
       let profilePhotoUrl = "";
       let kycDocumentUrl = "";
 
+      // Image uploads are best-effort — failure must not block member creation
       if (profileImage) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: profileImage, pathPrefix: "members/photos" });
-        profilePhotoUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: profileImage, pathPrefix: "members/photos" });
+          profilePhotoUrl = publicUrl;
+        } catch {
+          toast.error("Profile photo upload failed — member will be saved without photo");
+        }
       }
 
       if (kycDoc) {
-        const { publicUrl } = await uploadImage.mutateAsync({ file: kycDoc, pathPrefix: "members/kyc" });
-        kycDocumentUrl = publicUrl;
+        try {
+          const { publicUrl } = await uploadImage.mutateAsync({ file: kycDoc, pathPrefix: "members/kyc" });
+          kycDocumentUrl = publicUrl;
+        } catch {
+          toast.error("KYC document upload failed — member will be saved without KYC document");
+        }
       }
 
       const { challenge1, challenge2, challenge3, ...rest } = data;
@@ -388,7 +400,7 @@ export default function AddMemberPage() {
               </div>
 
               {/* Row 2 */}
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-3 gap-6">
                 <div>
                   <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Business Type</label>
                   <select {...register("productServiceType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
@@ -397,6 +409,15 @@ export default function AddMemberPage() {
                     <option value="Service-based">Service-based</option>
                     <option value="Coaching">Coaching</option>
                     <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase mb-2">Course Module</label>
+                  <select {...register("businessType")} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-[8px] h-[44px] px-4 text-white placeholder-[#555] text-[14px] outline-none focus:border-[#dc2626] appearance-none cursor-pointer">
+                    <option value="">— Not assigned —</option>
+                    <option value="Product">Product</option>
+                    <option value="Service">Service</option>
+                    <option value="Coaching">Coaching</option>
                   </select>
                 </div>
                 <div>
@@ -666,16 +687,16 @@ export default function AddMemberPage() {
               {/* Learning hours slider */}
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase">Hours per week for learning</p>
-                  <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 5} <span className="text-[#555] text-[13px] font-normal">hrs/week</span></span>
+                  <p className="text-[11px] font-[600] text-[#888] tracking-[0.05em] uppercase">Hours per day for learning</p>
+                  <span className="text-[16px] font-bold text-white tabular-nums">{watchLearningHours ?? 1} <span className="text-[#555] text-[13px] font-normal">{(watchLearningHours ?? 1) === 1 ? "hr/day" : "hrs/day"}</span></span>
                 </div>
                 <input
-                  type="range" min={5} max={80} step={5}
+                  type="range" min={1} max={24} step={1}
                   {...register("weeklyLearningHours", { valueAsNumber: true })}
                   className="w-full h-[6px] rounded-full cursor-pointer accent-[#dc2626]"
                 />
                 <div className="flex justify-between text-[11px] text-[#555] mt-1">
-                  <span>5 hrs</span><span>40 hrs</span><span>80 hrs</span>
+                  <span>1 hr</span><span>12 hrs</span><span>24 hrs</span>
                 </div>
               </div>
 
@@ -801,7 +822,7 @@ export default function AddMemberPage() {
         </div>
 
         {/* Sticky Footer */}
-        <div className="fixed bottom-0 right-0 left-[220px] bg-[#0a0a0a]/90 backdrop-blur-md border-t border-[#1f1f1f] px-8 py-4 flex items-center justify-between z-50">
+        <div className="fixed bottom-0 right-0 left-0 md:left-[220px] bg-[#0a0a0a]/90 backdrop-blur-md border-t border-[#1f1f1f] px-8 py-4 flex items-center justify-between z-50">
           <button onClick={() => signOut()} type="button" className="flex items-center gap-2 text-[#888] hover:text-white transition-colors text-[13px] font-semibold">
             <LogOut size={16} /> Logout
           </button>

@@ -5,6 +5,7 @@ import {
   getOnboardingContentHandler,
   getOnboardingButtonsHandler,
   presignProfilePhotoHandler,
+  uploadProfilePhotoHandler,
   presignOnboardingDocumentHandler,
   uploadOnboardingDocumentHandler,
   registerOnboardingDocumentHandler,
@@ -44,6 +45,7 @@ export async function onboardingRoutes(fastify: FastifyInstance) {
     userScope.get('/content', getOnboardingContentHandler);
     userScope.get('/buttons', getOnboardingButtonsHandler);
     userScope.post('/photo/presign', presignProfilePhotoHandler);
+    userScope.post('/photo/upload', { bodyLimit: DOC_BODY_LIMIT }, uploadProfilePhotoHandler);
     userScope.post('/documents/presign', presignOnboardingDocumentHandler);
     userScope.post('/documents/upload', { bodyLimit: DOC_BODY_LIMIT }, uploadOnboardingDocumentHandler);
     userScope.post('/documents', registerOnboardingDocumentHandler);

@@ -7,7 +7,7 @@ import { env } from '../config/env.js';
 import { localDayKey, programToday, resolveProgramTimezone, computeTierActiveDays } from './activityDays.js';
 import { computeStreakSummary, type StreakSummary } from './streakSummaryLogic.js';
 import { buildWeeklyGraph, type WeeklyGraph } from './weeklyGraphLogic.js';
-import { loadGraphConfig } from './weeklyGraphConfigData.js';
+import { loadGraphConfig, loadProgramWeekSpanDays } from './weeklyGraphConfigData.js';
 import {
   buildDemoActivity,
   buildDemoGraphInputs,
@@ -99,10 +99,15 @@ export async function buildDemoOverlay(request: FastifyRequest, now: Date = new 
   let graph: WeeklyGraph | null = null;
   if (program.batchId && program.programStartDay && currentDay !== null) {
     const { tasks, submissions } = buildDemoGraphInputs(program, currentDay);
+    // Same axis as the member's real graph (the program's admin config, or defaults
+    // over the program's week span — see getMyWeeklyGraphHandler).
+    const config = await loadGraphConfig(request.server.prisma, program.programId);
+    const defaultSpanDays = !config.weeks && program.programId
+      ? await loadProgramWeekSpanDays(request.server.prisma, program.programId)
+      : undefined;
     graph = buildWeeklyGraph({
       memberId: request.memberId!, tasks, submissions, dayProgress: [], totalDays: program.totalDays, currentDay,
-      // Same axis as the member's real graph (the program's admin config, or defaults).
-      config: await loadGraphConfig(request.server.prisma, program.programId),
+      config, defaultSpanDays,
     });
   }
   return { streak, tierActiveDays, graph };

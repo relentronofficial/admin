@@ -40,6 +40,16 @@ export const useUpdateAvatar = () => {
   });
 };
 
+export const useUploadAvatar = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: userService.uploadAvatar,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+    },
+  });
+};
+
 export const useNotificationPrefs = () =>
   useQuery({
     queryKey: ["user", "notification-prefs"],

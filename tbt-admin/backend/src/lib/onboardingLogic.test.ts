@@ -25,9 +25,15 @@ describe('canEditOnboarding / canSubmitOnboarding', () => {
     expect(canSubmitOnboarding('under_review')).toBe(false);
   });
 
-  it('blocks editing/submitting once verified', () => {
-    expect(canEditOnboarding('verified')).toBe(false);
+  it('a verified member may edit their details, but not submit for review again', () => {
+    expect(canEditOnboarding('verified')).toBe(true);
     expect(canSubmitOnboarding('verified')).toBe(false);
+  });
+
+  it('a member without an onboarding status (e.g. admin-created) may edit, not submit', () => {
+    expect(canEditOnboarding(null)).toBe(true);
+    expect(canEditOnboarding(undefined)).toBe(true);
+    expect(canSubmitOnboarding(null)).toBe(false);
   });
 
   it('blocks editing/submitting once rejected', () => {

@@ -3,50 +3,57 @@ import { verifyToken } from '@clerk/backend';
 import { env } from '../../config/env.js';
 import { cacheGet, cacheSet, cacheGetOrCompute } from '../../lib/cache.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
+import { publicFaqList, type FaqRow } from '../../lib/moduleFaqLogic.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
 
   const redis = req.server.redis ?? null;
   const CACHE_KEY = 'pub:site-config:v3';
-  const data = await cacheGetOrCompute<object>(redis, CACHE_KEY, 300, async () => {
-    let config = await req.server.prisma.siteConfig.findFirst();
-    if (!config) {
-      config = await req.server.prisma.siteConfig.create({
-        data: { siteName: 'TBT', footerText: '© TBT' },
-      });
-    }
-    const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null }>>(
-      'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url FROM site_configs WHERE id = $1::uuid', config.id
-    ).catch(() => []);
-    const themeRows = await req.server.prisma.$queryRawUnsafe<Array<{ theme_mode: string | null }>>(
-      'SELECT theme_mode FROM site_configs WHERE id = $1::uuid', config.id
-    ).catch(() => []);
-    return {
-      siteName: config.siteName,
-      // Admin-controlled light/dark mode (Admin → Navigation) — web + mobile follow this.
-      themeMode: themeRows[0]?.theme_mode === 'dark' ? 'dark' : 'light',
-      logoUrl: config.logoUrl ?? null,
-      faviconUrl: config.faviconUrl ?? null,
-      footerText: config.footerText,
-      theme: {
-        accentColor: config.accentColor,
-        alertColor: config.alertColor,
-        successColor: config.successColor,
-        bgPrimary: config.bgPrimary,
-        bgSurface: config.bgSurface,
-      },
-      splashLogoUrl: config.splashLogoUrl ?? null,
-      splashDurationMs: config.splashDurationMs,
-      loginBgUrl: config.loginBgUrl ?? null,
-      loginBgMobileUrl: config.loginBgMobileUrl ?? null,
-      loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
-      taskTimerSeconds: extraRows[0]?.task_timer_seconds ?? 300,
-      freeLifelinesPerSession: extraRows[0]?.free_lifelines_per_session ?? 3,
-      earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
-      coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
-    };
+  const cached = await cacheGet<object>(redis, CACHE_KEY);
+  if (cached) return reply.send({ success: true, data: cached, error: null });
+
+  let config = await req.server.prisma.siteConfig.findFirst();
+  if (!config) {
+    config = await req.server.prisma.siteConfig.create({
+      data: { siteName: 'TBT', footerText: '© TBT' },
+    });
+  }
+
+  const extraRows = await req.server.prisma.$queryRawUnsafe<Array<{ task_timer_seconds: number; free_lifelines_per_session: number; early_completion_bonus_xp: number; courses_banner_url: string | null; theme_mode: string | null }>>(
+    'SELECT task_timer_seconds, free_lifelines_per_session, early_completion_bonus_xp, courses_banner_url, theme_mode FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch((err) => {
+    req.log.error({ err }, '[pub/site-config] extra site_configs columns query failed');
+    return null;
   });
+  const extrasFailed = extraRows === null;
+
+  const data = {
+    siteName: config.siteName,
+    themeMode: extraRows?.[0]?.theme_mode === 'dark' ? 'dark' : 'light',
+    logoUrl: config.logoUrl ?? null,
+    faviconUrl: config.faviconUrl ?? null,
+    footerText: config.footerText,
+    theme: {
+      accentColor: config.accentColor,
+      alertColor: config.alertColor,
+      successColor: config.successColor,
+      bgPrimary: config.bgPrimary,
+      bgSurface: config.bgSurface,
+    },
+    splashLogoUrl: config.splashLogoUrl ?? null,
+    splashDurationMs: config.splashDurationMs,
+    loginBgUrl: config.loginBgUrl ?? null,
+    loginBgMobileUrl: config.loginBgMobileUrl ?? null,
+    loginBgImages: Array.isArray(config.loginBgImages) ? config.loginBgImages as string[] : null,
+    taskTimerSeconds: extraRows?.[0]?.task_timer_seconds ?? 300,
+    freeLifelinesPerSession: extraRows?.[0]?.free_lifelines_per_session ?? 5,
+    earlyCompletionBonusXp: extraRows?.[0]?.early_completion_bonus_xp ?? 5,
+    coursesBannerUrl: extraRows?.[0]?.courses_banner_url ?? null,
+  };
+  // Never cache a degraded (defaulted) response — it would hide the real
+  // values for the full TTL once the underlying query recovers.
+  if (!extrasFailed) await cacheSet(redis, CACHE_KEY, data, 300);
   return reply.send({ success: true, data, error: null });
 }
 
@@ -65,14 +72,8 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
     const items = allItems.filter((i) => i.isVisible);
     const hiddenHrefs = allItems.filter((i) => !i.isVisible).map((i) => i.href);
     const rawCols = config
-      ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown }>>(
-          'SELECT hidden_menu_keys FROM site_configs WHERE id = $1::uuid', config.id
-        ).catch(() => [])
-      : [];
-    // Separate query so a missing nav_order column can't take hidden_menu_keys down with it.
-    const orderRows = config
-      ? await req.server.prisma.$queryRawUnsafe<Array<{ nav_order: unknown }>>(
-          'SELECT nav_order FROM site_configs WHERE id = $1::uuid', config.id
+      ? await req.server.prisma.$queryRawUnsafe<Array<{ hidden_menu_keys: unknown; nav_order: unknown }>>(
+          'SELECT hidden_menu_keys, nav_order FROM site_configs WHERE id = $1::uuid', config.id
         ).catch(() => [])
       : [];
     return {
@@ -84,8 +85,7 @@ export async function pubNavItemsHandler(req: FastifyRequest, reply: FastifyRepl
       },
       hiddenMenuKeys: (Array.isArray(rawCols[0]?.hidden_menu_keys) ? rawCols[0].hidden_menu_keys : []) as string[],
       hiddenHrefs,
-      // Combined web nav order (nav item ids + "section:<key>" tokens); null = default.
-      navOrder: Array.isArray(orderRows[0]?.nav_order) ? (orderRows[0].nav_order as string[]) : null,
+      navOrder: Array.isArray(rawCols[0]?.nav_order) ? (rawCols[0].nav_order as string[]) : null,
     };
   });
   return reply.send({ success: true, data, error: null });
@@ -589,6 +589,26 @@ export async function pubLegalPageHandler(req: FastifyRequest, reply: FastifyRep
   });
 }
 
+// ── Modules page FAQ ──────────────────────────────────────────────────
+// Public, read-only: published FAQs only, in admin display order, and only
+// id/question/answer (no drafts, authors or timestamps). Not cached so an
+// unpublish takes effect on every instance immediately.
+
+export async function pubModuleFaqsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'no-store');
+  try {
+    const rows = await req.server.prisma.$queryRawUnsafe<FaqRow[]>(
+      `SELECT id::text AS id, question, answer, is_published, sort_order, video_url, bunny_video_id, category
+       FROM module_faqs WHERE is_published = TRUE
+       ORDER BY sort_order ASC, created_at ASC`,
+    );
+    return reply.send({ success: true, data: publicFaqList(rows), error: null });
+  } catch (err) {
+    req.log.error({ err }, 'module FAQ read failed');
+    return reply.status(503).send({ success: false, data: null, error: 'FAQs are unavailable right now' });
+  }
+}
+
 // ── WhatsApp → Autonomous Dev Pipeline ────────────────────────────────────────
 //
 // POST /api/pub/whatsapp-intake
@@ -692,4 +712,27 @@ export async function whatsappIntakeHandler(req: FastifyRequest, reply: FastifyR
   } catch (err: any) {
     req.server.log.error({ err }, '[WA-intake] handler error');
   }
+}
+
+// ── Public course-page FAQs ──────────────────────────────────────────────
+// GET /api/pub/course-faqs — unauthenticated; returns active FAQs only.
+export async function pubCourseFaqsHandler(req: FastifyRequest, reply: FastifyReply) {
+  reply.header('Cache-Control', 'public, max-age=120, stale-while-revalidate=60');
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, question, answer_type, answer_text, answer_video_url, sort_order
+     FROM course_page_faqs
+     WHERE is_active = true
+     ORDER BY sort_order ASC, created_at ASC`,
+  ).catch(() => []);
+  return reply.send({
+    success: true,
+    data: rows.map(r => ({
+      id: r.id,
+      question: r.question,
+      answerType: r.answer_type,
+      answerText: r.answer_text ?? null,
+      answerVideoUrl: r.answer_video_url ?? null,
+    })),
+    error: null,
+  });
 }

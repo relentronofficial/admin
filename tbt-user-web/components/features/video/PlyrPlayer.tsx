@@ -287,7 +287,6 @@ const PlyrPlayer = forwardRef<PlyrPlayerHandle, PlyrPlayerProps>(function PlyrPl
           <span style={{
             color: "#fff",
             fontSize: 11,
-            fontFamily: "monospace",
             fontWeight: 700,
             textShadow: "0 1px 4px rgba(0,0,0,0.9)",
           }}>

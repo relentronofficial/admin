@@ -6,18 +6,20 @@
 
 export type VerificationStatus = 'awaiting_kyc' | 'under_review' | 'verified' | 'rejected' | 'changes_requested';
 
-/** A member may edit their profile / upload documents only while their
- * application hasn't been submitted yet, or after admin sent it back for
- * changes. Not while under review (admin is looking at it) or already
- * verified (nothing left to change). */
-export function canEditOnboarding(verificationStatus: VerificationStatus): boolean {
-  return verificationStatus === 'awaiting_kyc' || verificationStatus === 'changes_requested';
+/** A member may edit their own onboarding details (profile, photo, documents)
+ * whenever the wizard shows them the form: before submitting, after admin
+ * sent it back for changes, once verified, and when no onboarding status was
+ * ever set (e.g. an admin-created account). Not while under review (admin is
+ * looking at it) or after rejection — the wizard shows those screens instead. */
+export function canEditOnboarding(verificationStatus: VerificationStatus | null | undefined): boolean {
+  return verificationStatus !== 'under_review' && verificationStatus !== 'rejected';
 }
 
-/** Submitting has the same precondition as editing — you can only submit
- * what you're still allowed to touch. */
-export function canSubmitOnboarding(verificationStatus: VerificationStatus): boolean {
-  return canEditOnboarding(verificationStatus);
+/** Submitting for review stays limited to an application that is not yet in
+ * (or back from) review: before the first submit, or after changes were
+ * requested. A verified member's edits are saved without a new review. */
+export function canSubmitOnboarding(verificationStatus: VerificationStatus | null | undefined): boolean {
+  return verificationStatus === 'awaiting_kyc' || verificationStatus === 'changes_requested';
 }
 
 /** Admin reject / request-changes both require the application to actually

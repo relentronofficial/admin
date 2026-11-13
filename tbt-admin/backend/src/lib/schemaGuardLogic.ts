@@ -216,8 +216,14 @@ function constraintOwned(table: string, name: string, managed: StartupManagedObj
   return false;
 }
 
-/** The SQL to execute: all additive statements in one transaction (atomic — no partial schema). */
+/**
+ * The SQL to execute: all additive statements in one transaction (atomic — no
+ * partial schema). lock_timeout makes an ALTER on a busy table (e.g. members)
+ * fail the deploy quickly instead of queueing behind long transactions and
+ * blocking every query on that table until statement_timeout.
+ */
+export const APPLY_LOCK_TIMEOUT = '10s';
 export function buildApplyScript(apply: string[]): string {
   if (!apply.length) return '';
-  return ['BEGIN;', ...apply.map((s) => `${s};`), 'COMMIT;', ''].join('\n');
+  return ['BEGIN;', `SET LOCAL lock_timeout = '${APPLY_LOCK_TIMEOUT}';`, ...apply.map((s) => `${s};`), 'COMMIT;', ''].join('\n');
 }

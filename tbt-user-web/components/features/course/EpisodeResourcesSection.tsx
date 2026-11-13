@@ -23,14 +23,35 @@ export function getResourceKind(r: Pick<EpisodeResource, "fileType" | "fileUrl">
   return "file";
 }
 
+/**
+ * Only http(s) links can be downloaded by members. A resource saved with a
+ * browser-local path (file:///C:/...) is shown as unavailable rather than as a
+ * Download link that does nothing.
+ */
+export function isDownloadableUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 interface Props {
   resources: EpisodeResource[];
   heading: string;
   defaultDownloadLabel: string;
   showEmpty?: boolean;
+  unavailableLabel?: string;
+  unavailableHint?: string;
 }
 
-export function EpisodeResourcesSection({ resources, heading, defaultDownloadLabel, showEmpty = false }: Props) {
+export function EpisodeResourcesSection({
+  resources, heading, defaultDownloadLabel, showEmpty = false,
+  unavailableLabel = "File unavailable",
+  unavailableHint = "This file can't be downloaded right now. Please contact support.",
+}: Props) {
   const items = resources.filter((r) => !!r.fileUrl);
   if (items.length === 0 && !showEmpty) return null;
 
@@ -53,8 +74,9 @@ export function EpisodeResourcesSection({ resources, heading, defaultDownloadLab
       ) : null}
       <div className="divide-y" style={{ borderColor: "var(--color-border-card)" }}>
         {items.map((r) => {
-          const kind = getResourceKind(r);
           const url = r.fileUrl!;
+          const available = isDownloadableUrl(url);
+          const kind = available ? getResourceKind(r) : "file";
           return (
             <div key={r.id} data-testid="episode-resource" data-kind={kind} className="px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
@@ -65,17 +87,30 @@ export function EpisodeResourcesSection({ resources, heading, defaultDownloadLab
                     <p className="text-xs mt-0.5 line-clamp-2" style={{ color: "var(--color-text-subtle)" }}>{r.description}</p>
                   )}
                 </div>
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  download
-                  className="shrink-0 flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold transition-opacity hover:opacity-80 text-white"
-                  style={{ background: "var(--color-accent)" }}
-                >
-                  <Download size={11} /> {r.downloadLabel || defaultDownloadLabel}
-                </a>
+                {available ? (
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                    className="shrink-0 flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold transition-opacity hover:opacity-80 text-white"
+                    style={{ background: "var(--color-accent)" }}
+                  >
+                    <Download size={11} /> {r.downloadLabel || defaultDownloadLabel}
+                  </a>
+                ) : (
+                  <span
+                    data-testid="episode-resource-unavailable"
+                    className="shrink-0 text-xs px-3 py-1.5 rounded-lg font-semibold"
+                    style={{ color: "var(--color-text-subtle)", background: "var(--color-surface-overlay)" }}
+                  >
+                    {unavailableLabel}
+                  </span>
+                )}
               </div>
+              {!available && (
+                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>{unavailableHint}</p>
+              )}
 
               {kind === "image" && (
                 <a href={url} target="_blank" rel="noopener noreferrer" className="block">

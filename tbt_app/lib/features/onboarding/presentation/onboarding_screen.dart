@@ -38,10 +38,7 @@ const _kSupportWhatsAppUrl = 'https://wa.me/919000000000';
 
 // ── Wizard step label helpers ─────────────────────────────────────────────────
 
-String _contentStepLabel(int index, int total) {
-  if (total == 1) return 'Before You Begin';
-  if (index == 0) return 'Before You Begin';
-  if (index == total - 1) return 'How It Works';
+String _contentStepLabel(int index) {
   return 'Step ${index + 1}';
 }
 
@@ -386,6 +383,13 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
   }
 
   Future<void> _saveAndNext() async {
+    final photoUrl = _profile['profilePhotoUrl'] as String?;
+    if (photoUrl == null || photoUrl.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please upload a photo')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       // Combine challenge fields into currentChallenges array and strip them.
@@ -561,7 +565,7 @@ class _OnboardingWizardState extends ConsumerState<_OnboardingWizard> {
       ...activeContent.asMap().entries.map(
         (e) => _ContentStep(
           content: e.value,
-          stepLabel: _contentStepLabel(e.key, activeContent.length),
+          stepLabel: _contentStepLabel(e.key),
         ),
       ),
       _ProfileStep(
@@ -1107,7 +1111,7 @@ class _ProfileStep extends StatelessWidget {
             onChanged: onChanged,
             key: 'productServiceType',
             label: 'Business Type *',
-            options: const ['Product-based', 'Service-based', 'Both', 'Other'],
+            options: const ['Product-based', 'Service-based', 'Coaching'],
           ),
           Row(children: [
             Expanded(child: _field(profile, onChanged, 'businessStartedFrom', 'Business Started From')),
@@ -1140,7 +1144,7 @@ class _ProfileStep extends StatelessWidget {
               onChanged: onChanged,
               key: 'annualTurnover',
               label: 'Revenue Until Now',
-              options: const ['Under 10L', '10L - 25L', '25L - 50L', '50L - 1Cr', '1Cr - 5Cr', '5Cr+'],
+              options: const ['No Revenue', 'Under 1 Lakh', 'Under 5 Lakhs', 'Under 10L', '10L - 25L', '25L - 50L', '50L - 1Cr', '1Cr - 5Cr', '5Cr+'],
             )),
             const SizedBox(width: 12),
             Expanded(child: _field(profile, onChanged, 'revenueGoalAfterTbt', 'Revenue Goal After TBT')),
@@ -1271,7 +1275,7 @@ Widget _multilineField(
   );
 }
 
-const _kMarketingChannels = ['SEO', 'Paid Ads', 'Social Media', 'Email', 'Referral', 'Offline'];
+const _kMarketingChannels = ['SEO', 'Paid Ads', 'Social Media', 'Email', 'Referral', 'Offline', 'None'];
 
 Widget _marketingChannelChips(
   Map<String, dynamic> profile,

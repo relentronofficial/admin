@@ -1003,12 +1003,19 @@ export async function getAllBatchTasksHandler(
   });
   if (!batch) return reply.status(404).send({ success: false, data: null, error: 'Batch not found' });
 
+  // Archived (soft-deleted) program activities stay out of the list; deleted_at is a raw SQL column.
+  const archived = batch.programId
+    ? await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id::text AS id FROM tasks WHERE program_id = $1::uuid AND deleted_at IS NOT NULL`, batch.programId,
+      ).catch(() => [] as Array<{ id: string }>)
+    : [];
   const tasks = await req.server.prisma.task.findMany({
     where: {
       OR: [
         { batchId: req.params.id },
         ...(batch.programId ? [{ programId: batch.programId, batchId: null }] : []),
       ],
+      ...(archived.length > 0 ? { id: { notIn: archived.map((r) => r.id) } } : {}),
     },
     orderBy: [{ dayNumber: 'asc' }, { sortOrder: 'asc' }],
   });

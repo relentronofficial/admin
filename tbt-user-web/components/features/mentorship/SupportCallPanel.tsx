@@ -5,19 +5,27 @@
 // real sessions published by the TBT team (GET /api/user/support-calls); the server
 // re-checks availability, seats, quota and duplicates when a booking is confirmed,
 // and controls cancellation cutoffs and the join window. Nothing is generated here.
+//
+// Once the included calls are used, an extra call can be unlocked with TBT coins
+// at the admin-set price — only after the member confirms that exact price. Buying
+// coins (Razorpay) only adds coins: it never books a call or spends them.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Loader2, Users, Video, Check, ChevronLeft, ChevronRight, CalendarDays, Clock } from "lucide-react";
+import { X, Loader2, Users, Video, Check, ChevronLeft, ChevronRight, CalendarDays, Clock, Coins, Lock } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { getServerNow } from "@/lib/api/client";
 import {
   useBookSupportCall,
+  useBuyExtraSupportCalls,
   useCancelSupportCallBooking,
   useJoinSupportCall,
   useSupportCalls,
 } from "@/lib/hooks/useSupportCalls";
+import { useCoinPackages, useCoinPurchase } from "@/lib/hooks/useCoins";
 import type {
+  SupportCallBookingConfirmation,
   SupportCallCategory,
+  SupportCallCoinInfo,
   SupportCallHistoryItem,
   SupportCallSession,
 } from "@/lib/api/services/supportCalls.service";
@@ -46,6 +54,7 @@ const SOFT = "#d0cfd4";
 const BLUE = "#809ed5";
 const RED = "#ff313b";
 const GREEN = "#22c55e";
+const GOLD = "#eab308";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -68,6 +77,8 @@ const SLOT_LABEL: Record<SlotState, string> = {
 function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short" });
 }
+
+const formatInr = (v: number) => `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 
 /** Server-synced clock, refreshed every 30 s so slot states roll over without a reload. */
 function useServerNow() {
@@ -230,30 +241,248 @@ function SlotButton({
   );
 }
 
+/**
+ * Buy a TBT coin package via Razorpay. Shows the real outcome (added, failed,
+ * cancelled, or paid-but-confirming) and never books or spends anything.
+ */
+function CoinPurchaseBox({ needed }: { needed: number | null }) {
+  const { data, isLoading, isError, refetch } = useCoinPackages();
+  const purchase = useCoinPurchase();
+  const [pickedId, setPickedId] = useState<string | null | undefined>(undefined);
+  const packages = data?.packages ?? [];
+  const picked = packages.find((p) => p.id === pickedId) ?? (packages.length === 1 ? packages[0] : null);
+  const { state, busy } = purchase;
+
+  const stepLabel =
+    state.status === "working"
+      ? state.step === "order"
+        ? "Opening secure payment…"
+        : state.step === "checkout"
+          ? "Complete the payment in the Razorpay window…"
+          : "Confirming your payment…"
+      : null;
+
+  return (
+    <div className="rounded-[10px] p-3.5 space-y-2.5" style={{ background: CARD, border: `1px solid ${GOLD}55` }} data-testid="coin-purchase">
+      <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
+        <Coins size={13} style={{ color: GOLD }} /> Purchase TBT Coins
+      </p>
+      {needed != null && needed > 0 && (
+        <p className="text-[11px]" style={{ color: MUTED }}>You need {needed} more coins to unlock this call.</p>
+      )}
+      {isLoading ? (
+        <div className="h-10 rounded-lg animate-pulse" style={{ background: CHIP }} aria-busy="true" />
+      ) : isError || !data ? (
+        <div className="flex items-center gap-2">
+          <p className="text-[11px]" style={{ color: SOFT }}>Couldn&apos;t load coin packages.</p>
+          <button type="button" onClick={() => refetch()} className="text-[11px] font-semibold px-2 py-1 rounded-md" style={{ background: CHIP, color: TEXT }}>
+            Retry
+          </button>
+        </div>
+      ) : !data.purchaseAvailable ? (
+        <p className="text-[11px]" style={{ color: SOFT }}>Coin purchase isn&apos;t available right now. Please try again later.</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Coin packages">
+            {packages.map((p) => {
+              const selected = picked?.id === p.id;
+              return (
+                <button
+                  key={p.id ?? "default"}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={busy}
+                  onClick={() => setPickedId(p.id)}
+                  className="text-left rounded-lg px-3 py-2 disabled:opacity-60"
+                  style={{ background: selected ? `${GOLD}22` : CHIP, border: `1px solid ${selected ? GOLD : "transparent"}` }}
+                >
+                  <span className="block text-sm font-bold" style={{ color: TEXT }}>{p.coins.toLocaleString("en-IN")} coins</span>
+                  <span className="block text-[11px]" style={{ color: SOFT }}>{formatInr(p.priceInr)} · {p.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            disabled={!picked || busy}
+            onClick={() => picked && void purchase.buy(picked)}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+            style={{ background: GOLD, color: "#1a1a1d" }}
+          >
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Coins size={13} />}
+            {picked ? `Pay ${formatInr(picked.priceInr)}` : "Choose a package"}
+          </button>
+        </>
+      )}
+      <div aria-live="polite">
+        {stepLabel && <p className="text-[11px]" style={{ color: SOFT }}>{stepLabel}</p>}
+        {state.status === "success" && (
+          <p role="status" className="text-xs rounded-md px-2.5 py-2" style={{ background: "rgba(34,197,94,0.12)", color: TEXT }}>
+            <strong>{state.coinsAdded} TBT coins added.</strong> New balance: {state.balance} coins. Nothing has been booked or spent. Confirm a slot to use them.
+          </p>
+        )}
+        {state.status === "pending" && (
+          <p role="status" className="text-xs rounded-md px-2.5 py-2" style={{ background: `${GOLD}1f`, color: TEXT }}>{state.message}</p>
+        )}
+        {state.status === "cancelled" && (
+          <p role="status" className="text-xs rounded-md px-2.5 py-2" style={{ background: CHIP, color: SOFT }}>Payment cancelled. You were not charged.</p>
+        )}
+        {state.status === "failed" && (
+          <p role="alert" className="text-xs rounded-md px-2.5 py-2" style={{ background: "rgba(255,49,59,0.12)", color: "#ff8a90" }}>
+            Payment failed: {state.message}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const BUY_QUANTITIES = [1, 2, 3, 5] as const;
+
+/**
+ * Pre-purchase N extra call credits with TBT coins. Coins deducted immediately;
+ * the purchased quota adds to the member's allocation so future bookings are free.
+ */
+function BuyExtraCallsBox({
+  category,
+  coinCostEach,
+  coinBalance,
+}: {
+  category: SupportCallCategory;
+  coinCostEach: number;
+  coinBalance: number;
+}) {
+  const [qty, setQty] = useState<number>(1);
+  const [bought, setBought] = useState<{ qty: number; spent: number; balance: number } | null>(null);
+  const buyMutation = useBuyExtraSupportCalls();
+  const totalCost = qty * coinCostEach;
+  const canAfford = coinBalance >= totalCost;
+
+  if (bought) {
+    return (
+      <div className="rounded-[10px] p-3.5 space-y-1.5" style={{ background: CARD, border: `1px solid ${GREEN}55` }}>
+        <p className="text-xs font-semibold" style={{ color: GREEN }}>
+          ✓ {bought.qty} extra call{bought.qty !== 1 ? "s" : ""} added to your quota
+        </p>
+        <p className="text-[11px]" style={{ color: SOFT }}>
+          {bought.spent} TBT coins deducted · New balance: {bought.balance} coins
+        </p>
+        <p className="text-[11px]" style={{ color: MUTED }}>Pick any available slot below — no coin payment at booking.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[10px] p-3.5 space-y-3" style={{ background: CARD, border: `1px solid ${GOLD}55` }}>
+      <div className="flex items-center gap-1.5">
+        <Coins size={13} style={{ color: GOLD }} />
+        <span className="text-xs font-semibold" style={{ color: TEXT }}>Buy Extra Calls with TBT Coins</span>
+      </div>
+      <p className="text-[11px]" style={{ color: SOFT }}>
+        Choose how many extra calls to buy. Coins are deducted now; book any published slot afterwards — no per-slot payment.
+      </p>
+      <div className="space-y-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: MUTED }}>Number of calls</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {BUY_QUANTITIES.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setQty(n)}
+              className="w-10 h-10 rounded-lg text-sm font-bold transition-colors"
+              style={{
+                background: qty === n ? GOLD : CHIP,
+                color: qty === n ? "#1a1a1d" : SOFT,
+                border: qty === n ? `1px solid ${GOLD}` : "1px solid #2a2a2e",
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-lg px-3 py-2.5 space-y-0.5" style={{ background: "#1a1a1d" }}>
+        <div className="flex items-center justify-between text-[11px]">
+          <span style={{ color: MUTED }}>Cost: {qty} × {coinCostEach.toLocaleString("en-IN")} coins</span>
+          <span className="font-bold" style={{ color: GOLD }}>{totalCost.toLocaleString("en-IN")} coins</span>
+        </div>
+        <div className="flex items-center justify-between text-[11px]">
+          <span style={{ color: MUTED }}>Your balance</span>
+          <span style={{ color: canAfford ? SOFT : RED }}>{coinBalance.toLocaleString("en-IN")} coins{canAfford ? "" : " (insufficient)"}</span>
+        </div>
+        {canAfford && (
+          <div className="flex items-center justify-between text-[11px]">
+            <span style={{ color: MUTED }}>After purchase</span>
+            <span style={{ color: SOFT }}>{(coinBalance - totalCost).toLocaleString("en-IN")} coins</span>
+          </div>
+        )}
+      </div>
+      {canAfford ? (
+        <button
+          type="button"
+          disabled={buyMutation.isPending}
+          onClick={async () => {
+            try {
+              const res = await buyMutation.mutateAsync({ category, quantity: qty, expectedCoinCostEach: coinCostEach });
+              setBought({ qty, spent: res.coinsSpent, balance: res.newBalance });
+            } catch (err: any) {
+              const msg = err?.response?.data?.error ?? err?.message ?? "Failed to purchase extra calls";
+              toast.error(typeof msg === "string" ? msg : "Failed to purchase extra calls", { id: "buy-extra-calls" });
+            }
+          }}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-opacity disabled:opacity-60"
+          style={{ background: GOLD, color: "#1a1a1d" }}
+        >
+          {buyMutation.isPending ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
+          Buy {qty} Call{qty !== 1 ? "s" : ""} · {totalCost.toLocaleString("en-IN")} Coins
+        </button>
+      ) : (
+        <p className="text-[11px] text-center py-2" style={{ color: RED }}>
+          You need {(totalCost - coinBalance).toLocaleString("en-IN")} more coins. Use the &ldquo;Purchase TBT Coins&rdquo; option below.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ConfirmCard({
   session,
   categoryLabel,
   dateKey,
+  coin,
+  payWithCoins,
   onConfirmed,
   onClear,
 }: {
   session: SupportCallSession;
   categoryLabel: string;
   dateKey: string;
-  onConfirmed: (session: SupportCallSession) => void;
+  coin: SupportCallCoinInfo | null;
+  /** True when the included calls are used and this booking is an extra, coin-paid call. */
+  payWithCoins: boolean;
+  onConfirmed: (booking: SupportCallBookingConfirmation) => void;
   onClear: () => void;
 }) {
   const book = useBookSupportCall();
   const [error, setError] = useState<string | null>(null);
+  const cost = payWithCoins ? coin?.cost ?? null : null;
+  const balance = coin?.balance ?? 0;
+  const shortBy = cost != null ? Math.max(0, cost - balance) : 0;
 
   const confirm = async () => {
     if (book.isPending) return;
+    if (payWithCoins && (cost == null || shortBy > 0)) return;
     setError(null);
     try {
-      await book.mutateAsync(session.id);
-      onConfirmed(session);
+      const booking = await book.mutateAsync(
+        payWithCoins
+          ? { sessionId: session.id, expectedStartsAt: session.startsAt, payWithCoins: true, expectedCoinCost: cost! }
+          : { sessionId: session.id, expectedStartsAt: session.startsAt },
+      );
+      onConfirmed(booking);
     } catch (err: any) {
-      // The server re-validates availability; its message says what changed.
+      // The server re-validates availability, quota and the coin price; its message says what changed.
       setError(err?.message || "This slot could not be booked. Please pick another time.");
     }
   };
@@ -276,6 +505,22 @@ function ConfirmCard({
             <dd style={{ color: TEXT }}>{session.hostName}</dd>
           </>
         )}
+        <dt style={{ color: MUTED }}>Uses</dt>
+        <dd style={{ color: TEXT }}>
+          {cost != null ? (
+            <span className="inline-flex items-center gap-1"><Coins size={12} style={{ color: GOLD }} /> {cost} TBT coins (extra call)</span>
+          ) : (
+            "1 included call from your plan"
+          )}
+        </dd>
+        {cost != null && (
+          <>
+            <dt style={{ color: MUTED }}>Balance</dt>
+            <dd style={{ color: TEXT }}>
+              {balance} coins{shortBy === 0 ? ` → ${balance - cost} after booking` : ""}
+            </dd>
+          </>
+        )}
       </dl>
       {session.description && <p className="text-xs leading-relaxed" style={{ color: MUTED }}>{session.description}</p>}
       {error && (
@@ -283,20 +528,82 @@ function ConfirmCard({
           {error}
         </p>
       )}
-      <div className="flex items-center gap-2 flex-wrap pt-0.5">
-        <button
-          type="button"
-          onClick={confirm}
-          disabled={book.isPending}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
-          style={{ background: "var(--color-accent)", color: "#fff" }}
-        >
-          {book.isPending && <Loader2 size={13} className="animate-spin" />} Confirm Booking
-        </button>
-        <button type="button" onClick={onClear} disabled={book.isPending} className="text-xs px-2 py-2" style={{ color: MUTED }}>
-          Change time
-        </button>
+      {payWithCoins && shortBy > 0 ? (
+        <CoinPurchaseBox needed={shortBy} />
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap pt-0.5">
+          <button
+            type="button"
+            onClick={confirm}
+            disabled={book.isPending}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50"
+            style={{ background: "var(--color-accent)", color: "#fff" }}
+          >
+            {book.isPending ? <Loader2 size={13} className="animate-spin" /> : cost != null ? <Coins size={13} /> : null}
+            {cost != null ? `Unlock with ${cost} TBT Coins` : "Confirm Booking"}
+          </button>
+          <button type="button" onClick={onClear} disabled={book.isPending} className="text-xs px-2 py-2" style={{ color: MUTED }}>
+            Change time
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The booking exactly as the server committed it. */
+function BookingConfirmation({
+  booking,
+  categoryLabel,
+  onDismiss,
+}: {
+  booking: SupportCallBookingConfirmation;
+  categoryLabel: string;
+  onDismiss: () => void;
+}) {
+  // It renders at the top of the panel; on a phone the member is scrolled down at
+  // the Confirm button, so bring it into view or they'd never see it.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [booking.id]);
+  return (
+    <div ref={ref} role="status" className="rounded-[10px] px-3.5 py-3 space-y-2" style={{ background: "rgba(34,197,94,0.12)", border: `1px solid ${GREEN}` }}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-bold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
+          <Check size={15} style={{ color: GREEN }} /> Booking confirmed
+        </p>
+        <button type="button" onClick={onDismiss} aria-label="Dismiss" style={{ color: SOFT }}><X size={14} /></button>
       </div>
+      <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+        <dt style={{ color: MUTED }}>Status</dt>
+        <dd style={{ color: BLUE }} className="font-semibold">Booked</dd>
+        <dt style={{ color: MUTED }}>Call</dt>
+        <dd style={{ color: TEXT }}>{categoryLabel}</dd>
+        <dt style={{ color: MUTED }}>Session</dt>
+        <dd style={{ color: TEXT }}>{booking.title}</dd>
+        <dt style={{ color: MUTED }}>When</dt>
+        <dd style={{ color: TEXT }}>
+          {formatShortDate(booking.startsAt)}, {formatSlotRange(booking)} IST ({booking.durationMinutes} min)
+        </dd>
+        {booking.hostName && (
+          <>
+            <dt style={{ color: MUTED }}>Host</dt>
+            <dd style={{ color: TEXT }}>{booking.hostName}</dd>
+          </>
+        )}
+        <dt style={{ color: MUTED }}>Paid with</dt>
+        <dd style={{ color: TEXT }}>
+          {booking.paidWithCoins
+            ? `${booking.coinsSpent} TBT coins${booking.coinBalance != null ? ` · balance now ${booking.coinBalance}` : ""}`
+            : "1 included call"}
+        </dd>
+        <dt style={{ color: MUTED }}>Reference</dt>
+        <dd style={{ color: SOFT }} className="font-mono text-[11px]">{booking.id.slice(0, 8).toUpperCase()}</dd>
+      </dl>
+      <p className="text-[11px]" style={{ color: MUTED }}>
+        It&apos;s listed under My bookings. The join link opens 10 minutes before the call.
+      </p>
     </div>
   );
 }
@@ -307,12 +614,14 @@ function MyBookingCard({ session, nowMs }: { session: SupportCallSession; nowMs:
   const [confirmCancel, setConfirmCancel] = useState(false);
   const mine = session.myBooking!;
   const live = new Date(session.startsAt).getTime() <= nowMs;
+  const paid = mine.coinCost ?? null;
 
   const onCancel = async () => {
     if (cancel.isPending) return;
     try {
-      await cancel.mutateAsync(mine.id);
-      toast.success("Booking cancelled — the call is back in your quota");
+      const res = await cancel.mutateAsync(mine.id);
+      const refunded = res?.coinsRefunded ?? 0;
+      toast.success(refunded > 0 ? `Booking cancelled — ${refunded} TBT coins refunded` : "Booking cancelled — the call is back in your quota");
       setConfirmCancel(false);
     } catch (err: any) {
       toast.error(err?.message || "Could not cancel this booking");
@@ -347,9 +656,14 @@ function MyBookingCard({ session, nowMs }: { session: SupportCallSession; nowMs:
             {session.hostName ? ` · with ${session.hostName}` : ""}
           </p>
         </div>
-        <div className="shrink-0 flex items-center gap-1.5">
+        <div className="shrink-0 flex items-center gap-1.5 flex-wrap justify-end">
           {live && (
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: RED }}>● Live now</span>
+          )}
+          {paid != null && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: GOLD }}>
+              <Coins size={11} /> {paid} coins
+            </span>
           )}
           <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: CHIP, color: BLUE }}>
             <Check size={11} /> Booked
@@ -376,7 +690,8 @@ function MyBookingCard({ session, nowMs }: { session: SupportCallSession; nowMs:
           </button>
         )}
         {mine.canCancel && confirmCancel && (
-          <span className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            {paid != null && <span className="text-[11px]" style={{ color: SOFT }}>Your {paid} coins will be refunded.</span>}
             <button
               type="button"
               onClick={onCancel}
@@ -414,7 +729,8 @@ export default function SupportCallPanel({
   const nowMs = useServerNow();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const [justBooked, setJustBooked] = useState<SupportCallSession | null>(null);
+  const [justBooked, setJustBooked] = useState<SupportCallBookingConfirmation | null>(null);
+  const [showCoinShop, setShowCoinShop] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -430,9 +746,18 @@ export default function SupportCallPanel({
   }, [onClose]);
 
   const quota = data?.quota;
+  const coin = data?.coin ?? null;
+  // notIncluded: category has 0 plan-allocated calls (plan doesn't include this call type at all).
+  const notIncluded = !!quota && (quota.included ?? quota.allocated) <= 0;
+  // coinPath: included calls exhausted AND admin has set a coin price — extra call can be booked
+  // with TBT coins regardless of whether the member currently has enough (they can buy more).
+  // Also covers the edge case where action is still 'locked' because Razorpay isn't configured —
+  // the member may already have enough coins and the ConfirmCard will handle the short-balance case.
+  const coinPath = !!quota && quota.remaining <= 0 && !notIncluded && coin?.cost != null;
   const member = useMemo(
-    () => ({ notIncluded: !!quota && quota.allocated <= 0, canBookMore: !!quota && quota.remaining > 0 }),
-    [quota],
+    // Same rule as the server: only plan-included calls make a category bookable (coin unlocks don't).
+    () => ({ notIncluded, canBookMore: !!quota && (quota.remaining > 0 || coinPath) }),
+    [quota, notIncluded, coinPath],
   );
   const byDate = useMemo(() => groupByDate(data?.sessions ?? []), [data?.sessions]);
   const openDates = useMemo(() => datesWithOpenSlots(byDate, nowMs), [byDate, nowMs]);
@@ -443,11 +768,17 @@ export default function SupportCallPanel({
     [openDates, todayKey, byDate, nowMs, member],
   );
 
-  // Default to the first date with a bookable slot; drop a selection that is no longer bookable.
+  // Default to the first date with a bookable slot. A date the member picked stays
+  // selected when its last slot is taken (it then says so) unless it is now in the past.
+  const pickedRef = useRef(false);
   useEffect(() => {
     if (!data) return;
-    if (!selectedDate || !bookableDates.includes(selectedDate)) setSelectedDate(bookableDates[0] ?? null);
-  }, [data, bookableDates, selectedDate]);
+    const keep = !!selectedDate && selectedDate >= todayKey && (pickedRef.current || bookableDates.includes(selectedDate));
+    if (!keep) {
+      pickedRef.current = false;
+      setSelectedDate(bookableDates[0] ?? null);
+    }
+  }, [data, bookableDates, selectedDate, todayKey]);
 
   const daySlots = selectedDate ? byDate.get(selectedDate) ?? [] : [];
   const selectedSlot = daySlots.find((s) => s.id === selectedSlotId) ?? null;
@@ -459,6 +790,7 @@ export default function SupportCallPanel({
   if (!mounted) return null;
 
   const nothingPublished = !!data && openDates.length === 0;
+  const unlocked = quota?.unlocked ?? 0;
 
   return createPortal(
     <div
@@ -504,7 +836,17 @@ export default function SupportCallPanel({
                 <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{ background: CHIP, color: TEXT }}>
                   🟣 {quota.remaining} Left to book
                 </span>
+                {unlocked > 0 && (
+                  <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full" style={{ background: CHIP, color: GOLD }}>
+                    🪙 {unlocked} unlocked with coins
+                  </span>
+                )}
               </>
+            )}
+            {coin && coin.cost != null && !member.notIncluded && (
+              <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full inline-flex items-center gap-1" style={{ background: CHIP, color: GOLD }}>
+                <Coins size={11} /> {coin.balance} coins
+              </span>
             )}
           </div>
         )}
@@ -524,93 +866,133 @@ export default function SupportCallPanel({
             </div>
           ) : (
             <>
-              {justBooked && (
-                <div role="status" className="rounded-[10px] px-3.5 py-3 flex items-start justify-between gap-3" style={{ background: "rgba(34,197,94,0.12)", border: `1px solid ${GREEN}` }}>
-                  <p className="text-xs" style={{ color: TEXT }}>
-                    <strong>Booked!</strong> {justBooked.title} on {formatShortDate(justBooked.startsAt)}, {formatSlotRange(justBooked)} IST. It&apos;s listed under My bookings.
-                  </p>
-                  <button type="button" onClick={() => setJustBooked(null)} aria-label="Dismiss" style={{ color: SOFT }}><X size={14} /></button>
-                </div>
-              )}
+              {justBooked && <BookingConfirmation booking={justBooked} categoryLabel={label} onDismiss={() => setJustBooked(null)} />}
 
-              <section className="space-y-2">
-                <div className="grid sm:grid-cols-2 gap-3 items-start">
-                  <div className="space-y-2">
-                    <SectionTitle icon={<CalendarDays size={13} />}>1. Choose a date</SectionTitle>
-                    <BookingCalendar
-                      byDate={byDate}
-                      nowMs={nowMs}
-                      member={member}
-                      selectedKey={selectedDate}
-                      onSelect={(key) => {
-                        setSelectedDate(key);
-                        setSelectedSlotId(null);
-                      }}
-                      lastOpenKey={openDates[openDates.length - 1] ?? null}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <SectionTitle icon={<Clock size={13} />}>
-                      2. Choose a time{selectedDate ? ` · ${formatShortDate(`${selectedDate}T12:00:00+05:30`)}` : ""}
-                    </SectionTitle>
-                    {nothingPublished && !member.notIncluded ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots right now. Please check again later.</p>
-                        <p className="text-[11px] mt-1" style={{ color: MUTED }}>
-                          The TBT team publishes {label.replace(/^\S+\s/, "")} slots here. As soon as they do, the dates light up on the calendar and you can book a time.
-                        </p>
-                      </div>
-                    ) : member.notIncluded || !member.canBookMore ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs font-semibold" style={{ color: TEXT }}>
-                          {member.notIncluded ? "This call type isn't included in your plan." : "You have no calls left to book in this category."}
-                        </p>
-                        <p className="text-[11px] mt-1" style={{ color: MUTED }}>
-                          {member.notIncluded
-                            ? "Your plan doesn't include this call type, so its slots can't be booked."
-                            : "A call becomes available again if you cancel an upcoming booking."}
-                        </p>
-                      </div>
-                    ) : !selectedDate ? (
-                      <div className="rounded-[10px] p-4" style={{ background: CARD }}>
-                        <p className="text-xs" style={{ color: SOFT }}>All published slots are booked. Please check again later.</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-1 gap-2" role="group" aria-label="Available time slots">
-                        {daySlots.map((s) => (
-                          <SlotButton
-                            key={s.id}
-                            session={s}
-                            state={slotState(s, nowMs, member)}
-                            selected={s.id === selectedSlotId}
-                            onSelect={() => {
-                              setSelectedSlotId(s.id);
-                              setJustBooked(null);
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-
-              {selectedSlot && selectedDate && (
-                <section className="space-y-2">
-                  <SectionTitle icon={<Check size={13} />}>3. Confirm</SectionTitle>
-                  <ConfirmCard
-                    key={selectedSlot.id}
-                    session={selectedSlot}
-                    categoryLabel={label}
-                    dateKey={selectedDate}
-                    onConfirmed={(s) => {
-                      setSelectedSlotId(null);
-                      setJustBooked(s);
-                      toast.success("Call booked");
-                    }}
-                    onClear={() => setSelectedSlotId(null)}
+              {coinPath && coin?.cost != null ? (
+                // ── Quota exhausted + coin purchase available: show buy flow only.
+                // After BuyExtraCallsBox succeeds the query refetches; quota.remaining
+                // rises above 0, coinPath flips false, and the calendar section below
+                // renders automatically — no manual state change needed.
+                <div className="space-y-3" data-testid="coin-unlock-banner">
+                  <BuyExtraCallsBox
+                    category={category}
+                    coinCostEach={coin.cost}
+                    coinBalance={coin.balance}
                   />
-                </section>
+                  {coin.balance < coin.cost && (
+                    <div className="rounded-[10px] p-3.5 space-y-2" style={{ background: CARD, border: `1px solid #2a2a2e` }}>
+                      <p className="text-[11px] font-semibold" style={{ color: SOFT }}>
+                        Not enough coins? Top up your balance first.
+                      </p>
+                      {showCoinShop ? (
+                        <CoinPurchaseBox needed={Math.max(0, coin.cost - coin.balance)} />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setShowCoinShop(true)}
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg"
+                          style={{ background: CHIP, color: GOLD, border: `1px solid ${GOLD}55` }}
+                        >
+                          <Coins size={13} /> Purchase TBT Coins
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : !member.canBookMore && !member.notIncluded ? (
+                // ── Quota exhausted, coin purchases not configured for this category.
+                <div className="rounded-[10px] p-4 space-y-1.5" style={{ background: CARD }}>
+                  <p className="text-xs font-semibold inline-flex items-center gap-1.5" style={{ color: TEXT }}>
+                    <Lock size={13} style={{ color: RED }} /> All included calls used
+                  </p>
+                  <p className="text-[11px]" style={{ color: MUTED }}>
+                    You&apos;ve used your full {label.replace(/^\S+\s/, "")} allocation. Additional call purchases aren&apos;t configured for this category yet — please contact your program manager.
+                  </p>
+                </div>
+              ) : (
+                // ── Normal booking flow (calls available or plan doesn't include this type).
+                <>
+                  <section className="space-y-2">
+                    <div className="grid sm:grid-cols-2 gap-3 items-start">
+                      <div className="space-y-2">
+                        <SectionTitle icon={<CalendarDays size={13} />}>1. Choose a date</SectionTitle>
+                        <BookingCalendar
+                          byDate={byDate}
+                          nowMs={nowMs}
+                          member={member}
+                          selectedKey={selectedDate}
+                          onSelect={(key) => {
+                            pickedRef.current = true;
+                            setSelectedDate(key);
+                            setSelectedSlotId(null);
+                          }}
+                          lastOpenKey={openDates[openDates.length - 1] ?? null}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <SectionTitle icon={<Clock size={13} />}>
+                          2. Choose a time{selectedDate ? ` · ${formatShortDate(`${selectedDate}T12:00:00+05:30`)}` : ""}
+                        </SectionTitle>
+                        {member.notIncluded ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>This call type isn&apos;t included in your plan.</p>
+                            <p className="text-[11px] mt-1" style={{ color: MUTED }}>Your plan doesn&apos;t include this call type, so its slots can&apos;t be booked.</p>
+                          </div>
+                        ) : nothingPublished ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots right now. Please check again later.</p>
+                            <p className="text-[11px] mt-1" style={{ color: MUTED }}>
+                              The TBT team publishes {label.replace(/^\S+\s/, "")} slots here. As soon as they do, the dates light up on the calendar and you can book a time.
+                            </p>
+                          </div>
+                        ) : !selectedDate ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }}>
+                            <p className="text-xs" style={{ color: SOFT }}>All published slots are booked. Please check again later.</p>
+                          </div>
+                        ) : !daySlots.some((s) => slotState(s, nowMs, member) === "available") ? (
+                          <div className="rounded-[10px] p-4" style={{ background: CARD }} role="status">
+                            <p className="text-xs font-semibold" style={{ color: TEXT }}>No available slots for this date. Please choose another date.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-1 gap-2" role="group" aria-label="Available time slots">
+                            {daySlots.map((s) => (
+                              <SlotButton
+                                key={s.id}
+                                session={s}
+                                state={slotState(s, nowMs, member)}
+                                selected={s.id === selectedSlotId}
+                                onSelect={() => {
+                                  setSelectedSlotId(s.id);
+                                  setJustBooked(null);
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                  {selectedSlot && selectedDate && (
+                    <section className="space-y-2">
+                      <SectionTitle icon={<Check size={13} />}>3. Confirm</SectionTitle>
+                      <ConfirmCard
+                        key={selectedSlot.id}
+                        session={selectedSlot}
+                        categoryLabel={label}
+                        dateKey={selectedDate}
+                        coin={coin}
+                        payWithCoins={false}
+                        onConfirmed={(booking) => {
+                          setSelectedSlotId(null);
+                          setShowCoinShop(false);
+                          setJustBooked(booking);
+                          toast.success("Call booked");
+                        }}
+                        onClear={() => setSelectedSlotId(null)}
+                      />
+                    </section>
+                  )}
+                </>
               )}
 
               <section className="space-y-2">
@@ -628,11 +1010,15 @@ export default function SupportCallPanel({
                   <ul className="space-y-1.5">
                     {data.history.map((h) => {
                       const st = HISTORY_LABEL[h.status] ?? HISTORY_LABEL.booked;
+                      const refunded = h.coinCost != null && (h.status === "cancelled" || h.status === "session_cancelled");
                       return (
                         <li key={h.bookingId} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ background: CARD }}>
                           <div className="min-w-0">
                             <p className="text-xs truncate" style={{ color: TEXT }}>{h.title}</p>
-                            <p className="text-[10px]" style={{ color: MUTED }}>{formatShortDate(h.startsAt)} · {formatSlotRange(h)} IST</p>
+                            <p className="text-[10px]" style={{ color: MUTED }}>
+                              {formatShortDate(h.startsAt)} · {formatSlotRange(h)} IST
+                              {h.coinCost != null ? ` · ${h.coinCost} coins${refunded ? " refunded" : ""}` : ""}
+                            </p>
                           </div>
                           <span className="shrink-0 text-[10px] font-semibold" style={{ color: st.color }}>{st.label}</span>
                         </li>

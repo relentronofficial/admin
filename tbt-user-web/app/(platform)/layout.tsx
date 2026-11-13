@@ -17,7 +17,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <main className="flex-1 pt-20">
         <SubscriptionGate>
           <NavAccessGuard>
-            <div className="max-w-[1440px] mx-auto px-4 md:px-6 py-6">
+            <div className="max-w-[1440px] mx-auto px-4 md:px-6 py-6 pb-24 lg:pb-6">
               {children}
             </div>
           </NavAccessGuard>

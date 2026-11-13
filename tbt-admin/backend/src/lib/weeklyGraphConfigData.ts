@@ -11,6 +11,7 @@ import {
   type GraphWeekRow,
 } from './weeklyGraphConfig.js';
 import type { GraphRecordInput } from './weeklyGraphLogic.js';
+import type { RevenueWeekRow } from './weeklyGraphRevenue.js';
 
 type Prisma = any;
 
@@ -22,7 +23,8 @@ export async function loadProgramGraphRows(prisma: Prisma, programId: string): P
       programId,
     ).catch(() => []),
     prisma.$queryRawUnsafe(
-      `SELECT id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive"
+      `SELECT id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive",
+              threshold_amount::float8 AS "threshold"
        FROM graph_milestones WHERE program_id = $1::uuid ORDER BY sort_order, label`,
       programId,
     ).catch(() => []),
@@ -47,11 +49,96 @@ export async function loadMemberGraphRecords(prisma: Prisma, memberId: string): 
 }
 
 /**
+ * This member's reported weekly revenue (member_revenue_reports — the figure
+ * "Your Revenue Stats" shows). Always scoped to the one member; a failed read
+ * yields no revenue data rather than an error, so the graph still renders.
+ */
+export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): Promise<RevenueWeekRow[]> {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT year AS "isoYear", week_number AS "isoWeek", revenue_generated::float8 AS revenue,
+            daily_revenue AS "dailyRevenue", created_at AS "reportedAt"
+     FROM member_revenue_reports WHERE member_id = $1::uuid`,
+    memberId,
+  ).catch(() => []);
+  return (rows as any[]).map((r) => ({
+    isoYear: Number(r.isoYear),
+    isoWeek: Number(r.isoWeek),
+    revenue: r.revenue === null || r.revenue === undefined ? null : Number(r.revenue),
+    dailyRevenue: Array.isArray(r.dailyRevenue)
+      ? r.dailyRevenue.map((v: unknown) => (v != null && Number.isFinite(Number(v)) ? Number(v) : null))
+      : null,
+    reportedAt: r.reportedAt ? new Date(r.reportedAt) : null,
+  }));
+}
+
+/**
+ * The day span a never-configured program's default weeks cover — the longest
+ * any member of it runs: the program's length, each of its batches' own length
+ * (snapshot_days, else the program's, as the member graph uses) plus any
+ * member's extra days, and the latest active activity day. The admin Weekly
+ * Graph page, "save the defaults", and the member graph all use this one span,
+ * so they list the same weeks. A failed read yields 0 (callers keep their own span).
+ */
+export async function loadProgramWeekSpanDays(prisma: Prisma, programId: string): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT GREATEST(
+       COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0),
+       COALESCE((SELECT MAX(COALESCE(b.snapshot_days, p.duration_days, 90) + COALESCE(s.extended_days, 0))
+                 FROM batches b JOIN programs p ON p.id = b.program_id
+                 LEFT JOIN member_batch_settings s ON s.batch_id = b.id
+                 WHERE b.program_id = $1::uuid), 0),
+       COALESCE((SELECT MAX(t.day_number) FROM tasks t
+                 WHERE t.is_active = true
+                   AND ((t.program_id = $1::uuid AND t.batch_id IS NULL)
+                        OR t.batch_id IN (SELECT id FROM batches WHERE program_id = $1::uuid))), 0)
+     )::int AS "days"`,
+    programId,
+  ).catch(() => []);
+  const days = Number((rows as any[])[0]?.days ?? 0);
+  return Number.isFinite(days) && days > 0 ? days : 0;
+}
+
+/**
+ * Backfills default milestones that were added after a program was first
+ * initialized. Safe to call on read paths (only writes when rows are missing).
+ * Idempotent: each step guards with NOT EXISTS so repeated calls are no-ops.
+ *
+ * Currently handles: '5 Lakhs' revenue milestone (added Oct 2026).
+ */
+export async function backfillNewDefaultMilestones(prisma: Prisma, programId: string): Promise<void> {
+  // Shift milestones above '1 lakh' up by one to make room.
+  await prisma.$executeRawUnsafe(
+    `UPDATE graph_milestones
+     SET sort_order = sort_order + 1
+     WHERE program_id = $1::uuid
+       AND EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
+       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')
+       AND sort_order > (
+         SELECT sort_order FROM graph_milestones
+         WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1
+       )`,
+    programId,
+  ).catch(() => {});
+
+  // Insert '5 Lakhs' between '1 lakh' and '1 crore'.
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO graph_milestones (program_id, label, kind, sort_order)
+     SELECT $1::uuid, '5 Lakhs', 'revenue',
+            (SELECT sort_order + 1 FROM graph_milestones
+             WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue' LIMIT 1)
+     WHERE EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '1 lakh' AND kind = 'revenue')
+       AND NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid AND label = '5 Lakhs' AND kind = 'revenue')`,
+    programId,
+  ).catch(() => {});
+}
+
+/**
  * Before the first admin edit of a program, write its current defaults as real
- * rows so every item gets a stable id: the five default milestones and one
- * 7-day week per program week. Idempotent (each set is only inserted while the
- * program has none). Existing milestone activities are then linked to the new
- * milestone ids by their label, so renaming a milestone later keeps them linked.
+ * rows so every item gets a stable id. Idempotent (each set is only inserted while
+ * the program has none). Also backfills any new default milestones that were added
+ * after a program was first initialized. Existing milestone activities are then
+ * linked to the new milestone ids by their label, so renaming a milestone later
+ * keeps them linked.
  */
 export async function ensureProgramGraphConfig(prisma: Prisma, programId: string): Promise<void> {
   const programRows = await prisma.$queryRawUnsafe(
@@ -68,7 +155,11 @@ export async function ensureProgramGraphConfig(prisma: Prisma, programId: string
     programId, ...ms.flatMap((m, i) => [m.label, m.kind, i]),
   );
 
-  const weeks = defaultWeeks(durationDays);
+  // Backfill any new default milestones added after this program was first initialized.
+  await backfillNewDefaultMilestones(prisma, programId);
+
+  // Same span the admin page shows and members see before the first save (Bug C).
+  const weeks = defaultWeeks(Math.max(durationDays, await loadProgramWeekSpanDays(prisma, programId)));
   if (weeks.length > 0) {
     const wValues = weeks.map((_, i) => `($${i * 4 + 2}, $${i * 4 + 3}::int, $${i * 4 + 4}::int, $${i * 4 + 5}::int)`).join(', ');
     await prisma.$executeRawUnsafe(

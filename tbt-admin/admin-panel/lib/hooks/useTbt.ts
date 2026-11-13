@@ -2321,7 +2321,7 @@ export const useListCourseModules = (courseId: string) =>
     queryKey: ['course-modules', courseId],
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/courses/${courseId}/modules`);
-      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; episodeIds: string[]; createdAt: string }>;
+      return (res?.data ?? []) as Array<{ id: string; courseId: string; title: string; description: string | null; sortOrder: number; thumbnailUrl: string | null; episodeIds: string[]; createdAt: string }>;
     },
     enabled: !!courseId,
     staleTime: 60_000,
@@ -2330,7 +2330,7 @@ export const useListCourseModules = (courseId: string) =>
 export const useCreateCourseModule = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { title: string; description?: string }) => {
+    mutationFn: async (data: { title: string; description?: string; thumbnailUrl?: string | null }) => {
       const res: any = await apiClient.post(`/api/courses/${courseId}/modules`, data);
       return res?.data;
     },
@@ -2341,7 +2341,7 @@ export const useCreateCourseModule = (courseId: string) => {
 export const useUpdateCourseModule = (courseId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; episodeIds?: string[] }) => {
+    mutationFn: async ({ moduleId, ...data }: { moduleId: string; title?: string; description?: string; thumbnailUrl?: string | null; episodeIds?: string[] }) => {
       const res: any = await apiClient.put(`/api/courses/${courseId}/modules/${moduleId}`, data);
       return res?.data;
     },
@@ -2573,6 +2573,8 @@ export interface ModuleConfig {
   sortOrder: number;
   /** Offered to members in the onboarding mentorship-module selection. */
   isActive?: boolean;
+  /** members.business_type values that automatically map to this module. */
+  businessTypeKeys?: string[];
 }
 
 export const useModuleConfigs = () =>
@@ -2633,6 +2635,44 @@ export interface SupportSession {
   activeBookings: number;
   pendingAttendance: number;
   seatsLeft: number;
+  /** Bookings ever made, including cancelled ones (a slot with any can't be deleted). */
+  totalBookings: number;
+  /** Server-computed: available | booked (every seat taken) | cancelled | in_progress | completed. */
+  slotStatus: SupportSlotStatus;
+  /** True only when nobody ever booked the slot. Otherwise it must be cancelled. */
+  canDelete: boolean;
+}
+
+export type SupportSlotStatus = 'available' | 'booked' | 'cancelled' | 'in_progress' | 'completed';
+
+/** One publish of admin-chosen slots: shared details + every start time (ISO, with offset). */
+export interface PublishSupportSlotsInput extends Omit<SupportSessionInput, 'startsAt'> {
+  category: SupportCallCategory;
+  title: string;
+  durationMinutes: number;
+  capacity: number;
+  startsAt: string[];
+}
+
+// Sample-data mode for /support-calls (lib/mocks/supportCallsDemo.ts), `next dev` only.
+// The two list queries repeat the env check inline instead of using this constant:
+// webpack can only drop a branch, and the import() inside it, when the condition is
+// written out in place, which keeps the sample data out of production bundles.
+export const SUPPORT_CALLS_DEMO =
+  process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1';
+const SUPPORT_CALLS_DEMO_READONLY =
+  'Sample data mode: changes are not saved. Unset NEXT_PUBLIC_SUPPORT_CALLS_DEMO to manage real sessions.';
+
+export interface SupportSessionBooking {
+  id: string;
+  status: 'booked' | 'cancelled' | 'attended' | 'no_show';
+  bookedAt: string;
+  cancelledAt: string | null;
+  memberId: string;
+  memberName: string;
+  phone: string | null;
+  email: string | null;
+  coinCost?: number | null;
 }
 
 export interface SupportSessionInput {
@@ -2647,10 +2687,19 @@ export interface SupportSessionInput {
   meetingUrl?: string | null;
 }
 
-export const useListSupportSessions = (params: { category?: string; scope?: 'upcoming' | 'past' | 'all' }) =>
+export const useListSupportSessions = (params: {
+  category?: string;
+  scope?: 'upcoming' | 'past' | 'all';
+  /** IST dates (YYYY-MM-DD, inclusive); when set, scope is ignored. */
+  from?: string;
+  to?: string;
+}) =>
   useQuery({
     queryKey: ['support-sessions', params],
     queryFn: async () => {
+      if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1') {
+        return (await import('../mocks/supportCallsDemo')).demoSupportSessions(params);
+      }
       const res: any = await apiClient.get('/api/support-entitlements/sessions', { params });
       return (res?.data ?? []) as SupportSession[];
     },
@@ -2662,6 +2711,7 @@ export const useCreateSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: SupportSessionInput) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.post('/api/support-entitlements/sessions', data);
       return res?.data as SupportSession;
     },
@@ -2673,6 +2723,7 @@ export const useUpdateSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: SupportSessionInput }) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.put(`/api/support-entitlements/sessions/${id}`, data);
       return res?.data as SupportSession;
     },
@@ -2684,6 +2735,7 @@ export const useCancelSupportSession = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.post(`/api/support-entitlements/sessions/${id}/cancel`);
       return res?.data as { id: string; status: string; cancelledBookings: number };
     },
@@ -2698,11 +2750,11 @@ export const useSupportSessionBookings = (sessionId: string | null) =>
   useQuery({
     queryKey: ['support-session-bookings', sessionId],
     queryFn: async () => {
+      if (process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_SUPPORT_CALLS_DEMO === '1') {
+        return (await import('../mocks/supportCallsDemo')).demoSupportSessionBookings(sessionId!);
+      }
       const res: any = await apiClient.get(`/api/support-entitlements/sessions/${sessionId}/bookings`);
-      return (res?.data ?? []) as Array<{
-        id: string; status: 'booked' | 'cancelled' | 'attended' | 'no_show'; bookedAt: string;
-        cancelledAt: string | null; memberId: string; memberName: string; phone: string | null; email: string | null;
-      }>;
+      return (res?.data ?? []) as SupportSessionBooking[];
     },
     enabled: !!sessionId,
     staleTime: 15_000,
@@ -2712,6 +2764,7 @@ export const useMarkSupportBooking = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'attended' | 'no_show' }) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
       const res: any = await apiClient.put(`/api/support-entitlements/bookings/${id}/status`, { status });
       return res?.data;
     },
@@ -2719,6 +2772,32 @@ export const useMarkSupportBooking = () => {
       qc.invalidateQueries({ queryKey: ['support-session-bookings'] });
       qc.invalidateQueries({ queryKey: ['support-sessions'] });
     },
+  });
+};
+
+/** Publish several admin-chosen slots at once (all or nothing). */
+export const usePublishSupportSlots = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: PublishSupportSlotsInput) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
+      const res: any = await apiClient.post('/api/support-entitlements/sessions/bulk', data);
+      return (res?.data ?? []) as SupportSession[];
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
+  });
+};
+
+/** Removes a slot nobody ever booked; the server refuses (409) once it has any booking. */
+export const useDeleteSupportSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      if (SUPPORT_CALLS_DEMO) throw new Error(SUPPORT_CALLS_DEMO_READONLY);
+      const res: any = await apiClient.delete(`/api/support-entitlements/sessions/${id}`);
+      return res?.data as { id: string; deleted: boolean };
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-sessions'] }),
   });
 };
 
@@ -2743,7 +2822,11 @@ export const useSupportCallHosts = (enabled: boolean) =>
 
 export type GraphMilestoneKind = 'activity' | 'revenue';
 export interface GraphWeekItem { id: string | null; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }
-export interface GraphMilestoneItem { id: string | null; label: string; kind: GraphMilestoneKind; sortOrder: number; isActive: boolean }
+export interface GraphMilestoneItem {
+  id: string | null; label: string; kind: GraphMilestoneKind; sortOrder: number; isActive: boolean;
+  /** Revenue milestones: cumulative member-reported revenue (₹) that reaches it; null = none (reached only by an admin record). */
+  threshold?: number | null;
+}
 export interface GraphActivityItem {
   id: string; title: string; dayNumber: number; sortOrder: number; isRequired: boolean; isActive: boolean;
   memberId: string | null; weekId: string | null; milestoneId: string | null; isMilestone: boolean; milestoneLabel: string | null;
@@ -2790,14 +2873,16 @@ export const useSaveGraphWeek = (programId: string) =>
   useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; startDay?: number; endDay?: number; isActive?: boolean }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/weeks/${id}`, body) : await apiClient.post(`${wgBase(programId)}/weeks`, body)) as any).data);
 
+// moveTo: for a week in use — the week that takes over its activities and member records.
 export const useDeleteGraphWeek = (programId: string) =>
-  useWeeklyGraphMutation(programId, async (id: string) => (await apiClient.delete(`${wgBase(programId)}/weeks/${id}`) as any).data);
+  useWeeklyGraphMutation(programId, async ({ id, moveTo }: { id: string; moveTo?: string }) =>
+    (await apiClient.delete(`${wgBase(programId)}/weeks/${id}`, moveTo ? { params: { moveTo } } : undefined) as any).data);
 
 export const useReorderGraphWeeks = (programId: string) =>
   useWeeklyGraphMutation(programId, async (ids: string[]) => (await apiClient.put(`${wgBase(programId)}/weeks/reorder`, { ids }) as any).data);
 
 export const useSaveGraphMilestone = (programId: string) =>
-  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; kind?: GraphMilestoneKind; isActive?: boolean }) =>
+  useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string | null; label?: string; kind?: GraphMilestoneKind; isActive?: boolean; threshold?: number | null }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/milestones/${id}`, body) : await apiClient.post(`${wgBase(programId)}/milestones`, body)) as any).data);
 
 export const useDeleteGraphMilestone = (programId: string) =>
@@ -2809,6 +2894,12 @@ export const useReorderGraphMilestones = (programId: string) =>
 export const useSaveGraphActivity = (programId: string) =>
   useWeeklyGraphMutation(programId, async ({ id, ...body }: { id?: string; title?: string; weekId?: string | null; milestoneId?: string | null; isRequired?: boolean; isActive?: boolean }) =>
     ((id ? await apiClient.put(`${wgBase(programId)}/activities/${id}`, body) : await apiClient.post(`${wgBase(programId)}/activities`, body)) as any).data);
+
+// archive: true is the admin's explicit confirmation to delete an activity that has
+// submissions — the server archives it and keeps every submission.
+export const useDeleteGraphActivity = (programId: string) =>
+  useWeeklyGraphMutation(programId, async ({ id, archive }: { id: string; archive?: boolean }) =>
+    (await apiClient.delete(`${wgBase(programId)}/activities/${id}`, archive ? { params: { archive: "true" } } : undefined) as any).data);
 
 const graphRecordsKey = (memberId: string) => ['weekly-graph-records', memberId];
 
@@ -2849,3 +2940,220 @@ export const useDeleteGraphMemberRecord = (memberId: string) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
   });
 };
+
+// ── Course Page FAQs ──────────────────────────────────────────────────────
+
+const faqsKey = ['course-page-faqs'];
+
+export const useListCourseFaqsAdmin = () =>
+  useQuery({ queryKey: faqsKey, queryFn: async () => (await apiClient.get('/api/courses/faqs') as any).data });
+
+export const useCreateCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { question: string; answerType: string; answerText?: string; answerVideoUrl?: string; isActive?: boolean }) =>
+      (await apiClient.post('/api/courses/faqs', body) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useUpdateCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: { id: string; question?: string; answerType?: string; answerText?: string; answerVideoUrl?: string; isActive?: boolean }) =>
+      (await apiClient.put(`/api/courses/faqs/${id}`, body) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useDeleteCourseFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) =>
+      (await apiClient.delete(`/api/courses/faqs/${id}`) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+export const useReorderCourseFaqs = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) =>
+      (await apiClient.put('/api/courses/faqs/reorder', { ids }) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: faqsKey }),
+  });
+};
+
+// ── Modules page FAQ (admin) ─────────────────────────────────────────────────
+
+export type ModuleFaq = {
+  id: string; question: string; answer: string; isPublished: boolean; sortOrder: number; updatedAt: string | null;
+  /** Optional Bunny Stream video (embed URL + video id). */
+  videoUrl?: string | null; bunnyVideoId?: string | null;
+  /** Section in the member FAQ popup; null for older FAQs created before categories. */
+  category?: ModuleFaqCategory | null;
+  /** Optional thumbnail image (public URL of the uploaded image). */
+  thumbnailUrl?: string | null;
+};
+export type ModuleFaqCategory = 'ecommerce' | 'service' | 'coachx';
+export type ModuleFaqInput = {
+  question: string; answer: string; isPublished?: boolean; videoUrl?: string | null; bunnyVideoId?: string | null; category?: ModuleFaqCategory;
+  thumbnailUrl?: string | null;
+};
+const moduleFaqsKey = ['module-faqs-admin'];
+
+export const useListModuleFaqs = () =>
+  useQuery({
+    queryKey: moduleFaqsKey,
+    queryFn: async () => ((await apiClient.get('/api/module-faqs/admin')) as any)?.data as ModuleFaq[],
+    staleTime: 30_000,
+  });
+
+export const useSaveModuleFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id?: string } & ModuleFaqInput) =>
+      ((id
+        ? await apiClient.put(`/api/module-faqs/admin/${id}`, data)
+        : await apiClient.post('/api/module-faqs/admin', data)) as any).data as ModuleFaq,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+/** Several new FAQs saved together (one transaction server-side). */
+export const useCreateModuleFaqsBulk = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: ModuleFaqInput[]) =>
+      ((await apiClient.post('/api/module-faqs/admin/bulk', { items })) as any).data as ModuleFaq[],
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useSetModuleFaqPublished = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, isPublished }: { id: string; isPublished: boolean }) =>
+      ((await apiClient.patch(`/api/module-faqs/admin/${id}/publish`, { isPublished })) as any).data as ModuleFaq,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useReorderModuleFaqs = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (ids: string[]) => ((await apiClient.put('/api/module-faqs/admin/reorder', { ids })) as any).data as ModuleFaq[],
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+export const useDeleteModuleFaq = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => ((await apiClient.delete(`/api/module-faqs/admin/${id}`)) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: moduleFaqsKey }),
+  });
+};
+
+// ── Support calls unlocked with TBT coins + coin packages ────────────────────
+
+export type CallCoinPrice = { category: string; coinCost: number | null };
+export type CoinPackageRow = { id: string; label: string; coins: number; priceInr: number; isActive: boolean; sortOrder: number };
+
+export const useGetCallCoinPricing = () =>
+  useQuery({
+    queryKey: ['support-call-coin-pricing'],
+    queryFn: async () => ((await apiClient.get('/api/support-entitlements/coin-pricing')) as any)?.data as CallCoinPrice[],
+    staleTime: 60_000,
+  });
+
+export const useUpdateCallCoinPrice = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ category, coinCost }: CallCoinPrice) =>
+      ((await apiClient.put(`/api/support-entitlements/coin-pricing/${category}`, { coinCost })) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['support-call-coin-pricing'] }),
+  });
+};
+
+export const useListCoinPackages = () =>
+  useQuery({
+    queryKey: ['coin-packages'],
+    queryFn: async () => ((await apiClient.get('/api/credits/coin-packages')) as any)?.data as CoinPackageRow[],
+    staleTime: 60_000,
+  });
+
+export const useSaveCoinPackage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: Omit<CoinPackageRow, 'id'> & { id?: string }) =>
+      ((id
+        ? await apiClient.put(`/api/credits/coin-packages/${id}`, data)
+        : await apiClient.post('/api/credits/coin-packages', data)) as any).data as CoinPackageRow,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coin-packages'] }),
+  });
+};
+
+export const useDeleteCoinPackage = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => ((await apiClient.delete(`/api/credits/coin-packages/${id}`)) as any).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['coin-packages'] }),
+  });
+};
+
+// ── AL-02 Member Points & Activity Log (/api/members/:id/tbt-activity-log) ────
+export interface ActivityPeriodRow {
+  periodKey: string;
+  label: string;
+  earned: number;
+  spent: number;
+  net: number;
+  activeLearningEvents: number;
+  topSources: string[];
+}
+export interface ActivitySourceBreakdown {
+  source: string;
+  events: number;
+  points: number;
+  isLearning: boolean;
+}
+export interface ActivityLogSummary {
+  totalPoints: number;
+  totalEarned: number;
+  totalSpent: number;
+  activeDays: number;
+  currentStreak: number;
+  rangeLabel: string;
+}
+export interface MemberTbtActivityLogData {
+  summary: ActivityLogSummary;
+  rows: ActivityPeriodRow[];
+  sources: ActivitySourceBreakdown[];
+}
+
+export const useMemberTbtActivityLog = (
+  memberId: string,
+  params: { view: 'daily' | 'weekly' | 'monthly'; from: string; to: string; sourceGroup: 'all' | 'learning' | 'coins' },
+) =>
+  useQuery({
+    queryKey: ['member-tbt-activity-log', memberId, params],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/members/${memberId}/tbt-activity-log`, { params });
+      return (res?.data ?? null) as MemberTbtActivityLogData | null;
+    },
+    enabled: !!memberId,
+    staleTime: 60_000,
+  });
+
+// ── Episode Form Submissions (admin read) ─────────────────────────────────────
+
+export const useEpisodeFormSubmissions = (episodeId: string, page = 1) =>
+  useQuery({
+    queryKey: ['episode-form-submissions', episodeId, page],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/courses/episodes/${episodeId}/form-submissions`, { params: { page, limit: 50 } });
+      return { data: res?.data ?? [], meta: res?.meta ?? { total: 0 } };
+    },
+    enabled: !!episodeId,
+  });

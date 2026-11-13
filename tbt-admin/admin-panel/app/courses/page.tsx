@@ -8,7 +8,7 @@ import {
   Eye, EyeOff, AlertCircle, GripVertical, Save, Image as ImageIcon, Upload,
   Lock, BarChart2, Users, ShieldCheck, Trophy, CreditCard, Download, Filter,
   CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, FileText, ListTodo, Link2,
-  MessageSquare, Star, ThumbsUp, Layers, Copy,
+  MessageSquare, Star, ThumbsUp, Layers, Copy, HelpCircle, Video, Type,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -33,9 +33,14 @@ import {
   useVideoFeedbackQuestions, useCreateVideoFeedbackQuestion, useUpdateVideoFeedbackQuestion,
   useDeleteVideoFeedbackQuestion, useReorderVideoFeedbackQuestions, useVideoFeedbackResponses,
   useListCourseEpisodeFeedback, useUpdateCourseEpisodeFeedbackStatus,
+  useListCourseFaqsAdmin, useCreateCourseFaq, useUpdateCourseFaq, useDeleteCourseFaq, useReorderCourseFaqs,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage, useCreateBunnyVideo, useGetPresignedUrl } from "@/lib/hooks/useAdmin";
+// Bundled with the page, not lazy-loaded on click: a tab opened before an admin
+// deploy would ask for the old build's chunk, which 404s (ChunkLoadError).
+import { Upload as TusUpload } from "tus-js-client";
 import { useListMembers } from "@/lib/hooks/useMembers";
+import { useListBatches } from "@/lib/hooks/useTbt";
 import { useBusinessTypes } from "@/lib/hooks/useMasters";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
@@ -54,6 +59,7 @@ const EMPTY_COURSE = {
   paymentLinkUrl: "",
   module: "" as string,
   applicableBusinessTypes: [] as string[],
+  batchVisibilityIds: [] as string[],
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
 };
@@ -66,6 +72,22 @@ const timeToSecs = (t: string) => {
 const EMPTY_OPTION = () => ({ id: uid(), text: "", correct: false });
 const EMPTY_QUESTION = () => ({ id: uid(), question: "", options: [EMPTY_OPTION(), EMPTY_OPTION()] });
 const EMPTY_CUE = () => ({ id: uid(), atSeconds: 60, atTime: "1:00", questions: [EMPTY_QUESTION()] });
+
+const EMPTY_SIDE_CONTENT = { enabled: false, text: "", buttons: [] as any[] };
+const EMPTY_FORM_CONFIG = { enabled: false, title: "", description: "", submitLabel: "Submit", allowMultiple: false, fields: [] as any[] };
+const EMPTY_FORM_FIELD = () => ({ id: crypto.randomUUID(), type: "text" as string, label: "", placeholder: "", required: false, options: [] as string[], validation: {} });
+
+const FORM_FIELD_TYPES = [
+  { value: "text", label: "Short Text" },
+  { value: "email", label: "Email" },
+  { value: "number", label: "Number" },
+  { value: "textarea", label: "Long Text" },
+  { value: "dropdown", label: "Dropdown" },
+  { value: "radio", label: "Radio Buttons" },
+  { value: "checkbox", label: "Checkboxes" },
+  { value: "date", label: "Date" },
+  { value: "file", label: "File Upload" },
+];
 
 const EMPTY_EP = {
   title: "", videoUrl: "", bunnyVideoId: "", thumbnailUrl: "",
@@ -80,21 +102,11 @@ const EMPTY_EP = {
   lifelineCount: 3 as number,
   lifelineCoinCost: 50 as number,
   maxPurchasedLifelines: 5 as number,
-  // Assessment type (2026-09) — a simplified single-task view over the same
-  // `tasks` row(s) the full "Tasks" modal manages via course_episode_id +
-  // completion_mode. "none" = no active task linked to this episode — only
-  // reachable by editing an episode that predates this feature; new episodes
-  // must pick "self" or "admin" ("" = not yet chosen, blocks save).
-  assessmentType: "none" as "" | "none" | "self" | "admin",
-  assessmentTaskId: null as string | null,
+  sideContent: { ...EMPTY_SIDE_CONTENT } as any,
+  formConfig: { ...EMPTY_FORM_CONFIG } as any,
+  lessonType: "video" as "video" | "text",
+  assessmentType: "" as "" | "self" | "admin",
   assessmentTaskTitle: "",
-  assessmentTaskDescription: "",
-};
-
-const ASSESSMENT_TYPE_LABEL: Record<"none" | "self" | "admin", string> = {
-  none: "No Assessment",
-  self: "Self Assessment",
-  admin: "Admin Assessment",
 };
 
 // ── File upload button ─────────────────────────────────────────────────
@@ -156,6 +168,8 @@ export default function CoursesPage() {
   const tiers: any[] = (tiersData as any)?.data || [];
   const { data: businessTypesData } = useBusinessTypes();
   const businessTypeOptions: string[] = (businessTypesData ?? []).map((b: any) => b.name);
+  const { data: batchesData } = useListBatches();
+  const batches: any[] = (batchesData as any)?.data || [];
   const createCourse = useCreateVodCourse();
   const updateCourse = useUpdateVodCourse();
   const deleteCourse = useDeleteVodCourse();
@@ -225,6 +239,7 @@ export default function CoursesPage() {
       paymentLinkUrl: c.paymentLinkUrl || "",
       module: c.module || "",
       applicableBusinessTypes: c.applicableBusinessTypes ?? [],
+      batchVisibilityIds: c.batchVisibilityIds ?? [],
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -246,6 +261,7 @@ export default function CoursesPage() {
     payload.paymentLinkUrl = courseForm.paymentLinkUrl.trim() || null;
     payload.module = courseForm.module || null;
     payload.applicableBusinessTypes = courseForm.applicableBusinessTypes?.length ? courseForm.applicableBusinessTypes : null;
+    payload.batchVisibilityIds = courseForm.batchVisibilityIds ?? [];
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     try {
@@ -381,7 +397,27 @@ export default function CoursesPage() {
                         {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
                         {c.module && <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">{c.module}</span>}
-                        {c.applicableBusinessTypes?.length > 0 && <span className="text-[10px] text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded font-bold shrink-0" title={c.applicableBusinessTypes.join(", ")}>{c.applicableBusinessTypes.length} biz type{c.applicableBusinessTypes.length > 1 ? "s" : ""}</span>}
+                        {(c.applicableBusinessTypes ?? []).length === 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-[#2a2a2a] text-[#888] shrink-0">General</span>
+                        ) : (
+                          (c.applicableBusinessTypes ?? []).map((t: string) => (
+                            <span
+                              key={t}
+                              className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold shrink-0"
+                              style={{
+                                background: t === "Product" ? "#1e3a5f" : t === "Service" ? "#1a3d2b" : "#3d1a3d",
+                                color: t === "Product" ? "#60a5fa" : t === "Service" ? "#4ade80" : "#c084fc",
+                              }}
+                            >
+                              {t}
+                            </span>
+                          ))
+                        )}
+                        {(c.batchVisibilityIds ?? []).length > 0 && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-[#3a2a1a] text-[#fb923c] shrink-0">
+                            +{c.batchVisibilityIds.length} batch{c.batchVisibilityIds.length > 1 ? "es" : ""}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-[#777] font-mono">/{c.slug}</p>
                       <p className="text-[11px] text-[#888]">{c._count?.courseEpisodes ?? 0} episodes · {c.xpPerEpisode ?? 10} XP/ep</p>
@@ -405,6 +441,10 @@ export default function CoursesPage() {
             </PanelErrorBoundary>
           )}
         </div>
+
+        {/* Course Page FAQ Manager */}
+        <CourseFaqManager />
+
         </>}
       </div>
 
@@ -448,34 +488,62 @@ export default function CoursesPage() {
                   <option value="Coaching">Coaching</option>
                 </select>
               </div>
+              {/* CV-10: Course Visibility */}
               <div>
-                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Business Type Visibility</label>
-                <p className="text-[11px] text-[#606060] mb-2">Leave empty to show to all members. Select types to restrict.</p>
-                {businessTypeOptions.length === 0 ? (
-                  <p className="text-[11px] text-[#606060] italic">No business types configured yet — add them via Masters.</p>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Course Visibility</label>
+                <p className="text-[11px] text-[#606060] mb-2">Who can see this course? Leave all unchecked (General Content) to show to all members.</p>
+                <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={(courseForm.applicableBusinessTypes ?? []).length === 0}
+                    onChange={() => setCourseField("applicableBusinessTypes", [])}
+                    className="accent-[#dc2626] w-4 h-4"
+                  />
+                  <span className="text-sm text-[#f0f0f0] font-medium">General Content (visible to all members)</span>
+                </label>
+                <div className={`space-y-2 pl-1 transition-opacity ${(courseForm.applicableBusinessTypes ?? []).length === 0 ? "opacity-40 pointer-events-none" : ""}`}>
+                  {(["Product", "Service", "Coaching"] as const).map((cat) => (
+                    <label key={cat} className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={(courseForm.applicableBusinessTypes ?? []).includes(cat)}
+                        onChange={(e) => {
+                          const current: string[] = courseForm.applicableBusinessTypes ?? [];
+                          setCourseField("applicableBusinessTypes",
+                            e.target.checked ? [...current, cat] : current.filter((c) => c !== cat));
+                        }}
+                        className="accent-[#dc2626] w-4 h-4"
+                      />
+                      <span className="text-sm text-[#d0d0d0]">
+                        {cat === "Product" ? "Product-Based Business" : cat === "Service" ? "Service-Based Business" : "Coaching Business"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {/* CV-11: Batch Visibility */}
+              <div>
+                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Batch Visibility (Optional)</label>
+                <p className="text-[11px] text-[#606060] mb-2">Members of selected batches can see this course regardless of their assigned business categories. Does not grant enrollment access.</p>
+                {batches.length === 0 ? (
+                  <p className="text-[11px] text-[#606060] italic">No batches configured yet.</p>
                 ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {businessTypeOptions.map((bt) => {
-                      const selected = courseForm.applicableBusinessTypes?.includes(bt);
-                      return (
-                        <button
-                          key={bt}
-                          type="button"
-                          onClick={() => {
-                            const current: string[] = courseForm.applicableBusinessTypes ?? [];
-                            setCourseField("applicableBusinessTypes",
-                              selected ? current.filter((x) => x !== bt) : [...current, bt]);
+                  <div className="space-y-2">
+                    {batches.map((batch: any) => (
+                      <label key={batch.id} className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={(courseForm.batchVisibilityIds ?? []).includes(batch.id)}
+                          onChange={(e) => {
+                            const current: string[] = courseForm.batchVisibilityIds ?? [];
+                            setCourseField("batchVisibilityIds",
+                              e.target.checked ? [...current, batch.id] : current.filter((id: string) => id !== batch.id));
                           }}
-                          className={`px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide border transition-all ${
-                            selected
-                              ? "bg-[#dc2626] border-[#dc2626] text-white"
-                              : "bg-transparent border-[#333] text-[#888] hover:border-[#dc2626] hover:text-white"
-                          }`}
-                        >
-                          {bt}
-                        </button>
-                      );
-                    })}
+                          className="accent-[#dc2626] w-4 h-4"
+                        />
+                        <span className="text-sm text-[#d0d0d0]">{batch.name}</span>
+                      </label>
+                    ))}
                   </div>
                 )}
               </div>
@@ -748,6 +816,31 @@ function CourseDetailPanel({ course, onClose }: { course: any; onClose: () => vo
 }
 
 // ── Episodes tab (original EpisodesPanel content) ─────────────────────
+// ── Episode task constants (shared by inline form + EpisodeTasksModal) ─
+const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
+const PROOF_BADGE: Record<string, string> = {
+  text: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  image: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  video: "bg-red-500/20 text-red-400 border-red-500/30",
+  link: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  watch: "bg-green-500/20 text-green-400 border-green-500/30",
+};
+const COMPLETION_MODE_BADGE: Record<string, string> = {
+  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+};
+const COMPLETION_MODE_LABEL: Record<string, string> = {
+  SELF_ASSESSMENT: "Self Assessment",
+  ADMIN_CHECK: "Admin Check",
+};
+const EMPTY_TASK_FORM = {
+  title: "", description: "", deliverables: "", contentUrl: "",
+  basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
+  timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
+  completionMode: "ADMIN_CHECK",
+};
+
 function EpisodesTab({ course }: { course: any }) {
   const { data, isLoading } = useListCourseEpisodes(course.id);
   const createEp = useCreateCourseEpisode(course.id);
@@ -784,12 +877,26 @@ function EpisodesTab({ course }: { course: any }) {
   const [epForm, setEpForm] = useState<any>(EMPTY_EP);
   const [deletingEp, setDeletingEp] = useState<string | null>(null);
   const [epUploading, setEpUploading] = useState<string | null>(null);
-  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string }>({});
+  const [epErrors, setEpErrors] = useState<{ title?: string; video?: string }>({});
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [resourcesEp, setResourcesEp] = useState<any | null>(null);
   const [tasksEp, setTasksEp] = useState<any | null>(null);
   const [feedbackEp, setFeedbackEp] = useState<any | null>(null);
+
+  // Inline task management (full task panel inside episode create/edit form)
+  const createInlineTask = useCreateEpisodeTask(editingEpId);
+  const updateInlineTask = useUpdateEpisodeTask(editingEpId);
+  const deleteInlineTask = useDeleteEpisodeTask(editingEpId);
+  const reorderInlineTasks = useReorderEpisodeTasks(editingEpId);
+  const [inlineTasks, setInlineTasks] = useState<any[]>([]);
+  const [inlineTaskDirty, setInlineTaskDirty] = useState(false);
+  const [inlineShowTaskForm, setInlineShowTaskForm] = useState(false);
+  const [inlineEditingTask, setInlineEditingTask] = useState<any>(null);
+  const [inlineTaskForm, setInlineTaskForm] = useState<any>({ ...EMPTY_TASK_FORM });
+  const inlineTaskDragIdx = useRef<number | null>(null);
+  const [inlineTaskDragOver, setInlineTaskDragOver] = useState<number | null>(null);
+  const [inlineDeletingTask, setInlineDeletingTask] = useState<string | null>(null);
 
   // Section management state
   const [showSectionForm, setShowSectionForm] = useState(false);
@@ -852,18 +959,19 @@ function EpisodesTab({ course }: { course: any }) {
     });
 
   const openCreate = (sectionId?: string | null) => {
-    // "" (not "none") — a brand-new episode must have Self or Admin Assessment
-    // explicitly chosen; "none" is only ever reached via openEdit on an
-    // episode that predates this requirement.
-    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null, assessmentType: "" });
+    setEpForm({ ...EMPTY_EP, sectionId: sectionId ?? null });
     setEditingEp(null); setEditingEpId(""); setEpErrors({}); setShowForm(true);
+    setInlineTasks([]); setInlineShowTaskForm(false); setInlineEditingTask(null);
+    setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineTaskDirty(false); setInlineDeletingTask(null);
   };
   const openEdit = (ep: any) => {
     // Normalise stored cues: add atTime display field
     const rawCues = ep.quizData?.cues ?? [];
     const cues = rawCues.map((c: any) => ({ ...c, atTime: secsToTime(c.atSeconds ?? 0) }));
+    const isText = ep.videoUrl === "";
     setEpForm({
       title: ep.title, videoUrl: ep.videoUrl, bunnyVideoId: ep.bunnyVideoId || "",
+      position: ep.position != null ? String(ep.position) : "",
       thumbnailUrl: ep.thumbnailUrl || "", durationSeconds: String(ep.durationSeconds || ""),
       isVisible: ep.isVisible,
       quizUnlockPercent: String(ep.quizUnlockPercent ?? 80),
@@ -877,37 +985,24 @@ function EpisodesTab({ course }: { course: any }) {
       lifelineCount: ep.lifelineCount ?? 3,
       lifelineCoinCost: ep.lifelineCoinCost ?? 50,
       maxPurchasedLifelines: ep.maxPurchasedLifelines ?? 5,
+      sideContent: ep.sideContent ?? { ...EMPTY_SIDE_CONTENT },
+      formConfig: ep.formConfig ?? { ...EMPTY_FORM_CONFIG },
+      lessonType: isText ? "text" : "video",
       quizData: ep.quizData
         ? { questions: ep.quizData.questions ?? [], cues }
         : null,
-      // Reset to "none" until the episode-tasks fetch below resolves and
-      // fills in the actual saved assessment type — avoids showing a stale
-      // value left over from whichever episode was edited previously.
-      assessmentType: "none", assessmentTaskId: null,
-      assessmentTaskTitle: "", assessmentTaskDescription: "",
     });
     setEditingEp(ep); setEditingEpId(ep.id); setEpErrors({}); setShowForm(true);
+    setInlineTasks([]); setInlineShowTaskForm(false); setInlineEditingTask(null);
+    setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineTaskDirty(false); setInlineDeletingTask(null);
   };
 
-  // Populate the Assessment Type control from whichever task is currently
-  // linked to the episode being edited. Mirrors the same tasks list the
-  // "Tasks" modal uses — an active task's completionMode maps 1:1 to
-  // Self/Admin Assessment; no active task means "No Assessment". If an
-  // inactive (previously "No Assessment") task exists, its id is kept so
-  // re-enabling reuses the same row instead of creating a duplicate.
+  // Sync server tasks into the inline task list when editing an existing episode.
   useEffect(() => {
     if (!editingEp || editingEp.id !== editingEpId) return;
     const tasks: any[] = (epTasksData as any)?.data ?? [];
-    if (!tasks.length) return;
-    const active = tasks.find((t: any) => t.isActive !== false);
-    const target = active ?? tasks[0];
-    setEpForm((f: any) => ({
-      ...f,
-      assessmentType: !active ? "none" : target.completionMode === "SELF_ASSESSMENT" ? "self" : "admin",
-      assessmentTaskId: target.id,
-      assessmentTaskTitle: target.title ?? "",
-      assessmentTaskDescription: target.description ?? "",
-    }));
+    setInlineTasks(tasks);
+    setInlineTaskDirty(false);
   }, [epTasksData, editingEp, editingEpId]);
 
   const uploadImage = useUploadImage();
@@ -920,9 +1015,8 @@ function EpisodesTab({ course }: { course: any }) {
       const secs = await detectDuration(file);
       if (secs > 0) setEpField("durationSeconds", String(secs));
       const { videoId, tusUploadUrl, tusHeaders, embedUrl } = await createBunnyVideo.mutateAsync({ title: epForm.title || file.name });
-      const { Upload } = await import("tus-js-client");
       await new Promise<void>((resolve, reject) => {
-        const upload = new Upload(file, {
+        const upload = new TusUpload(file, {
           endpoint: tusUploadUrl,
           headers: { AuthorizationSignature: tusHeaders.AuthorizationSignature, AuthorizationExpire: String(tusHeaders.AuthorizationExpire), VideoId: tusHeaders.VideoId, LibraryId: tusHeaders.LibraryId },
           chunkSize: 5 * 1024 * 1024, retryDelays: [0, 3000, 5000, 10000],
@@ -948,26 +1042,99 @@ function EpisodesTab({ course }: { course: any }) {
     finally { setEpUploading(null); }
   };
 
+  // ── Inline task handlers ─────────────────────────────────────────────
+  const handleInlineTaskSave = async () => {
+    if (!inlineTaskForm.title.trim()) { toast.error("Task title is required"); return; }
+    const payload = {
+      ...inlineTaskForm,
+      basePoints: Number(inlineTaskForm.basePoints),
+      bonusPoints: Number(inlineTaskForm.bonusPoints || 0),
+      estimatedMinutes: Number(inlineTaskForm.estimatedMinutes),
+      timerSeconds: inlineTaskForm.timerSeconds !== "" && inlineTaskForm.timerSeconds != null ? Number(inlineTaskForm.timerSeconds) : null,
+    };
+    if (editingEpId) {
+      try {
+        if (inlineEditingTask?.id) {
+          await updateInlineTask.mutateAsync({ id: inlineEditingTask.id, data: payload });
+          toast.success("Task updated");
+        } else {
+          await createInlineTask.mutateAsync(payload);
+          toast.success("Task created");
+        }
+        setInlineShowTaskForm(false); setInlineEditingTask(null);
+      } catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      // Draft mode — no episode ID yet; task will be created after episode save
+      if (inlineEditingTask?._localId) {
+        setInlineTasks(prev => prev.map((t: any) => t._localId === inlineEditingTask._localId ? { ...payload, _localId: inlineEditingTask._localId } : t));
+      } else {
+        setInlineTasks(prev => [...prev, { ...payload, _localId: uid() }]);
+      }
+      setInlineShowTaskForm(false); setInlineEditingTask(null);
+      toast.success(inlineEditingTask ? "Task updated" : "Task queued — will be saved with episode");
+    }
+  };
+
+  const handleInlineTaskDelete = async (task: any) => {
+    if (editingEpId && task.id) {
+      try { await deleteInlineTask.mutateAsync(task.id); toast.success("Task deleted"); }
+      catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      setInlineTasks(prev => prev.filter((t: any) => t._localId !== task._localId));
+    }
+    setInlineDeletingTask(null);
+  };
+
+  const handleInlineTaskReorder = async () => {
+    if (editingEpId) {
+      try { await reorderInlineTasks.mutateAsync(inlineTasks.map((t: any) => t.id)); setInlineTaskDirty(false); toast.success("Order saved"); }
+      catch (e: any) { toast.error(e.message || "Failed"); }
+    } else {
+      setInlineTaskDirty(false);
+    }
+  };
+
+  const onInlineTaskDragStart = (i: number) => { inlineTaskDragIdx.current = i; };
+  const onInlineTaskDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setInlineTaskDragOver(i); };
+  const onInlineTaskDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = inlineTaskDragIdx.current;
+    if (from === null || from === dropIdx) { setInlineTaskDragOver(null); return; }
+    const next = [...inlineTasks];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setInlineTasks(next); setInlineTaskDirty(true); inlineTaskDragIdx.current = null; setInlineTaskDragOver(null);
+  };
+  const onInlineTaskDragEnd = () => { inlineTaskDragIdx.current = null; setInlineTaskDragOver(null); };
+
+  const openInlineEditTask = (t: any) => {
+    setInlineTaskForm({
+      title: t.title, description: t.description || "", deliverables: t.deliverables || "",
+      contentUrl: t.contentUrl || "", basePoints: t.basePoints ?? 100, bonusPoints: t.bonusPoints ?? 0,
+      proofType: t.proofType || "text", estimatedMinutes: t.estimatedMinutes ?? 15,
+      timerSeconds: t.timerSeconds != null ? String(t.timerSeconds) : "",
+      isActive: t.isActive ?? true, isRequired: t.isRequired ?? true,
+      isMilestone: t.isMilestone ?? false, milestoneLabel: t.milestoneLabel || "",
+      completionMode: t.completionMode === "SELF_ASSESSMENT" ? "SELF_ASSESSMENT" : "ADMIN_CHECK",
+    });
+    setInlineEditingTask(t);
+    setInlineShowTaskForm(true);
+  };
+
   const handleSaveEp = async () => {
-    const errs: { title?: string; video?: string; assessmentTitle?: string; assessmentRequired?: string } = {};
+    const errs: { title?: string; video?: string; assessment?: string } = {};
     if (!epForm.title.trim()) errs.title = "Title is required";
-    if (!epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
-    const assessmentChosen = epForm.assessmentType === "self" || epForm.assessmentType === "admin";
-    // Mandatory only for brand-new episodes — an existing episode with no
-    // linked task (assessmentType "none") is grandfathered and stays savable.
-    if (!editingEp && !assessmentChosen) {
-      errs.assessmentRequired = "Select Self Assessment or Admin Assessment";
-    }
-    if (assessmentChosen && !epForm.assessmentTaskTitle.trim()) {
-      errs.assessmentTitle = "Assessment title is required";
-    }
-    if (errs.title || errs.video || errs.assessmentTitle || errs.assessmentRequired) {
+    if (epForm.lessonType !== "text" && !epForm.videoUrl.trim()) errs.video = "Upload a video (or paste a Bunny URL) before saving";
+    if (!editingEp && !epForm.assessmentType) errs.assessment = "Choose Self or Admin Assessment";
+    if (errs.title || errs.video || errs.assessment) {
       setEpErrors(errs);
-      toast.error(
-        errs.assessmentRequired ? errs.assessmentRequired
-        : errs.assessmentTitle && !errs.title && !errs.video ? "Assessment title is required"
-        : "Title and video are required"
-      );
+      toast.error(errs.title ? "Title is required" : errs.video ? "Video is required" : "Assessment Check By is required");
+      return;
+    }
+    const rawPosition = String(epForm.position ?? "").trim();
+    if (editingEp && rawPosition !== "" && !/^[1-9]\d*$/.test(rawPosition)) {
+      setEpErrors({ position: "Enter a whole number of 1 or more" } as any);
+      toast.error("Episode Order must be a whole number of 1 or more");
       return;
     }
     setEpErrors({});
@@ -985,13 +1152,20 @@ function EpisodesTab({ course }: { course: any }) {
         .filter((c: any) => c.questions.length > 0);
       if (questions.length > 0 || cues.length > 0) quizData = { questions, cues };
     }
-    const payload = {
-      ...epForm, videoUrl: normalizedVideoUrl,
-      durationSeconds: Number(epForm.durationSeconds) || 0,
-      bunnyVideoId: epForm.bunnyVideoId || undefined,
+    const isTextLesson = epForm.lessonType === "text";
+    const { position: _position, lessonType: _lessonType, assessmentType: _assessmentType, assessmentTaskTitle: _assessmentTaskTitle, ...epFields } = epForm;
+    const finalSideContent = isTextLesson
+      ? { ...(epForm.sideContent ?? {}), enabled: true }
+      : epForm.sideContent;
+    const payload: any = {
+      ...epFields,
+      videoUrl: isTextLesson ? "" : normalizedVideoUrl,
+      ...(editingEp && rawPosition !== "" ? { position: Number(rawPosition) } : {}),
+      durationSeconds: isTextLesson ? 0 : (Number(epForm.durationSeconds) || 0),
+      bunnyVideoId: isTextLesson ? undefined : (epForm.bunnyVideoId || undefined),
       quizUnlockPercent: Number(epForm.quizUnlockPercent) || 80,
-      drmEnabled: epForm.drmEnabled,
-      bunnyDrmToken: epForm.bunnyDrmToken || undefined,
+      drmEnabled: isTextLesson ? false : epForm.drmEnabled,
+      bunnyDrmToken: isTextLesson ? undefined : (epForm.bunnyDrmToken || undefined),
       streakPoints: Number(epForm.streakPoints) || 0,
       quizData,
       timerSeconds: epForm.timerSeconds !== "" ? Math.max(1, parseInt(String(epForm.timerSeconds)) || 1) * 60 : null,
@@ -1001,42 +1175,38 @@ function EpisodesTab({ course }: { course: any }) {
       lifelineCount: Number(epForm.lifelineCount) || 3,
       lifelineCoinCost: Number(epForm.lifelineCoinCost) || 50,
       maxPurchasedLifelines: Number(epForm.maxPurchasedLifelines) || 5,
+      sideContent: finalSideContent,
+      formConfig: epForm.formConfig,
+      ...(!editingEp && {
+        assessmentType: epForm.assessmentType,
+        assessmentTaskTitle: epForm.assessmentTaskTitle.trim() || epForm.title.trim(),
+      }),
     };
     try {
-      let episodeId: string;
-      if (editingEp) { await updateEp.mutateAsync({ id: editingEp.id, data: payload }); episodeId = editingEp.id; toast.success("Episode updated"); }
-      else { const created: any = await createEp.mutateAsync(payload); episodeId = created.id; toast.success("Episode created"); }
-      await syncEpisodeAssessment(episodeId);
+      if (editingEp) {
+        await updateEp.mutateAsync({ id: editingEp.id, data: payload });
+        toast.success("Episode updated");
+      } else {
+        const created: any = await createEp.mutateAsync(payload);
+        const newEpisodeId: string = created.id;
+        // Create any tasks that were queued while the episode didn't exist yet
+        if (inlineTasks.length > 0) {
+          for (const t of inlineTasks) {
+            const { _localId: _lid, id: _id, ...taskData } = t;
+            await apiClient.post(`/api/courses/episodes/${newEpisodeId}/tasks`, {
+              ...taskData,
+              basePoints: Number(taskData.basePoints),
+              bonusPoints: Number(taskData.bonusPoints || 0),
+              estimatedMinutes: Number(taskData.estimatedMinutes),
+              timerSeconds: taskData.timerSeconds !== "" && taskData.timerSeconds != null ? Number(taskData.timerSeconds) : null,
+            });
+          }
+          qc.invalidateQueries({ queryKey: ["episode-tasks", newEpisodeId] });
+        }
+        toast.success(`Episode created${inlineTasks.length > 0 ? ` with ${inlineTasks.length} task${inlineTasks.length > 1 ? "s" : ""}` : ""}`);
+      }
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
-  };
-
-  // Persists the Assessment Type selection against the episode's linked task
-  // row, reusing the existing episode-task endpoints (same ones the "Tasks"
-  // modal uses) rather than introducing a parallel assessment system.
-  // "No Assessment" deactivates (isActive: false) instead of deleting, so
-  // switching types never drops prior member submissions.
-  const syncEpisodeAssessment = async (episodeId: string) => {
-    const { assessmentType, assessmentTaskId, assessmentTaskTitle, assessmentTaskDescription } = epForm;
-    try {
-      if (assessmentType === "none") {
-        if (assessmentTaskId) {
-          await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, { isActive: false });
-        }
-        return;
-      }
-      const completionMode = assessmentType === "self" ? "SELF_ASSESSMENT" : "ADMIN_CHECK";
-      const body = { title: assessmentTaskTitle.trim(), description: assessmentTaskDescription.trim() || null, completionMode, isActive: true };
-      if (assessmentTaskId) {
-        await apiClient.put(`/api/courses/episodes/${episodeId}/tasks/${assessmentTaskId}`, body);
-      } else {
-        await apiClient.post(`/api/courses/episodes/${episodeId}/tasks`, body);
-      }
-    } catch (e: any) {
-      toast.error(e.message || "Episode saved, but the assessment setting failed to save");
-    } finally {
-      qc.invalidateQueries({ queryKey: ["episode-tasks", episodeId] });
-    }
   };
 
   const handleDeleteEp = async (id: string) => {
@@ -1113,7 +1283,7 @@ function EpisodesTab({ course }: { course: any }) {
     catch (e: any) { toast.error(e.message || "Failed"); }
   };
 
-  const renderEpRow = (ep: any, i: number, inSection?: string | null) => (
+  const renderEpRow = (ep: any, i: number, inSection?: string | null, displayNo?: number) => (
     <div key={ep.id} draggable
       onDragStart={e => {
         if (inSection !== undefined) { e.stopPropagation(); dragType.current = 'episode'; }
@@ -1134,7 +1304,7 @@ function EpisodesTab({ course }: { course: any }) {
         ${dragOver === i ? "bg-[#dc2626]/10 border-t-2 border-[#dc2626]" : "hover:bg-white/[0.02]"}
         ${movingEpId === ep.id ? "opacity-40" : dragIdx.current === i ? "opacity-30" : ""}`}>
       <GripVertical size={13} className="text-[#666] cursor-grab shrink-0" />
-      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{ep.order + 1}</span>
+      <span className="text-[10px] text-[#777] font-mono w-4 shrink-0">{displayNo ?? i + 1}</span>
       {ep.thumbnailUrl && (
         <img src={ep.thumbnailUrl} alt="" className="w-10 h-7 object-cover rounded border border-[#333] shrink-0" />
       )}
@@ -1142,6 +1312,7 @@ function EpisodesTab({ course }: { course: any }) {
         <p className="text-[13px] font-medium text-[#f0f0f0] truncate">{ep.title}</p>
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-[10px] text-[#888]">{fmtDuration(ep.durationSeconds)}</p>
+          {ep.videoUrl === "" && <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/30 px-1.5 rounded font-bold uppercase flex items-center gap-0.5"><Type size={8} /> Text</span>}
           {ep.quizData?.questions?.length > 0 && <span className="text-[9px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 rounded font-bold uppercase">Quiz</span>}
           {ep.quizData?.cues?.length > 0 && <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 rounded font-bold uppercase">Cues: {ep.quizData.cues.length}</span>}
           {ep.drmEnabled && <Lock size={9} className="text-[#888]" />}
@@ -1279,7 +1450,7 @@ function EpisodesTab({ course }: { course: any }) {
                           <p className="text-[9px] font-rajdhani uppercase tracking-wider text-[#555]">{isEpTarget ? "Release to move here" : "No episodes — drag one here"}</p>
                         </div>
                       ) : (
-                        eps.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), sec.id))
+                        eps.map((ep: any, k: number) => renderEpRow(ep, localEps.indexOf(ep), sec.id, k + 1))
                       )}
                     </div>
                   )}
@@ -1307,7 +1478,7 @@ function EpisodesTab({ course }: { course: any }) {
                   <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
                 </div>
                 <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/20">
-                  {epsBySection.get(null)!.map((ep: any) => renderEpRow(ep, localEps.indexOf(ep), null))}
+                  {epsBySection.get(null)!.map((ep: any, k: number) => renderEpRow(ep, localEps.indexOf(ep), null, k + 1))}
                 </div>
               </div>
             )}
@@ -1328,7 +1499,33 @@ function EpisodesTab({ course }: { course: any }) {
               className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.title ? "border-red-500" : "border-[#2a2a2a]"}`} />
             {epErrors.title && <p className="text-[10px] text-red-500 mt-1">{epErrors.title}</p>}
           </div>
-          {/* Video */}
+          {editingEp && (
+            <div>
+              <label htmlFor="ep-position" className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Episode Order</label>
+              <input id="ep-position" type="number" min={1} step={1} inputMode="numeric"
+                value={epForm.position ?? ""}
+                onChange={e => { setEpField("position", e.target.value); if ((epErrors as any).position) setEpErrors(prev => ({ ...prev, position: undefined } as any)); }}
+                className={`w-28 bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${(epErrors as any).position ? "border-red-500" : "border-[#2a2a2a]"}`} />
+              <p className="text-[10px] text-[#666] mt-1">Position inside its section — 1 is first. Other episodes in the section shift to make room.</p>
+              {(epErrors as any).position && <p className="text-[10px] text-red-500 mt-1">{(epErrors as any).position}</p>}
+            </div>
+          )}
+          {/* Lesson Type */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Lesson Type</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setEpField("lessonType", "video")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.lessonType !== "text" ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                <Video size={10} /> Video
+              </button>
+              <button type="button" onClick={() => setEpField("lessonType", "text")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.lessonType === "text" ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                <Type size={10} /> Text
+              </button>
+            </div>
+          </div>
+          {/* Video — only for video lessons */}
+          {epForm.lessonType !== "text" && (
           <div>
             <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Video *</label>
             <div className="flex items-center gap-2">
@@ -1344,57 +1541,240 @@ function EpisodesTab({ course }: { course: any }) {
               )}
             </div>
             {epErrors.video && <p className="text-[10px] text-red-500 mt-1">{epErrors.video}</p>}
-            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/mov" className="hidden"
+            <input ref={videoInputRef} type="file" accept="video/mp4,video/webm,video/quicktime,.mov" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleVideoUpload(f); e.target.value = ""; }} />
           </div>
-          {/* Assessment Check By — reuses the same episode-task infrastructure as the
-              per-episode "Tasks" panel; this is a simplified single-task view of it.
-              Mandatory (Self/Admin only, no "None") when creating a brand-new
-              episode — enforced here and re-validated server-side in
-              createCourseEpisodeHandler. "No Assessment" stays available only
-              when editing an existing episode (backward compatibility for
-              episodes that predate this rule), never on create. */}
+          )}
+          {/* Text Lesson Content — only for text lessons */}
+          {epForm.lessonType === "text" && (
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Lesson Content *</label>
+            <textarea
+              value={epForm.sideContent?.text ?? ""}
+              onChange={e => setEpField("sideContent", { ...(epForm.sideContent ?? {}), enabled: true, text: e.target.value })}
+              placeholder="Write the reading material, instructions, or notes for this lesson..."
+              rows={8}
+              className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
+            />
+            <p className="text-[10px] text-[#555] mt-1">This text will be displayed in the lesson player. Supports plain text with line breaks.</p>
+            <div className="mt-3">
+              <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Member Response Type</label>
+              <div className="flex gap-2">
+                {([
+                  { value: "", label: "None (Read Only)" },
+                  { value: "yes_no", label: "Yes / No" },
+                  { value: "agree_disagree", label: "Agree / Disagree" },
+                ] as const).map(opt => (
+                  <button key={opt.value} type="button"
+                    onClick={() => setEpField("sideContent", { ...(epForm.sideContent ?? {}), enabled: true, interactionType: opt.value })}
+                    className={`flex-1 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${(epForm.sideContent?.interactionType ?? "") === opt.value ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#555] mt-1">Choose how the member responds to complete this lesson.</p>
+            </div>
+          </div>
+          )}
+          {/* Assessment Check By — only for new episodes */}
+          {!editingEp && (
           <div className="border-t border-[#2a2a2a] pt-3">
-            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">
-              Assessment Check By {!editingEp && <span className="text-red-500">*</span>}
-              {editingEp && epTasksLoading && <span className="text-[#555] normal-case font-normal">(loading…)</span>}
-            </label>
-            <div className="flex flex-col sm:flex-row gap-2">
-              {(editingEp ? (["none", "self", "admin"] as const) : (["self", "admin"] as const)).map(type => (
-                <label key={type} className={`flex items-center gap-2 cursor-pointer flex-1 bg-[#1a1a1a] border rounded px-3 py-2 has-[:checked]:border-[#dc2626] ${epErrors.assessmentRequired ? "border-red-500" : "border-[#2a2a2a]"}`}>
-                  <input type="radio" name="assessmentType" checked={epForm.assessmentType === type}
-                    onChange={() => { setEpField("assessmentType", type); if (epErrors.assessmentRequired) setEpErrors(prev => ({ ...prev, assessmentRequired: undefined })); }}
-                    className="accent-red-600" />
-                  <span className="text-[11px] text-[#a0a0a0] font-rajdhani">{ASSESSMENT_TYPE_LABEL[type]}</span>
-                </label>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Assessment Check By *</label>
+            <div className="flex gap-2">
+              {(["self", "admin"] as const).map(t => (
+                <button key={t} type="button" onClick={() => setEpField("assessmentType", t)}
+                  className={`flex-1 px-3 py-1.5 rounded text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all border ${epForm.assessmentType === t ? "bg-[#dc2626] border-[#dc2626] text-white" : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:border-[#dc2626]/50"}`}>
+                  {t === "self" ? "Self Assessment" : "Admin Assessment"}
+                </button>
               ))}
             </div>
-            {epErrors.assessmentRequired && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentRequired}</p>}
-            <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
-              {epForm.assessmentType === "none" && "This video has no associated task — normal completion/unlock rules apply. (Legacy state — new videos must choose Self or Admin Assessment.)"}
-              {epForm.assessmentType === "self" && "Member submits the task and it's marked complete instantly — no admin review needed."}
-              {epForm.assessmentType === "admin" && "Member's submission is held as Pending until an admin approves it (Tasks → Submissions)."}
-              {epForm.assessmentType === "" && "Choose who checks this video's task before it can be saved."}
-            </p>
-            {(epForm.assessmentType === "self" || epForm.assessmentType === "admin") && (
-              <div className="mt-2 space-y-2">
-                <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Title *</label>
-                  <input value={epForm.assessmentTaskTitle}
-                    onChange={e => { setEpField("assessmentTaskTitle", e.target.value); if (epErrors.assessmentTitle) setEpErrors(prev => ({ ...prev, assessmentTitle: undefined })); }}
-                    placeholder="e.g. Submit your reflection notes"
-                    className={`w-full bg-[#1a1a1a] border rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs ${epErrors.assessmentTitle ? "border-red-500" : "border-[#2a2a2a]"}`} />
-                  {epErrors.assessmentTitle && <p className="text-[10px] text-red-500 mt-1">{epErrors.assessmentTitle}</p>}
+            {(epErrors as any).assessment && <p className="text-[10px] text-red-500 mt-1">{(epErrors as any).assessment}</p>}
+            <p className="text-[10px] text-[#555] mt-1">{epForm.assessmentType === "self" ? "Member marks lesson done themselves." : epForm.assessmentType === "admin" ? "Admin reviews and approves completion." : "Choose who confirms lesson completion."}</p>
+          </div>
+          )}
+          {/* ── Inline Tasks ─────────────────────────────────────── */}
+          <div className="border-t border-[#2a2a2a] pt-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-1.5 text-[10px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">
+                <ListTodo size={11} className="text-amber-400" />
+                Tasks
+                {inlineTasks.length > 0 && (
+                  <span className="text-[9px] font-bold font-rajdhani uppercase px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">{inlineTasks.length}</span>
+                )}
+                {epTasksLoading && editingEp && <span className="text-[#555] normal-case font-normal tracking-normal ml-1">(loading…)</span>}
+                {!editingEp && inlineTasks.length === 0 && <span className="text-[#555] normal-case font-normal tracking-normal ml-1">— optional, added with episode</span>}
+              </label>
+              <div className="flex items-center gap-2">
+                {inlineTaskDirty && editingEp && (
+                  <button onClick={handleInlineTaskReorder} disabled={reorderInlineTasks.isPending}
+                    className="flex items-center gap-1 text-[9px] bg-amber-600/20 hover:bg-amber-600/40 text-amber-400 font-rajdhani font-bold uppercase tracking-widest px-2 py-1 rounded border border-amber-500/30 disabled:opacity-60">
+                    {reorderInlineTasks.isPending ? <Loader2 size={9} className="animate-spin" /> : <Save size={9} />} Save Order
+                  </button>
+                )}
+                {!inlineShowTaskForm && (
+                  <button onClick={() => { setInlineTaskForm({ ...EMPTY_TASK_FORM }); setInlineEditingTask(null); setInlineShowTaskForm(true); }}
+                    className="flex items-center gap-1 text-[9px] bg-amber-600 hover:bg-amber-700 text-white font-rajdhani font-bold uppercase tracking-widest px-2.5 py-1 rounded transition-all">
+                    <Plus size={9} /> Add Task
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Task list */}
+            {inlineTasks.length > 0 && (
+              <div className="space-y-1.5">
+                {inlineTasks.map((t: any, i: number) => (
+                  <div key={t.id ?? t._localId}
+                    draggable={!!editingEp && !!t.id}
+                    onDragStart={() => onInlineTaskDragStart(i)}
+                    onDragOver={e => onInlineTaskDragOver(e, i)}
+                    onDrop={e => onInlineTaskDrop(e, i)}
+                    onDragEnd={onInlineTaskDragEnd}
+                    className={`rounded-lg border transition-all ${inlineTaskDragOver === i ? "border-amber-500/50 bg-amber-500/5" : "bg-[#1a1a1a] border-[#2a2a2a]"} ${!(t.isActive ?? true) ? "opacity-50" : ""}`}>
+                    <div className="flex items-start gap-2 px-3 py-2">
+                      {editingEp && t.id && <GripVertical size={12} className="text-[#444] shrink-0 mt-0.5 cursor-move" />}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <p className="text-[11px] font-medium text-[#f0f0f0] truncate">{t.title}</p>
+                          {t.isMilestone && <Star size={9} className="text-amber-400 shrink-0" />}
+                          {!(t.isActive ?? true) && <EyeOff size={9} className="text-[#555] shrink-0" />}
+                          {!t.id && <span className="text-[8px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">Draft</span>}
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[9px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded border ${PROOF_BADGE[t.proofType] ?? "bg-[#333] text-[#888] border-[#444]"}`}>{t.proofType ?? "text"}</span>
+                          <span className="text-[9px] text-[#666] font-rajdhani">{t.basePoints ?? 100} pts</span>
+                          {(t.bonusPoints ?? 0) > 0 && <span className="text-[9px] text-amber-400 font-rajdhani">+{t.bonusPoints} bonus</span>}
+                          <span className={`text-[9px] font-bold font-rajdhani uppercase px-1 py-0.5 rounded border ${COMPLETION_MODE_BADGE[t.completionMode] ?? COMPLETION_MODE_BADGE.ADMIN_CHECK}`}>
+                            {COMPLETION_MODE_LABEL[t.completionMode] ?? "Admin Check"}
+                          </span>
+                          {t.timerSeconds != null && t.timerSeconds !== "" && <span className="flex items-center gap-0.5 text-[9px] text-orange-400 font-rajdhani"><Clock size={8} />{t.timerSeconds}s</span>}
+                          {!(t.isRequired ?? true) && <span className="text-[9px] text-blue-400 font-rajdhani">Optional</span>}
+                        </div>
+                        {t.description && <p className="text-[9px] text-[#555] mt-0.5 truncate">{t.description}</p>}
+                      </div>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        {inlineDeletingTask === (t.id ?? t._localId) ? (
+                          <>
+                            <button onClick={() => handleInlineTaskDelete(t)} className="text-[9px] text-red-400 font-rajdhani font-bold uppercase hover:text-red-300 px-1.5 py-1">✓ Delete</button>
+                            <button onClick={() => setInlineDeletingTask(null)} className="text-[9px] text-[#666] font-rajdhani font-bold uppercase hover:text-white px-1">✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => openInlineEditTask(t)} title="Edit" className="p-1 text-[#666] hover:text-green-400 rounded transition-colors"><Pencil size={10} /></button>
+                            <button onClick={() => setInlineDeletingTask(t.id ?? t._localId)} title="Delete" className="p-1 text-[#666] hover:text-red-400 rounded transition-colors"><Trash2 size={10} /></button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Inline task form */}
+            {inlineShowTaskForm && (
+              <div className="bg-[#181818] border border-[#333] rounded-lg p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-[9px] font-bold text-amber-400 uppercase tracking-widest font-rajdhani">{inlineEditingTask ? "Edit Task" : "New Task"}</p>
+                  <button onClick={() => { setInlineShowTaskForm(false); setInlineEditingTask(null); }} className="text-[#555] hover:text-white transition-colors"><X size={12} /></button>
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Assessment Description <span className="text-[#777] normal-case tracking-normal">(optional)</span></label>
-                  <textarea value={epForm.assessmentTaskDescription} onChange={e => setEpField("assessmentTaskDescription", e.target.value)} rows={2}
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Title *</label>
+                  <input value={inlineTaskForm.title} onChange={e => setInlineTaskForm((f: any) => ({ ...f, title: e.target.value }))}
+                    placeholder="Task title"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
+                  <textarea value={inlineTaskForm.description} onChange={e => setInlineTaskForm((f: any) => ({ ...f, description: e.target.value }))} rows={2}
                     placeholder="What should the member do?"
-                    className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-white outline-none focus:border-[#dc2626] text-xs resize-none" />
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626] resize-none" />
                 </div>
-                <p className="text-[9px] text-[#555] font-rajdhani">
-                  For deliverables, proof type, points, or milestones, use the <span className="text-[#888]">Tasks</span> panel on this episode after saving.
-                </p>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Deliverables</label>
+                  <textarea value={inlineTaskForm.deliverables} onChange={e => setInlineTaskForm((f: any) => ({ ...f, deliverables: e.target.value }))} rows={2}
+                    placeholder="Expected output / what to submit"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626] resize-none" />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Content URL</label>
+                  <input value={inlineTaskForm.contentUrl} onChange={e => setInlineTaskForm((f: any) => ({ ...f, contentUrl: e.target.value }))}
+                    placeholder="https://... (optional reference)"
+                    className="w-full bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Proof Type</label>
+                    <select value={inlineTaskForm.proofType} onChange={e => setInlineTaskForm((f: any) => ({ ...f, proofType: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]">
+                      {PROOF_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Est. Minutes</label>
+                    <input type="number" min={1} value={inlineTaskForm.estimatedMinutes} onChange={e => setInlineTaskForm((f: any) => ({ ...f, estimatedMinutes: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Base Points</label>
+                    <input type="number" min={0} value={inlineTaskForm.basePoints} onChange={e => setInlineTaskForm((f: any) => ({ ...f, basePoints: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Bonus Points</label>
+                    <input type="number" min={0} value={inlineTaskForm.bonusPoints} onChange={e => setInlineTaskForm((f: any) => ({ ...f, bonusPoints: e.target.value }))}
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Focus Timer (seconds — blank = global default)</label>
+                    <input type="number" min={0} value={inlineTaskForm.timerSeconds} onChange={e => setInlineTaskForm((f: any) => ({ ...f, timerSeconds: e.target.value }))} placeholder="e.g. 300"
+                      className="w-full bg-[#141414] border border-[#333] rounded px-2 py-1.5 text-[11px] text-white outline-none focus:border-[#dc2626]" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[9px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Completion Mode</label>
+                  <div className="flex gap-2">
+                    {(["SELF_ASSESSMENT", "ADMIN_CHECK"] as const).map(mode => (
+                      <label key={mode} className="flex items-center gap-2 cursor-pointer flex-1 bg-[#141414] border border-[#333] rounded px-2.5 py-1.5 has-[:checked]:border-[#dc2626]">
+                        <input type="radio" name="inlineCompletionMode" checked={inlineTaskForm.completionMode === mode}
+                          onChange={() => setInlineTaskForm((f: any) => ({ ...f, completionMode: mode }))} className="accent-red-600" />
+                        <span className="text-[10px] text-[#a0a0a0] font-rajdhani">{COMPLETION_MODE_LABEL[mode]}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[9px] text-[#555] mt-1 font-rajdhani">
+                    {inlineTaskForm.completionMode === "SELF_ASSESSMENT" ? "Member's submission is instantly marked complete." : "Member's submission is held Pending until an admin approves it."}
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={inlineTaskForm.isActive} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isActive: e.target.checked }))} className="accent-red-600" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Active (visible)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={inlineTaskForm.isRequired} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isRequired: e.target.checked }))} className="accent-red-600" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Required</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer col-span-2">
+                    <input type="checkbox" checked={inlineTaskForm.isMilestone} onChange={e => setInlineTaskForm((f: any) => ({ ...f, isMilestone: e.target.checked }))} className="accent-amber-500" />
+                    <span className="text-[10px] text-[#a0a0a0] font-rajdhani">Mark as Milestone</span>
+                  </label>
+                </div>
+                {inlineTaskForm.isMilestone && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-amber-500/80 uppercase tracking-widest mb-1 font-rajdhani">Milestone Label</label>
+                    <input value={inlineTaskForm.milestoneLabel} onChange={e => setInlineTaskForm((f: any) => ({ ...f, milestoneLabel: e.target.value }))} placeholder="e.g. First Submission!"
+                      className="w-full bg-[#141414] border border-amber-500/30 rounded px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500" />
+                  </div>
+                )}
+                <div className="flex gap-2 pt-0.5">
+                  <button onClick={handleInlineTaskSave} disabled={createInlineTask.isPending || updateInlineTask.isPending}
+                    className="flex items-center gap-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[9px] font-rajdhani font-bold uppercase tracking-widest px-3 py-1.5 rounded transition-all disabled:opacity-60">
+                    {(createInlineTask.isPending || updateInlineTask.isPending) ? <Loader2 size={9} className="animate-spin" /> : <Save size={9} />}
+                    {inlineEditingTask ? "Update Task" : "Add Task"}
+                  </button>
+                  <button onClick={() => { setInlineShowTaskForm(false); setInlineEditingTask(null); }} className="text-[9px] text-[#666] font-rajdhani font-bold uppercase tracking-widest hover:text-white transition-colors px-2">Cancel</button>
+                </div>
               </div>
             )}
           </div>
@@ -1651,6 +2031,168 @@ function EpisodesTab({ course }: { course: any }) {
               </div>
             );
           })()}
+          {/* ── Side Content ────────────────────────────────── */}
+          <div className="border border-[#2a2a2a] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Side Content</span>
+              <button type="button" onClick={() => setEpField("sideContent", { ...epForm.sideContent, enabled: !epForm.sideContent?.enabled })}
+                className={`w-8 h-4 rounded-full relative transition-all ${epForm.sideContent?.enabled ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.sideContent?.enabled ? "right-0.5" : "left-0.5"}`} />
+              </button>
+            </div>
+            {epForm.sideContent?.enabled && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Text Content</label>
+                  <textarea
+                    value={epForm.sideContent?.text ?? ""}
+                    onChange={e => setEpField("sideContent", { ...epForm.sideContent, text: e.target.value })}
+                    placeholder="Add optional text content shown alongside the video..."
+                    rows={3}
+                    className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-2 outline-none focus:border-[#dc2626] resize-none"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Buttons</label>
+                    <button type="button"
+                      onClick={() => setEpField("sideContent", { ...epForm.sideContent, buttons: [...(epForm.sideContent?.buttons ?? []), { id: crypto.randomUUID(), label: "", type: "external", destination: "", variant: "primary" }] })}
+                      className="text-[10px] font-bold uppercase tracking-widest text-[#dc2626] hover:text-red-400 font-rajdhani">+ Add Button</button>
+                  </div>
+                  {(epForm.sideContent?.buttons ?? []).map((btn: any, bi: number) => (
+                    <div key={btn.id} className="flex gap-2 items-start mb-2 p-2 bg-[#141414] rounded border border-[#2a2a2a]">
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <input value={btn.label} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],label:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          placeholder="Button label" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none col-span-2" />
+                        <input value={btn.destination} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],destination:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          placeholder="URL or /path" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none" />
+                        <select value={btn.type} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],type:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                          <option value="external">External link</option>
+                          <option value="internal">Internal page</option>
+                        </select>
+                        <select value={btn.variant ?? "primary"} onChange={e => { const b=[...epForm.sideContent.buttons]; b[bi]={...b[bi],variant:e.target.value}; setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                          className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                          <option value="primary">Primary</option>
+                          <option value="secondary">Secondary</option>
+                          <option value="outline">Outline</option>
+                        </select>
+                      </div>
+                      <button type="button" onClick={() => { const b=[...epForm.sideContent.buttons]; b.splice(bi,1); setEpField("sideContent",{...epForm.sideContent,buttons:b}); }}
+                        className="text-[#666] hover:text-red-400 mt-1">✕</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Form Builder ───────────────────────────────── */}
+          <div className="border border-[#2a2a2a] rounded-lg p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Custom Form</span>
+              <button type="button" onClick={() => setEpField("formConfig", { ...epForm.formConfig, enabled: !epForm.formConfig?.enabled })}
+                className={`w-8 h-4 rounded-full relative transition-all ${epForm.formConfig?.enabled ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.formConfig?.enabled ? "right-0.5" : "left-0.5"}`} />
+              </button>
+            </div>
+            {epForm.formConfig?.enabled && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Form Title</label>
+                    <input value={epForm.formConfig?.title ?? ""} onChange={e => setEpField("formConfig",{...epForm.formConfig,title:e.target.value})}
+                      placeholder="e.g. Lesson Feedback" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Description</label>
+                    <input value={epForm.formConfig?.description ?? ""} onChange={e => setEpField("formConfig",{...epForm.formConfig,description:e.target.value})}
+                      placeholder="Optional description" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">Submit Button Label</label>
+                    <input value={epForm.formConfig?.submitLabel ?? "Submit"} onChange={e => setEpField("formConfig",{...epForm.formConfig,submitLabel:e.target.value})}
+                      placeholder="Submit" className="w-full bg-[#141414] border border-[#2a2a2a] rounded text-white text-[13px] px-3 py-1.5 outline-none focus:border-[#dc2626]" />
+                  </div>
+                  <div className="flex items-center gap-2 pt-4">
+                    <button type="button" onClick={() => setEpField("formConfig",{...epForm.formConfig,allowMultiple:!epForm.formConfig?.allowMultiple})}
+                      className={`w-8 h-4 rounded-full relative transition-all flex-shrink-0 ${epForm.formConfig?.allowMultiple ? "bg-[#dc2626]" : "bg-[#333]"}`}>
+                      <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${epForm.formConfig?.allowMultiple ? "right-0.5" : "left-0.5"}`} />
+                    </button>
+                    <span className="text-[11px] text-[#888]">Allow multiple submissions</span>
+                  </div>
+                </div>
+                {/* Fields */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Fields ({(epForm.formConfig?.fields ?? []).length})</span>
+                    <button type="button"
+                      onClick={() => setEpField("formConfig",{...epForm.formConfig,fields:[...(epForm.formConfig?.fields ?? []),EMPTY_FORM_FIELD()]})}
+                      className="text-[10px] font-bold uppercase tracking-widest text-[#dc2626] hover:text-red-400 font-rajdhani">+ Add Field</button>
+                  </div>
+                  {(epForm.formConfig?.fields ?? []).map((field: any, fi: number) => {
+                    const hasOptions = ["dropdown","radio","checkbox"].includes(field.type);
+                    const setField = (patch: any) => { const f=[...epForm.formConfig.fields]; f[fi]={...f[fi],...patch}; setEpField("formConfig",{...epForm.formConfig,fields:f}); };
+                    const moveField = (dir: -1|1) => { const f=[...epForm.formConfig.fields]; const to=fi+dir; if(to<0||to>=f.length)return; [f[fi],f[to]]=[f[to],f[fi]]; setEpField("formConfig",{...epForm.formConfig,fields:f}); };
+                    return (
+                      <div key={field.id} className="bg-[#141414] border border-[#2a2a2a] rounded-lg p-3 mb-2 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <button type="button" onClick={() => moveField(-1)} className="text-[#555] hover:text-[#aaa] leading-none text-[10px]">▲</button>
+                            <button type="button" onClick={() => moveField(1)} className="text-[#555] hover:text-[#aaa] leading-none text-[10px]">▼</button>
+                          </div>
+                          <select value={field.type} onChange={e => setField({type:e.target.value})}
+                            className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none">
+                            {FORM_FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                          <input value={field.label} onChange={e => setField({label:e.target.value})}
+                            placeholder="Field label *" className="flex-1 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-white text-[12px] outline-none" />
+                          <button type="button" onClick={() => { const f=[...epForm.formConfig.fields]; f.splice(fi,1); setEpField("formConfig",{...epForm.formConfig,fields:f}); }}
+                            className="text-[#666] hover:text-red-400 text-[12px]">✕</button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input value={field.placeholder ?? ""} onChange={e => setField({placeholder:e.target.value})}
+                            placeholder="Placeholder" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={field.required ?? false} onChange={e => setField({required:e.target.checked})} className="accent-[#dc2626]" />
+                            <span className="text-[12px] text-[#888]">Required</span>
+                          </label>
+                        </div>
+                        {hasOptions && (
+                          <div>
+                            <label className="text-[11px] text-[#606060] font-rajdhani uppercase tracking-wide">Options (one per line)</label>
+                            <textarea value={(field.options ?? []).join("\n")} onChange={e => setField({options:e.target.value.split("\n").map((s:string)=>s.trim()).filter(Boolean)})}
+                              rows={3} placeholder={"Option 1\nOption 2\nOption 3"}
+                              className="w-full mt-1 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none resize-none" />
+                          </div>
+                        )}
+                        <details className="text-[11px]">
+                          <summary className="cursor-pointer text-[#555] hover:text-[#888] font-rajdhani uppercase tracking-wide">Validation</summary>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            {(field.type==="text"||field.type==="textarea") && <>
+                              <input type="number" value={field.validation?.minLength??""} onChange={e=>setField({validation:{...field.validation,minLength:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Min length" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                              <input type="number" value={field.validation?.maxLength??""} onChange={e=>setField({validation:{...field.validation,maxLength:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Max length" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                            </>}
+                            {field.type==="number" && <>
+                              <input type="number" value={field.validation?.min??""} onChange={e=>setField({validation:{...field.validation,min:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Min value" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                              <input type="number" value={field.validation?.max??""} onChange={e=>setField({validation:{...field.validation,max:e.target.value?Number(e.target.value):undefined}})}
+                                placeholder="Max value" className="bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                            </>}
+                            <input value={field.validation?.errorMessage??""} onChange={e=>setField({validation:{...field.validation,errorMessage:e.target.value||undefined}})}
+                              placeholder="Custom error message" className="col-span-2 bg-[#1a1a1a] border border-[#333] rounded px-2 py-1 text-[#ccc] text-[12px] outline-none" />
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Visible */}
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => setEpField("isVisible", !epForm.isVisible)}
@@ -1758,36 +2300,57 @@ function EpisodesTab({ course }: { course: any }) {
 }
 
 // ── Modules tab ────────────────────────────────────────────────────────
+const fmtDuration = (secs: number) => {
+  if (!secs) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+};
+
 function ModulesTab({ course }: { course: any }) {
   const { data, isLoading } = useListCourseModules(course.id);
   const createModule = useCreateCourseModule(course.id);
   const updateModule = useUpdateCourseModule(course.id);
   const deleteModule = useDeleteCourseModule(course.id);
   const reorderModules = useReorderCourseModules(course.id);
+  const uploadImage = useUploadImage();
+  const { data: episodesData } = useListCourseEpisodes(course.id);
+  const allEpisodes: any[] = (episodesData as any)?.data || [];
 
   const serverModules: any[] = (data as any) ?? [];
   const [localModules, setLocalModules] = useState<any[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ title: "", description: "" });
+  const [form, setForm] = useState({ title: "", description: "", thumbnailUrl: "" });
+  const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
+  const thumbInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { setLocalModules(serverModules); setIsDirty(false); }, [data]);
 
-  const openCreate = () => { setForm({ title: "", description: "" }); setEditing(null); setShowForm(true); };
-  const openEdit = (m: any) => { setForm({ title: m.title, description: m.description ?? "" }); setEditing(m); setShowForm(true); };
+  const openCreate = () => { setForm({ title: "", description: "", thumbnailUrl: "" }); setEditing(null); setShowForm(true); };
+  const openEdit = (m: any) => { setForm({ title: m.title, description: m.description ?? "", thumbnailUrl: m.thumbnailUrl ?? "" }); setEditing(m); setShowForm(true); };
+
+  const handleThumbUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const { publicUrl } = await uploadImage.mutateAsync({ file, pathPrefix: "module-thumbs" });
+      setForm(f => ({ ...f, thumbnailUrl: publicUrl }));
+    } catch { toast.error("Thumbnail upload failed"); }
+    finally { setUploading(false); }
+  };
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     try {
       if (editing) {
-        await updateModule.mutateAsync({ moduleId: editing.id, title: form.title, description: form.description || undefined });
+        await updateModule.mutateAsync({ moduleId: editing.id, title: form.title, description: form.description || undefined, thumbnailUrl: form.thumbnailUrl || null });
         toast.success("Module updated");
       } else {
-        await createModule.mutateAsync({ title: form.title, description: form.description || undefined });
+        await createModule.mutateAsync({ title: form.title, description: form.description || undefined, thumbnailUrl: form.thumbnailUrl || null });
         toast.success("Module created");
       }
       setShowForm(false);
@@ -1849,9 +2412,38 @@ function ModulesTab({ course }: { course: any }) {
               placeholder="Short description of this module"
               className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white text-xs outline-none focus:border-[#dc2626]" />
           </div>
+          {/* Thumbnail upload */}
+          <div>
+            <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Thumbnail (optional)</label>
+            <input ref={thumbInputRef} type="file" accept="image/*" className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleThumbUpload(f); e.target.value = ""; }} />
+            {form.thumbnailUrl ? (
+              <div className="flex items-center gap-3">
+                <img src={form.thumbnailUrl} alt="thumbnail" className="w-16 h-10 object-cover rounded border border-[#333]" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => thumbInputRef.current?.click()}
+                    disabled={uploading}
+                    className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-[#333] text-[#a0a0a0] hover:text-white text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani flex items-center gap-1 disabled:opacity-60">
+                    {uploading ? <Loader2 size={10} className="animate-spin" /> : <ImageIcon size={10} />} Change
+                  </button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, thumbnailUrl: "" }))}
+                    className="px-3 py-1.5 bg-[#1a1a1a] hover:bg-red-900/30 border border-[#333] text-[#a0a0a0] hover:text-red-400 text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani">
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => thumbInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 px-3 py-2 bg-[#1a1a1a] hover:bg-[#2a2a2a] border border-dashed border-[#333] hover:border-[#555] text-[#888] hover:text-[#a0a0a0] text-[10px] font-bold uppercase tracking-widest rounded font-rajdhani transition-colors disabled:opacity-60">
+                {uploading ? <Loader2 size={11} className="animate-spin" /> : <ImageIcon size={11} />}
+                {uploading ? "Uploading…" : "Upload Thumbnail"}
+              </button>
+            )}
+          </div>
           <div className="flex gap-2 pt-1">
             <button onClick={() => setShowForm(false)} className="flex-1 py-2 text-[#888] hover:text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest border border-[#2a2a2a] rounded">Cancel</button>
-            <button onClick={handleSave} disabled={createModule.isPending || updateModule.isPending}
+            <button onClick={handleSave} disabled={createModule.isPending || updateModule.isPending || uploading}
               className="flex-1 py-2 bg-[#dc2626] hover:bg-red-700 text-white font-rajdhani font-bold text-[11px] uppercase tracking-widest rounded flex items-center justify-center gap-1 disabled:opacity-60">
               {(createModule.isPending || updateModule.isPending) && <Loader2 size={11} className="animate-spin" />} Save
             </button>
@@ -1889,10 +2481,28 @@ function ModulesTab({ course }: { course: any }) {
               onDrop={e => onDrop(e, idx)}
               className={`flex items-center gap-3 px-3 py-3 rounded-lg border transition-all ${dragOver === idx ? "border-[#dc2626] bg-[#dc2626]/5" : "border-[#2a2a2a] bg-[#141414]"}`}>
               <GripVertical size={14} className="text-[#444] cursor-grab shrink-0" />
+              {m.thumbnailUrl && (
+                <img src={m.thumbnailUrl} alt={m.title} className="w-12 h-8 object-cover rounded border border-[#333] shrink-0" />
+              )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-[#f0f0f0] truncate">{m.title}</p>
                 {m.description && <p className="text-[11px] text-[#888] truncate mt-0.5">{m.description}</p>}
-                <p className="text-[10px] text-[#606060] mt-0.5">{(m.episodeIds ?? []).length} episode{(m.episodeIds ?? []).length !== 1 ? "s" : ""}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <span className="text-[10px] text-[#606060]">{(m.episodeIds ?? []).length} episode{(m.episodeIds ?? []).length !== 1 ? "s" : ""}</span>
+                  {(() => {
+                    const mEps = allEpisodes.filter((e: any) => (m.episodeIds ?? []).includes(e.id));
+                    const vidSecs = mEps.reduce((s: number, e: any) => s + (Number(e.durationSeconds) || 0), 0);
+                    const taskSecs = mEps.reduce((s: number, e: any) => s + (e.timerSeconds != null ? Number(e.timerSeconds) : 0), 0);
+                    const vidStr = fmtDuration(vidSecs);
+                    const taskStr = fmtDuration(taskSecs);
+                    return (
+                      <>
+                        {vidStr && <span className="text-[10px] text-[#606060]">· {vidStr} video</span>}
+                        {taskStr && <span className="text-[10px] text-[#606060]">· {taskStr} tasks</span>}
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               <div className="flex gap-1 shrink-0">
                 <button onClick={() => openEdit(m)} className="p-1.5 rounded text-[#888] hover:text-white hover:bg-[#2a2a2a] transition-colors"><Pencil size={12} /></button>
@@ -2644,7 +3254,8 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
         filename: file.name, contentType: file.type,
         bucket: "resources", pathPrefix: "episode-resources",
       });
-      await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const put = await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      if (!put.ok) throw new Error(`Upload failed (HTTP ${put.status}) — the file was not stored; please try again`);
       // Auto-pick the type for media uploads so the course page renders them inline
       const mediaType = ["image", "video", "audio"].find(t => file.type.startsWith(`${t}/`));
       setForm((f: any) => ({ ...f, [field]: publicUrl, ...(field === "fileUrl" && mediaType ? { fileType: mediaType } : {}) }));
@@ -2659,6 +3270,10 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
     if (!form.fileUrl.trim()) { toast.error("File URL required"); return; }
+    // A pasted local path (file:///C:/...) only opens on this computer — members get a dead link.
+    const isWebUrl = (v: string) => { try { return ["http:", "https:"].includes(new URL(v.trim()).protocol); } catch { return false; } };
+    if (!isWebUrl(form.fileUrl)) { toast.error("File URL must be an https:// link. Use the upload button to upload the file; a local file path can't be opened by members."); return; }
+    if (form.previewUrl?.trim() && !isWebUrl(form.previewUrl)) { toast.error("Preview Image URL must be an https:// link, or left empty."); return; }
     try {
       if (editing) { await updateRes.mutateAsync({ id: editing.id, data: form }); toast.success("Resource updated"); }
       else { await createRes.mutateAsync(form); toast.success("Resource created"); }
@@ -2803,29 +3418,6 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
 }
 
 // ── Episode Tasks Modal ────────────────────────────────────────────────
-const PROOF_TYPES = ["text", "image", "video", "link", "file", "watch"];
-const PROOF_BADGE: Record<string, string> = {
-  text: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  image: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-  video: "bg-red-500/20 text-red-400 border-red-500/30",
-  link: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  file: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  watch: "bg-green-500/20 text-green-400 border-green-500/30",
-};
-const COMPLETION_MODE_BADGE: Record<string, string> = {
-  SELF_ASSESSMENT: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-  ADMIN_CHECK: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-};
-const COMPLETION_MODE_LABEL: Record<string, string> = {
-  SELF_ASSESSMENT: "Self Assessment",
-  ADMIN_CHECK: "Admin Check",
-};
-const EMPTY_TASK_FORM = {
-  title: "", description: "", deliverables: "", contentUrl: "",
-  basePoints: 100, bonusPoints: 0, proofType: "text", estimatedMinutes: 15,
-  timerSeconds: "", isActive: true, isRequired: true, isMilestone: false, milestoneLabel: "",
-  completionMode: "ADMIN_CHECK",
-};
 
 function TaskSubmissionsPanel({ episodeId, taskId }: { episodeId: string; taskId: string }) {
   const { data, isLoading, refetch } = useListEpisodeTaskSubmissions(episodeId, taskId);
@@ -3557,6 +4149,181 @@ function EpisodeFeedbackModal({ episode, onClose }: { episode: any; onClose: () 
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Course Page FAQ Manager ───────────────────────────────────────────────────
+
+const EMPTY_FAQ = { question: "", answerType: "text" as "text" | "video", answerText: "", answerVideoUrl: "", isActive: true };
+
+function CourseFaqManager() {
+  const { data, isLoading } = useListCourseFaqsAdmin();
+  const create = useCreateCourseFaq();
+  const update = useUpdateCourseFaq();
+  const remove = useDeleteCourseFaq();
+  const reorder = useReorderCourseFaqs();
+
+  const [localItems, setLocalItems] = useState<any[]>([]);
+  const [isDirty, setIsDirty] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ ...EMPTY_FAQ });
+  const dragIdx = useRef<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
+
+  const faqs: any[] = (data as any)?.data ?? [];
+  useEffect(() => { setLocalItems(faqs); setIsDirty(false); }, [data]);
+
+  function openCreate() { setForm({ ...EMPTY_FAQ }); setEditId(null); setShowForm(true); }
+  function openEdit(faq: any) {
+    setForm({ question: faq.question, answerType: faq.answerType, answerText: faq.answerText ?? "", answerVideoUrl: faq.answerVideoUrl ?? "", isActive: faq.isActive });
+    setEditId(faq.id); setShowForm(true);
+  }
+
+  async function handleSave() {
+    if (!form.question.trim()) return;
+    try {
+      if (editId) {
+        await update.mutateAsync({ id: editId, question: form.question.trim(), answerType: form.answerType, answerText: form.answerType === 'text' ? form.answerText : undefined, answerVideoUrl: form.answerType === 'video' ? form.answerVideoUrl : undefined, isActive: form.isActive });
+        toast.success("FAQ updated");
+      } else {
+        await create.mutateAsync({ question: form.question.trim(), answerType: form.answerType, answerText: form.answerType === 'text' ? form.answerText : undefined, answerVideoUrl: form.answerType === 'video' ? form.answerVideoUrl : undefined, isActive: form.isActive });
+        toast.success("FAQ created");
+      }
+      setShowForm(false); setEditId(null); setForm({ ...EMPTY_FAQ });
+    } catch { toast.error("Failed to save FAQ"); }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this FAQ?")) return;
+    await remove.mutateAsync(id).catch(() => toast.error("Delete failed"));
+    toast.success("Deleted");
+  }
+
+  const onDragStart = (i: number) => { dragIdx.current = i; };
+  const onDragOver = (e: React.DragEvent, i: number) => { e.preventDefault(); setDragOver(i); };
+  const onDrop = (e: React.DragEvent, dropIdx: number) => {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === dropIdx) { setDragOver(null); return; }
+    const next = [...localItems];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIdx, 0, moved);
+    setLocalItems(next); setIsDirty(true); dragIdx.current = null; setDragOver(null);
+  };
+
+  async function handleSaveOrder() {
+    await reorder.mutateAsync(localItems.map(f => f.id));
+    setIsDirty(false); toast.success("Order saved");
+  }
+
+  return (
+    <div className="bg-[#181818] border border-[#2a2a2a] rounded-2xl overflow-hidden">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[#2a2a2a]">
+        <div className="flex items-center gap-2">
+          <HelpCircle size={16} className="text-[#dc2626]" />
+          <span className="font-rajdhani text-[11px] font-bold uppercase tracking-widest text-[#606060]">Course Page FAQ</span>
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#2a2a2a] text-[#a0a0a0]">{faqs.length}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {isDirty && (
+            <button onClick={handleSaveOrder} disabled={reorder.isPending} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors disabled:opacity-50">
+              {reorder.isPending ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />} Save Order
+            </button>
+          )}
+          {!showForm && (
+            <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors">
+              <Plus size={11} /> Add FAQ
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {showForm && (
+          <div className="border border-[#333] bg-[#141414] rounded-xl p-4 space-y-3 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">{editId ? "Edit FAQ" : "New FAQ"}</p>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Question</label>
+              <input value={form.question} onChange={e => setForm(f => ({ ...f, question: e.target.value }))} placeholder="e.g. What courses are included in this program?" className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white text-sm outline-none focus:border-[#dc2626]" />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Answer Type</label>
+              <div className="flex gap-2">
+                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.answerType === 'text' ? 'border-[#dc2626] bg-red-500/10 text-[#dc2626]' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                  <input type="radio" className="sr-only" checked={form.answerType === 'text'} onChange={() => setForm(f => ({ ...f, answerType: 'text' }))} />
+                  <Type size={11} /> Text
+                </label>
+                <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer text-[11px] font-bold transition-colors ${form.answerType === 'video' ? 'border-[#dc2626] bg-red-500/10 text-[#dc2626]' : 'border-[#333] text-[#666] hover:border-[#555]'}`}>
+                  <input type="radio" className="sr-only" checked={form.answerType === 'video'} onChange={() => setForm(f => ({ ...f, answerType: 'video' }))} />
+                  <Video size={11} /> Video
+                </label>
+              </div>
+            </div>
+            {form.answerType === 'text' ? (
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Answer Text</label>
+                <textarea value={form.answerText} onChange={e => setForm(f => ({ ...f, answerText: e.target.value }))} placeholder="Write the answer..." rows={4} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-[#dc2626] resize-none" />
+              </div>
+            ) : (
+              <div>
+                <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">Video URL (Bunny iframe embed URL)</label>
+                <input value={form.answerVideoUrl} onChange={e => setForm(f => ({ ...f, answerVideoUrl: e.target.value }))} placeholder="https://iframe.mediadelivery.net/embed/..." className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-10 px-3 text-white text-sm outline-none focus:border-[#dc2626]" />
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="faq-active" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="accent-[#dc2626]" />
+              <label htmlFor="faq-active" className="text-[11px] text-[#a0a0a0]">Active (visible to members)</label>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setShowForm(false); setEditId(null); }} className="px-3 py-1.5 text-[11px] text-[#666] hover:text-white rounded-lg transition-colors">Cancel</button>
+              <button onClick={handleSave} disabled={create.isPending || update.isPending || !form.question.trim()} className="flex items-center gap-1.5 px-3 py-1.5 bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold rounded-lg font-rajdhani uppercase tracking-wide transition-colors disabled:opacity-50">
+                {(create.isPending || update.isPending) ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
+                {editId ? "Update" : "Add"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <p className="text-[12px] text-[#555] text-center py-6">Loading...</p>}
+        {!isLoading && localItems.length === 0 && !showForm && (
+          <p className="text-[12px] text-[#555] text-center py-6">No FAQs yet. Click "Add FAQ" to create the first one.</p>
+        )}
+
+        {localItems.map((faq, i) => (
+          <div key={faq.id} draggable onDragStart={() => onDragStart(i)} onDragOver={e => onDragOver(e, i)} onDrop={e => onDrop(e, i)} onDragLeave={() => setDragOver(null)}
+            className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${dragOver === i ? 'border-[#dc2626] bg-red-500/5' : 'border-[#2a2a2a] bg-[#141414]'}`}>
+            <GripVertical size={14} className="text-[#444] mt-0.5 shrink-0 cursor-grab" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-[#f0f0f0] leading-snug">{faq.question}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-bold ${faq.answerType === 'video' ? 'bg-blue-500/15 text-blue-400' : 'bg-[#2a2a2a] text-[#666]'}`}>
+                  {faq.answerType === 'video' ? <Video size={8} /> : <Type size={8} />}
+                  {faq.answerType}
+                </span>
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${faq.isActive ? 'bg-green-500/15 text-green-400' : 'bg-[#2a2a2a] text-[#555]'}`}>
+                  {faq.isActive ? 'active' : 'hidden'}
+                </span>
+                {faq.answerType === 'text' && faq.answerText && (
+                  <span className="text-[10px] text-[#555] truncate max-w-[260px]">{faq.answerText}</span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => update.mutate({ id: faq.id, isActive: !faq.isActive })} title={faq.isActive ? "Hide" : "Show"} className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#555] hover:text-[#a0a0a0] transition-colors">
+                {faq.isActive ? <Eye size={12} /> : <EyeOff size={12} />}
+              </button>
+              <button onClick={() => openEdit(faq)} className="p-1.5 rounded hover:bg-[#2a2a2a] text-[#555] hover:text-[#a0a0a0] transition-colors">
+                <Pencil size={12} />
+              </button>
+              <button onClick={() => handleDelete(faq.id)} className="p-1.5 rounded hover:bg-red-500/10 text-[#555] hover:text-red-400 transition-colors">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

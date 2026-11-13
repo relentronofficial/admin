@@ -7,7 +7,7 @@ import type { NavItem } from "@/types";
 // Isolate the Navbar from network/socket/router — this test only checks which nav
 // links it renders and in what order, given the admin's nav config.
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/courses",
+  usePathname: () => "/mentorship",
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }));
 vi.mock("@tanstack/react-query", () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn(), clear: vi.fn() }) }));
@@ -23,11 +23,12 @@ vi.mock("@/lib/hooks/useUser", () => ({ useMe: () => ({ data: { id: "me", curren
 vi.mock("@/lib/socket/client", () => ({ getSocket: () => new Promise(() => {}) }));
 vi.mock("./StreakButton", () => ({ StreakButton: () => null }));
 vi.mock("./TierAccessIndicator", () => ({ TierAccessIndicator: () => null }));
+vi.mock("./CoinBalanceIndicator", () => ({ CoinBalanceIndicator: () => null }));
 vi.mock("@/lib/api/client", () => ({ default: { post: vi.fn() } }));
 
 const nav: NavItem[] = [
   { id: "home-id", label: "Home", href: "/tbt", order: 0, isVisible: true },
-  { id: "mentorship-id", label: "Mentorship", href: "/courses", order: 1, isVisible: true },
+  { id: "mentorship-id", label: "Mentorship", href: "/mentorship", order: 1, isVisible: true },
 ];
 
 function renderNavbar(navOrder: string[] | null, hiddenMenuKeys: string[] = []) {

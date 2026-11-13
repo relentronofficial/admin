@@ -69,6 +69,7 @@ export function demoRevenue(week: { isoWeek: number; isoYear: number }) {
   return {
     weekNumber: week.isoWeek,
     year: week.isoYear,
+    totalAllTime: revenueGenerated + 412000,
     revenueGenerated,
     revenuePrev: 412000,
     numberOfOrders,

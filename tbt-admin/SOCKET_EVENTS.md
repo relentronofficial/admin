@@ -8,6 +8,7 @@ Complete reference for all Socket.IO events in the TBT platform.
 |---|---|---|---|---|---|
 | `notification` | `user:{memberId}` | `notifications/controller.ts` | Navbar, `/notifications` page | Admin sends targeted notification | `{ id, title, body, type, isRead, createdAt }` |
 | `notification:broadcast` | All sockets | `notifications/controller.ts` | Navbar, `/notifications` page | Admin broadcasts to all members | `{ title, body, type }` |
+| `support_calls:changed` | All sockets | `support-entitlements/controller.ts`, `user/controller.ts` | `useSupportCalls` (support-call booking calendar) refetches that category | A support-call slot is published, edited, cancelled, removed, booked or freed | `{ category }` (no member or meeting data) |
 | `qa:new_question` | `workshop:{slug}` | `user/controller.ts` | `/workshop/[slug]` Q&A tab | Member posts a question | `{ id, questionText, memberName, createdAt, replies: [] }` |
 | `qa:new_reply` | `workshop:{slug}` | `user/controller.ts` | `/workshop/[slug]` Q&A tab | Member or admin replies to a question | `{ postId, reply: { id, replyText, createdAt } }` |
 | `live:started` | `live:{webinarId}` | `webinar/controller.ts` | `/live/[webinarId]` | Admin starts a webinar | `{ webinarId, streamUrl, startedAt }` |

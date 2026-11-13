@@ -158,3 +158,94 @@ export function isActiveHeartbeat(body: unknown): { active: boolean; media: bool
   const media = b.media === true;
   return { active: visible && (interacted || media), media: visible && media };
 }
+
+// ── Member's own usage history (Daily Time Spent popup) ─────────────────────
+
+export interface UsageHistoryDay {
+  date: string; // YYYY-MM-DD in ACTIVITY_TIMEZONE
+  activeMinutes: number;
+  mediaMinutes: number;
+}
+
+export interface UsageHistory {
+  /** The member's onboarding date (ACTIVITY_TIMEZONE), or null when unknown. */
+  onboardingDate: string | null;
+  /** First day of the history: the onboarding date, or an earlier day the member was already active. */
+  rangeStart: string;
+  /**
+   * First day with tracked data in the range. Days from rangeStart up to the day
+   * before this were never tracked (tracking went live later) — unknown, not 0.
+   * null = nothing in the range was tracked.
+   */
+  trackedFrom: string | null;
+  today: string;
+  /** Every tracked day from today back to trackedFrom (zero-use days included), newest first. */
+  days: UsageHistoryDay[];
+  totalMinutes: number;
+  /** totalMinutes / tracked days (rounded) — zero-use days count; untracked days don't. */
+  averageDailyMinutes: number;
+  activeDays: number;
+  trackedDays: number;
+  /** true when the range was cut to maxDays. */
+  truncated: boolean;
+}
+
+/**
+ * A member's date-wise active time from their onboarding date to today. Pure:
+ * `today`, the onboarding date and the tracking start are passed in. Only
+ * recorded activity minutes are used (lib/memberActivity.ts — one bit per
+ * active minute per day, so sessions on several devices never double-count).
+ */
+export function buildUsageHistory(
+  rows: DailyActivityRow[],
+  opts: { today: string; onboardingDate: string | null; trackingStartDate: string | null; maxDays?: number },
+): UsageHistory {
+  const maxDays = Math.max(1, Math.floor(opts.maxDays ?? 1095));
+  const todayN = toDayNumber(opts.today);
+  const inRange = rows.filter((r) => toDayNumber(r.date) <= todayN);
+  const byDate = new Map(inRange.map((r) => [r.date, r]));
+  const earliestRow = inRange.reduce<number | null>((min, r) => {
+    const n = toDayNumber(r.date);
+    return min === null || n < min ? n : min;
+  }, null);
+
+  const onboardN = opts.onboardingDate ? Math.min(toDayNumber(opts.onboardingDate), todayN) : null;
+  let startN = onboardN ?? earliestRow ?? todayN;
+  if (earliestRow !== null && earliestRow < startN) startN = earliestRow; // active before onboarding: include it
+  const floorN = todayN - (maxDays - 1);
+  const truncated = startN < floorN;
+  if (truncated) startN = floorN;
+
+  // Tracked from: the later of the range start and the day tracking went live.
+  // A recorded row always means tracking was on, whatever trackingStartDate says.
+  let trackedN: number | null = opts.trackingStartDate ? Math.max(startN, toDayNumber(opts.trackingStartDate)) : null;
+  const firstRowInRange = earliestRow !== null && earliestRow >= startN ? earliestRow : null;
+  if (firstRowInRange !== null && (trackedN === null || firstRowInRange < trackedN)) trackedN = firstRowInRange;
+  if (trackedN !== null && trackedN > todayN) trackedN = null;
+
+  const days: UsageHistoryDay[] = [];
+  let totalMinutes = 0;
+  let activeDays = 0;
+  if (trackedN !== null) {
+    for (let n = todayN; n >= trackedN; n--) {
+      const row = byDate.get(toDateString(n));
+      const activeMinutes = row?.activeMinutes ?? 0;
+      days.push({ date: toDateString(n), activeMinutes, mediaMinutes: row?.mediaMinutes ?? 0 });
+      totalMinutes += activeMinutes;
+      if (activeMinutes > 0) activeDays++;
+    }
+  }
+  const trackedDays = days.length;
+  return {
+    onboardingDate: onboardN !== null ? toDateString(onboardN) : null,
+    rangeStart: toDateString(startN),
+    trackedFrom: trackedN !== null ? toDateString(trackedN) : null,
+    today: opts.today,
+    days,
+    totalMinutes,
+    averageDailyMinutes: trackedDays ? Math.round(totalMinutes / trackedDays) : 0,
+    activeDays,
+    trackedDays,
+    truncated,
+  };
+}

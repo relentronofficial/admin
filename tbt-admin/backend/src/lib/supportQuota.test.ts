@@ -4,6 +4,7 @@ import {
   creditTypeToUsageType,
   LEGACY_CREDIT_USAGE_NOTE_PREFIX,
   SUPPORT_USAGE_COUNTS_SQL,
+  COIN_UNLOCKED_BOOKINGS_SQL,
 } from './supportQuota.js';
 
 describe('computeSupportQuota', () => {
@@ -21,10 +22,10 @@ describe('computeSupportQuota', () => {
     );
 
     expect(result.plan).toBe('premium');
-    expect(result.techSupport).toEqual({ allocated: 5, used: 2, remaining: 3 });
-    expect(result.adSupport).toEqual({ allocated: 5, used: 5, remaining: 0 });
-    expect(result.groupCall).toEqual({ allocated: 10, used: 0, remaining: 10 });
-    expect(result.callCredits).toEqual({ allocated: 1, used: 1, remaining: 0 });
+    expect(result.techSupport).toEqual({ allocated: 5, used: 2, remaining: 3, unlocked: 0 });
+    expect(result.adSupport).toEqual({ allocated: 5, used: 5, remaining: 0, unlocked: 0 });
+    expect(result.groupCall).toEqual({ allocated: 10, used: 0, remaining: 10, unlocked: 0 });
+    expect(result.callCredits).toEqual({ allocated: 1, used: 1, remaining: 0, unlocked: 0 });
     expect(result.oneToOne).toBe(true);
     expect(result.lifelines).toEqual({ total: 3, used: 1, remaining: 2 });
   });
@@ -35,10 +36,10 @@ describe('computeSupportQuota', () => {
   it('falls back to zero allocation when the plan has no entitlement row', () => {
     const result = computeSupportQuota('legacy_custom_plan', [], [], []);
 
-    expect(result.techSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
-    expect(result.adSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
-    expect(result.groupCall).toEqual({ allocated: 0, used: 0, remaining: 0 });
-    expect(result.callCredits).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.techSupport).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
+    expect(result.adSupport).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
+    expect(result.groupCall).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
+    expect(result.callCredits).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
     expect(result.oneToOne).toBe(false);
   });
 
@@ -50,7 +51,7 @@ describe('computeSupportQuota', () => {
       [],
     );
 
-    expect(result.techSupport).toEqual({ allocated: 2, used: 9, remaining: 0 });
+    expect(result.techSupport).toEqual({ allocated: 2, used: 9, remaining: 0, unlocked: 0 });
   });
 
   it('defaults lifelines to 3 total / 0 used when the member has no batch settings row', () => {
@@ -68,8 +69,8 @@ describe('computeSupportQuota', () => {
       ],
       [],
     );
-    expect(result.salesSupport).toEqual({ allocated: 7, used: 2, remaining: 5 });
-    expect(result.contentSupport).toEqual({ allocated: 5, used: 4, remaining: 1 });
+    expect(result.salesSupport).toEqual({ allocated: 7, used: 2, remaining: 5, unlocked: 0 });
+    expect(result.contentSupport).toEqual({ allocated: 5, used: 4, remaining: 1, unlocked: 0 });
   });
 
   it('treats a plan row without sales/content columns as zero allocation', () => {
@@ -79,8 +80,8 @@ describe('computeSupportQuota', () => {
       [{ type: 'sales_support', cnt: 1 }],
       [],
     );
-    expect(result.salesSupport).toEqual({ allocated: 0, used: 1, remaining: 0 });
-    expect(result.contentSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.salesSupport).toEqual({ allocated: 0, used: 1, remaining: 0, unlocked: 0 });
+    expect(result.contentSupport).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
   });
 
   // Regression: an approved credit purchase must ADD allocation (MG-05
@@ -100,10 +101,10 @@ describe('computeSupportQuota', () => {
         { credit_type: 'one_to_one_60', qty: 1 },
       ],
     );
-    expect(result.techSupport).toEqual({ allocated: 3, used: 0, remaining: 3 });
-    expect(result.adSupport).toEqual({ allocated: 4, used: 0, remaining: 4 });
-    expect(result.groupCall).toEqual({ allocated: 7, used: 1, remaining: 6 });
-    expect(result.callCredits).toEqual({ allocated: 2, used: 0, remaining: 2 });
+    expect(result.techSupport).toEqual({ allocated: 3, used: 0, remaining: 3, unlocked: 0 });
+    expect(result.adSupport).toEqual({ allocated: 4, used: 0, remaining: 4, unlocked: 0 });
+    expect(result.groupCall).toEqual({ allocated: 7, used: 1, remaining: 6, unlocked: 0 });
+    expect(result.callCredits).toEqual({ allocated: 2, used: 0, remaining: 2, unlocked: 0 });
   });
 
   it('ignores lifeline and unknown purchase types for support buckets', () => {
@@ -114,9 +115,9 @@ describe('computeSupportQuota', () => {
       [],
       [{ credit_type: 'lifeline', qty: 5 }, { credit_type: 'mystery', qty: 3 }],
     );
-    expect(result.techSupport).toEqual({ allocated: 0, used: 0, remaining: 0 });
-    expect(result.groupCall).toEqual({ allocated: 0, used: 0, remaining: 0 });
-    expect(result.callCredits).toEqual({ allocated: 0, used: 0, remaining: 0 });
+    expect(result.techSupport).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
+    expect(result.groupCall).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
+    expect(result.callCredits).toEqual({ allocated: 0, used: 0, remaining: 0, unlocked: 0 });
     expect(result.lifelines).toEqual({ total: 3, used: 0, remaining: 3 });
   });
 
@@ -139,6 +140,19 @@ describe('computeSupportQuota', () => {
       [{ type: 'some_future_type', cnt: 99 }],
       [],
     );
-    expect(result.techSupport).toEqual({ allocated: 1, used: 0, remaining: 1 });
+    expect(result.techSupport).toEqual({ allocated: 1, used: 0, remaining: 1, unlocked: 0 });
+  });
+
+  it('adds live coin-unlocked bookings to the allocation without touching included calls', () => {
+    const ent = [{ tech_support_days: 2, ad_support_days: 0, group_call_count: 0, call_credit_count: 0, one_to_one_enabled: false }];
+    // 2 included, both completed, plus 1 coin-paid booking still live.
+    const result = computeSupportQuota('premium', ent, [{ type: 'tech_support', cnt: 2 }], [], [], [{ type: 'tech_support', cnt: 1 }]);
+    expect(result.techSupport).toEqual({ allocated: 3, used: 2, remaining: 1, unlocked: 1 });
+    expect(result.adSupport.unlocked).toBe(0);
+  });
+
+  it('coin-unlocked SQL counts only not-cancelled paid bookings', () => {
+    expect(COIN_UNLOCKED_BOOKINGS_SQL).toContain('coin_cost IS NOT NULL');
+    expect(COIN_UNLOCKED_BOOKINGS_SQL).toContain("status <> 'cancelled'");
   });
 });
