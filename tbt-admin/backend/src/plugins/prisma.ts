@@ -3079,8 +3079,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // ── Nav-item href fix: /courses was the old mentorship page before the rename.
     //    Update any nav_items rows still pointing at /courses → /mentorship so the
     //    logo link and NavAccessGuard fallback resolve correctly after the rename.
-    await fastify.prisma.$executeRawUnsafe(
-      `UPDATE nav_items SET href = '/mentorship' WHERE href = '/courses'`
+    await prisma.$executeRawUnsafe(
+      `UPDATE nav_items SET href = '/mentorship' WHERE href = '/courses' AND label != 'Courses'`
     ).catch(() => {});
 
     fastify.log.info('✅ Column safety net complete');
