@@ -1301,6 +1301,13 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       // client-side math.
       locked: isLocked,
       unlocked: lockState?.unlocked ?? true,
+      // The lesson actually holding this one back (see lessonProgression.ts) — lets the
+      // player name it instead of always blaming the lesson listed just above.
+      lockedBy: (() => {
+        const blocker = lockState?.blockedByEpisodeId
+          ? course.courseEpisodes.find((e) => e.id === lockState.blockedByEpisodeId) : null;
+        return blocker ? { id: blocker.id, title: blocker.title } : null;
+      })(),
       completedByThreshold: lockState?.completed ?? false,
       watchPercent: lockState?.watchPercent ?? null,
       timerSeconds: episodeSectionMap.get(ep.id)?.episodeTimerSeconds ?? null,

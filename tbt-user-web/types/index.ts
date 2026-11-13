@@ -104,6 +104,8 @@ export interface Lesson {
   order: number;
   isFree: boolean;
   locked?: boolean;
+  /** When locked: the lesson actually holding it back (first incomplete earlier lesson). */
+  lockedBy?: { id: string; title: string } | null;
   resumeAtSeconds?: number;
   actualWatchedSecs?: number;
   isCompleted?: boolean;

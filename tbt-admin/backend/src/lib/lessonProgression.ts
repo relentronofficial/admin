@@ -60,6 +60,13 @@ export interface LessonLockState {
   watchPercent: number | null;
   /** Last recorded playback position in seconds — for the resume button. */
   lastPositionSeconds: number;
+  /**
+   * When locked: the earliest lesson (in course order) that is not yet
+   * completed — the one actually holding this lesson back. It is not always
+   * the lesson listed just above: a member viewing one module/section can
+   * have an incomplete lesson elsewhere earlier in the course. null when unlocked.
+   */
+  blockedByEpisodeId: string | null;
 }
 
 const MIN_COMPLETION_THRESHOLD = 0.5;   // clamp so a mis-set 0% doesn't autocomplete on open
@@ -85,6 +92,7 @@ export function computeLessonLockStates(
   const threshold = clampThreshold(course.completionThresholdPercent);
   const out: LessonLockState[] = [];
   let allPreviousCompleted = true;
+  let firstIncompleteId: string | null = null;
 
   for (const ep of ordered) {
     const p = progressById.get(ep.id);
@@ -114,13 +122,17 @@ export function computeLessonLockStates(
       watchFraction,
       watchPercent: watchFraction == null ? null : Math.round(watchFraction * 100),
       lastPositionSeconds: p?.lastWatchedSecs ?? 0,
+      blockedByEpisodeId: unlocked ? null : firstIncompleteId,
     });
 
     // A locked lesson can never gate the next one — but that's already
     // enforced because a locked lesson has no progress row, so `completed`
     // is false, so `allPreviousCompleted` becomes false too. The
     // explicit check below is defensive against future refactors.
-    if (!completed) allPreviousCompleted = false;
+    if (!completed) {
+      allPreviousCompleted = false;
+      if (firstIncompleteId === null) firstIncompleteId = ep.id;
+    }
   }
 
   return out;
