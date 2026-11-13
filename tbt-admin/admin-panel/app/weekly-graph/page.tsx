@@ -1,17 +1,19 @@
 "use client";
 
-// Weekly Activity Graph configuration — per program. Weeks (X axis), milestones
-// (Y axis), the program's activities, and admin-recorded member milestones.
+// Weekly Activity Graph — member-first. The admin selects a member; the
+// backend resolves that member's batch and program (members.batch_id →
+// batches.program_id, the same mapping the member's own graph uses), and the
+// page loads that program's weeks, milestones and activities. There is no
+// program picker: an admin can never record against the wrong program.
 // Everything is stored on the backend (/api/weekly-graph/admin) and the member
 // graph on /batch-program reads it on every load — no redeploy per change.
 // Role rules are enforced server-side; the UI surfaces the server's messages.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, Plus, Loader2, X, Edit2, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, Search, Sparkles } from "lucide-react";
+import { BarChart3, Plus, Loader2, X, Edit2, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, Search, Sparkles, AlertTriangle, UserRound } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import {
-  useListPrograms,
   useWeeklyGraphConfig,
   useInitializeWeeklyGraph,
   useSaveGraphWeek,
@@ -25,6 +27,8 @@ import {
   useSaveGraphMemberRecord,
   useDeleteGraphMemberRecord,
   type GraphActivityItem,
+  type GraphMemberProgram,
+  type GraphMemberRecord,
   type GraphMilestoneItem,
   type GraphMilestoneKind,
   type GraphWeekItem,
@@ -43,10 +47,11 @@ const ICON_BTN = "p-1.5 rounded-md text-[#a0a0a0] hover:text-white hover:bg-[#22
 const errMsg = (e: any, fallback: string) => e?.message || fallback;
 
 export default function WeeklyGraphPage() {
-  const { data: programsRes, isLoading: programsLoading } = useListPrograms();
-  const programs: Array<{ id: string; name: string; durationDays?: number }> = programsRes?.data || [];
-  const [programId, setProgramId] = useState("");
-  useEffect(() => { if (!programId && programs.length) setProgramId(programs[0].id); }, [programs, programId]);
+  // The only selection on the page. The program comes from the member.
+  const [memberId, setMemberId] = useState("");
+  const { data: memberData, isLoading: memberLoading, isError: memberIsError, error: memberError } = useGraphMemberRecords(memberId);
+  const member = memberData?.member ?? null;
+  const programId = memberData && !memberData.noProgramReason ? member?.programId ?? "" : "";
 
   const { data: config, isLoading, isError, error, refetch } = useWeeklyGraphConfig(programId);
   const initialize = useInitializeWeeklyGraph(programId);
@@ -54,42 +59,52 @@ export default function WeeklyGraphPage() {
   return (
     <DashboardLayout>
       <div className="p-6 space-y-6 max-w-6xl">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="font-rajdhani text-2xl font-bold uppercase tracking-tight text-[#f0f0f0] flex items-center gap-2">
-              <BarChart3 size={22} className="text-[#dc2626]" /> Weekly Graph
-            </h1>
-            <p className="text-[13px] text-[#a0a0a0] mt-1">
-              Configure the member Weekly Activity Graph per program. Changes are live on members&apos; next load — no redeploy.
-            </p>
-          </div>
-          <div className="w-72">
-            <label className={LABEL}>Program</label>
-            <select className={cn(INPUT, "mt-1")} value={programId} onChange={(e) => setProgramId(e.target.value)} disabled={programsLoading}>
-              {programsLoading && <option>Loading…</option>}
-              {!programsLoading && programs.length === 0 && <option value="">No programs</option>}
-              {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
+        <div>
+          <h1 className="font-rajdhani text-2xl font-bold uppercase tracking-tight text-[#f0f0f0] flex items-center gap-2">
+            <BarChart3 size={22} className="text-[#dc2626]" /> Weekly Graph
+          </h1>
+          <p className="text-[13px] text-[#a0a0a0] mt-1">
+            Select a member to view and record their milestones. Their batch and program are picked up automatically. Changes are live on the member&apos;s next load.
+          </p>
         </div>
 
-        {!programsLoading && programs.length === 0 && (
-          <div className={cn(CARD, "p-8 text-center text-[#a0a0a0]")}>Create a program first (Batches → Programs).</div>
-        )}
+        <section className={CARD}>
+          <SectionHeader title="Member milestones" hint="Search a member by name or phone. Their batch and program are loaded automatically." />
+          <div className="px-5 pb-5 space-y-4">
+            <MemberPicker selected={memberId} onSelect={setMemberId} />
 
-        {programId && isLoading && (
-          <div className={cn(CARD, "p-10 flex items-center justify-center text-[#a0a0a0]")}><Loader2 className="animate-spin mr-2" size={18} /> Loading configuration…</div>
-        )}
+            {memberId && memberLoading && <p className="text-[13px] text-[#a0a0a0] flex items-center"><Loader2 size={14} className="animate-spin mr-2" /> Loading member…</p>}
+            {memberId && memberIsError && <p className="text-[13px] text-[#ef4444]">{errMsg(memberError, "Could not load this member")}</p>}
 
-        {programId && isError && (
-          <div className={cn(CARD, "p-6 flex items-center justify-between")}>
-            <p className="text-[#ef4444] text-sm">{errMsg(error, "Could not load the configuration.")}</p>
-            <button className={BTN_GHOST} onClick={() => refetch()}>Retry</button>
+            {member && <MemberSummary member={member} />}
+
+            {memberData?.noProgramReason && (
+              <div className="flex items-start gap-2 rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/10 px-4 py-3 text-[13px] text-[#fca5a5]">
+                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[#ef4444]" />
+                <span>{memberData.noProgramReason} Milestones can&apos;t be recorded until then.</span>
+              </div>
+            )}
+
+            {programId && isLoading && <p className="text-[13px] text-[#a0a0a0] flex items-center"><Loader2 size={14} className="animate-spin mr-2" /> Loading the program&apos;s milestones…</p>}
+            {programId && isError && (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[#ef4444] text-[13px]">{errMsg(error, "Could not load the program configuration.")}</p>
+                <button className={BTN_GHOST} onClick={() => refetch()}>Retry</button>
+              </div>
+            )}
+
+            {member && memberData && config && config.program.id === member.programId && (
+              <MemberRecords member={member} records={memberData.records} config={config} />
+            )}
           </div>
-        )}
+        </section>
 
-        {config && (
+        {member && config && config.program.id === member.programId && (
           <>
+            <div className="pt-2">
+              <h2 className="font-rajdhani text-xl font-bold uppercase tracking-tight text-[#f0f0f0]">Program settings · {config.program.name}</h2>
+              <p className="text-[12px] text-[#f59e0b] mt-0.5">These apply to every member of {config.program.name}, not just {member.firstName}.</p>
+            </div>
             {!config.saved ? (
               <div className={cn(CARD, "p-5 flex flex-wrap items-center justify-between gap-4 border-[#f59e0b]/40")}>
                 <div>
@@ -113,8 +128,14 @@ export default function WeeklyGraphPage() {
             <WeeksSection config={config} programId={programId} />
             <MilestonesSection config={config} programId={programId} />
             <ActivitiesSection config={config} programId={programId} />
-            <MemberRecordsSection config={config} />
           </>
+        )}
+
+        {!memberId && (
+          <div className={cn(CARD, "p-8 text-center text-[13px] text-[#606060]")}>
+            <UserRound size={22} className="mx-auto mb-2 text-[#404040]" />
+            Select a member above to see their milestones and their program&apos;s graph settings.
+          </div>
         )}
       </div>
     </DashboardLayout>
@@ -521,97 +542,141 @@ function ActivityForm({ config, initial, onClose, onSave }: {
 
 // ── Member milestones (admin-recorded) ───────────────────────────────────────
 
-function MemberRecordsSection({ config }: { config: WeeklyGraphConfig }) {
+const memberName = (m: { firstName: string; lastName?: string | null }) => `${m.firstName} ${m.lastName ?? ""}`.trim();
+
+/** Search by name or phone; picking a result is the page's only selection step. */
+function MemberPicker({ selected, onSelect }: { selected: string; onSelect: (id: string) => void }) {
   const [search, setSearch] = useState("");
-  const [memberId, setMemberId] = useState("");
-  const { data: membersRes, isFetching } = useListMembers({ search, limit: 8 }, { enabled: search.trim().length >= 2 });
+  const { data: membersRes, isFetching } = useListMembers({ search, limit: 8 }, { enabled: search.trim().length >= 2 && !selected });
   const results: any[] = membersRes?.data || [];
-  const { data, isLoading, isError, error } = useGraphMemberRecords(memberId);
-  const saveRecord = useSaveGraphMemberRecord(memberId);
-  const delRecord = useDeleteGraphMemberRecord(memberId);
+  return (
+    <div className="space-y-2">
+      <div className="relative max-w-md">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
+        <input className={cn(INPUT, "pl-9")} placeholder="Search a member by name or phone…" value={search}
+          onChange={(e) => { setSearch(e.target.value); if (selected) onSelect(""); }} />
+        {search.trim().length >= 2 && !selected && (
+          <div className="absolute z-10 mt-1 w-full bg-[#141414] border border-[#2a2a2a] rounded-lg max-h-64 overflow-y-auto">
+            {isFetching && <p className="p-3 text-[12px] text-[#606060]">Searching…</p>}
+            {!isFetching && results.length === 0 && <p className="p-3 text-[12px] text-[#606060]">No members found</p>}
+            {results.map((m) => (
+              <button key={m.id} className="w-full text-left px-3 py-2 hover:bg-[#1f1f1f] text-[13px] text-[#f0f0f0]"
+                onClick={() => { onSelect(m.id); setSearch(memberName(m)); }}>
+                {m.firstName} {m.lastName} <span className="text-[#606060]">· {m.phone} {m.batch?.name ? `· ${m.batch.name}` : "· no batch"}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {selected && (
+        <button className="text-[12px] text-[#a0a0a0] underline" onClick={() => { onSelect(""); setSearch(""); }}>Choose another member</button>
+      )}
+    </div>
+  );
+}
+
+/** Read-only: where the member's milestones will be saved. Nothing here is editable. */
+function MemberSummary({ member }: { member: GraphMemberProgram }) {
+  const cell = (label: string, value: string | null, missing: string) => (
+    <div>
+      <p className={LABEL}>{label}</p>
+      <p className={cn("mt-1 text-[13px]", value ? "text-[#f0f0f0]" : "text-[#ef4444]")}>{value ?? missing}</p>
+    </div>
+  );
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] px-4 py-3">
+      {cell("Member", memberName(member), "—")}
+      {cell("Phone", member.phone, "—")}
+      {cell("Batch", member.batchName, "No batch")}
+      {cell("Program", member.programName, member.batchId ? "Batch not linked" : "—")}
+    </div>
+  );
+}
+
+function MemberRecords({ member, records, config }: { member: GraphMemberProgram; records: GraphMemberRecord[]; config: WeeklyGraphConfig }) {
+  const saveRecord = useSaveGraphMemberRecord(member.id);
+  const delRecord = useDeleteGraphMemberRecord(member.id);
+  const initialize = useInitializeWeeklyGraph(config.program.id);
   const [milestone, setMilestone] = useState("");
   const [week, setWeek] = useState("");
   const [note, setNote] = useState("");
-  const inProgram = data?.member.programId === config.program.id;
+  useEffect(() => { setMilestone(""); setWeek(""); setNote(""); }, [member.id]);
   const activeMs = useMemo(() => config.milestones.filter((m) => m.isActive && m.id), [config.milestones]);
   const activeWeeks = useMemo(() => config.weeks.filter((w) => w.isActive && w.id), [config.weeks]);
+  // One record per milestone (the server upserts) — say so before the admin overwrites one.
+  const existing = records.find((r) => r.milestoneId === milestone);
 
   const record = async () => {
     if (!milestone || !week) return toast.error("Choose a milestone and a week");
-    try { await saveRecord.mutateAsync({ milestoneId: milestone, weekId: week, note: note || undefined }); toast.success("Milestone recorded"); setNote(""); }
-    catch (e) { toast.error(errMsg(e, "Could not record the milestone")); }
+    try {
+      await saveRecord.mutateAsync({ milestoneId: milestone, weekId: week, note: note || undefined });
+      toast.success(existing ? "Milestone updated" : "Milestone recorded");
+      setNote("");
+    } catch (e) { toast.error(errMsg(e, "Could not record the milestone")); }
   };
   const remove = async (id: string, label: string) => {
-    if (!window.confirm(`Remove "${label}" from this member's graph?`)) return;
+    if (!window.confirm(`Remove "${label}" from ${member.firstName}'s graph?`)) return;
     try { await delRecord.mutateAsync(id); toast.success("Record removed"); } catch (e) { toast.error(errMsg(e, "Could not remove the record")); }
   };
 
   return (
-    <section className={CARD}>
-      <SectionHeader title="Member milestones" hint="Record a milestone a member has reached (e.g. a verified revenue milestone). It lifts that member's point in the chosen week. One record per milestone." />
-      <div className="px-5 pb-5 space-y-4">
-        <div className="relative max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#606060]" />
-          <input className={cn(INPUT, "pl-9")} placeholder="Search a member by name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
-          {search.trim().length >= 2 && !memberId && (
-            <div className="absolute z-10 mt-1 w-full bg-[#141414] border border-[#2a2a2a] rounded-lg max-h-64 overflow-y-auto">
-              {isFetching && <p className="p-3 text-[12px] text-[#606060]">Searching…</p>}
-              {!isFetching && results.length === 0 && <p className="p-3 text-[12px] text-[#606060]">No members found</p>}
-              {results.map((m) => (
-                <button key={m.id} className="w-full text-left px-3 py-2 hover:bg-[#1f1f1f] text-[13px] text-[#f0f0f0]" onClick={() => { setMemberId(m.id); setSearch(`${m.firstName} ${m.lastName ?? ""}`.trim()); }}>
-                  {m.firstName} {m.lastName} <span className="text-[#606060]">· {m.phone} {m.batch?.name ? `· ${m.batch.name}` : ""}</span>
-                </button>
-              ))}
-            </div>
-          )}
+    <div className="space-y-4">
+      {records.length === 0 ? (
+        <p className="text-[13px] text-[#606060]">No milestones recorded for {member.firstName} yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {records.map((r) => {
+            const otherProgram = !!r.programId && r.programId !== config.program.id;
+            return (
+              <li key={r.id} className={cn("flex items-center justify-between bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-[13px]", otherProgram && "opacity-60")}>
+                <span className="text-[#f0f0f0]">
+                  {r.milestoneLabel}{r.kind === "revenue" && <span className="text-[#606060]"> (revenue)</span>}
+                  <span className="text-[#606060]"> · {r.weekLabel ?? "week removed"}{r.note ? ` · ${r.note}` : ""}{r.recordedBy ? ` · by ${r.recordedBy}` : ""}</span>
+                  {otherProgram && <span className="ml-2 text-[10px] uppercase tracking-widest text-[#f59e0b]">previous program · not on their graph</span>}
+                </span>
+                <span className="flex items-center gap-1">
+                  {!otherProgram && (
+                    <button className={ICON_BTN} title="Edit" onClick={() => { setMilestone(r.milestoneId); setWeek(r.weekId ?? ""); setNote(r.note ?? ""); }}><Edit2 size={14} /></button>
+                  )}
+                  <button className={ICON_BTN} title="Remove" onClick={() => remove(r.id, r.milestoneLabel)}><Trash2 size={14} /></button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!config.saved ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="text-[12px] text-[#f59e0b]">{config.program.name} still uses the built-in defaults. Save them once so each milestone and week has a stable id.</p>
+          <button className={BTN_PRIMARY} disabled={initialize.isPending}
+            onClick={() => initialize.mutateAsync().then(() => toast.success("Defaults saved"), (e) => toast.error(errMsg(e, "Could not save the defaults")))}>
+            {initialize.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Start customizing
+          </button>
         </div>
-        {memberId && (
-          <button className="text-[12px] text-[#a0a0a0] underline" onClick={() => { setMemberId(""); setSearch(""); }}>Choose another member</button>
-        )}
-
-        {memberId && isLoading && <p className="text-[13px] text-[#a0a0a0] flex items-center"><Loader2 size={14} className="animate-spin mr-2" /> Loading…</p>}
-        {memberId && isError && <p className="text-[13px] text-[#ef4444]">{errMsg(error, "Could not load this member")}</p>}
-        {data && !inProgram && (
-          <p className="text-[13px] text-[#f59e0b]">This member is not in a batch of {config.program.name}. Switch the program above to the member&apos;s program.</p>
-        )}
-        {data && inProgram && (
-          <>
-            {data.records.length === 0 ? (
-              <p className="text-[13px] text-[#606060]">No milestones recorded for {data.member.firstName} yet.</p>
-            ) : (
-              <ul className="space-y-2">
-                {data.records.map((r) => (
-                  <li key={r.id} className="flex items-center justify-between bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-[13px]">
-                    <span className="text-[#f0f0f0]">{r.milestoneLabel} <span className="text-[#606060]">· {r.weekLabel ?? "week removed"}{r.note ? ` · ${r.note}` : ""}{r.recordedBy ? ` · by ${r.recordedBy}` : ""}</span></span>
-                    <button className={ICON_BTN} title="Remove" onClick={() => remove(r.id, r.milestoneLabel)}><Trash2 size={14} /></button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {!config.saved ? (
-              <p className="text-[12px] text-[#f59e0b]">{needsSaved(config)}</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.4fr_auto] gap-3 items-end">
-                <div><label className={LABEL}>Milestone</label>
-                  <select className={cn(INPUT, "mt-1")} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
-                    <option value="">Choose…</option>
-                    {activeMs.map((m) => <option key={m.id!} value={m.id!}>{m.label}{m.kind === "revenue" ? " (revenue)" : ""}</option>)}
-                  </select></div>
-                <div><label className={LABEL}>Week reached</label>
-                  <select className={cn(INPUT, "mt-1")} value={week} onChange={(e) => setWeek(e.target.value)}>
-                    <option value="">Choose…</option>
-                    {activeWeeks.map((w) => <option key={w.id!} value={w.id!}>{w.label}</option>)}
-                  </select></div>
-                <div><label className={LABEL}>Note (optional)</label>
-                  <input className={cn(INPUT, "mt-1")} value={note} maxLength={500} placeholder="e.g. Verified from invoices" onChange={(e) => setNote(e.target.value)} /></div>
-                <button className={cn(BTN_PRIMARY, "h-11")} disabled={saveRecord.isPending} onClick={record}>
-                  {saveRecord.isPending ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Record
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </section>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_1.4fr_auto] gap-3 items-end">
+            <div><label className={LABEL}>Milestone</label>
+              <select className={cn(INPUT, "mt-1")} value={milestone} onChange={(e) => setMilestone(e.target.value)}>
+                <option value="">Choose…</option>
+                {activeMs.map((m) => <option key={m.id!} value={m.id!}>{m.label}{m.kind === "revenue" ? " (revenue)" : ""}</option>)}
+              </select></div>
+            <div><label className={LABEL}>Week reached</label>
+              <select className={cn(INPUT, "mt-1")} value={week} onChange={(e) => setWeek(e.target.value)}>
+                <option value="">Choose…</option>
+                {activeWeeks.map((w) => <option key={w.id!} value={w.id!}>{w.label}</option>)}
+              </select></div>
+            <div><label className={LABEL}>Note (optional)</label>
+              <input className={cn(INPUT, "mt-1")} value={note} maxLength={500} placeholder="e.g. Verified from invoices" onChange={(e) => setNote(e.target.value)} /></div>
+            <button className={cn(BTN_PRIMARY, "h-11")} disabled={saveRecord.isPending} onClick={record}>
+              {saveRecord.isPending ? <Loader2 size={14} className="animate-spin" /> : existing ? <CheckCircle2 size={14} /> : <Plus size={14} />} {existing ? "Update" : "Record"}
+            </button>
+          </div>
+          {existing && (
+            <p className="text-[12px] text-[#a0a0a0]">{member.firstName} already has &ldquo;{existing.milestoneLabel}&rdquo; ({existing.weekLabel ?? "week removed"}). Saving moves it to the chosen week — one record per milestone.</p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
