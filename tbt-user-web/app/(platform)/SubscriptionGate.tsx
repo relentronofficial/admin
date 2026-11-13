@@ -260,7 +260,10 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   // Block render until auth state is known — prevents platform page flash for
   // unauthenticated users (cookies are cross-domain so middleware can't check them;
   // the 401 redirect in the useEffect above handles unauthenticated cases).
-  if (isLoading) return <PageLoader />;
+  // Also block on isError: there is a single render cycle where isLoading=false
+  // and isError=true before the useEffect redirect fires — without this guard
+  // children flash briefly for unauthenticated visitors.
+  if (isLoading || isError) return <PageLoader />;
 
   // Pending users: page content visible, but every click opens the pending popup —
   // except awaiting_kyc (redirected above) and the onboarding wizard itself.
