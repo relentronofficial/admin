@@ -1078,9 +1078,12 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
       },
     }),
     getCourseAccessRecord(prisma as any, memberId, id),
-    prisma.$queryRawUnsafe<{ applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]>(
-      `SELECT applicable_business_types, batch_visibility_ids, COALESCE(course_type, 'mentorship') AS course_type FROM courses WHERE id = $1::uuid`, id,
-    ).catch(() => [] as { applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]),
+    prisma.$queryRawUnsafe<any[]>(
+      `SELECT applicable_business_types, batch_visibility_ids, COALESCE(course_type, 'mentorship') AS course_type,
+              purchase_headline, video_preview_url, thank_you_note, key_highlights,
+              bundle_course_ids, bundle_price, all_access_price
+       FROM courses WHERE id = $1::uuid`, id,
+    ).catch(() => [] as any[]),
     prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null; current_tier: number | null }[]>(
       `SELECT COALESCE(mbp.business_categories, '[]'::jsonb) AS business_categories, m.batch_id, m.current_tier
        FROM members m LEFT JOIN member_business_profiles mbp ON mbp.member_id = m.id WHERE m.id = $1::uuid`, memberId,
@@ -1167,12 +1170,19 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
 
   const pendingPaymentRow = pendingPaymentRows[0] ?? null;
 
-  // Resolve upsell / cross-sell course IDs to lightweight course objects
+  // Resolve upsell / cross-sell / bundle course IDs to lightweight course objects
   const upsellIds: string[] = (course as any).upsellCourseIds ?? [];
   const crossSellIds: string[] = (course as any).crossSellCourseIds ?? [];
+  const bundleIds: string[] = (() => {
+    const raw = visRows[0]?.bundle_course_ids;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw as string[];
+    try { return JSON.parse(raw as unknown as string) as string[]; } catch { return []; }
+  })();
   let upsellCourses: any[] = [];
   let crossSellCourses: any[] = [];
-  const allRelatedIds = [...new Set([...upsellIds, ...crossSellIds])];
+  let bundleCourses: any[] = [];
+  const allRelatedIds = [...new Set([...upsellIds, ...crossSellIds, ...bundleIds])];
   if (allRelatedIds.length > 0) {
     const related = await prisma.course.findMany({
       where: { id: { in: allRelatedIds }, isPublished: true },
@@ -1181,6 +1191,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     const relatedMap = new Map(related.map((c) => [c.id, c]));
     upsellCourses = upsellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
     crossSellCourses = crossSellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
+    bundleCourses = bundleIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
   }
 
   const LESSON_BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
@@ -1370,6 +1381,19 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     upsellCourses,
     crossSellCourses,
     courseType: (visRows[0] as any)?.course_type ?? 'mentorship',
+    purchaseHeadline: (visRows[0] as any)?.purchase_headline ?? null,
+    videoPreviewUrl: (visRows[0] as any)?.video_preview_url ?? null,
+    thankYouNote: (visRows[0] as any)?.thank_you_note ?? null,
+    keyHighlights: (() => {
+      const raw = (visRows[0] as any)?.key_highlights;
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw;
+      try { return JSON.parse(raw); } catch { return []; }
+    })(),
+    bundleCourseIds: bundleIds,
+    bundleCourses,
+    bundlePrice: (visRows[0] as any)?.bundle_price != null ? Number((visRows[0] as any).bundle_price) : null,
+    allAccessPrice: (visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null,
   });
 }
 
@@ -7910,6 +7934,274 @@ export async function verifyRazorpayPaymentHandler(request: FastifyRequest, repl
     courseId,
     accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
   });
+
+  return ok(reply, { accessGranted: true, courseId });
+}
+
+// POST /api/user/courses/:id/razorpay/bundle-order
+export async function createBundleOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const course = await request.server.prisma.course.findUnique({
+    where: { id: courseId },
+    select: { id: true, title: true, isPublished: true },
+  });
+  if (!course || !course.isPublished) return fail(reply, 404, 'Course not found');
+
+  const [priceRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT bundle_price, bundle_course_ids, access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  );
+  const bundlePrice = priceRow?.bundle_price != null ? Number(priceRow.bundle_price) : null;
+  if (bundlePrice == null || bundlePrice <= 0) return fail(reply, 400, 'BUNDLE_PRICE_NOT_CONFIGURED');
+
+  const bundleCourseIds: string[] = (() => {
+    const raw = priceRow?.bundle_course_ids;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    try { return JSON.parse(raw); } catch { return []; }
+  })();
+  const allCourseIds = [...new Set([courseId, ...bundleCourseIds])];
+
+  // Expire stale pending bundle orders
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='expired', updated_at=NOW()
+     WHERE member_id = $1::uuid AND course_id = $2::uuid
+       AND status = 'pending' AND method = 'razorpay' AND payment_type = 'bundle'
+       AND created_at < NOW() - INTERVAL '15 minutes'`,
+    memberId, courseId,
+  ).catch(() => {});
+
+  const existingPending = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
+       AND method = 'razorpay' AND payment_type = 'bundle'
+       AND created_at > NOW() - INTERVAL '14 minutes'
+     ORDER BY created_at DESC LIMIT 1`,
+    memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (existingPending[0]?.razorpay_order_id) {
+    return ok(reply, {
+      orderId: existingPending[0].razorpay_order_id,
+      amount: Math.round(bundlePrice * 100),
+      currency: 'INR',
+      keyId: env.RAZORPAY_KEY_ID,
+      paymentRecordId: existingPending[0].id,
+    });
+  }
+
+  let rzpOrder: any;
+  try {
+    rzpOrder = await getRazorpay().orders.create({
+      amount: Math.round(bundlePrice * 100),
+      currency: 'INR',
+      receipt: `tbt-bundle-${courseId.slice(0, 8)}-${Date.now()}`,
+      notes: { courseId, memberId, paymentType: 'bundle' },
+    });
+  } catch {
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_payments (id, member_id, course_id, amount, currency, method, status, razorpay_order_id, payment_type, bundle_data)
+     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'INR', 'razorpay', 'pending', $4, 'bundle', $5::jsonb)
+     RETURNING id`,
+    memberId, courseId, bundlePrice, rzpOrder.id, JSON.stringify({ courseIds: allCourseIds }),
+  );
+
+  return ok(reply, {
+    orderId: rzpOrder.id,
+    amount: Math.round(bundlePrice * 100),
+    currency: 'INR',
+    keyId: env.RAZORPAY_KEY_ID,
+    paymentRecordId: paymentRow.id,
+  });
+}
+
+// POST /api/user/courses/:id/razorpay/bundle-verify
+export async function verifyBundlePaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, paymentRecordId } = request.body as any;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status, bundle_data FROM course_payments WHERE id = $1::uuid AND member_id = $2::uuid AND course_id = $3::uuid`,
+    paymentRecordId, memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow) return fail(reply, 404, 'Payment record not found');
+  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
+
+  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    return fail(reply, 400, 'SIGNATURE_INVALID');
+  }
+
+  const bundleData: { courseIds?: string[] } = (() => {
+    try { return typeof paymentRow.bundle_data === 'string' ? JSON.parse(paymentRow.bundle_data) : (paymentRow.bundle_data ?? {}); } catch { return {}; }
+  })();
+  const courseIds: string[] = bundleData.courseIds ?? [courseId];
+
+  // Mark payment completed
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='completed', updated_at=NOW() WHERE id=$1::uuid`,
+    paymentRecordId,
+  );
+
+  // Grant access to all bundle courses (including anchor)
+  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
+  ).catch(() => [] as any[]);
+  const accessDurationDays = courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null;
+
+  await Promise.all(courseIds.map((cid) =>
+    grantCourseAccessAfterPayment({
+      prisma: request.server.prisma,
+      io: (request.server as any).io ?? null,
+      redis,
+      paymentRecordId,
+      razorpayPaymentId,
+      razorpaySignature,
+      memberId,
+      courseId: cid,
+      accessDurationDays,
+    }).catch(() => {}),
+  ));
+
+  return ok(reply, { accessGranted: true, courseId });
+}
+
+// POST /api/user/courses/:id/razorpay/all-access-order
+export async function createAllAccessOrderHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const [priceRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT all_access_price FROM courses WHERE id = $1::uuid`, courseId,
+  );
+  const allAccessPrice = priceRow?.all_access_price != null ? Number(priceRow.all_access_price) : null;
+  if (allAccessPrice == null || allAccessPrice <= 0) return fail(reply, 400, 'ALL_ACCESS_PRICE_NOT_CONFIGURED');
+
+  // Expire stale pending all-access orders
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='expired', updated_at=NOW()
+     WHERE member_id = $1::uuid AND course_id = $2::uuid
+       AND status = 'pending' AND method = 'razorpay' AND payment_type = 'all_access'
+       AND created_at < NOW() - INTERVAL '15 minutes'`,
+    memberId, courseId,
+  ).catch(() => {});
+
+  const existingPending = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, razorpay_order_id FROM course_payments
+     WHERE member_id = $1::uuid AND course_id = $2::uuid AND status = 'pending'
+       AND method = 'razorpay' AND payment_type = 'all_access'
+       AND created_at > NOW() - INTERVAL '14 minutes'
+     ORDER BY created_at DESC LIMIT 1`,
+    memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (existingPending[0]?.razorpay_order_id) {
+    return ok(reply, {
+      orderId: existingPending[0].razorpay_order_id,
+      amount: Math.round(allAccessPrice * 100),
+      currency: 'INR',
+      keyId: env.RAZORPAY_KEY_ID,
+      paymentRecordId: existingPending[0].id,
+    });
+  }
+
+  let rzpOrder: any;
+  try {
+    rzpOrder = await getRazorpay().orders.create({
+      amount: Math.round(allAccessPrice * 100),
+      currency: 'INR',
+      receipt: `tbt-all-${courseId.slice(0, 8)}-${Date.now()}`,
+      notes: { courseId, memberId, paymentType: 'all_access' },
+    });
+  } catch {
+    return fail(reply, 500, 'ORDER_CREATE_FAILED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO course_payments (id, member_id, course_id, amount, currency, method, status, razorpay_order_id, payment_type)
+     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, $3, 'INR', 'razorpay', 'pending', $4, 'all_access')
+     RETURNING id`,
+    memberId, courseId, allAccessPrice, rzpOrder.id,
+  );
+
+  return ok(reply, {
+    orderId: rzpOrder.id,
+    amount: Math.round(allAccessPrice * 100),
+    currency: 'INR',
+    keyId: env.RAZORPAY_KEY_ID,
+    paymentRecordId: paymentRow.id,
+  });
+}
+
+// POST /api/user/courses/:id/razorpay/all-access-verify
+export async function verifyAllAccessPaymentHandler(request: FastifyRequest, reply: FastifyReply) {
+  const { id: courseId } = request.params as { id: string };
+  const memberId = request.memberId!;
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, paymentRecordId } = request.body as any;
+  const redis = (request.server as any).redis ?? null;
+
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return fail(reply, 503, 'RAZORPAY_NOT_CONFIGURED');
+  }
+
+  const [paymentRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status FROM course_payments WHERE id = $1::uuid AND member_id = $2::uuid AND course_id = $3::uuid`,
+    paymentRecordId, memberId, courseId,
+  ).catch(() => [] as any[]);
+
+  if (!paymentRow) return fail(reply, 404, 'Payment record not found');
+  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
+
+  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+    return fail(reply, 400, 'SIGNATURE_INVALID');
+  }
+
+  // Fetch all published mini_courses to grant all-access
+  const allMiniCourses = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT id FROM courses WHERE course_type = 'mini_course' AND is_published = true`,
+  ).catch(() => [] as { id: string }[]);
+
+  const courseIds = allMiniCourses.map((c) => c.id);
+  if (!courseIds.includes(courseId)) courseIds.push(courseId);
+
+  // Mark payment completed
+  await request.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments SET status='completed', updated_at=NOW() WHERE id=$1::uuid`,
+    paymentRecordId,
+  );
+
+  await Promise.all(courseIds.map((cid) =>
+    grantCourseAccessAfterPayment({
+      prisma: request.server.prisma,
+      io: (request.server as any).io ?? null,
+      redis,
+      paymentRecordId,
+      razorpayPaymentId,
+      razorpaySignature,
+      memberId,
+      courseId: cid,
+      accessDurationDays: null,
+    }).catch(() => {}),
+  ));
 
   return ok(reply, { accessGranted: true, courseId });
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Search, Lock, Play, ShoppingCart, Loader2 } from "lucide-react";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
+import { useMe } from "@/lib/hooks/useUser";
 import { formatMinutes } from "@/lib/utils/courseDurations";
 
 export default function CoursesPage() {
@@ -17,7 +18,13 @@ export default function CoursesPage() {
   const enrollments: any[] = (enrollmentsData as any) ?? [];
   const enrolledIds = new Set(enrollments.map((e: any) => e.courseId));
 
+  const { isError: isAuthError } = useMe();
+
   const handleCourseClick = (c: any) => {
+    if (isAuthError) {
+      router.push(`/login?redirect_url=${encodeURIComponent(`/courses/${c.id}`)}`);
+      return;
+    }
     if (c.hasAccess) {
       router.push(`/learning/${c.id}`);
     } else {

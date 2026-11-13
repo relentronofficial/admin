@@ -133,6 +133,10 @@ import {
   getMyPsychometricResultHandler,
   createRazorpayOrderHandler,
   verifyRazorpayPaymentHandler,
+  createBundleOrderHandler,
+  verifyBundlePaymentHandler,
+  createAllAccessOrderHandler,
+  verifyAllAccessPaymentHandler,
   razorpayWebhookHandler,
   createCoinOrderHandler,
   verifyCoinPaymentHandler,
@@ -388,6 +392,10 @@ export async function userRoutes(fastify: FastifyInstance) {
   // ── Razorpay Course Payments (authenticated) ──────────────────────────────
   fastify.post('/courses/:id/razorpay/create-order', createRazorpayOrderHandler);
   fastify.post('/courses/:id/razorpay/verify', verifyRazorpayPaymentHandler);
+  fastify.post('/courses/:id/razorpay/bundle-order', createBundleOrderHandler);
+  fastify.post('/courses/:id/razorpay/bundle-verify', verifyBundlePaymentHandler);
+  fastify.post('/courses/:id/razorpay/all-access-order', createAllAccessOrderHandler);
+  fastify.post('/courses/:id/razorpay/all-access-verify', verifyAllAccessPaymentHandler);
 
   // ── TBT Coin Purchase via Razorpay ─────────────────────────────────────────
   fastify.get('/coins/balance', getCoinBalanceHandler);

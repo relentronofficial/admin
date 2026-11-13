@@ -147,6 +147,46 @@ export const coursesService = {
       },
     ),
 
+  createBundleOrder: (courseId: string) =>
+    apiClient.post<never, ApiResponse<RazorpayOrderResult>>(`/api/user/courses/${courseId}/razorpay/bundle-order`),
+
+  verifyBundlePayment: (params: {
+    courseId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    paymentRecordId: string;
+  }) =>
+    apiClient.post<never, ApiResponse<{ accessGranted: boolean; courseId: string }>>(
+      `/api/user/courses/${params.courseId}/razorpay/bundle-verify`,
+      {
+        razorpayOrderId: params.razorpayOrderId,
+        razorpayPaymentId: params.razorpayPaymentId,
+        razorpaySignature: params.razorpaySignature,
+        paymentRecordId: params.paymentRecordId,
+      },
+    ),
+
+  createAllAccessOrder: (courseId: string) =>
+    apiClient.post<never, ApiResponse<RazorpayOrderResult>>(`/api/user/courses/${courseId}/razorpay/all-access-order`),
+
+  verifyAllAccessPayment: (params: {
+    courseId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+    paymentRecordId: string;
+  }) =>
+    apiClient.post<never, ApiResponse<{ accessGranted: boolean; courseId: string }>>(
+      `/api/user/courses/${params.courseId}/razorpay/all-access-verify`,
+      {
+        razorpayOrderId: params.razorpayOrderId,
+        razorpayPaymentId: params.razorpayPaymentId,
+        razorpaySignature: params.razorpaySignature,
+        paymentRecordId: params.paymentRecordId,
+      },
+    ),
+
   createCoinOrder: () =>
     apiClient.post<never, ApiResponse<CoinOrderResult>>(`/api/user/coins/razorpay/create-order`),
 

@@ -63,6 +63,13 @@ const EMPTY_COURSE = {
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
   courseType: "mentorship" as "mentorship" | "mini_course",
+  purchaseHeadline: "",
+  videoPreviewUrl: "",
+  thankYouNote: "",
+  keyHighlights: [] as string[],
+  bundleCourseIds: [] as string[],
+  bundlePrice: "",
+  allAccessPrice: "",
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const secsToTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -246,6 +253,13 @@ export default function CoursesPage() {
       applicableBusinessTypes: c.applicableBusinessTypes ?? [],
       batchVisibilityIds: c.batchVisibilityIds ?? [],
       courseType: (c.courseType === 'mini_course' ? 'mini_course' : 'mentorship') as "mentorship" | "mini_course",
+      purchaseHeadline: c.purchaseHeadline || "",
+      videoPreviewUrl: c.videoPreviewUrl || "",
+      thankYouNote: c.thankYouNote || "",
+      keyHighlights: c.keyHighlights ?? [],
+      bundleCourseIds: c.bundleCourseIds ?? [],
+      bundlePrice: c.bundlePrice != null ? String(c.bundlePrice) : "",
+      allAccessPrice: c.allAccessPrice != null ? String(c.allAccessPrice) : "",
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -271,6 +285,13 @@ export default function CoursesPage() {
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
     if (!editingCourse) payload.courseType = courseForm.courseType || 'mentorship';
+    payload.purchaseHeadline = (courseForm as any).purchaseHeadline?.trim() || null;
+    payload.videoPreviewUrl = (courseForm as any).videoPreviewUrl?.trim() || null;
+    payload.thankYouNote = (courseForm as any).thankYouNote?.trim() || null;
+    payload.keyHighlights = (courseForm as any).keyHighlights ?? [];
+    payload.bundleCourseIds = (courseForm as any).bundleCourseIds ?? [];
+    payload.bundlePrice = (courseForm as any).bundlePrice !== "" ? Number((courseForm as any).bundlePrice) : null;
+    payload.allAccessPrice = (courseForm as any).allAccessPrice !== "" ? Number((courseForm as any).allAccessPrice) : null;
     try {
       if (editingCourse) {
         const updated = await updateCourse.mutateAsync({ id: editingCourse.id, data: payload });
@@ -703,6 +724,71 @@ export default function CoursesPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Purchase Page (mini courses only) */}
+              {courseForm.courseType === 'mini_course' && (
+                <div className="border-t border-[#2a2a2a] pt-4">
+                  <p className="text-[10px] text-purple-400 font-bold uppercase tracking-widest font-rajdhani mb-3">Purchase Page</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Headline</label>
+                      <input value={(courseForm as any).purchaseHeadline} onChange={e => setCourseField("purchaseHeadline", e.target.value)} placeholder="Master the skill in 30 days"
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Preview Video URL</label>
+                      <input value={(courseForm as any).videoPreviewUrl} onChange={e => setCourseField("videoPreviewUrl", e.target.value)} placeholder="https://..."
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm font-mono" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Thank-You Note</label>
+                      <textarea value={(courseForm as any).thankYouNote} onChange={e => setCourseField("thankYouNote", e.target.value)} rows={2} placeholder="Shown after purchase…"
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white outline-none focus:border-purple-500 text-sm resize-none" />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Key Highlights (one per line)</label>
+                      <textarea
+                        value={((courseForm as any).keyHighlights ?? []).join("\n")}
+                        onChange={e => setCourseField("keyHighlights", e.target.value.split("\n").map((s: string) => s.trimStart()).filter(Boolean))}
+                        rows={4} placeholder={"30 lessons\nLifetime access\nCertificate included"}
+                        className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white outline-none focus:border-purple-500 text-sm resize-none font-mono" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Bundle Price (₹)</label>
+                        <input type="number" min="0" value={(courseForm as any).bundlePrice} onChange={e => setCourseField("bundlePrice", e.target.value)} placeholder="—"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">All-Access Price (₹)</label>
+                        <input type="number" min="0" value={(courseForm as any).allAccessPrice} onChange={e => setCourseField("allAccessPrice", e.target.value)} placeholder="—"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Bundle Courses (included in Curated Bundle)</label>
+                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1 bg-[#141414] border border-[#222] rounded p-2">
+                        {courses.filter((c: any) => c.id !== editingCourse?.id && c.courseType === 'mini_course').map((c: any) => {
+                          const sel = ((courseForm as any).bundleCourseIds ?? []).includes(c.id);
+                          return (
+                            <label key={c.id} className="flex items-center gap-2 cursor-pointer">
+                              <input type="checkbox" checked={sel} className="accent-purple-500"
+                                onChange={() => {
+                                  const cur: string[] = (courseForm as any).bundleCourseIds ?? [];
+                                  setCourseField("bundleCourseIds", sel ? cur.filter((id: string) => id !== c.id) : [...cur, c.id]);
+                                }} />
+                              <span className="text-[11px] text-[#a0a0a0] truncate">{c.title}</span>
+                            </label>
+                          );
+                        })}
+                        {courses.filter((c: any) => c.id !== editingCourse?.id && c.courseType === 'mini_course').length === 0 && (
+                          <p className="text-[10px] text-[#555]">No other mini courses</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-6">
                 <div className="flex items-center gap-3">

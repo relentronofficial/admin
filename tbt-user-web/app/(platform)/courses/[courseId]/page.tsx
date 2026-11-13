@@ -9,7 +9,11 @@ import {
   ShoppingCart, Loader2, ExternalLink, ChevronRight,
   Target, TrendingUp, Layers, Star,
 } from "lucide-react";
-import { useCourse, useCreateRazorpayOrder, useVerifyRazorpayPayment } from "@/lib/hooks/useCourses";
+import {
+  useCourse, useCreateRazorpayOrder, useVerifyRazorpayPayment,
+  useCreateBundleOrder, useVerifyBundlePayment,
+  useCreateAllAccessOrder, useVerifyAllAccessPayment,
+} from "@/lib/hooks/useCourses";
 import { useMe } from "@/lib/hooks/useUser";
 import { toast } from "react-hot-toast";
 
@@ -658,6 +662,119 @@ function CurriculumSection({ course }: { course: any }) {
   );
 }
 
+// ── Video Preview ─────────────────────────────────────────────────────────────
+
+function VideoPreviewSection({ videoUrl }: { videoUrl: string }) {
+  const isYouTube = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
+  const isVimeo = videoUrl.includes("vimeo.com");
+
+  let embedUrl = videoUrl;
+  if (isYouTube) {
+    const match = videoUrl.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (match) embedUrl = `https://www.youtube.com/embed/${match[1]}?rel=0`;
+  } else if (isVimeo) {
+    const match = videoUrl.match(/vimeo\.com\/(\d+)/);
+    if (match) embedUrl = `https://player.vimeo.com/video/${match[1]}`;
+  }
+
+  const isEmbed = isYouTube || isVimeo;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 32 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.5 }}
+      className="py-16"
+      style={{ background: "var(--color-bg-surface)" }}
+    >
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
+            Preview the Course
+          </h2>
+        </div>
+        <div
+          className="relative rounded-2xl overflow-hidden"
+          style={{
+            boxShadow: "0 8px 48px rgba(0,0,0,0.5)",
+            border: "1px solid var(--color-surface-overlay)",
+          }}
+        >
+          {isEmbed ? (
+            <div className="aspect-video">
+              <iframe
+                src={embedUrl}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="Course Preview"
+              />
+            </div>
+          ) : (
+            <div className="aspect-video">
+              <video src={videoUrl} controls className="w-full h-full object-cover" />
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
+// ── Key Highlights ────────────────────────────────────────────────────────────
+
+function KeyHighlightsSection({ highlights }: { highlights: string[] }) {
+  if (!highlights.length) return null;
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 32 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.5 }}
+      className="py-16"
+      style={{ background: "var(--color-bg-primary)" }}
+    >
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-10">
+          <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
+            What You&apos;ll <span style={{ color: "var(--color-accent)" }}>Walk Away With</span>
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {highlights.map((item, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -12 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true, margin: "-20px" }}
+              transition={{ duration: 0.4, delay: i * 0.05 }}
+              className="flex items-start gap-3 p-4 rounded-xl"
+              style={{
+                background: "var(--color-bg-surface)",
+                border: "1px solid var(--color-surface-overlay)",
+              }}
+            >
+              <div
+                className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                  color: "var(--color-accent)",
+                }}
+              >
+                <CheckCircle2 size={14} />
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+                {item}
+              </p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </motion.section>
+  );
+}
+
 // ── Related Courses ───────────────────────────────────────────────────────────
 
 function RelatedCourses({ courses }: { courses: any[] }) {
@@ -736,15 +853,24 @@ function RelatedCourses({ courses }: { courses: any[] }) {
 
 // ── Pricing ───────────────────────────────────────────────────────────────────
 
-function PricingSection({ course, courseId, buying, onBuy }: {
+function PricingSection({
+  course, courseId, buying, onBuy,
+  buyingBundle, onBuyBundle,
+  buyingAllAccess, onBuyAllAccess,
+}: {
   course: any; courseId: string; buying: boolean; onBuy: () => void;
+  buyingBundle: boolean; onBuyBundle: () => void;
+  buyingAllAccess: boolean; onBuyAllAccess: () => void;
 }) {
+  const router = useRouter();
   const lessons: any[] = course.lessons ?? [];
   const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
   const hasPrice = course.price != null && Number(course.price) > 0;
+  const hasBundlePrice = course.bundlePrice != null && Number(course.bundlePrice) > 0;
+  const hasAllAccessPrice = course.allAccessPrice != null && Number(course.allAccessPrice) > 0;
+  const isMultiTier = hasBundlePrice || hasAllAccessPrice;
 
-  const perks = [
-    hasPrice && `₹${Number(course.price).toLocaleString("en-IN")} one-time payment`,
+  const basePerkItems = [
     lessons.length > 0 && `${lessons.length} lesson${lessons.length !== 1 ? "s" : ""}`,
     totalSecs > 0 && `${fmtDurationSecs(totalSecs)} of content`,
     course.level && `${levelLabel(course.level)} level`,
@@ -753,6 +879,139 @@ function PricingSection({ course, courseId, buying, onBuy }: {
     "Start immediately",
     "Learn at your own pace",
   ].filter(Boolean) as string[];
+
+  const headline = course.purchaseHeadline || "Choose Your Learning Plan";
+
+  if (!isMultiTier) {
+    // Single card centered (original layout)
+    const perks = [
+      hasPrice && `₹${Number(course.price).toLocaleString("en-IN")} one-time payment`,
+      ...basePerkItems,
+    ].filter(Boolean) as string[];
+
+    return (
+      <motion.section
+        initial={{ opacity: 0, y: 32 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-80px" }}
+        transition={{ duration: 0.5 }}
+        className="py-20"
+        style={{ background: "var(--color-bg-primary)" }}
+      >
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl sm:text-4xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
+              {headline}
+            </h2>
+          </div>
+          <div className="max-w-sm mx-auto">
+            <div
+              className="relative rounded-3xl p-8"
+              style={{
+                background: "var(--color-bg-surface)",
+                border: "2px solid var(--color-accent)",
+                boxShadow: "0 0 48px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 24px 64px rgba(0,0,0,0.4)",
+              }}
+            >
+              <div
+                className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 rounded-full text-xs font-black text-white uppercase tracking-widest"
+                style={{ background: "var(--color-accent)" }}
+              >
+                {course.hasAccess ? "✓ Enrolled" : course.courseType === "mini_course" ? "Mini Course" : "Full Access"}
+              </div>
+              <div className="mt-2 mb-6">
+                <h3 className="text-xl font-extrabold mb-1" style={{ color: "var(--color-text-normal)" }}>
+                  {course.title}
+                </h3>
+                {course.description && (
+                  <p className="text-xs line-clamp-2" style={{ color: "var(--color-text-subtle)" }}>
+                    {course.description}
+                  </p>
+                )}
+              </div>
+              {hasPrice && !course.hasAccess ? (
+                <div className="mb-6">
+                  <div className="text-4xl font-black mb-1" style={{ color: "var(--color-text-normal)" }}>
+                    ₹{Number(course.price).toLocaleString("en-IN")}
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>One-time · Instant access</p>
+                </div>
+              ) : course.hasAccess ? (
+                <div className="mb-6">
+                  <div className="text-2xl font-black" style={{ color: "var(--color-success, #22c55e)" }}>
+                    You&apos;re Enrolled
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6">
+                  <div className="text-3xl font-black" style={{ color: "var(--color-success, #22c55e)" }}>
+                    Free Access
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2.5 mb-7">
+                {perks.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                    <CheckCircle2 size={14} style={{ color: "var(--color-accent)" }} className="shrink-0" />
+                    {p}
+                  </div>
+                ))}
+              </div>
+              <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
+            </div>
+          </div>
+        </div>
+      </motion.section>
+    );
+  }
+
+  // 3-tier layout
+  const bundleCourses: any[] = course.bundleCourses ?? [];
+
+  const tiers = [
+    {
+      key: "single",
+      label: "Single Course",
+      badge: course.hasAccess ? "✓ Enrolled" : "Get Started",
+      price: hasPrice ? `₹${Number(course.price).toLocaleString("en-IN")}` : "Free",
+      priceNote: hasPrice ? "One-time · Instant access" : "No payment needed",
+      perks: [`This course only`, ...basePerkItems],
+      cta: course.hasAccess
+        ? { label: "Continue Learning", action: () => router.push(`/learning/${courseId}`), loading: false, style: "success" }
+        : { label: buying ? "Processing…" : hasPrice ? `Buy ₹${Number(course.price).toLocaleString("en-IN")}` : "Enroll Free", action: onBuy, loading: buying, style: "accent" },
+      featured: false,
+    },
+    ...(hasBundlePrice ? [{
+      key: "bundle",
+      label: "Curated Bundle",
+      badge: "Best Value",
+      price: `₹${Number(course.bundlePrice).toLocaleString("en-IN")}`,
+      priceNote: "One-time · All bundled courses",
+      perks: [
+        `${bundleCourses.length + 1} courses included`,
+        ...basePerkItems,
+        "Bundle discount applied",
+      ],
+      bundleCourses,
+      cta: { label: buyingBundle ? "Processing…" : `Buy Bundle ₹${Number(course.bundlePrice).toLocaleString("en-IN")}`, action: onBuyBundle, loading: buyingBundle, style: "accent" },
+      featured: true,
+    }] : []),
+    ...(hasAllAccessPrice ? [{
+      key: "all_access",
+      label: "All-Access",
+      badge: "Maximum Value",
+      price: `₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`,
+      priceNote: "One-time · Every mini course",
+      perks: [
+        "All published mini courses",
+        "Future courses included",
+        ...basePerkItems,
+        "Best value for serious learners",
+      ],
+      cta: { label: buyingAllAccess ? "Processing…" : `Get All Access ₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`, action: onBuyAllAccess, loading: buyingAllAccess, style: "gradient" },
+      featured: false,
+    }] : []),
+  ];
 
   return (
     <motion.section
@@ -763,83 +1022,125 @@ function PricingSection({ course, courseId, buying, onBuy }: {
       className="py-20"
       style={{ background: "var(--color-bg-primary)" }}
     >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl sm:text-4xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
-            Choose Your Learning Plan
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="text-center mb-12">
+          <h2 className="text-3xl sm:text-4xl font-extrabold mb-3" style={{ color: "var(--color-text-normal)" }}>
+            {headline}
           </h2>
+          <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
+            Pick the plan that matches your learning ambition
+          </p>
         </div>
 
-        {/* Single course plan card — centered, prominent */}
-        <div className="max-w-sm mx-auto">
-          <div
-            className="relative rounded-3xl p-8"
-            style={{
-              background: "var(--color-bg-surface)",
-              border: "2px solid var(--color-accent)",
-              boxShadow: "0 0 48px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 24px 64px rgba(0,0,0,0.4)",
-            }}
-          >
-            {/* Top badge */}
-            <div
-              className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 rounded-full text-xs font-black text-white uppercase tracking-widest"
-              style={{ background: "var(--color-accent)" }}
+        <div className={`grid gap-6 ${tiers.length === 3 ? "grid-cols-1 md:grid-cols-3" : tiers.length === 2 ? "grid-cols-1 md:grid-cols-2 max-w-3xl mx-auto" : "grid-cols-1 max-w-sm mx-auto"}`}>
+          {tiers.map((tier, i) => (
+            <motion.div
+              key={tier.key}
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-40px" }}
+              transition={{ duration: 0.45, delay: i * 0.08 }}
+              className="relative flex flex-col rounded-3xl p-7"
+              style={{
+                background: "var(--color-bg-surface)",
+                border: tier.featured
+                  ? "2px solid var(--color-accent)"
+                  : "1px solid var(--color-surface-overlay)",
+                boxShadow: tier.featured
+                  ? "0 0 48px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 24px 64px rgba(0,0,0,0.4)"
+                  : "none",
+              }}
             >
-              {course.hasAccess ? "✓ Enrolled" : course.courseType === "mini_course" ? "Mini Course" : "Full Access"}
-            </div>
-
-            {/* Course title */}
-            <div className="mt-2 mb-6">
-              <h3 className="text-xl font-extrabold mb-1" style={{ color: "var(--color-text-normal)" }}>
-                {course.title}
-              </h3>
-              {course.description && (
-                <p className="text-xs line-clamp-2" style={{ color: "var(--color-text-subtle)" }}>
-                  {course.description}
-                </p>
-              )}
-            </div>
-
-            {/* Price */}
-            {hasPrice && !course.hasAccess ? (
-              <div className="mb-6">
-                <div className="text-4xl font-black mb-1" style={{ color: "var(--color-text-normal)" }}>
-                  ₹{Number(course.price).toLocaleString("en-IN")}
-                </div>
-                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  One-time · Instant access
-                </p>
+              {/* Badge */}
+              <div
+                className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest whitespace-nowrap"
+                style={{
+                  background: tier.featured ? "var(--color-accent)" : "var(--color-surface-overlay-md)",
+                  color: tier.featured ? "#fff" : "var(--color-text-secondary)",
+                }}
+              >
+                {tier.badge}
               </div>
-            ) : course.hasAccess ? (
-              <div className="mb-6">
+
+              {/* Plan name */}
+              <div className="mt-3 mb-4">
+                <h3 className="text-lg font-extrabold mb-1" style={{ color: "var(--color-text-normal)" }}>
+                  {tier.label}
+                </h3>
+              </div>
+
+              {/* Price */}
+              <div className="mb-5">
                 <div
-                  className="text-2xl font-black"
-                  style={{ color: "var(--color-success, #22c55e)" }}
+                  className="text-3xl font-black mb-1"
+                  style={{ color: tier.featured ? "var(--color-accent)" : "var(--color-text-normal)" }}
                 >
-                  You&apos;re Enrolled
+                  {tier.price}
                 </div>
+                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>{tier.priceNote}</p>
               </div>
-            ) : (
-              <div className="mb-6">
-                <div className="text-3xl font-black" style={{ color: "var(--color-success, #22c55e)" }}>
-                  Free Access
+
+              {/* Bundle course names */}
+              {tier.bundleCourses && tier.bundleCourses.length > 0 && (
+                <div className="mb-4 p-3 rounded-xl" style={{ background: "var(--color-surface-overlay-xs)" }}>
+                  <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>
+                    Includes
+                  </p>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                      <CheckCircle2 size={12} style={{ color: "var(--color-accent)" }} className="shrink-0" />
+                      <span className="font-semibold">{course.title}</span>
+                      <span style={{ color: "var(--color-text-subtle)" }}>(this course)</span>
+                    </div>
+                    {tier.bundleCourses.map((bc: any) => (
+                      <div key={bc.id} className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                        <CheckCircle2 size={12} style={{ color: "var(--color-accent)" }} className="shrink-0" />
+                        {bc.title}
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              )}
+
+              {/* Perks */}
+              <div className="space-y-2 mb-6 flex-1">
+                {tier.perks.map((p, j) => (
+                  <div key={j} className="flex items-center gap-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                    <CheckCircle2 size={13} style={{ color: "var(--color-accent)" }} className="shrink-0" />
+                    {p}
+                  </div>
+                ))}
               </div>
-            )}
 
-            {/* Perks */}
-            <div className="space-y-2.5 mb-7">
-              {perks.map((p, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-                  <CheckCircle2 size={14} style={{ color: "var(--color-accent)" }} className="shrink-0" />
-                  {p}
-                </div>
-              ))}
-            </div>
-
-            {/* CTA */}
-            <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
-          </div>
+              {/* CTA */}
+              <button
+                onClick={tier.cta.action}
+                disabled={tier.cta.loading}
+                className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={
+                  tier.cta.style === "success"
+                    ? { background: "var(--color-success, #22c55e)", color: "#fff" }
+                    : tier.cta.style === "gradient"
+                    ? {
+                        background: "linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 70%, #7c3aed))",
+                        color: "#fff",
+                        boxShadow: "0 4px 20px color-mix(in srgb, var(--color-accent) 35%, transparent)",
+                      }
+                    : {
+                        background: tier.featured ? "var(--color-accent)" : "transparent",
+                        color: tier.featured ? "#fff" : "var(--color-accent)",
+                        border: tier.featured ? "none" : "2px solid var(--color-accent)",
+                        boxShadow: tier.featured
+                          ? "0 4px 20px color-mix(in srgb, var(--color-accent) 35%, transparent)"
+                          : "none",
+                      }
+                }
+              >
+                {tier.cta.loading && <Loader2 size={14} className="animate-spin" />}
+                {tier.cta.label}
+              </button>
+            </motion.div>
+          ))}
         </div>
       </div>
     </motion.section>
@@ -1181,12 +1482,22 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
   const { data: meData } = useMe();
   const createOrder = useCreateRazorpayOrder();
   const verifyPayment = useVerifyRazorpayPayment();
+  const createBundleOrder = useCreateBundleOrder();
+  const verifyBundlePayment = useVerifyBundlePayment();
+  const createAllAccessOrder = useCreateAllAccessOrder();
+  const verifyAllAccessPayment = useVerifyAllAccessPayment();
   const [buying, setBuying] = useState(false);
+  const [buyingBundle, setBuyingBundle] = useState(false);
+  const [buyingAllAccess, setBuyingAllAccess] = useState(false);
 
   useEffect(() => {
     if (!course) return;
     const c = course as any;
-    if (!c.price || Number(c.price) <= 0) return;
+    const needsRazorpay =
+      (c.price && Number(c.price) > 0) ||
+      (c.bundlePrice && Number(c.bundlePrice) > 0) ||
+      (c.allAccessPrice && Number(c.allAccessPrice) > 0);
+    if (!needsRazorpay) return;
     if (document.getElementById("rzp-checkout-js")) return;
     const s = document.createElement("script");
     s.id = "rzp-checkout-js";
@@ -1253,6 +1564,122 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
     }
   };
 
+  const handleBundleBuy = async () => {
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system loading, please try again in a moment.");
+      return;
+    }
+    setBuyingBundle(true);
+    try {
+      const orderRes = await createBundleOrder.mutateAsync(courseId);
+      const { orderId, amount, currency, keyId, paymentRecordId } = orderRes.data as any;
+      const c = course as any;
+      const options: any = {
+        key: keyId, amount, currency, order_id: orderId,
+        name: "Tamil Business Tribe",
+        description: "Curated Bundle",
+        image: c?.thumbnailUrl ?? undefined,
+        handler: async (response: any) => {
+          setBuyingBundle(false);
+          try {
+            await verifyBundlePayment.mutateAsync({
+              courseId,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              paymentRecordId,
+            });
+            const paid = `₹${(amount / 100).toLocaleString("en-IN")}`;
+            toast.success(
+              `Bundle payment of ${paid} successful! Ref: ${response.razorpay_payment_id}`,
+              { duration: 8000 }
+            );
+            router.push(`/learning/${courseId}`);
+          } catch {
+            toast.error(
+              `Payment received but verification failed. Keep ID ${response.razorpay_payment_id} and contact support.`,
+              { duration: 10000 }
+            );
+            setBuyingBundle(false);
+          }
+        },
+        prefill: { name: (meData as any)?.name ?? "", contact: (meData as any)?.phone ?? "" },
+        theme: { color: "#dc2626" },
+        modal: { ondismiss: () => setBuyingBundle(false) },
+      };
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", (resp: any) => {
+        setBuyingBundle(false);
+        toast.error(
+          resp?.error?.description ?? resp?.error?.reason ?? "Payment failed. Please try again.",
+          { duration: 6000 }
+        );
+      });
+      rzp.open();
+    } catch (e: any) {
+      setBuyingBundle(false);
+      toast.error(e.message || "Could not initiate payment. Please try again.");
+    }
+  };
+
+  const handleAllAccessBuy = async () => {
+    if (!(window as any).Razorpay) {
+      toast.error("Payment system loading, please try again in a moment.");
+      return;
+    }
+    setBuyingAllAccess(true);
+    try {
+      const orderRes = await createAllAccessOrder.mutateAsync(courseId);
+      const { orderId, amount, currency, keyId, paymentRecordId } = orderRes.data as any;
+      const c = course as any;
+      const options: any = {
+        key: keyId, amount, currency, order_id: orderId,
+        name: "Tamil Business Tribe",
+        description: "All-Access Package",
+        image: c?.thumbnailUrl ?? undefined,
+        handler: async (response: any) => {
+          setBuyingAllAccess(false);
+          try {
+            await verifyAllAccessPayment.mutateAsync({
+              courseId,
+              razorpayOrderId: orderId,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              paymentRecordId,
+            });
+            const paid = `₹${(amount / 100).toLocaleString("en-IN")}`;
+            toast.success(
+              `All-Access payment of ${paid} successful! Ref: ${response.razorpay_payment_id}`,
+              { duration: 8000 }
+            );
+            router.push(`/learning/${courseId}`);
+          } catch {
+            toast.error(
+              `Payment received but verification failed. Keep ID ${response.razorpay_payment_id} and contact support.`,
+              { duration: 10000 }
+            );
+            setBuyingAllAccess(false);
+          }
+        },
+        prefill: { name: (meData as any)?.name ?? "", contact: (meData as any)?.phone ?? "" },
+        theme: { color: "#dc2626" },
+        modal: { ondismiss: () => setBuyingAllAccess(false) },
+      };
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", (resp: any) => {
+        setBuyingAllAccess(false);
+        toast.error(
+          resp?.error?.description ?? resp?.error?.reason ?? "Payment failed. Please try again.",
+          { duration: 6000 }
+        );
+      });
+      rzp.open();
+    } catch (e: any) {
+      setBuyingAllAccess(false);
+      toast.error(e.message || "Could not initiate payment. Please try again.");
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--color-bg-primary)" }}>
@@ -1278,13 +1705,21 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
     (x: any, i: number, arr: any[]) => arr.findIndex((y: any) => y.id === x.id) === i
   );
 
+  const highlights: string[] = Array.isArray(c.keyHighlights) ? c.keyHighlights : [];
+
   return (
     <div className="min-h-screen" style={{ background: "var(--color-bg-primary)" }}>
       <HeroSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
       <MarqueeStrip />
+      {c.videoPreviewUrl && <VideoPreviewSection videoUrl={c.videoPreviewUrl} />}
+      {highlights.length > 0 && <KeyHighlightsSection highlights={highlights} />}
       <CurriculumSection course={c} />
       {related.length > 0 && <RelatedCourses courses={related} />}
-      <PricingSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
+      <PricingSection
+        course={c} courseId={courseId} buying={buying} onBuy={handleBuy}
+        buyingBundle={buyingBundle} onBuyBundle={handleBundleBuy}
+        buyingAllAccess={buyingAllAccess} onBuyAllAccess={handleAllAccessBuy}
+      />
       <JourneySection />
       <QuoteSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
       <FAQSection course={c} />

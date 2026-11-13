@@ -202,6 +202,52 @@ export const useVerifyRazorpayPayment = () => {
   });
 };
 
+export const useCreateBundleOrder = () =>
+  useMutation({
+    mutationFn: (courseId: string) => coursesService.createBundleOrder(courseId),
+  });
+
+export const useVerifyBundlePayment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      courseId: string;
+      razorpayOrderId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+      paymentRecordId: string;
+    }) => coursesService.verifyBundlePayment(params),
+    onSuccess: (_data, { courseId }) => {
+      queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
+    },
+  });
+};
+
+export const useCreateAllAccessOrder = () =>
+  useMutation({
+    mutationFn: (courseId: string) => coursesService.createAllAccessOrder(courseId),
+  });
+
+export const useVerifyAllAccessPayment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      courseId: string;
+      razorpayOrderId: string;
+      razorpayPaymentId: string;
+      razorpaySignature: string;
+      paymentRecordId: string;
+    }) => coursesService.verifyAllAccessPayment(params),
+    onSuccess: (_data, { courseId }) => {
+      queryClient.invalidateQueries({ queryKey: ["courses", courseId] });
+      queryClient.invalidateQueries({ queryKey: ["user", "me"] });
+      queryClient.invalidateQueries({ queryKey: ["user", "enrollments"] });
+    },
+  });
+};
+
 export const useCreateCoinOrder = () =>
   useMutation({ mutationFn: () => coursesService.createCoinOrder() });
 

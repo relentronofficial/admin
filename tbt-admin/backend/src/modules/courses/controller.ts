@@ -157,6 +157,14 @@ export async function createCourseHandler(req: FastifyRequest, reply: FastifyRep
     if (module) { rawSets.push(`module = $${rawVals.length + 1}`); rawVals.push(module); }
     if (applicableBusinessTypes !== null) { rawSets.push(`applicable_business_types = $${rawVals.length + 1}`); rawVals.push(applicableBusinessTypes); }
     if (batchVisibilityIds !== null) { rawSets.push(`batch_visibility_ids = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(batchVisibilityIds)); }
+    // Mini course purchase page fields
+    if (body.purchaseHeadline !== undefined) { rawSets.push(`purchase_headline = $${rawVals.length + 1}`); rawVals.push(body.purchaseHeadline ?? null); }
+    if (body.videoPreviewUrl !== undefined) { rawSets.push(`video_preview_url = $${rawVals.length + 1}`); rawVals.push(body.videoPreviewUrl ?? null); }
+    if (body.thankYouNote !== undefined) { rawSets.push(`thank_you_note = $${rawVals.length + 1}`); rawVals.push(body.thankYouNote ?? null); }
+    if (body.keyHighlights !== undefined) { rawSets.push(`key_highlights = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(Array.isArray(body.keyHighlights) ? body.keyHighlights : [])); }
+    if (body.bundleCourseIds !== undefined) { rawSets.push(`bundle_course_ids = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(Array.isArray(body.bundleCourseIds) ? body.bundleCourseIds : [])); }
+    if (body.bundlePrice !== undefined) { rawSets.push(`bundle_price = $${rawVals.length + 1}`); rawVals.push(body.bundlePrice != null && body.bundlePrice !== '' ? Number(body.bundlePrice) : null); }
+    if (body.allAccessPrice !== undefined) { rawSets.push(`all_access_price = $${rawVals.length + 1}`); rawVals.push(body.allAccessPrice != null && body.allAccessPrice !== '' ? Number(body.allAccessPrice) : null); }
     rawVals.push(course.id);
     await req.server.prisma.$executeRawUnsafe(
       `UPDATE courses SET ${rawSets.join(', ')} WHERE id = $${rawVals.length}::uuid`, ...rawVals,
@@ -236,6 +244,14 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
       rawSets.push(`batch_visibility_ids = $${rawVals.length + 1}::jsonb`);
       rawVals.push(JSON.stringify(batchVisibilityIds ?? []));
     }
+    // Mini course purchase page fields
+    if ('purchaseHeadline' in body) { rawSets.push(`purchase_headline = $${rawVals.length + 1}`); rawVals.push(body.purchaseHeadline ?? null); }
+    if ('videoPreviewUrl' in body) { rawSets.push(`video_preview_url = $${rawVals.length + 1}`); rawVals.push(body.videoPreviewUrl ?? null); }
+    if ('thankYouNote' in body) { rawSets.push(`thank_you_note = $${rawVals.length + 1}`); rawVals.push(body.thankYouNote ?? null); }
+    if ('keyHighlights' in body) { rawSets.push(`key_highlights = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(Array.isArray(body.keyHighlights) ? body.keyHighlights : [])); }
+    if ('bundleCourseIds' in body) { rawSets.push(`bundle_course_ids = $${rawVals.length + 1}::jsonb`); rawVals.push(JSON.stringify(Array.isArray(body.bundleCourseIds) ? body.bundleCourseIds : [])); }
+    if ('bundlePrice' in body) { rawSets.push(`bundle_price = $${rawVals.length + 1}`); rawVals.push(body.bundlePrice != null && body.bundlePrice !== '' ? Number(body.bundlePrice) : null); }
+    if ('allAccessPrice' in body) { rawSets.push(`all_access_price = $${rawVals.length + 1}`); rawVals.push(body.allAccessPrice != null && body.allAccessPrice !== '' ? Number(body.allAccessPrice) : null); }
     if (rawSets.length) {
       rawVals.push(id);
       await req.server.prisma.$executeRawUnsafe(
@@ -243,15 +259,27 @@ export async function updateCourseHandler(req: FastifyRequest, reply: FastifyRep
       );
     }
     // Always read back raw columns for the response
-    const rawRows = await req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]>(
-      `SELECT module, applicable_business_types, batch_visibility_ids, course_type FROM courses WHERE id = $1::uuid`, id,
+    const rawRows = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT module, applicable_business_types, batch_visibility_ids, course_type,
+              purchase_headline, video_preview_url, thank_you_note, key_highlights,
+              bundle_course_ids, bundle_price, all_access_price
+       FROM courses WHERE id = $1::uuid`, id,
     ).catch(() => []);
     module = rawRows[0]?.module ?? null;
     applicableBusinessTypes = rawRows[0]?.applicable_business_types ?? null;
     batchVisibilityIds = (rawRows[0]?.batch_visibility_ids as string[] | null) ?? null;
     const courseType = rawRows[0]?.course_type ?? 'mentorship';
     bustHome(req);
-    return reply.send({ success: true, data: { ...course, module, applicableBusinessTypes, batchVisibilityIds, courseType }, error: null });
+    return reply.send({ success: true, data: {
+      ...course, module, applicableBusinessTypes, batchVisibilityIds, courseType,
+      purchaseHeadline: rawRows[0]?.purchase_headline ?? null,
+      videoPreviewUrl: rawRows[0]?.video_preview_url ?? null,
+      thankYouNote: rawRows[0]?.thank_you_note ?? null,
+      keyHighlights: (rawRows[0]?.key_highlights as string[] | null) ?? [],
+      bundleCourseIds: (rawRows[0]?.bundle_course_ids as string[] | null) ?? [],
+      bundlePrice: rawRows[0]?.bundle_price != null ? Number(rawRows[0].bundle_price) : null,
+      allAccessPrice: rawRows[0]?.all_access_price != null ? Number(rawRows[0].all_access_price) : null,
+    }, error: null });
   } catch (err: any) {
     req.log.error({ err, courseId: id }, 'updateCourseHandler failed');
     return reply.status(500).send({ success: false, data: null, error: err?.message ?? 'Failed to update course' });

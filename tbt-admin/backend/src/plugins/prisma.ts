@@ -3075,6 +3075,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
 
     // ── Mini Courses (MINI_COURSES_SPECKIT.md 2026-11-13) ────────────────────
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_type VARCHAR(20) NOT NULL DEFAULT 'mentorship'`);
+    // Mini Course purchase page & bundle pricing fields (2026-11-13)
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS purchase_headline TEXT`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS video_preview_url TEXT`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS thank_you_note TEXT`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS key_highlights JSONB DEFAULT '[]'::jsonb`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_course_ids JSONB DEFAULT '[]'::jsonb`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_price DECIMAL(10,2)`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS all_access_price DECIMAL(10,2)`);
+    await safeAlter(`ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS payment_type VARCHAR(20) NOT NULL DEFAULT 'single'`);
+    await safeAlter(`ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS bundle_data JSONB`);
 
     // ── Nav-item href fix: /courses was the old mentorship page before the rename.
     //    Update any nav_items rows still pointing at /courses → /mentorship so the
