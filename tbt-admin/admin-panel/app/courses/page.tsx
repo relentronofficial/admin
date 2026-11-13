@@ -62,6 +62,7 @@ const EMPTY_COURSE = {
   batchVisibilityIds: [] as string[],
   upsellCourseIds: [] as string[],
   crossSellCourseIds: [] as string[],
+  courseType: "mentorship" as "mentorship" | "mini_course",
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const secsToTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -220,7 +221,11 @@ export default function CoursesPage() {
 
   const setCourseField = (k: string, v: any) => setCourseForm((f: any) => ({ ...f, [k]: v }));
 
-  const openCreateCourse = () => { setCourseForm(EMPTY_COURSE); setEditingCourse(null); setShowCourseForm(true); };
+  const openCreateCourse = (courseType: "mentorship" | "mini_course" = "mentorship") => {
+    setCourseForm({ ...EMPTY_COURSE, courseType });
+    setEditingCourse(null);
+    setShowCourseForm(true);
+  };
   const openEditCourse = (c: any) => {
     setCourseForm({
       title: c.title, slug: c.slug, description: c.description || "",
@@ -240,6 +245,7 @@ export default function CoursesPage() {
       module: c.module || "",
       applicableBusinessTypes: c.applicableBusinessTypes ?? [],
       batchVisibilityIds: c.batchVisibilityIds ?? [],
+      courseType: (c.courseType === 'mini_course' ? 'mini_course' : 'mentorship') as "mentorship" | "mini_course",
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -264,6 +270,7 @@ export default function CoursesPage() {
     payload.batchVisibilityIds = courseForm.batchVisibilityIds ?? [];
     payload.upsellCourseIds = courseForm.upsellCourseIds;
     payload.crossSellCourseIds = courseForm.crossSellCourseIds;
+    if (!editingCourse) payload.courseType = courseForm.courseType || 'mentorship';
     try {
       if (editingCourse) {
         const updated = await updateCourse.mutateAsync({ id: editingCourse.id, data: payload });
@@ -329,10 +336,16 @@ export default function CoursesPage() {
               </button>
             </div>
             {viewMode === "courses" && (
-              <button onClick={openCreateCourse}
-                className="flex items-center gap-2 bg-[#dc2626] text-white px-5 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
-                <Plus size={15} /> New Course
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => openCreateCourse("mentorship")}
+                  className="flex items-center gap-2 bg-[#dc2626] text-white px-4 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
+                  <Plus size={15} /> Mentorship
+                </button>
+                <button onClick={() => openCreateCourse("mini_course")}
+                  className="flex items-center gap-2 bg-[#1a1a1a] border border-[#3a3a3a] text-[#f0f0f0] px-4 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:border-[#dc2626] hover:text-white transition-all">
+                  <Plus size={15} /> Mini Course
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -395,6 +408,7 @@ export default function CoursesPage() {
                         <p className="font-bold text-[#f0f0f0] text-sm truncate group-hover:text-[#dc2626] transition-colors">{c.title}</p>
                         {!c.isActive && <span className="text-[10px] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Inactive</span>}
                         {c.isActive && !c.isPublished && <span className="text-[10px] text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Draft</span>}
+                        {c.courseType === 'mini_course' && <span className="text-[10px] text-purple-400 bg-purple-400/10 border border-purple-400/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">Mini</span>}
                         {c.price > 0 && <span className="text-[10px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded font-bold shrink-0">₹{c.price}</span>}
                         {c.module && <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase shrink-0">{c.module}</span>}
                         {(c.applicableBusinessTypes ?? []).length === 0 ? (
@@ -453,7 +467,12 @@ export default function CoursesPage() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
           <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl">
             <div className="px-6 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
-              <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingCourse ? "Edit Course" : "New Course"}</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-rajdhani font-bold uppercase tracking-widest text-[#f0f0f0]">{editingCourse ? "Edit Course" : "New Course"}</h3>
+                {courseForm.courseType === 'mini_course'
+                  ? <span className="text-[10px] text-purple-400 bg-purple-400/10 border border-purple-400/20 px-2 py-0.5 rounded font-bold uppercase font-rajdhani">Mini Course</span>
+                  : <span className="text-[10px] text-[#dc2626] bg-[#dc2626]/10 border border-[#dc2626]/20 px-2 py-0.5 rounded font-bold uppercase font-rajdhani">Mentorship</span>}
+              </div>
               <button onClick={() => setShowCourseForm(false)} className="text-[#888] hover:text-white"><X size={18} /></button>
             </div>
             <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">

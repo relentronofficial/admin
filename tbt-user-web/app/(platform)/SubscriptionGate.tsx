@@ -9,7 +9,7 @@ import apiClient from "@/lib/api/client";
 import { useSuppressAds } from "@/lib/ads/useRegisterMedia";
 
 // Paths where the free-plan / expired-subscription interceptors are suspended
-const EXEMPT_PATHS = ["/Products", "/profile"];
+const EXEMPT_PATHS = ["/Products", "/profile", "/courses"];
 
 // A pending member must be able to reach the self-onboarding wizard —
 // otherwise there's no way for them to ever get out of "pending". See

@@ -1402,6 +1402,7 @@ export default function MentorshipPage() {
 
   const { data: catalogData, isLoading: catalogLoading, isError: catalogError, refetch: refetchCatalog } = useCourses({
     limit: 100,
+    courseType: "mentorship",
   });
   const allCourses: any[]    = catalogData?.data ?? [];
   const meta: any            = (catalogData as any)?.meta ?? {};

@@ -11,6 +11,7 @@ export interface ListCoursesParams {
   category?: string;
   moduleTitle?: string;
   modules?: string[];
+  courseType?: "mentorship" | "mini_course";
 }
 
 export const coursesService = {

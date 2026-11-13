@@ -25,8 +25,6 @@ const nextConfig: NextConfig = {
       { source: "/tbt/:path*", destination: "/discover/:path*", permanent: true },
       { source: "/sign-in", destination: "/login", permanent: false },
       { source: "/sign-up", destination: "/login", permanent: false },
-      { source: "/courses", destination: "/mentorship", permanent: true },
-      { source: "/courses/:path*", destination: "/mentorship/:path*", permanent: true },
     ];
   },
   images: {
