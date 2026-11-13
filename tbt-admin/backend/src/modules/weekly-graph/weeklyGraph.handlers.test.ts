@@ -174,7 +174,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return db.members.filter((m) => m.id === a[0]).map((m) => {
       const b = db.batches.find((x) => x.id === m.batchId) ?? null;
       const p = b?.programId ? db.programs.find((x) => x.id === b.programId) ?? null : null;
-      return { id: m.id, firstName: m.firstName, lastName: m.lastName, phone: null, email: null, batchId: b?.id ?? null, batchName: b?.name ?? null,
+      return { id: m.id, firstName: m.firstName, lastName: m.lastName, phone: null, batchId: b?.id ?? null, batchName: b?.name ?? null,
         programId: p?.id ?? null, programName: p?.name ?? null };
     });
   }

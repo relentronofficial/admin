@@ -407,7 +407,7 @@ export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>,
 type M = { memberId: string };
 
 type MemberProgram = {
-  id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null;
+  id: string; firstName: string; lastName: string | null; phone: string | null;
   batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
 };
 
@@ -421,7 +421,7 @@ async function memberProgram(req: FastifyRequest<{ Params: M }>, reply: FastifyR
   const { memberId } = req.params;
   if (!UUID.test(memberId)) { fail(reply, 400, 'Invalid member id'); return null; }
   const [m] = await req.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT m.id::text, m.first_name AS "firstName", m.last_name AS "lastName", m.phone, m.email,
+    `SELECT m.id::text, m.first_name AS "firstName", m.last_name AS "lastName", m.phone,
             m.batch_id::text AS "batchId", b.name AS "batchName",
             b.program_id::text AS "programId", p.name AS "programName"
      FROM members m

@@ -2915,7 +2915,7 @@ export const useGraphMemberRecords = (memberId: string) =>
 
 /** The selected member with their batch and program, resolved server-side (members.batch_id → batches.program_id). */
 export interface GraphMemberProgram {
-  id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null;
+  id: string; firstName: string; lastName: string | null; phone: string | null;
   batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
 }
 
