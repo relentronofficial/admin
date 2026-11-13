@@ -80,9 +80,17 @@ export const useMarkLessonComplete = (courseId: string) => {
         queryClient.setQueryData(["user", "progress", courseId], context.previous);
       }
     },
-    onSuccess: (_data, { isCompleted }) => {
+    onSuccess: (res: any, { lessonId, isCompleted }) => {
+      // A lesson can become complete on ANY progress post — the 30 s heartbeat crossing the
+      // server threshold too, not only an explicit isCompleted call. Whenever the server
+      // reports a completion it hadn't before, refresh everything that depends on it —
+      // above all the course query, which carries each lesson's `locked` flag. Otherwise the
+      // green tick (progress query) and the unlock state (course query) disagree until reload.
+      const prevProgress = queryClient.getQueryData<any[]>(["user", "progress", courseId]);
+      const wasCompleted = Array.isArray(prevProgress) && prevProgress.some((p: any) => p.lessonId === lessonId && p.completed);
+      const serverCompleted = (res?.data ?? res)?.completed === true;
       queryClient.invalidateQueries({ queryKey: ["user", "progress", courseId] });
-      if (isCompleted) {
+      if (isCompleted || (serverCompleted && !wasCompleted)) {
         // Invalidate course data so the `locked` field on subsequent lessons
         // refreshes immediately (sequential-unlock UI update).
         queryClient.invalidateQueries({ queryKey: ["courses", courseId] });

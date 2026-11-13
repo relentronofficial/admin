@@ -152,3 +152,37 @@ describe('isEpisodeUnlocked', () => {
     expect(unlocked).toBe(true);
   });
 });
+
+describe('blockedByEpisodeId — which lesson actually holds a locked lesson back', () => {
+  it('is null for unlocked lessons and the first incomplete lesson for locked ones', () => {
+    const progress: ProgressRow[] = [
+      { episodeId: 'ep1', actualWatchedSecs: 100, lastWatchedSecs: 100, isCompleted: true },
+    ];
+    const states = computeLessonLockStates(episodes(1, 2, 3, 4), progress, SEQ);
+    expect(states.map((s) => s.blockedByEpisodeId)).toEqual([null, null, 'ep2', 'ep2']);
+  });
+
+  it('names an earlier incomplete lesson even when the lesson just before is completed (out-of-order completion)', () => {
+    // ep3 completed (e.g. while sequential unlocking was off), ep2 still incomplete:
+    // ep4 is locked by ep2, not by ep3 — and stays locked (sequential rule unchanged).
+    const progress: ProgressRow[] = [
+      { episodeId: 'ep1', actualWatchedSecs: 100, lastWatchedSecs: 100, isCompleted: true },
+      { episodeId: 'ep3', actualWatchedSecs: 100, lastWatchedSecs: 100, isCompleted: true },
+    ];
+    const states = computeLessonLockStates(episodes(1, 2, 3, 4), progress, SEQ);
+    expect(states[2]).toMatchObject({ completed: true, locked: true, blockedByEpisodeId: 'ep2' });
+    expect(states[3]).toMatchObject({ locked: true, blockedByEpisodeId: 'ep2' });
+  });
+
+  it('a lesson with a stored completed flag unlocks the next one (same source as the green tick)', () => {
+    const progress: ProgressRow[] = [
+      { episodeId: 'ep1', actualWatchedSecs: 10, lastWatchedSecs: 10, isCompleted: true },
+    ];
+    const states = computeLessonLockStates(episodes(1, 2), progress, SEQ);
+    expect(states[1]).toMatchObject({ locked: false, blockedByEpisodeId: null });
+  });
+
+  it('is always null when sequential unlocking is off', () => {
+    expect(computeLessonLockStates(episodes(1, 2, 3), [], FREE).map((s) => s.blockedByEpisodeId)).toEqual([null, null, null]);
+  });
+});

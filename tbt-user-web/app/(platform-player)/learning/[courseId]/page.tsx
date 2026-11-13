@@ -81,6 +81,18 @@ function lessonAlreadyDone(
   return false;
 }
 
+/**
+ * The lock warning for a lesson. The server reports which lesson actually holds it back
+ * (`lockedBy` — the first incomplete lesson earlier in the course); that is not always the
+ * one listed just above it, e.g. when the sidebar shows a single module or section.
+ */
+function lessonLockedMessage(lesson: any): string {
+  const by = lesson?.lockedBy as { id: string; title: string } | null | undefined;
+  return by?.title
+    ? `Complete “${by.title}” first to unlock this one.`
+    : "Complete the previous lesson first to unlock this one.";
+}
+
 function fmtTime(secs: number): string {
   return `${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, "0")}`;
 }
@@ -1458,7 +1470,11 @@ export default function CourseDetailPage({
   const targetModuleId = searchParams.get("module"); // pre-select a course topic module in sidebar
   const { uiStrings, config } = useSiteConfig();
   const qc = useQueryClient();
-  const { data: course, isLoading, error: courseError } = useCourse(courseId);
+  const { data: course, isLoading, error: courseError, isFetching: courseFetching } = useCourse(courseId);
+  // Completing a lesson invalidates the course query; until that refetch lands, every
+  // later lesson in the cached copy still has locked: true and no video URL.
+  const courseFetchingRef = useRef(false);
+  courseFetchingRef.current = courseFetching;
   const { data: progressList } = useLessonProgress(courseId);
   const markComplete = useMarkLessonComplete(courseId);
   const { data: me } = useMe();
@@ -1812,7 +1828,7 @@ export default function CourseDetailPage({
       const target = course.lessons.find((l: any) => l.id === targetLessonId);
       if (target && (target as any).locked) {
         urlFocusDialogShownRef.current = targetLessonId;
-        toast.error("Complete the previous lesson to unlock this one.", { id: "lesson-locked" });
+        toast.error(lessonLockedMessage(target), { id: "lesson-locked" });
         return;
       }
       if (target && !(target as any).locked) {
@@ -1844,7 +1860,7 @@ export default function CourseDetailPage({
       } else if (target && (target as any).locked) {
         // Direct/deep-linked navigation to a locked lesson
         urlFocusDialogShownRef.current = targetLessonId;
-        toast.error("Complete the previous lesson first to unlock this one.", { id: "lesson-locked", duration: 3000 });
+        toast.error(lessonLockedMessage(target), { id: "lesson-locked", duration: 3000 });
       }
     }
   }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1932,6 +1948,9 @@ export default function CourseDetailPage({
     const promptOpen = !!quizModal || !!cueQuizModal || !!pendingReflection || !!focusDialog || !!missionComplete
       || (!!feedbackEpisodeId && (feedbackFetching || feedbackQuestions.length > 0));
     if (promptOpen) return;
+    // Wait for the post-completion course refetch: the cached lesson list still marks the
+    // next lesson locked (and strips its video URL) until the server's fresh lock states land.
+    if (courseFetching) return;
     const wait = pendingAdvance.notBefore - Date.now();
     if (wait > 0) {
       const t = setTimeout(() => setAdvanceTick((n) => n + 1), wait);
@@ -1945,7 +1964,7 @@ export default function CourseDetailPage({
     clearInterval(upNextTimerRef.current);
     setUpNextVisible(false);
     advanceToLessonRef.current(next);
-  }, [pendingAdvance, advanceTick, selectedLesson?.id, quizModal, cueQuizModal, pendingReflection, focusDialog, missionComplete, feedbackEpisodeId, feedbackFetching, feedbackQuestions.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingAdvance, advanceTick, selectedLesson?.id, quizModal, cueQuizModal, pendingReflection, focusDialog, missionComplete, feedbackEpisodeId, feedbackFetching, feedbackQuestions.length, courseFetching]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tracking refs ────────────────────────────────────────────────────────────
   const markCalledRef = useRef(false);
@@ -2868,12 +2887,22 @@ export default function CourseDetailPage({
     timerIntervalRef.current = setInterval(tick, 500);
   };
 
-  const handleSelectLessonWithFocus = (lesson: any) => {
+  const handleSelectLessonWithFocus = (lessonArg: any) => {
+    // Always act on the freshest copy of the lesson: a caller may hold one from before the
+    // last completion refetch (locked: true, videoUrl stripped).
+    const lesson = (courseRef.current?.lessons ?? []).find((l: any) => l.id === lessonArg?.id) ?? lessonArg;
+    if ((lesson as any).locked === true && justCompletedInSessionRef.current && courseFetchingRef.current && selectedLessonRef.current) {
+      // The previous lesson was just completed and the server's unlock is still loading:
+      // queue the move — the advance effect runs it once the refetch lands.
+      toast("Unlocking the next lesson…", { id: "lesson-unlocking", duration: 2000 });
+      setPendingAdvance({ from: selectedLessonRef.current.id, notBefore: Date.now() });
+      return;
+    }
     // Sequential lock: block locked lessons unless the current one was just completed
     // (justCompleted = true means completion is in-flight; the server will unlock this next lesson shortly)
     if ((lesson as any).locked === true && !justCompletedInSessionRef.current) {
       // Fixed toast id de-dupes repeated clicks on the same locked lesson instead of stacking.
-      toast.error("Complete the previous lesson first to unlock this one.", { id: "lesson-locked", duration: 3000 });
+      toast.error(lessonLockedMessage(lesson), { id: "lesson-locked", duration: 3000 });
       return;
     }
     const isFocusLocked = focusLockedIds.has(lesson.id) && !completedIds.has(lesson.id);
@@ -4203,7 +4232,7 @@ export default function CourseDetailPage({
                       <button
                         onClick={() => handleSelectLessonWithFocus(lesson)}
                         aria-disabled={!canPlay}
-                        title={isLocked ? "Complete the previous lesson to unlock." : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
+                        title={isLocked ? lessonLockedMessage(lesson) : isFocusLocked ? "Use a lifeline to unlock this lesson." : undefined}
                         className={cn("w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors", canPlay ? "cursor-pointer hover:opacity-90" : "cursor-default")}
                       >
                         {/* Status circle */}
