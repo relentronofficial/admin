@@ -11,7 +11,7 @@ export default function LoadingPage() {
   useEffect(() => {
     if (isLoading) return;
     const delay = config?.splashDurationMs ?? 1500;
-    const t = setTimeout(() => router.replace("/batch-program/mentorship"), delay);
+    const t = setTimeout(() => router.replace("/mentorship"), delay);
     return () => clearTimeout(t);
   }, [isLoading, config, router]);
 

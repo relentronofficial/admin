@@ -3076,6 +3076,13 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     // ── Mini Courses (MINI_COURSES_SPECKIT.md 2026-11-13) ────────────────────
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS course_type VARCHAR(20) NOT NULL DEFAULT 'mentorship'`);
 
+    // ── Nav-item href fix: /courses was the old mentorship page before the rename.
+    //    Update any nav_items rows still pointing at /courses → /mentorship so the
+    //    logo link and NavAccessGuard fallback resolve correctly after the rename.
+    await fastify.prisma.$executeRawUnsafe(
+      `UPDATE nav_items SET href = '/mentorship' WHERE href = '/courses'`
+    ).catch(() => {});
+
     fastify.log.info('✅ Column safety net complete');
     await ddlPrisma.$disconnect().catch(() => {});
   }
