@@ -18,7 +18,11 @@ export default function CoursesPage() {
   const enrolledIds = new Set(enrollments.map((e: any) => e.courseId));
 
   const handleCourseClick = (c: any) => {
-    router.push(`/learning/${c.id}`);
+    if (c.hasAccess) {
+      router.push(`/learning/${c.id}`);
+    } else {
+      router.push(`/courses/${c.id}`);
+    }
   };
 
   return (
@@ -131,22 +135,23 @@ export default function CoursesPage() {
                         style={{ background: "var(--color-success)", color: "#fff" }}>
                         Continue Learning
                       </button>
-                    ) : c.price > 0 && c.razorpayEnabled !== false ? (
+                    ) : c.price > 0 ? (
                       <button
-                        onClick={() => router.push(`/learning/${c.id}?buy=1`)}
+                        onClick={() => router.push(`/courses/${c.id}`)}
                         className="w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all"
                         style={{ background: "var(--color-accent)", color: "#fff" }}>
                         <ShoppingCart size={15} /> Buy ₹{c.price}
                       </button>
                     ) : c.paymentLinkUrl ? (
-                      <a href={c.paymentLinkUrl} target="_blank" rel="noopener noreferrer"
+                      <button
+                        onClick={() => router.push(`/courses/${c.id}`)}
                         className="w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all"
                         style={{ background: "var(--color-accent)", color: "#fff" }}>
                         <ShoppingCart size={15} /> Buy Now
-                      </a>
+                      </button>
                     ) : (
                       <button
-                        onClick={() => router.push(`/learning/${c.id}`)}
+                        onClick={() => router.push(`/courses/${c.id}`)}
                         className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all border"
                         style={{
                           background: "transparent",
