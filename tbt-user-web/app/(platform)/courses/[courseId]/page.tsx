@@ -1,14 +1,8 @@
 "use client";
 
-import { use, useState, useEffect, useRef } from "react";
+import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Play, Lock, ChevronDown, ChevronUp, CheckCircle2,
-  BookOpen, Clock, Zap, Award, ArrowRight, Users,
-  ShoppingCart, Loader2, ChevronRight,
-  Target, TrendingUp, Layers, Star, Flame, Badge,
-} from "lucide-react";
+import { Loader2, BookOpen, Play, ArrowRight, ShoppingCart, ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
 import {
   useCourse, useCreateRazorpayOrder, useVerifyRazorpayPayment,
   useCreateBundleOrder, useVerifyBundlePayment,
@@ -41,964 +35,593 @@ function isRazorpayEnabled(course: any): boolean {
   return Boolean(process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID);
 }
 
-function levelLabel(l: string | null | undefined) {
-  if (!l) return "";
-  return l.charAt(0).toUpperCase() + l.slice(1);
-}
-
 function padNum(n: number) {
   return String(n).padStart(2, "0");
 }
 
-// ── Shared Buy Button ─────────────────────────────────────────────────────────
-
-function BuyButton({
-  course, courseId, buying, onBuy, size = "md",
-}: {
-  course: any; courseId: string; buying: boolean; onBuy: () => void; size?: "sm" | "md" | "lg";
-}) {
-  const router = useRouter();
-  const hasPrice = course.price != null && Number(course.price) > 0;
-  const razorpayOn = isRazorpayEnabled(course);
-
-  const cls =
-    size === "lg"
-      ? "px-10 py-4 text-base rounded-2xl"
-      : size === "sm"
-      ? "px-5 py-2.5 text-sm rounded-xl"
-      : "px-7 py-3.5 text-sm rounded-xl";
-
-  if (course.hasAccess) {
-    return (
-      <button
-        onClick={() => router.push(`/learning/${courseId}`)}
-        className={`${cls} font-bold flex items-center gap-2 transition-opacity hover:opacity-90`}
-        style={{ background: "var(--color-success, #22c55e)", color: "#fff" }}
-      >
-        <Play size={16} fill="currentColor" /> Continue Learning
-      </button>
-    );
+function getVideoEmbed(url: string): { type: "iframe" | "video"; src: string } {
+  if (url.includes("youtube.com") || url.includes("youtu.be")) {
+    const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (m) return { type: "iframe", src: `https://www.youtube.com/embed/${m[1]}?rel=0&autoplay=1` };
   }
-  if (hasPrice && razorpayOn && !course.pendingPayment) {
-    return (
-      <button
-        onClick={onBuy}
-        disabled={buying}
-        className={`${cls} font-bold flex items-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-60`}
-        style={{
-          background: "var(--color-accent)",
-          color: "#fff",
-          boxShadow: "0 4px 24px color-mix(in srgb, var(--color-accent) 40%, transparent)",
-        }}
-      >
-        {buying ? (
-          <><Loader2 size={15} className="animate-spin" /> Processing…</>
-        ) : (
-          <><ShoppingCart size={15} /> Buy Now · ₹{Number(course.price).toLocaleString("en-IN")}</>
-        )}
-      </button>
-    );
+  if (url.includes("vimeo.com")) {
+    const m = url.match(/vimeo\.com\/(\d+)/);
+    if (m) return { type: "iframe", src: `https://player.vimeo.com/video/${m[1]}?autoplay=1` };
   }
+  return { type: "video", src: url };
+}
+
+// ── Injected CSS (mini-course design, namespaced mc-) ─────────────────────────
+
+const MC_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+.mc-page{--mc-red:var(--color-accent,#f21f2b);--mc-red-dark:#d91420;--mc-maroon:#4b080b;overflow-x:hidden;background:#fff;color:#17151a;font-family:"DM Sans",sans-serif;line-height:1.55}
+.mc-page *,.mc-page *::before,.mc-page *::after{box-sizing:border-box}
+.mc-page a{color:inherit;text-decoration:none}
+.mc-page button{font:inherit}
+
+.mc-hero{position:relative;overflow:hidden;background:radial-gradient(ellipse at 50% 10%,#fff 0,#fff8f8 45%,#ffe8e9 100%);padding:40px 20px 30px}
+.mc-hero-orb{position:absolute;width:32px;height:32px;border-radius:10px;filter:blur(2px);opacity:.5;transform:rotate(20deg)}
+.mc-orb-one{background:#48b9ec;left:8%;top:30%}
+.mc-orb-two{background:#9ce21c;right:8%;top:37%}
+.mc-hero-inner{max-width:1030px;margin:auto;text-align:center;position:relative;z-index:1}
+.mc-eyebrow{font-size:10px;letter-spacing:1.5px;color:var(--mc-red);font-weight:800;margin:0 0 9px;display:block}
+.mc-hero h1{font:700 clamp(30px,4.4vw,54px)/1.12 Outfit,sans-serif;letter-spacing:-1.6px;margin:0 auto 12px;max-width:900px}
+.mc-hero h1 span,.mc-section-heading h2 span,.mc-earning-copy h2 span{color:var(--mc-red)}
+.mc-hero-copy{max-width:720px;margin:0 auto 26px;color:#625b62;font-size:14px}
+.mc-hero-showcase{display:grid;grid-template-columns:1.5fr .75fr;gap:28px;align-items:center;max-width:850px;margin:0 auto 22px}
+.mc-video-preview{height:250px;border:0;padding:0;position:relative;overflow:hidden;border-radius:17px;background:#18151a;cursor:pointer;box-shadow:0 15px 35px #29101320;width:100%}
+.mc-video-preview img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s}
+.mc-video-preview:hover img{transform:scale(1.06)}
+.mc-video-preview::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#0008,transparent 45%);pointer-events:none}
+.mc-play-button{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:58px;height:58px;border:2px solid white;border-radius:50%;display:grid;place-items:center;background:#ffffff20;backdrop-filter:blur(4px);transition:.25s}
+.mc-play-button span{width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:14px solid #fff;margin-left:4px;display:block}
+.mc-video-preview:hover .mc-play-button{background:var(--mc-red);scale:1.08}
+.mc-video-caption{position:absolute;z-index:2;bottom:15px;left:18px;color:#fff;font-size:9px;letter-spacing:1.6px;font-weight:800}
+.mc-hero-facts{display:grid;gap:19px;text-align:left}
+.mc-fact{display:flex;align-items:center;gap:12px}
+.mc-fact-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#ffe3e5;color:var(--mc-red);font-size:17px;flex-shrink:0}
+.mc-fact small{display:block;color:#777;font-size:10px}
+.mc-fact strong{display:block;color:var(--mc-red);font:700 15px Outfit,sans-serif}
+.mc-offer-strip{max-width:850px;margin:auto;padding:17px 20px;border:1px solid #f5dfe1;border-radius:14px;background:#fff;display:flex;justify-content:space-between;align-items:center;text-align:left;box-shadow:0 8px 25px #6e1b2010}
+.mc-offer-strip small{font-size:10px;color:#555}
+.mc-discount{background:var(--mc-red);color:#fff;border-radius:20px;padding:3px 8px;margin-left:7px;font-size:8px}
+.mc-offer-price{font:800 25px Outfit;color:var(--mc-red);line-height:1.3}
+.mc-offer-price del{font:500 11px "DM Sans";color:#999}
+.mc-offer-note{color:#438b36!important}
+.mc-offer-actions{display:grid;gap:8px;width:220px}
+.mc-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:12px 19px;border-radius:30px;font-size:11px;font-weight:800;border:1px solid transparent;transition:transform .25s,background .25s,box-shadow .25s;cursor:pointer;font-family:"DM Sans",sans-serif;line-height:1}
+.mc-btn:disabled{opacity:.6;cursor:not-allowed}
+.mc-btn-red{background:var(--mc-red);color:#fff;box-shadow:0 8px 20px rgba(242,31,43,.15)}
+.mc-btn-red:hover:not(:disabled){background:var(--mc-red-dark);transform:translateY(-2px)}
+.mc-btn-outline{border-color:#2b2528;background:#fff;color:#1c191b}
+.mc-btn-outline:hover{border-color:var(--mc-red);color:var(--mc-red);transform:translateY(-2px)}
+.mc-btn-dark{background:#111;color:#fff}
+.mc-btn-dark:hover:not(:disabled){background:var(--mc-red);transform:translateY(-2px)}
+.mc-btn-white{background:#fff;color:#111}
+.mc-btn-white:hover{transform:translateY(-2px);box-shadow:0 8px 20px #0003}
+.mc-btn-green{background:#22c55e;color:#fff}
+.mc-btn-green:hover{background:#16a34a;transform:translateY(-2px)}
+
+.mc-ticker{overflow:hidden;border-bottom:1px solid #f2eeee;padding:15px 0;white-space:nowrap;background:var(--mc-red)}
+.mc-ticker-track{display:flex;align-items:center;gap:24px;min-width:max-content;animation:mc-ticker 28s linear infinite;font:700 12px Outfit;letter-spacing:.5px;color:#fff}
+.mc-ticker-track i{font-style:normal;color:rgba(255,255,255,.55);font-size:16px}
+@keyframes mc-ticker{to{transform:translateX(-50%)}}
+
+.mc-section{padding:82px 5vw}
+.mc-section-heading{text-align:center;max-width:760px;margin:0 auto 35px}
+.mc-section-heading h2,.mc-earning-copy h2{font:700 clamp(27px,3vw,38px)/1.15 Outfit,sans-serif;letter-spacing:-.8px;margin:0 0 10px}
+.mc-section-heading>p:last-child{font-size:13px;color:#77717a;margin:0}
+.mc-section-heading.mc-light h2{color:#fff}
+.mc-section-heading.mc-light>p:last-child{color:#e8cfd0}
+.mc-section-heading.mc-light .mc-eyebrow{color:#ffb7ba}
+
+.mc-module-grid{max-width:1050px;margin:auto;display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.mc-module-list{display:grid;gap:10px;align-content:start}
+.mc-module-card{border:1px solid #e9e5e6;border-radius:12px;overflow:hidden;background:#fff;transition:box-shadow .25s,border-color .25s}
+.mc-module-card:hover{border-color:#f4a4a9;box-shadow:0 8px 22px #2d11110c}
+.mc-module-card.mc-featured{border-color:#ff8f96}
+.mc-module-trigger{width:100%;display:flex;align-items:center;gap:9px;text-align:left;padding:13px 12px;background:#fff;border:0;cursor:pointer}
+.mc-module-number{display:grid;place-items:center;flex:0 0 25px;height:25px;border-radius:7px;background:#17171a;color:#fff;font-size:10px;font-weight:800}
+.mc-featured .mc-module-number{background:var(--mc-red)}
+.mc-module-title{font-size:11px;font-weight:800;flex:1;line-height:1.35}
+.mc-module-tag{font-size:8px;color:#777;background:#f6f3f3;border-radius:20px;padding:4px 7px;white-space:nowrap}
+.mc-chevron{color:#777;transition:transform .25s;display:block;font-style:normal;line-height:1}
+.mc-module-trigger[aria-expanded="true"] .mc-chevron{transform:rotate(180deg)}
+.mc-module-details{display:none;padding:0 14px 12px 47px;font-size:10px;color:#686168}
+.mc-module-trigger[aria-expanded="true"]+.mc-module-details{display:block;animation:mc-drop .25s ease}
+.mc-module-details>div{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #f1eeee}
+.mc-module-details small{white-space:nowrap;color:#999}
+.mc-module-details p{margin:5px 0}
+.mc-center-btn{display:flex;width:max-content;margin:28px auto 0}
+
+.mc-related-section{background:linear-gradient(130deg,#430709,#570b0d 55%,#390608);padding:75px 5vw 65px;color:#fff}
+.mc-course-grid{max-width:1000px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.mc-course-card{min-width:0;cursor:pointer}
+.mc-course-art{height:175px;border-radius:13px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 25px #16030570;isolation:isolate}
+.mc-course-art::before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,#ffffff20,transparent 50%);z-index:0}
+.mc-course-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.mc-course-art-overlay{position:absolute;inset:0;background:linear-gradient(0deg,#000a,transparent 50%);z-index:1}
+.mc-course-art-text{position:relative;z-index:2;text-align:center;padding:12px}
+.mc-course-art b{font:800 clamp(18px,2.5vw,28px)/.95 Outfit;text-align:center;letter-spacing:-1px;text-shadow:0 3px 12px #0007;color:#fff}
+.mc-course-art em{font-style:normal;font-size:.65em;display:block}
+.mc-art-label{position:absolute;top:12px;left:12px;background:#fff;color:#111;padding:5px 8px;border-radius:5px;font-weight:900;font-size:11px;z-index:3}
+.mc-art-shape{position:absolute;bottom:-50px;right:-15px;width:150px;height:100px;border:2px solid #ffffff55;border-radius:50%;transform:rotate(-25deg);z-index:1}
+.mc-course-card h3{font:700 15px Outfit;margin:13px 0 3px;color:#fff}
+.mc-course-card>p{font-size:11px;color:#e8cfd0;margin:0 0 7px;max-width:300px}
+.mc-course-card>span{font-size:10px;color:#ffe54c;font-weight:700;text-decoration:underline}
+
+.mc-plans-section{background:#fff}
+.mc-plans-grid{max-width:1080px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
+.mc-plans-grid.mc-g2{grid-template-columns:repeat(2,1fr);max-width:720px}
+.mc-plans-grid.mc-g1{grid-template-columns:1fr;max-width:420px}
+.mc-plan-card{position:relative;border:1px solid #e8e4e5;border-radius:17px;padding:24px 22px 20px;display:flex;flex-direction:column;box-shadow:0 9px 28px #16060908;transition:transform .3s,box-shadow .3s}
+.mc-plan-card:hover{transform:translateY(-7px);box-shadow:0 12px 35px rgba(36,10,14,.08)}
+.mc-plan-card.mc-popular{border:1.5px solid var(--mc-red);box-shadow:0 12px 30px rgba(242,31,43,.1)}
+.mc-popular-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);white-space:nowrap;border-radius:20px;background:var(--mc-red);color:#fff;padding:5px 15px;font-size:8px;font-weight:800;letter-spacing:.5px}
+.mc-plan-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9px;font-weight:800;color:#555}
+.mc-pill{background:#f5f2f2;border-radius:20px;padding:4px 8px;font-size:8px;white-space:nowrap}
+.mc-plan-card h3{font:700 21px Outfit;margin:18px 0 7px}
+.mc-plan-card>p{font-size:11px;color:#777;min-height:52px;margin:0}
+.mc-plan-price{font:800 29px Outfit;margin:15px 0 20px;white-space:nowrap}
+.mc-plan-price del{font:500 11px "DM Sans";color:#aaa}
+.mc-plan-price small{font:700 9px "DM Sans";background:#e6faed;color:#248849;padding:4px 7px;border-radius:5px;margin-left:4px}
+.mc-plan-subtitle{font-size:9px;font-weight:800;color:#777;margin-bottom:7px}
+.mc-plan-feature-title{font-size:11px;color:#292329;display:block;margin-bottom:4px}
+.mc-plan-card ul{list-style:none;padding:0;margin:13px 0 22px;flex:1}
+.mc-plan-card li{font-size:10px;color:#5e575e;padding:7px 0 7px 18px;position:relative;border-bottom:1px solid #f6f1f1}
+.mc-plan-card li::before{content:"✓";position:absolute;left:0;color:var(--mc-red);font-weight:900}
+.mc-plan-btn{width:100%;margin-top:auto;border-radius:8px!important}
+
+.mc-earning-section{display:grid;grid-template-columns:.9fr 1.1fr;gap:35px;align-items:center;padding:75px 5vw 60px}
+.mc-earning-copy h2{max-width:480px;font:700 clamp(27px,3vw,38px)/1.15 Outfit,sans-serif;letter-spacing:-.8px;margin:0 0 10px}
+.mc-earning-copy>p:not(.mc-eyebrow){color:#777;font-size:13px;max-width:460px}
+.mc-button-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.mc-steps-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.mc-steps-grid article{background:#fff2f3;border-radius:15px;padding:18px 17px;min-height:135px;transition:transform .25s,background .25s}
+.mc-steps-grid article:hover{transform:translateY(-4px);background:#ffe5e7}
+.mc-step-icon{display:block;color:var(--mc-red);font-size:23px;margin-bottom:4px}
+.mc-steps-grid h3{font:700 15px Outfit;margin:4px 0}
+.mc-steps-grid p{font-size:10px;color:#6d6269;margin:0}
+.mc-testimonial{grid-column:1/-1;display:flex;align-items:flex-start;gap:15px;background:#fff3f3;border-radius:13px;padding:17px 20px;margin:0}
+.mc-avatar{flex:0 0 42px;height:42px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(135deg,#f6c6a3,#5a2725);color:#fff;font-weight:800;font-size:14px}
+.mc-testimonial p{font-size:11px;color:#63575e;margin:0}
+.mc-testimonial small{display:block;margin-top:7px;color:#9a4248;font-size:9px}
+
+.mc-quote-section{background:#fff1f2;text-align:center;padding:48px 20px}
+.mc-quote-section p{max-width:850px;margin:0 auto 13px;font:700 clamp(22px,3vw,32px)/1.3 Outfit;letter-spacing:-.5px}
+.mc-quote-section p span{color:var(--mc-red)}
+.mc-quote-section small{display:block;font-size:9px;letter-spacing:1px;margin-bottom:16px;color:#77717a}
+.mc-quote-section .mc-btn{min-width:150px}
+
+.mc-faq-section{padding:75px 5vw 85px}
+.mc-faq-list{max-width:760px;margin:auto;display:grid;gap:8px}
+.mc-faq-item{border-radius:9px;background:#fff3f3;overflow:hidden}
+.mc-faq-item button{width:100%;border:0;background:transparent;display:flex;justify-content:space-between;align-items:center;padding:14px 17px;text-align:left;font-size:12px;font-weight:700;cursor:pointer;color:#17151a}
+.mc-faq-item button span{transition:transform .25s;display:block;font-style:normal;font-size:16px;line-height:1}
+.mc-faq-item button[aria-expanded="true"] span{transform:rotate(180deg)}
+.mc-faq-answer{display:none;padding:0 17px 15px;font-size:11px;color:#6d6269;max-width:680px}
+.mc-faq-item button[aria-expanded="true"]+.mc-faq-answer{display:block;animation:mc-drop .25s ease}
+
+.mc-modal-overlay{position:fixed;inset:0;background:#100508d9;z-index:1000;display:grid;place-items:center;padding:20px}
+.mc-modal-panel{width:min(760px,100%);position:relative;background:#1c1114;border-radius:16px;padding:15px}
+.mc-modal-close{position:absolute;right:8px;top:5px;border:0;background:transparent;color:#fff;font-size:30px;cursor:pointer;z-index:2;line-height:1;padding:4px 10px}
+.mc-modal-body{border-radius:10px;overflow:hidden;aspect-ratio:16/9}
+.mc-modal-body iframe,.mc-modal-body video{width:100%;height:100%;border:0;display:block}
+.mc-modal-placeholder{height:300px;display:grid;place-content:center;justify-items:center;color:#fff;background:radial-gradient(circle at 50% 50%,#4e242a,#100b0d 70%);border-radius:10px;gap:8px}
+.mc-modal-placeholder p{margin:0;font:700 16px Outfit}
+.mc-modal-placeholder small{color:#cdbfc1;font-size:11px}
+
+.mc-sticky-bar{position:fixed;bottom:0;inset-inline:0;z-index:50;background:#fff;border-top:1px solid #f5dfe1;box-shadow:0 -4px 20px #0001;padding-bottom:env(safe-area-inset-bottom,0px)}
+.mc-sticky-bar-inner{display:flex;align-items:center;gap:12px;padding:10px 20px}
+.mc-sticky-title{flex:1;min-width:0;font-size:12px;font-weight:700;color:#17151a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-sticky-price{font:800 14px Outfit;color:var(--mc-red);white-space:nowrap}
+.mc-sticky-orig{font-size:11px;color:#aaa;text-decoration:line-through;margin-left:4px}
+
+@keyframes mc-drop{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+
+@media(max-width:900px){
+  .mc-hero-showcase{max-width:740px}
+  .mc-video-preview{height:220px}
+  .mc-plan-card{padding:20px 15px}
+  .mc-plan-price{font-size:25px}
+  .mc-module-trigger{gap:6px}
+  .mc-module-tag{display:none}
+}
+@media(max-width:680px){
+  .mc-hero{padding:28px 17px 25px}
+  .mc-hero h1{font-size:35px;letter-spacing:-1px}
+  .mc-hero-copy{font-size:12px}
+  .mc-hero-showcase{grid-template-columns:1fr;gap:17px}
+  .mc-video-preview{height:210px}
+  .mc-hero-facts{grid-template-columns:1fr 1fr;gap:13px}
+  .mc-offer-strip{padding:14px;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .mc-offer-actions{width:100%;grid-template-columns:1fr 1fr}
+  .mc-offer-price{font-size:22px}
+  .mc-section{padding:60px 18px}
+  .mc-section-heading{margin-bottom:25px}
+  .mc-section-heading h2,.mc-earning-copy h2{font-size:29px}
+  .mc-module-grid{grid-template-columns:1fr;gap:10px}
+  .mc-module-title{font-size:10px}
+  .mc-module-details{padding-left:43px}
+  .mc-related-section{padding:58px 18px}
+  .mc-course-grid{grid-template-columns:1fr;gap:24px;max-width:420px;margin:auto}
+  .mc-course-art{height:190px}
+  .mc-plans-grid,.mc-plans-grid.mc-g2,.mc-plans-grid.mc-g3{grid-template-columns:1fr;max-width:440px;gap:25px;margin:auto}
+  .mc-plan-card>p{min-height:0}
+  .mc-plan-price{font-size:29px}
+  .mc-plan-card li{font-size:11px}
+  .mc-earning-section{grid-template-columns:1fr;gap:25px;padding:60px 18px}
+  .mc-steps-grid article{min-height:115px;padding:15px}
+  .mc-quote-section{padding:40px 20px}
+  .mc-quote-section p{font-size:23px}
+  .mc-faq-section{padding:58px 18px 65px}
+  .mc-faq-item button{font-size:11px;padding:13px}
+}
+@media(max-width:380px){
+  .mc-hero h1{font-size:30px}
+  .mc-offer-strip{flex-direction:column}
+  .mc-steps-grid{gap:8px}
+  .mc-steps-grid article{padding:12px}
+}
+@media(prefers-reduced-motion:reduce){
+  .mc-ticker-track{animation-duration:.01ms!important}
+  .mc-module-trigger[aria-expanded="true"]+.mc-module-details,.mc-faq-item button[aria-expanded="true"]+.mc-faq-answer{animation:none}
+}
+`;
+
+// ── Video Modal ───────────────────────────────────────────────────────────────
+
+function MCVideoModal({ url, onClose }: { url: string | null; onClose: () => void }) {
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", fn);
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", fn); document.body.style.overflow = ""; };
+  }, [onClose]);
+
   return (
-    <button
-      onClick={() => router.push(`/learning/${courseId}`)}
-      className={`${cls} font-bold flex items-center gap-2 transition-opacity hover:opacity-90`}
-      style={{ border: "2px solid var(--color-accent)", color: "var(--color-accent)", background: "transparent" }}
-    >
-      <ArrowRight size={15} /> View Course
-    </button>
+    <div className="mc-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="mc-modal-panel">
+        <button className="mc-modal-close" onClick={onClose} aria-label="Close preview">×</button>
+        {url ? (() => {
+          const { type, src } = getVideoEmbed(url);
+          return (
+            <div className="mc-modal-body">
+              {type === "iframe"
+                ? <iframe src={src} allow="autoplay; fullscreen" allowFullScreen title="Course Preview" />
+                : <video src={src} controls autoPlay />}
+            </div>
+          );
+        })() : (
+          <div className="mc-modal-placeholder">
+            <div className="mc-play-button" style={{ position: "static", transform: "none" }}><span /></div>
+            <p>Course Preview</p>
+            <small>No preview video configured yet.</small>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 // ── Hero ──────────────────────────────────────────────────────────────────────
 
-function HeroSection({ course, courseId, buying, onBuy }: {
-  course: any; courseId: string; buying: boolean; onBuy: () => void;
+function MCHeroSection({
+  course, courseId, buying, onBuy, onVideoPreview,
+}: {
+  course: any; courseId: string; buying: boolean; onBuy: () => void; onVideoPreview: () => void;
 }) {
+  const router = useRouter();
   const lessons: any[] = course.lessons ?? [];
   const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
   const hasPrice = course.price != null && Number(course.price) > 0;
   const price = hasPrice ? Number(course.price) : 0;
-  const originalPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
-  const discountPct = originalPrice && originalPrice > price && price > 0
-    ? Math.round(((originalPrice - price) / originalPrice) * 100)
-    : null;
+  const origPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
+  const discountPct = origPrice && origPrice > price && price > 0
+    ? Math.round(((origPrice - price) / origPrice) * 100) : null;
+  const hasBundlePrice = course.bundlePrice != null && Number(course.bundlePrice) > 0;
+  const hasAllAccessPrice = course.allAccessPrice != null && Number(course.allAccessPrice) > 0;
+  const isMultiTier = hasBundlePrice || hasAllAccessPrice;
+  const razorpayOn = isRazorpayEnabled(course);
+
+  const durationLabel = totalSecs > 0
+    ? fmtDurationSecs(totalSecs)
+    : course.durationHours
+    ? fmtHours(course.durationHours)
+    : lessons.length > 0 ? `${lessons.length} Lessons` : "";
+
+  const facts = [
+    { icon: "▤", label: "Learning Methodology", value: "Self-Paced" },
+    { icon: "◷", label: "Timing Starts at", value: "Immediately" },
+    { icon: "▣", label: durationLabel ? "Course Duration" : "Total Lessons", value: durationLabel || `${lessons.length} Lessons` },
+    { icon: "▧", label: "Will be Held in", value: "TBT Course Portal" },
+  ];
+
+  function handleHeroCta() {
+    if (course.hasAccess) { router.push(`/learning/${courseId}`); return; }
+    if (isMultiTier) {
+      document.getElementById("mc-plans")?.scrollIntoView({ behavior: "smooth" });
+    } else {
+      onBuy();
+    }
+  }
+
+  const heroCtaLabel = course.hasAccess
+    ? "Continue Learning →"
+    : isMultiTier
+    ? "Choose Your Plan →"
+    : hasPrice && razorpayOn
+    ? `Enroll for ₹${price.toLocaleString("en-IN")} →`
+    : "Start Learning Free →";
 
   return (
-    <section
-      className="relative pt-10 pb-0 overflow-hidden"
-      style={{ background: "var(--color-bg-surface)" }}
-    >
-      {/* Subtle radial glow */}
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[600px]"
-        style={{
-          background:
-            "radial-gradient(ellipse 70% 50% at 30% 0%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent)",
-        }}
-      />
+    <section className="mc-hero">
+      <div className="mc-hero-orb mc-orb-one" />
+      <div className="mc-hero-orb mc-orb-two" />
+      <div className="mc-hero-inner">
+        <p className="mc-eyebrow">
+          {course.module ? `${course.module.toUpperCase()} COURSE · LEARN THE SKILL` : "LEARN A SKILL. BUILD A BUSINESS."}
+        </p>
+        <h1>
+          {course.purchaseHeadline
+            ? course.purchaseHeadline
+            : (<>{course.title.split(" ").slice(0, -2).join(" ") || course.title}{" "}<span>{course.title.split(" ").slice(-2).join(" ")}</span></>)
+          }
+        </h1>
+        {course.description && (
+          <p className="mc-hero-copy">{course.description}</p>
+        )}
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Breadcrumb */}
-        <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className="flex items-center gap-2 text-xs mb-8"
-          style={{ color: "var(--color-text-subtle)" }}
-        >
-          <span className="cursor-pointer hover:underline" onClick={() => window.history.back()}>
-            Courses
-          </span>
-          <ChevronRight size={11} />
-          <span className="truncate max-w-[200px]" style={{ color: "var(--color-text-secondary)" }}>{course.title}</span>
-        </motion.div>
-
-        {/* Two-column split */}
-        <div className="flex flex-col lg:flex-row lg:items-center gap-10 lg:gap-16 pb-0">
-
-          {/* ── LEFT: Text Content ───────────────────────────────── */}
-          <div className="flex-1 min-w-0">
-            {/* Badges */}
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.05 }}
-              className="flex items-center gap-2 flex-wrap mb-5"
-            >
-              {course.courseType === "mini_course" && (
-                <span
-                  className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-                  style={{
-                    background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                    color: "var(--color-accent)",
-                    border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
-                  }}
-                >
-                  Mini Course
-                </span>
-              )}
-              {discountPct && (
-                <span
-                  className="text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full"
-                  style={{ background: "var(--color-accent)", color: "#fff" }}
-                >
-                  {discountPct}% OFF
-                </span>
-              )}
-              <span
-                className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-                style={{
-                  background: "var(--color-surface-overlay)",
-                  color: "var(--color-text-secondary)",
-                  border: "1px solid var(--color-surface-overlay-xs)",
-                }}
-              >
-                Self-Paced
-              </span>
-              {course.level && (
-                <span
-                  className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-                  style={{
-                    background: "var(--color-surface-overlay)",
-                    color: "var(--color-text-secondary)",
-                    border: "1px solid var(--color-surface-overlay-xs)",
-                  }}
-                >
-                  {levelLabel(course.level)}
-                </span>
-              )}
-            </motion.div>
-
-            {/* Title */}
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.55, delay: 0.08 }}
-              className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight tracking-tight mb-4"
-              style={{ color: "var(--color-text-normal)" }}
-            >
-              {course.title}
-            </motion.h1>
-
-            {/* Description */}
-            {course.description && (
-              <motion.p
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.14 }}
-                className="text-base leading-relaxed mb-6 max-w-xl"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                {course.description}
-              </motion.p>
+        <div className="mc-hero-showcase">
+          <button
+            className="mc-video-preview"
+            aria-label="Play course preview"
+            onClick={onVideoPreview}
+          >
+            {course.thumbnailUrl ? (
+              <img src={course.thumbnailUrl} alt={course.title} />
+            ) : (
+              <div style={{ width: "100%", height: "100%", background: "#2a1a1b", display: "grid", placeItems: "center" }}>
+                <BookOpen size={48} color="#ffffff44" />
+              </div>
             )}
-
-            {/* Price row */}
-            {hasPrice && !course.hasAccess && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, delay: 0.18 }}
-                className="flex items-baseline gap-3 mb-6"
-              >
-                <span
-                  className="text-4xl font-black"
-                  style={{ color: "var(--color-text-normal)" }}
-                >
-                  ₹{price.toLocaleString("en-IN")}
-                </span>
-                {originalPrice && originalPrice > price && (
-                  <span
-                    className="text-xl font-semibold line-through"
-                    style={{ color: "var(--color-text-subtle)" }}
-                  >
-                    ₹{originalPrice.toLocaleString("en-IN")}
-                  </span>
-                )}
-                <span
-                  className="text-xs font-bold px-2.5 py-1 rounded-full"
-                  style={{
-                    background: "color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)",
-                    color: "var(--color-success, #22c55e)",
-                    border: "1px solid color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent)",
-                  }}
-                >
-                  One-time
-                </span>
-              </motion.div>
+            <div className="mc-play-button"><span /></div>
+            {course.videoPreviewUrl && (
+              <span className="mc-video-caption">WATCH COURSE PREVIEW</span>
             )}
+          </button>
 
-            {/* CTA row */}
-            <motion.div
-              initial={{ opacity: 0, y: 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.22 }}
-              className="flex items-center gap-4 flex-wrap mb-6"
-            >
-              <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
-              <a
-                href="#curriculum"
-                className="text-sm font-semibold flex items-center gap-1.5 transition-colors hover:opacity-80"
-                style={{ color: "var(--color-text-secondary)" }}
-              >
-                See curriculum <ChevronDown size={14} />
-              </a>
-            </motion.div>
-
-            {/* Enrollment count */}
-            {(course._count?.enrollments ?? 0) > 0 && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.4, delay: 0.28 }}
-                className="flex items-center gap-2 mb-6"
-              >
-                <div className="flex -space-x-1.5">
-                  {[0,1,2].map(i => (
-                    <div
-                      key={i}
-                      className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
-                      style={{
-                        background: `hsl(${i * 40 + 10}, 60%, 55%)`,
-                        borderColor: "var(--color-bg-surface)",
-                        color: "#fff",
-                      }}
-                    >
-                      {String.fromCharCode(65 + i)}
-                    </div>
-                  ))}
-                </div>
-                <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  <span className="font-semibold" style={{ color: "var(--color-text-secondary)" }}>
-                    {course._count.enrollments.toLocaleString("en-IN")}
-                  </span>{" "}
-                  already enrolled
-                </span>
-              </motion.div>
-            )}
-
-            {/* Instructor */}
-            {course.instructor && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.4, delay: 0.3 }}
-                className="flex items-center gap-3"
-              >
-                {course.instructor.profilePhotoUrl ? (
-                  <img
-                    src={course.instructor.profilePhotoUrl}
-                    alt={course.instructor.fullName}
-                    className="w-9 h-9 rounded-full object-cover shrink-0"
-                    style={{ border: "2px solid var(--color-surface-overlay-md)" }}
-                  />
-                ) : (
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
-                    style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)" }}
-                  >
-                    {course.instructor.fullName?.charAt(0) ?? "?"}
-                  </div>
-                )}
+          <div className="mc-hero-facts">
+            {facts.map((f, i) => (
+              <div className="mc-fact" key={i}>
+                <span className="mc-fact-icon">{f.icon}</span>
                 <div>
-                  <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-                    {course.instructor.fullName}
-                  </p>
-                  {course.instructor.designation && (
-                    <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                      {course.instructor.designation}
-                    </p>
-                  )}
+                  <small>{f.label}</small>
+                  <strong>{f.value}</strong>
                 </div>
-              </motion.div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mc-offer-strip">
+          <div>
+            {hasPrice && !course.hasAccess ? (
+              <>
+                <small>
+                  Special Course Access
+                  {discountPct && <b className="mc-discount">{discountPct}% OFF</b>}
+                </small>
+                <div className="mc-offer-price">
+                  ₹{price.toLocaleString("en-IN")}
+                  {origPrice && origPrice > price && <del> ₹{origPrice.toLocaleString("en-IN")}</del>}
+                </div>
+                <small className="mc-offer-note">✓ Instant access · Learn at your own pace</small>
+              </>
+            ) : course.hasAccess ? (
+              <>
+                <small>You&apos;re enrolled in this course</small>
+                <div className="mc-offer-price" style={{ color: "#22c55e" }}>Already Enrolled ✓</div>
+                <small className="mc-offer-note">✓ Continue from where you left off</small>
+              </>
+            ) : (
+              <>
+                <small>Free Course Access</small>
+                <div className="mc-offer-price" style={{ color: "#22c55e" }}>Free Access</div>
+                <small className="mc-offer-note">✓ Instant access · No payment required</small>
+              </>
             )}
           </div>
-
-          {/* ── RIGHT: Thumbnail ──────────────────────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, x: 24, scale: 0.97 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ duration: 0.65, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            className="lg:w-[46%] lg:shrink-0 relative"
-          >
-            {/* Glow behind thumbnail */}
-            <div
-              className="pointer-events-none absolute -inset-6 rounded-3xl"
-              style={{
-                background: "radial-gradient(ellipse 80% 60% at 50% 50%, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent)",
-                filter: "blur(24px)",
-              }}
-            />
-            <div
-              className="relative rounded-2xl overflow-hidden aspect-video"
-              style={{
-                border: "1px solid var(--color-surface-overlay-md)",
-                boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3)",
-              }}
+          <div className="mc-offer-actions">
+            <button
+              className={`mc-btn ${course.hasAccess ? "mc-btn-green" : "mc-btn-red"}`}
+              onClick={handleHeroCta}
+              disabled={buying && !course.hasAccess && !isMultiTier}
             >
-              {course.thumbnailUrl ? (
-                <img
-                  src={course.thumbnailUrl}
-                  alt={course.title}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div
-                  className="w-full h-full flex items-center justify-center"
-                  style={{ background: "var(--color-surface-overlay)" }}
-                >
-                  <BookOpen size={64} style={{ color: "var(--color-text-subtle)" }} />
-                </div>
-              )}
-              {/* Gradient overlay at bottom */}
-              <div
-                className="absolute inset-x-0 bottom-0 h-24"
-                style={{ background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent)" }}
-              />
-              {/* Play button */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <motion.div
-                  whileHover={{ scale: 1.08 }}
-                  transition={{ type: "spring", stiffness: 300 }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center cursor-pointer"
-                  style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)", border: "1.5px solid rgba(255,255,255,0.35)" }}
-                  onClick={() => { const el = document.getElementById("video-preview"); el?.scrollIntoView({ behavior: "smooth" }); }}
-                >
-                  <Play size={26} className="text-white ml-1" fill="white" />
-                </motion.div>
-              </div>
-              {/* Discount badge on thumbnail */}
-              {discountPct && (
-                <div
-                  className="absolute top-3 right-3 px-3 py-1.5 rounded-full text-xs font-black text-white"
-                  style={{ background: "var(--color-accent)", boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
-                >
-                  {discountPct}% OFF
-                </div>
-              )}
-            </div>
-          </motion.div>
+              {buying && !course.hasAccess && !isMultiTier
+                ? <><Loader2 size={12} style={{ display: "inline-block", animation: "spin 1s linear infinite" }} /> Processing…</>
+                : heroCtaLabel}
+            </button>
+            <a className="mc-btn mc-btn-outline" href="#mc-curriculum">
+              Explore Curriculum →
+            </a>
+          </div>
         </div>
       </div>
-
-      {/* 4-col Details Strip */}
-      <DetailsStrip course={course} lessons={[...(course.lessons ?? [])]} totalSecs={totalSecs} />
     </section>
   );
 }
 
-function DetailsStrip({ course, lessons, totalSecs }: { course: any; lessons: any[]; totalSecs: number }) {
-  const items = [
-    { label: "Learning Method", value: "Self-Paced" },
-    { label: "Start", value: "Immediately" },
-    {
-      label: "Duration",
-      value: totalSecs > 0
-        ? fmtDurationSecs(totalSecs)
-        : course.durationHours
-        ? fmtHours(course.durationHours)
-        : `${lessons.length} Lessons`,
-    },
-    { label: "Platform", value: "TBT Portal" },
-  ];
+// ── Ticker ────────────────────────────────────────────────────────────────────
 
-  return (
-    <div
-      className="border-t"
-      style={{
-        background: "var(--color-bg-primary)",
-        borderColor: "var(--color-surface-overlay-md)",
-      }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 md:grid-cols-4 divide-x"
-          style={{ borderColor: "var(--color-surface-overlay)" }}
-        >
-          {items.map((item, i) => (
-            <div
-              key={i}
-              className="px-6 py-5 text-center"
-              style={{
-                borderColor: "var(--color-surface-overlay)",
-                borderRightWidth: i < 3 ? "1px" : "0",
-                borderRightStyle: "solid",
-              }}
-            >
-              <p
-                className="text-[11px] font-bold uppercase tracking-widest mb-1"
-                style={{ color: "var(--color-text-subtle)" }}
-              >
-                {item.label}
-              </p>
-              <p className="text-base font-bold" style={{ color: "var(--color-text-normal)" }}>
-                {item.value}
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Marquee ───────────────────────────────────────────────────────────────────
-
-function MarqueeStrip({ course }: { course?: any }) {
+function MCTickerSection({ course }: { course: any }) {
   const title = course?.title ? course.title.toUpperCase() : null;
   const module = course?.module ? course.module.toUpperCase() : null;
-  const items = title
-    ? [
-        title, "✦", "LEARN THE SKILL", "✦",
-        module ?? "BUILD YOUR BUSINESS", "✦", "START TODAY", "✦",
-        "GROW FASTER", "✦", "SELF-PACED LEARNING", "✦",
-      ]
-    : [
-        "LEARN THE SKILL", "✦", "BUILD YOUR PORTFOLIO", "✦",
-        "SELL YOUR SERVICE", "✦", "START IMMEDIATELY", "✦",
-        "GROW YOUR BUSINESS", "✦", "LEARN AT YOUR OWN PACE", "✦",
-      ];
-  const repeated = [...items, ...items, ...items];
-
+  const items = [
+    "LEARN THE SKILL", "✦", "BUILD YOUR PORTFOLIO", "✦",
+    title ?? "GROW YOUR BUSINESS", "✦", "SELL YOUR SERVICE", "✦",
+    module ?? "START TODAY", "✦", "LEARN AT YOUR OWN PACE", "✦",
+  ];
+  const repeated = [...items, ...items];
   return (
-    <div
-      className="overflow-hidden py-4 select-none"
-      style={{
-        background: "var(--color-accent)",
-        borderTop: "1px solid color-mix(in srgb, var(--color-accent) 70%, white 30%)",
-        borderBottom: "1px solid color-mix(in srgb, var(--color-accent) 60%, black 40%)",
-      }}
-    >
-      <motion.div
-        className="flex gap-8 whitespace-nowrap"
-        animate={{ x: [0, "-33.33%"] }}
-        transition={{ duration: 22, ease: "linear", repeat: Infinity }}
-      >
+    <div className="mc-ticker" aria-hidden="true">
+      <div className="mc-ticker-track">
         {repeated.map((item, i) => (
-          <span key={i} className="text-xs font-black tracking-[0.2em] uppercase text-white">
-            {item}
-          </span>
+          item === "✦" ? <i key={i}>✦</i> : <span key={i}>{item}</span>
         ))}
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Social Proof ─────────────────────────────────────────────────────────────
-
-function SocialProofSection({ course }: { course: any }) {
-  const count = course._count?.enrollments ?? 0;
-  if (count === 0) return null;
-  const lessons: any[] = course.lessons ?? [];
-  const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
-
-  const stats = [
-    { icon: <Users size={18} />, value: `${count.toLocaleString("en-IN")}+`, label: "Students Enrolled" },
-    { icon: <BookOpen size={18} />, value: `${lessons.length}`, label: "Lessons" },
-    totalSecs > 0 && { icon: <Clock size={18} />, value: fmtDurationSecs(totalSecs), label: "Total Duration" },
-    { icon: <Award size={18} />, value: "Certificate", label: "On Completion" },
-  ].filter(Boolean) as { icon: React.ReactNode; value: string; label: string }[];
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-60px" }}
-      transition={{ duration: 0.5 }}
-      className="py-14"
-      style={{ background: "var(--color-bg-primary)" }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
-          {stats.map((s, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-20px" }}
-              transition={{ duration: 0.4, delay: i * 0.07 }}
-              className="flex flex-col items-center text-center p-5 rounded-2xl"
-              style={{
-                background: "var(--color-bg-surface)",
-                border: "1px solid var(--color-surface-overlay)",
-              }}
-            >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                {s.icon}
-              </div>
-              <p className="text-2xl font-black mb-0.5" style={{ color: "var(--color-text-normal)" }}>
-                {s.value}
-              </p>
-              <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                {s.label}
-              </p>
-            </motion.div>
-          ))}
-        </div>
       </div>
-    </motion.section>
+    </div>
   );
 }
 
 // ── Curriculum ───────────────────────────────────────────────────────────────
 
-function ModuleCard({
-  num, title, description, lessons, defaultOpen,
-}: {
-  num: number; title: string; description?: string; lessons: any[]; defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen ?? false);
-  const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
-  const completedCount = lessons.filter((l: any) => l.isCompleted).length;
-
-  return (
-    <div
-      className="rounded-2xl overflow-hidden transition-all"
-      style={{
-        background: "var(--color-bg-surface)",
-        border: "1px solid var(--color-surface-overlay)",
-      }}
-    >
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-start gap-4 p-5 text-left transition-colors"
-        style={{ background: open ? "var(--color-surface-overlay-xs)" : "transparent" }}
-      >
-        {/* Number */}
-        <span
-          className="shrink-0 text-3xl font-black leading-none mt-0.5"
-          style={{ color: "color-mix(in srgb, var(--color-accent) 25%, var(--color-text-subtle))" }}
-        >
-          {padNum(num)}
-        </span>
-
-        <div className="flex-1 min-w-0">
-          <p className="font-bold text-base leading-snug" style={{ color: "var(--color-text-normal)" }}>
-            {title}
-          </p>
-          {description && (
-            <p className="text-xs mt-1 line-clamp-1" style={{ color: "var(--color-text-subtle)" }}>
-              {description}
-            </p>
-          )}
-          <div className="flex items-center gap-3 mt-2 flex-wrap">
-            <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-              {lessons.length} lesson{lessons.length !== 1 ? "s" : ""}
-              {totalSecs > 0 && ` · ${fmtDurationSecs(totalSecs)}`}
-            </span>
-            {completedCount > 0 && (
-              <span
-                className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                style={{
-                  background: "color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)",
-                  color: "var(--color-success, #22c55e)",
-                }}
-              >
-                {completedCount}/{lessons.length} done
-              </span>
-            )}
-          </div>
-        </div>
-
-        <span className="shrink-0 mt-1" style={{ color: "var(--color-text-subtle)" }}>
-          {open ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-        </span>
-      </button>
-
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-            style={{ overflow: "hidden" }}
-          >
-            <div style={{ borderTop: "1px solid var(--color-surface-overlay)" }}>
-              {lessons.map((l: any, i: number) => (
-                <div
-                  key={l.id}
-                  className="flex items-center gap-3 px-5 py-3"
-                  style={{
-                    borderBottom: i < lessons.length - 1 ? "1px solid var(--color-surface-overlay-xs)" : "none",
-                    background: "var(--color-bg-surface)",
-                  }}
-                >
-                  <span
-                    className="shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold"
-                    style={{
-                      background: l.isCompleted
-                        ? "color-mix(in srgb, var(--color-success, #22c55e) 20%, transparent)"
-                        : "var(--color-surface-overlay)",
-                      color: l.isCompleted ? "var(--color-success, #22c55e)" : "var(--color-text-subtle)",
-                    }}
-                  >
-                    {l.isCompleted ? <CheckCircle2 size={11} /> : i + 1}
-                  </span>
-                  <span
-                    className="flex-1 text-sm"
-                    style={{ color: l.locked ? "var(--color-text-subtle)" : "var(--color-text-secondary)" }}
-                  >
-                    {l.title}
-                  </span>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {l.locked && <Lock size={11} style={{ color: "var(--color-text-subtle)" }} />}
-                    {l.durationSeconds > 0 && (
-                      <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                        {fmtDurationSecs(l.durationSeconds)}
-                      </span>
-                    )}
-                    {l.hasQuiz && (
-                      <span
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded"
-                        style={{
-                          background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                          color: "var(--color-accent)",
-                        }}
-                      >
-                        Quiz
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function CurriculumSection({ course }: { course: any }) {
-  const lessons: any[] = course.lessons ?? [];
+function MCCurriculumSection({ course }: { course: any }) {
+  const lessons: any[] = (course.lessons ?? []).slice().sort((a: any, b: any) => a.order - b.order);
   const sections: any[] = (course.sections ?? []).slice().sort((a: any, b: any) => a.sortOrder - b.sortOrder);
-  const [showAll, setShowAll] = useState(false);
 
-  const groups: Array<{ title: string; description?: string; lessons: any[] }> = [];
+  type Group = { title: string; tag?: string; lessons: any[]; featured?: boolean };
+  const groups: Group[] = [];
 
   if (sections.length > 0) {
-    sections.forEach((sec: any) => {
-      const sl = lessons.filter((l: any) => l.sectionId === sec.id).sort((a: any, b: any) => a.order - b.order);
-      if (sl.length > 0) groups.push({ title: sec.title, description: sec.description, lessons: sl });
+    sections.forEach((sec: any, i: number) => {
+      const sl = lessons.filter((l: any) => l.sectionId === sec.id);
+      if (sl.length > 0) groups.push({ title: sec.title, tag: sec.description?.slice(0, 20) ?? undefined, lessons: sl, featured: i === 0 });
     });
-    const unsectioned = lessons.filter((l: any) => !l.sectionId).sort((a: any, b: any) => a.order - b.order);
+    const unsectioned = lessons.filter((l: any) => !l.sectionId);
     if (unsectioned.length > 0) groups.push({ title: "General", lessons: unsectioned });
   } else {
-    // Treat each lesson as its own card
-    lessons.slice().sort((a: any, b: any) => a.order - b.order).forEach((l: any) => {
-      groups.push({ title: l.title, lessons: [l] });
+    lessons.forEach((l: any, i: number) => {
+      groups.push({ title: l.title, tag: l.type ?? undefined, lessons: [l], featured: i === 0 });
     });
   }
 
   if (groups.length === 0) return null;
 
-  const PREVIEW = 6;
-  const displayed = showAll ? groups : groups.slice(0, PREVIEW);
+  const mid = Math.ceil(groups.length / 2);
+  const leftGroups = groups.slice(0, mid);
+  const rightGroups = groups.slice(mid);
 
   return (
-    <motion.section
-      id="curriculum"
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-primary)" }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="text-center mb-12">
-          <h2
-            className="text-3xl sm:text-4xl font-extrabold mb-3"
-            style={{ color: "var(--color-text-normal)" }}
-          >
-            Everything You Need to{" "}
-            <span style={{ color: "var(--color-accent)" }}>Start Earning</span>
-          </h2>
-          <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
-            {lessons.length} lesson{lessons.length !== 1 ? "s" : ""}
-            {groups.length > 1 && ` · ${groups.length} modules`}
-          </p>
-        </div>
+    <section className="mc-section" id="mc-curriculum">
+      <div className="mc-section-heading">
+        <p className="mc-eyebrow">YOUR LEARNING ROADMAP</p>
+        <h2>Everything You Need to <span>Start Earning</span></h2>
+        <p>
+          Explore the step-by-step curriculum, master the skills, and build what businesses pay for.
+        </p>
+      </div>
 
-        {/* 2-column grid of module cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {displayed.map((g, i) => (
-            <ModuleCard
-              key={i}
-              num={i + 1}
-              title={g.title}
-              description={g.description}
-              lessons={g.lessons}
-              defaultOpen={i === 0}
-            />
+      <div className="mc-module-grid" style={{ gridTemplateColumns: rightGroups.length > 0 ? undefined : "1fr" }}>
+        <div className="mc-module-list">
+          {leftGroups.map((g, i) => (
+            <MCModuleCard key={i} index={i} group={g} />
           ))}
         </div>
-
-        {groups.length > PREVIEW && (
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setShowAll(o => !o)}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-colors"
-              style={{
-                background: "var(--color-surface-overlay)",
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-surface-overlay-md)",
-              }}
-            >
-              {showAll ? (
-                <><ChevronUp size={15} /> Show Less</>
-              ) : (
-                <><ChevronDown size={15} /> Show {groups.length - PREVIEW} More Modules</>
-              )}
-            </button>
+        {rightGroups.length > 0 && (
+          <div className="mc-module-list">
+            {rightGroups.map((g, i) => (
+              <MCModuleCard key={i + mid} index={i + mid} group={g} />
+            ))}
           </div>
         )}
       </div>
-    </motion.section>
+
+      <a className="mc-btn mc-btn-dark mc-center-btn" href="#mc-plans">
+        Explore Pricing Plans →
+      </a>
+    </section>
   );
 }
 
-// ── Video Preview ─────────────────────────────────────────────────────────────
-
-function VideoPreviewSection({ videoUrl }: { videoUrl: string }) {
-  const isYouTube = videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be");
-  const isVimeo = videoUrl.includes("vimeo.com");
-
-  let embedUrl = videoUrl;
-  if (isYouTube) {
-    const match = videoUrl.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-    if (match) embedUrl = `https://www.youtube.com/embed/${match[1]}?rel=0`;
-  } else if (isVimeo) {
-    const match = videoUrl.match(/vimeo\.com\/(\d+)/);
-    if (match) embedUrl = `https://player.vimeo.com/video/${match[1]}`;
-  }
-
-  const isEmbed = isYouTube || isVimeo;
+function MCModuleCard({ index, group }: { index: number; group: { title: string; tag?: string; lessons: any[]; featured?: boolean } }) {
+  const [open, setOpen] = useState(index === 0);
+  const totalSecs = group.lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
 
   return (
-    <motion.section
-      id="video-preview"
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-16"
-      style={{ background: "var(--color-bg-surface)" }}
-    >
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
-            Preview the Course
-          </h2>
-        </div>
-        <div
-          className="relative rounded-2xl overflow-hidden"
-          style={{
-            boxShadow: "0 8px 48px rgba(0,0,0,0.5)",
-            border: "1px solid var(--color-surface-overlay)",
-          }}
-        >
-          {isEmbed ? (
-            <div className="aspect-video">
-              <iframe
-                src={embedUrl}
-                className="w-full h-full"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-                title="Course Preview"
-              />
-            </div>
-          ) : (
-            <div className="aspect-video">
-              <video src={videoUrl} controls className="w-full h-full object-cover" />
-            </div>
-          )}
-        </div>
+    <article className={`mc-module-card${group.featured ? " mc-featured" : ""}`}>
+      <button
+        className="mc-module-trigger"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+      >
+        <span className="mc-module-number">{padNum(index + 1)}</span>
+        <span className="mc-module-title">{group.title}</span>
+        {group.tag && <span className="mc-module-tag">{group.tag}</span>}
+        {totalSecs > 0 && <span className="mc-module-tag">{fmtDurationSecs(totalSecs)}</span>}
+        <i className="mc-chevron">⌄</i>
+      </button>
+      <div className="mc-module-details">
+        {group.lessons.map((l: any, j: number) => (
+          <div key={l.id ?? j}>
+            <span>{j + 1}. {l.title}</span>
+            {l.durationSeconds > 0 && <small>{fmtDurationSecs(l.durationSeconds)}</small>}
+          </div>
+        ))}
+        {group.lessons.length === 0 && <p>Lessons loading…</p>}
       </div>
-    </motion.section>
-  );
-}
-
-// ── Key Highlights ────────────────────────────────────────────────────────────
-
-function KeyHighlightsSection({ highlights }: { highlights: string[] }) {
-  if (!highlights.length) return null;
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-16"
-      style={{ background: "var(--color-bg-primary)" }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-10">
-          <h2 className="text-2xl sm:text-3xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
-            What You&apos;ll <span style={{ color: "var(--color-accent)" }}>Walk Away With</span>
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {highlights.map((item, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: -12 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-20px" }}
-              transition={{ duration: 0.4, delay: i * 0.05 }}
-              className="flex items-start gap-3 p-4 rounded-xl"
-              style={{
-                background: "var(--color-bg-surface)",
-                border: "1px solid var(--color-surface-overlay)",
-              }}
-            >
-              <div
-                className="mt-0.5 w-6 h-6 rounded-full flex items-center justify-center shrink-0"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                <CheckCircle2 size={14} />
-              </div>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
-                {item}
-              </p>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </motion.section>
+    </article>
   );
 }
 
 // ── Related Courses ───────────────────────────────────────────────────────────
 
-function RelatedCourses({ courses }: { courses: any[] }) {
+const ART_BG = [
+  "radial-gradient(circle at 70% 80%,#65b3f1,#102f66 50%,#06142b)",
+  "radial-gradient(circle at 70% 70%,#c77c39,#38201a 50%,#101016)",
+  "radial-gradient(circle at 75% 75%,#5ecf8e,#1a5c38 50%,#0a1c10)",
+];
+
+function MCRelatedSection({ courses }: { courses: any[] }) {
   const router = useRouter();
-  if (!courses.length) return null;
+  const shown = courses.slice(0, 3);
+  if (!shown.length) return null;
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-surface)" }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
-            Skills That Work Even Better Together.
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {courses.slice(0, 3).map((c: any) => (
-            <div
-              key={c.id}
-              className="rounded-2xl overflow-hidden cursor-pointer group transition-transform hover:scale-[1.02]"
-              style={{ border: "1px solid var(--color-surface-overlay)", background: "var(--color-bg-primary)" }}
-              onClick={() => router.push(`/courses/${c.id}`)}
-            >
-              <div className="aspect-video relative">
-                {c.thumbnailUrl ? (
-                  <img src={c.thumbnailUrl} alt={c.title} className="w-full h-full object-cover" />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center"
-                    style={{ background: "var(--color-surface-overlay)" }}
-                  >
-                    <BookOpen size={28} style={{ color: "var(--color-text-subtle)" }} />
-                  </div>
-                )}
-              </div>
-              <div className="p-4">
-                <h3 className="font-bold text-sm line-clamp-2 mb-2" style={{ color: "var(--color-text-normal)" }}>
-                  {c.title}
-                </h3>
-                {c.description && (
-                  <p className="text-xs line-clamp-2 mb-3" style={{ color: "var(--color-text-subtle)" }}>
-                    {c.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-between">
-                  {c.price > 0 ? (
-                    <span className="text-sm font-black" style={{ color: "var(--color-accent)" }}>
-                      ₹{Number(c.price).toLocaleString("en-IN")}
-                    </span>
-                  ) : (
-                    <span className="text-sm font-black" style={{ color: "var(--color-success, #22c55e)" }}>
-                      Free
-                    </span>
-                  )}
-                  <span
-                    className="text-xs font-semibold flex items-center gap-1 transition-colors"
-                    style={{ color: "var(--color-accent)" }}
-                  >
-                    View Course <ArrowRight size={12} />
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+    <section className="mc-related-section">
+      <div className="mc-section-heading mc-light">
+        <p className="mc-eyebrow">GROW YOUR SKILLS</p>
+        <h2>Skills That Work Even Better <span>Together.</span></h2>
+        <p>Explore complementary courses that help you expand your services and deliver more value.</p>
       </div>
-    </motion.section>
+
+      <div className="mc-course-grid" style={{ gridTemplateColumns: shown.length === 1 ? "1fr" : shown.length === 2 ? "repeat(2,1fr)" : undefined }}>
+        {shown.map((c: any, i: number) => (
+          <article
+            key={c.id}
+            className="mc-course-card"
+            onClick={() => router.push(`/courses/${c.id}`)}
+          >
+            <div className="mc-course-art" style={{ background: c.thumbnailUrl ? "#000" : ART_BG[i % ART_BG.length] }}>
+              {c.thumbnailUrl && <img src={c.thumbnailUrl} alt={c.title} />}
+              <div className="mc-course-art-overlay" />
+              {!c.thumbnailUrl && (
+                <div className="mc-course-art-text">
+                  <b>{c.title.toUpperCase()}</b>
+                </div>
+              )}
+              <span className="mc-art-label">{c.price > 0 ? `₹${Number(c.price).toLocaleString("en-IN")}` : "Free"}</span>
+              <span className="mc-art-shape" />
+            </div>
+            <h3>{c.title}</h3>
+            {c.description && <p>{c.description.slice(0, 90)}{c.description.length > 90 ? "…" : ""}</p>}
+            <span>View Course →</span>
+          </article>
+        ))}
+      </div>
+
+      <a className="mc-btn mc-btn-white mc-center-btn" href="/courses">
+        View All Courses →
+      </a>
+    </section>
   );
 }
 
-// ── Pricing ───────────────────────────────────────────────────────────────────
+// ── Plans ─────────────────────────────────────────────────────────────────────
 
-function PricingSection({
+function MCPlansSection({
   course, courseId, buying, onBuy,
   buyingBundle, onBuyBundle,
   buyingAllAccess, onBuyAllAccess,
@@ -1013,583 +636,246 @@ function PricingSection({
   const hasPrice = course.price != null && Number(course.price) > 0;
   const hasBundlePrice = course.bundlePrice != null && Number(course.bundlePrice) > 0;
   const hasAllAccessPrice = course.allAccessPrice != null && Number(course.allAccessPrice) > 0;
-  const isMultiTier = hasBundlePrice || hasAllAccessPrice;
+  const origPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
+  const price = hasPrice ? Number(course.price) : 0;
+  const discountPct = origPrice && origPrice > price && price > 0
+    ? Math.round(((origPrice - price) / origPrice) * 100) : null;
+  const razorpayOn = isRazorpayEnabled(course);
 
-  const basePerkItems = [
+  const basePerks = [
     lessons.length > 0 && `${lessons.length} lesson${lessons.length !== 1 ? "s" : ""}`,
     totalSecs > 0 && `${fmtDurationSecs(totalSecs)} of content`,
-    course.level && `${levelLabel(course.level)} level`,
     course.accessDurationDays ? `${course.accessDurationDays}-day access` : "Lifetime access",
-    course.xpPerEpisode > 0 && `${course.xpPerEpisode} XP per lesson`,
-    "Start immediately",
     "Learn at your own pace",
+    "Start immediately",
   ].filter(Boolean) as string[];
 
   const headline = course.purchaseHeadline || "Choose Your Learning Plan";
-
-  if (!isMultiTier) {
-    // Single card centered (original layout)
-    const perks = [
-      hasPrice && `₹${Number(course.price).toLocaleString("en-IN")} one-time payment`,
-      ...basePerkItems,
-    ].filter(Boolean) as string[];
-
-    return (
-      <motion.section
-        initial={{ opacity: 0, y: 32 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, margin: "-80px" }}
-        transition={{ duration: 0.5 }}
-        className="py-20"
-        style={{ background: "var(--color-bg-primary)" }}
-      >
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-10">
-            <h2 className="text-3xl sm:text-4xl font-extrabold" style={{ color: "var(--color-text-normal)" }}>
-              {headline}
-            </h2>
-          </div>
-          <div className="max-w-sm mx-auto">
-            <div
-              className="relative rounded-3xl p-8"
-              style={{
-                background: "var(--color-bg-surface)",
-                border: "2px solid var(--color-accent)",
-                boxShadow: "0 0 48px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 24px 64px rgba(0,0,0,0.4)",
-              }}
-            >
-              <div
-                className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 rounded-full text-xs font-black text-white uppercase tracking-widest"
-                style={{ background: "var(--color-accent)" }}
-              >
-                {course.hasAccess ? "✓ Enrolled" : course.courseType === "mini_course" ? "Mini Course" : "Full Access"}
-              </div>
-              <div className="mt-2 mb-6">
-                <h3 className="text-xl font-extrabold mb-1" style={{ color: "var(--color-text-normal)" }}>
-                  {course.title}
-                </h3>
-                {course.description && (
-                  <p className="text-xs line-clamp-2" style={{ color: "var(--color-text-subtle)" }}>
-                    {course.description}
-                  </p>
-                )}
-              </div>
-              {hasPrice && !course.hasAccess ? (
-                <div className="mb-6">
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <div className="text-4xl font-black" style={{ color: "var(--color-text-normal)" }}>
-                      ₹{Number(course.price).toLocaleString("en-IN")}
-                    </div>
-                    {course.originalPrice != null && Number(course.originalPrice) > Number(course.price) && (
-                      <span className="text-lg font-semibold line-through" style={{ color: "var(--color-text-subtle)" }}>
-                        ₹{Number(course.originalPrice).toLocaleString("en-IN")}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>One-time · Instant access</p>
-                </div>
-              ) : course.hasAccess ? (
-                <div className="mb-6">
-                  <div className="text-2xl font-black" style={{ color: "var(--color-success, #22c55e)" }}>
-                    You&apos;re Enrolled
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-6">
-                  <div className="text-3xl font-black" style={{ color: "var(--color-success, #22c55e)" }}>
-                    Free Access
-                  </div>
-                </div>
-              )}
-              <div className="space-y-2.5 mb-7">
-                {perks.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-                    <CheckCircle2 size={14} style={{ color: "var(--color-accent)" }} className="shrink-0" />
-                    {p}
-                  </div>
-                ))}
-              </div>
-              <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
-            </div>
-          </div>
-        </div>
-      </motion.section>
-    );
-  }
-
-  // 3-tier layout
-  const bundleCourses: any[] = course.bundleCourses ?? [];
-
-  const origPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
-  const discountPct2 = origPrice && origPrice > Number(course.price ?? 0) && Number(course.price ?? 0) > 0
-    ? Math.round(((origPrice - Number(course.price)) / origPrice) * 100)
-    : null;
-
-  const tiers = [
-    {
-      key: "single",
-      label: "Single Course",
-      badge: course.hasAccess ? "✓ Enrolled" : discountPct2 ? `${discountPct2}% OFF` : "Get Started",
-      price: hasPrice ? `₹${Number(course.price).toLocaleString("en-IN")}` : "Free",
-      originalPrice: origPrice && origPrice > Number(course.price ?? 0) ? `₹${origPrice.toLocaleString("en-IN")}` : null,
-      priceNote: hasPrice ? "One-time · Instant access" : "No payment needed",
-      perks: [`This course only`, ...basePerkItems],
-      cta: course.hasAccess
-        ? { label: "Continue Learning", action: () => router.push(`/learning/${courseId}`), loading: false, style: "success" }
-        : { label: buying ? "Processing…" : hasPrice ? `Buy ₹${Number(course.price).toLocaleString("en-IN")}` : "Enroll Free", action: onBuy, loading: buying, style: "accent" },
-      featured: false,
-    },
-    ...(hasBundlePrice ? [{
-      key: "bundle",
-      label: "Curated Bundle",
-      badge: "Best Value",
-      price: `₹${Number(course.bundlePrice).toLocaleString("en-IN")}`,
-      originalPrice: null as string | null,
-      priceNote: "One-time · All bundled courses",
-      perks: [
-        `${bundleCourses.length + 1} courses included`,
-        ...basePerkItems,
-        "Bundle discount applied",
-      ],
-      bundleCourses,
-      cta: { label: buyingBundle ? "Processing…" : `Buy Bundle ₹${Number(course.bundlePrice).toLocaleString("en-IN")}`, action: onBuyBundle, loading: buyingBundle, style: "accent" },
-      featured: true,
-    }] : []),
-    ...(hasAllAccessPrice ? [{
-      key: "all_access",
-      label: "All-Access",
-      badge: "Maximum Value",
-      price: `₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`,
-      originalPrice: null as string | null,
-      priceNote: "One-time · Every mini course",
-      perks: [
-        "All published mini courses",
-        "Future courses included",
-        ...basePerkItems,
-        "Best value for serious learners",
-      ],
-      cta: { label: buyingAllAccess ? "Processing…" : `Get All Access ₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`, action: onBuyAllAccess, loading: buyingAllAccess, style: "gradient" },
-      featured: false,
-    }] : []),
-  ];
+  const tierCount = 1 + (hasBundlePrice ? 1 : 0) + (hasAllAccessPrice ? 1 : 0);
+  const gridClass = tierCount === 1 ? "mc-plans-grid mc-g1" : tierCount === 2 ? "mc-plans-grid mc-g2" : "mc-plans-grid";
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-primary)" }}
-    >
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl sm:text-4xl font-extrabold mb-3" style={{ color: "var(--color-text-normal)" }}>
-            {headline}
-          </h2>
-          <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
-            Pick the plan that matches your learning ambition
-          </p>
-        </div>
-
-        <div className={`grid gap-6 ${tiers.length === 3 ? "grid-cols-1 md:grid-cols-3" : tiers.length === 2 ? "grid-cols-1 md:grid-cols-2 max-w-3xl mx-auto" : "grid-cols-1 max-w-sm mx-auto"}`}>
-          {tiers.map((tier, i) => (
-            <motion.div
-              key={tier.key}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="relative flex flex-col rounded-3xl p-7"
-              style={{
-                background: "var(--color-bg-surface)",
-                border: tier.featured
-                  ? "2px solid var(--color-accent)"
-                  : "1px solid var(--color-surface-overlay)",
-                boxShadow: tier.featured
-                  ? "0 0 48px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 24px 64px rgba(0,0,0,0.4)"
-                  : "none",
-              }}
-            >
-              {/* Badge */}
-              <div
-                className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest whitespace-nowrap"
-                style={{
-                  background: tier.featured ? "var(--color-accent)" : "var(--color-surface-overlay-md)",
-                  color: tier.featured ? "#fff" : "var(--color-text-secondary)",
-                }}
-              >
-                {tier.badge}
-              </div>
-
-              {/* Plan name */}
-              <div className="mt-3 mb-4">
-                <h3 className="text-lg font-extrabold mb-1" style={{ color: "var(--color-text-normal)" }}>
-                  {tier.label}
-                </h3>
-              </div>
-
-              {/* Price */}
-              <div className="mb-5">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <div
-                    className="text-3xl font-black"
-                    style={{ color: tier.featured ? "var(--color-accent)" : "var(--color-text-normal)" }}
-                  >
-                    {tier.price}
-                  </div>
-                  {(tier as any).originalPrice && (
-                    <span className="text-sm font-semibold line-through" style={{ color: "var(--color-text-subtle)" }}>
-                      {(tier as any).originalPrice}
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>{tier.priceNote}</p>
-              </div>
-
-              {/* Bundle course names */}
-              {tier.bundleCourses && tier.bundleCourses.length > 0 && (
-                <div className="mb-4 p-3 rounded-xl" style={{ background: "var(--color-surface-overlay-xs)" }}>
-                  <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: "var(--color-text-subtle)" }}>
-                    Includes
-                  </p>
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-text-secondary)" }}>
-                      <CheckCircle2 size={12} style={{ color: "var(--color-accent)" }} className="shrink-0" />
-                      <span className="font-semibold">{course.title}</span>
-                      <span style={{ color: "var(--color-text-subtle)" }}>(this course)</span>
-                    </div>
-                    {tier.bundleCourses.map((bc: any) => (
-                      <div key={bc.id} className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-text-secondary)" }}>
-                        <CheckCircle2 size={12} style={{ color: "var(--color-accent)" }} className="shrink-0" />
-                        {bc.title}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Perks */}
-              <div className="space-y-2 mb-6 flex-1">
-                {tier.perks.map((p, j) => (
-                  <div key={j} className="flex items-center gap-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
-                    <CheckCircle2 size={13} style={{ color: "var(--color-accent)" }} className="shrink-0" />
-                    {p}
-                  </div>
-                ))}
-              </div>
-
-              {/* CTA */}
-              <button
-                onClick={tier.cta.action}
-                disabled={tier.cta.loading}
-                className="w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-60"
-                style={
-                  tier.cta.style === "success"
-                    ? { background: "var(--color-success, #22c55e)", color: "#fff" }
-                    : tier.cta.style === "gradient"
-                    ? {
-                        background: "linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 70%, #7c3aed))",
-                        color: "#fff",
-                        boxShadow: "0 4px 20px color-mix(in srgb, var(--color-accent) 35%, transparent)",
-                      }
-                    : {
-                        background: tier.featured ? "var(--color-accent)" : "transparent",
-                        color: tier.featured ? "#fff" : "var(--color-accent)",
-                        border: tier.featured ? "none" : "2px solid var(--color-accent)",
-                        boxShadow: tier.featured
-                          ? "0 4px 20px color-mix(in srgb, var(--color-accent) 35%, transparent)"
-                          : "none",
-                      }
-                }
-              >
-                {tier.cta.loading && <Loader2 size={14} className="animate-spin" />}
-                {tier.cta.label}
-              </button>
-            </motion.div>
-          ))}
-        </div>
+    <section className="mc-section mc-plans-section" id="mc-plans">
+      <div className="mc-section-heading">
+        <p className="mc-eyebrow">PICK YOUR LEARNING PATH</p>
+        <h2>Choose Your <span>Learning Plan</span></h2>
+        <p>Select the plan that best matches your learning goals.</p>
       </div>
-    </motion.section>
+
+      <div className={gridClass}>
+        {/* Single course card */}
+        <article className={`mc-plan-card${hasBundlePrice ? "" : " mc-popular"}`}>
+          {!hasBundlePrice && !hasAllAccessPrice && <div className="mc-popular-label">✦ BEST VALUE</div>}
+          <div className="mc-plan-top">
+            <span>STANDALONE COURSE</span>
+            <span className="mc-pill">Self-Paced</span>
+          </div>
+          <h3>{course.title}</h3>
+          <p>{course.description?.slice(0, 90) ?? "Complete course access with everything you need to get started."}</p>
+          <div className="mc-plan-price">
+            {course.hasAccess
+              ? <span style={{ color: "#22c55e", fontSize: "24px" }}>Enrolled ✓</span>
+              : hasPrice
+              ? (<>{`₹${price.toLocaleString("en-IN")}`}{origPrice && origPrice > price && <del>{`₹${origPrice.toLocaleString("en-IN")}`}</del>}{discountPct && <small>{discountPct}% OFF</small>}</>)
+              : "Free"}
+          </div>
+          <div className="mc-plan-subtitle">CURRICULUM SCOPE:</div>
+          <b className="mc-plan-feature-title">Complete {lessons.length}-Lesson Course</b>
+          <ul>
+            {basePerks.map((p, i) => <li key={i}>{p}</li>)}
+          </ul>
+          {course.hasAccess ? (
+            <button className="mc-btn mc-btn-green mc-plan-btn" onClick={() => router.push(`/learning/${courseId}`)}>
+              Continue Learning →
+            </button>
+          ) : hasPrice && razorpayOn ? (
+            <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buying} onClick={onBuy}>
+              {buying ? <><Loader2 size={12} style={{ display: "inline", animation: "spin 1s linear infinite" }} /> Processing…</> : `Enroll in Course →`}
+            </button>
+          ) : (
+            <button className="mc-btn mc-btn-red mc-plan-btn" onClick={() => router.push(`/learning/${courseId}`)}>
+              Start Learning Free →
+            </button>
+          )}
+        </article>
+
+        {/* Bundle card */}
+        {hasBundlePrice && (
+          <article className="mc-plan-card mc-popular">
+            <div className="mc-popular-label">✦ BEST VALUE FOR CREATORS</div>
+            <div className="mc-plan-top">
+              <span>CURATED BUNDLE</span>
+              <span className="mc-pill">Most Popular</span>
+            </div>
+            <h3>Creative Skill Bundle</h3>
+            <p>Get this course plus a curated set of complementary courses at a special bundle price.</p>
+            <div className="mc-plan-price">
+              {`₹${Number(course.bundlePrice).toLocaleString("en-IN")}`}
+              <small>Bundle Discount</small>
+            </div>
+            <div className="mc-plan-subtitle">INCLUDES:</div>
+            <b className="mc-plan-feature-title">{course.title} + Bundle Courses</b>
+            <ul>
+              <li>Everything in the standalone course</li>
+              {(course.bundleCourses ?? []).slice(0, 3).map((bc: any) => <li key={bc.id}>{bc.title}</li>)}
+              <li>Bundle discount applied</li>
+              ...{basePerks.slice(0, 2).map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
+            <button className="mc-btn mc-btn-red mc-plan-btn" disabled={buyingBundle} onClick={onBuyBundle}>
+              {buyingBundle ? "Processing…" : `Get Bundle →`}
+            </button>
+          </article>
+        )}
+
+        {/* All-access card */}
+        {hasAllAccessPrice && (
+          <article className="mc-plan-card">
+            <div className="mc-plan-top">
+              <span>ALL-ACCESS</span>
+              <span className="mc-pill">Maximum Value</span>
+            </div>
+            <h3>All-Access Pass</h3>
+            <p>Get access to every published course on the platform. Best for serious learners and business builders.</p>
+            <div className="mc-plan-price">
+              {`₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`}
+              <small>All Courses</small>
+            </div>
+            <div className="mc-plan-subtitle">INCLUDES:</div>
+            <b className="mc-plan-feature-title">All Published Courses</b>
+            <ul>
+              <li>All currently published courses</li>
+              <li>Future courses included</li>
+              <li>Best value for serious learners</li>
+              <li>Priority support access</li>
+              {basePerks.slice(0, 2).map((p, i) => <li key={i}>{p}</li>)}
+            </ul>
+            <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buyingAllAccess} onClick={onBuyAllAccess}>
+              {buyingAllAccess ? "Processing…" : `Get All Access →`}
+            </button>
+          </article>
+        )}
+      </div>
+    </section>
   );
 }
 
-// ── Journey Section ───────────────────────────────────────────────────────────
+// ── Earning ───────────────────────────────────────────────────────────────────
 
-const JOURNEY_STEPS = [
-  {
-    num: "01",
-    title: "Learn",
-    desc: "Follow structured lessons designed to build your skills from the ground up.",
-    icon: <BookOpen size={24} />,
-  },
-  {
-    num: "02",
-    title: "Practice",
-    desc: "Apply what you've learned through quizzes and real-world exercises.",
-    icon: <Target size={24} />,
-  },
-  {
-    num: "03",
-    title: "Apply",
-    desc: "Use your new skills in your business or freelance projects immediately.",
-    icon: <Layers size={24} />,
-  },
-  {
-    num: "04",
-    title: "Grow",
-    desc: "Scale your results and unlock new opportunities with your expertise.",
-    icon: <TrendingUp size={24} />,
-  },
+const EARN_STEPS = [
+  { icon: "♟", title: "Learn", desc: "Master the tools, techniques, and practical workflows from Tamil creators." },
+  { icon: "♧", title: "Implement", desc: "Turn your skills into real projects that showcase your capabilities." },
+  { icon: "◎", title: "Monetize", desc: "Discover service ideas, offer packaging, pricing models, and your first 3 clients." },
+  { icon: "▥", title: "Scale", desc: "Retain clients, build repeatable systems, and turn your skill into a sustainable business." },
 ];
 
-function JourneySection() {
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-surface)" }}
-    >
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-14">
-          <h2 className="text-3xl sm:text-4xl font-extrabold mb-3" style={{ color: "var(--color-text-normal)" }}>
-            Don&apos;t Just Learn the Skill.
-            <br />
-            <span style={{ color: "var(--color-accent)" }}>Learn How to Earn From It.</span>
-          </h2>
-        </div>
+function MCEarningSection({ course, onBuy }: { course: any; onBuy: () => void }) {
+  const router = useRouter();
+  const hasPrice = course.price != null && Number(course.price) > 0;
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {JOURNEY_STEPS.map((step, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-40px" }}
-              transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="relative rounded-2xl p-6"
-              style={{
-                background: "var(--color-bg-primary)",
-                border: "1px solid var(--color-surface-overlay)",
-              }}
-            >
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                  color: "var(--color-accent)",
-                }}
-              >
-                {step.icon}
-              </div>
-              <div
-                className="text-5xl font-black mb-2 leading-none"
-                style={{ color: "color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-overlay-md))" }}
-              >
-                {step.num}
-              </div>
-              <h3 className="text-lg font-extrabold mb-2" style={{ color: "var(--color-text-normal)" }}>
-                {step.title}
-              </h3>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
-                {step.desc}
-              </p>
-            </motion.div>
-          ))}
+  return (
+    <section className="mc-earning-section">
+      <div className="mc-earning-copy">
+        <p className="mc-eyebrow">FROM LEARNING TO EARNING</p>
+        <h2>Don&apos;t Just Learn the Skill. <span>Learn How to Earn</span> From It.</h2>
+        <p>Every learning path connects technical skills with the business side — because a skill only changes your life when someone pays for it.</p>
+        <div className="mc-button-row">
+          <button className="mc-btn mc-btn-red" onClick={course.hasAccess ? () => router.push(`/learning/${course.id}`) : onBuy}>
+            {course.hasAccess ? "Continue Learning →" : hasPrice ? "Explore Pricing →" : "Start Learning →"}
+          </button>
+          <a className="mc-btn mc-btn-outline" href="#mc-curriculum">Explore Curriculum</a>
         </div>
       </div>
-    </motion.section>
+
+      <div>
+        <div className="mc-steps-grid">
+          {EARN_STEPS.map((s, i) => (
+            <article key={i}>
+              <span className="mc-step-icon">{s.icon}</span>
+              <h3>{s.title}</h3>
+              <p>{s.desc}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="mc-testimonial" style={{ marginTop: "13px" }}>
+          <div className="mc-avatar">SK</div>
+          <p>
+            &ldquo;Most courses stop at showing how the buttons work. TBT taught me how to package my skills into a monthly social media retainer. I closed my first local client within 3 weeks of finishing.&rdquo;
+            <small><b>Santhosh Kumar</b> · Freelance Creator · TBT Member</small>
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
-// ── Core Principle / Quote ────────────────────────────────────────────────────
+// ── Quote ─────────────────────────────────────────────────────────────────────
 
-function QuoteSection({ course, courseId, buying, onBuy }: {
-  course: any; courseId: string; buying: boolean; onBuy: () => void;
-}) {
+function MCQuoteSection({ course, onBuy }: { course: any; onBuy: () => void }) {
+  const router = useRouter();
+  const hasPrice = course.price != null && Number(course.price) > 0;
+
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-24"
-      style={{
-        background: "var(--color-bg-primary)",
-        borderTop: "1px solid var(--color-surface-overlay)",
-        borderBottom: "1px solid var(--color-surface-overlay)",
-      }}
-    >
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <div
-          className="text-5xl font-black mb-8 leading-none"
-          style={{ color: "color-mix(in srgb, var(--color-accent) 20%, var(--color-surface-overlay-md))" }}
+    <section className="mc-quote-section">
+      <p>
+        &ldquo;You don&apos;t need to know everything before you start.{" "}
+        <span>Start with one skill.</span> Learn to use it. Discover how to{" "}
+        <span>sell it.</span> Build from there.&rdquo;
+      </p>
+      <small>TBT CORE PRINCIPLE</small>
+      <div>
+        <button
+          className="mc-btn mc-btn-red"
+          onClick={course.hasAccess ? () => router.push(`/learning/${course.id}`) : onBuy}
         >
-          &ldquo;
-        </div>
-        <blockquote
-          className="text-2xl sm:text-3xl font-bold leading-snug mb-8"
-          style={{ color: "var(--color-text-normal)" }}
-        >
-          You don&apos;t need to know everything before you start.
-          <br />
-          <span style={{ color: "var(--color-accent)" }}>
-            Take the first step — the rest will follow.
-          </span>
-        </blockquote>
-        <p
-          className="text-xs font-bold uppercase tracking-widest mb-10"
-          style={{ color: "var(--color-text-subtle)" }}
-        >
-          TBT Core Principle
-        </p>
-        <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
+          {course.hasAccess ? "Continue Learning →" : hasPrice ? "Get Started →" : "Start Free →"}
+        </button>
       </div>
-    </motion.section>
+    </section>
   );
 }
 
 // ── FAQ ───────────────────────────────────────────────────────────────────────
 
-function FAQItem({ q, a }: { q: string; a: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div
-      className="rounded-xl overflow-hidden"
-      style={{ border: "1px solid var(--color-surface-overlay)" }}
-    >
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between gap-4 px-5 py-4 text-left transition-colors"
-        style={{ background: open ? "var(--color-surface-overlay-xs)" : "var(--color-bg-surface)" }}
-      >
-        <span className="font-semibold text-sm" style={{ color: "var(--color-text-normal)" }}>
-          {q}
-        </span>
-        {open
-          ? <ChevronUp size={16} style={{ color: "var(--color-text-subtle)" }} className="shrink-0" />
-          : <ChevronDown size={16} style={{ color: "var(--color-text-subtle)" }} className="shrink-0" />}
-      </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0 }}
-            animate={{ height: "auto" }}
-            exit={{ height: 0 }}
-            transition={{ duration: 0.2 }}
-            style={{ overflow: "hidden" }}
-          >
-            <p
-              className="px-5 py-4 text-sm leading-relaxed"
-              style={{
-                color: "var(--color-text-secondary)",
-                borderTop: "1px solid var(--color-surface-overlay)",
-                background: "var(--color-bg-surface)",
-              }}
-            >
-              {a}
-            </p>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function FAQSection({ course }: { course: any }) {
+function MCFAQSection({ course }: { course: any }) {
   const faqs = [
-    {
-      q: "Who is this course for?",
-      a: "This course is designed for anyone looking to build practical skills and apply them in their business or freelance career. Whether you're a beginner or looking to sharpen existing knowledge, you'll find value here.",
-    },
-    {
-      q: `How long do I have access to ${course.title}?`,
-      a: course.accessDurationDays
-        ? `You will have access for ${course.accessDurationDays} days from the date of purchase.`
-        : "You have lifetime access to this course. Learn at your own pace, revisit lessons anytime.",
-    },
-    {
-      q: "What payment methods are accepted?",
-      a: "We accept all major credit/debit cards, UPI, net banking, and wallets through our secure Razorpay payment gateway.",
-    },
-    {
-      q: "Will I receive a certificate?",
-      a: "Yes! Upon completing the course you can download your TBT completion certificate to showcase on LinkedIn and your portfolio.",
-    },
-    {
-      q: "What if I have questions while learning?",
-      a: "You can reach our support team anytime through the platform. For mentorship-level support, explore our TBT membership plans.",
-    },
-    {
-      q: "Is there a refund policy?",
-      a: "Please contact our support team within 7 days of purchase if you are unsatisfied. Refunds are assessed on a case-by-case basis.",
-    },
+    { q: "1. What is Tamil Business Tribe?", a: "Tamil Business Tribe (TBT) is a learning platform focused on helping you learn practical digital and business skills, build a portfolio, and explore ways to offer those skills as services." },
+    { q: "2. Who are these courses for?", a: "The courses are designed for beginners, creators, freelancers, and business owners who want to develop practical skills and monetize their knowledge." },
+    { q: "3. Can I start if I haven't started a business yet?", a: "Absolutely. You can start by learning the skill and creating portfolio projects before offering a service. Many of our members started with zero business experience." },
+    { q: `4. How long do I have access to ${course.title}?`, a: course.accessDurationDays ? `You will have access for ${course.accessDurationDays} days from the date of purchase.` : "You have lifetime access to this course. Learn at your own pace and revisit lessons anytime." },
+    { q: "5. What payment methods are accepted?", a: "We accept all major credit/debit cards, UPI, net banking, and wallets through our secure Razorpay payment gateway." },
+    { q: "6. Will I receive a certificate?", a: "Yes! Upon completing the course you can download your TBT completion certificate to showcase on LinkedIn and your portfolio." },
+    { q: "7. Will I learn how to earn from my skills?", a: "The learning path includes practical guidance on portfolio building, service ideas, pricing, and client acquisition — not just the technical skill." },
+    { q: "8. How do I access the course after purchase?", a: "The course is delivered through the TBT Course Portal. You'll have immediate access to all lessons after enrollment." },
+    { q: "9. Is there a refund policy?", a: "Please contact our support team within 7 days of purchase if you are unsatisfied. Refunds are assessed on a case-by-case basis." },
   ];
 
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 32 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-surface)" }}
-    >
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-10">
-          <h2 className="text-3xl font-extrabold mb-2" style={{ color: "var(--color-text-normal)" }}>
-            Frequently Asked Questions
-          </h2>
-          <p className="text-sm" style={{ color: "var(--color-text-subtle)" }}>
-            Everything you need to know before you enroll.
-          </p>
-        </div>
-        <div className="space-y-3">
-          {faqs.map((f, i) => (
-            <FAQItem key={i} q={f.q} a={f.a} />
-          ))}
-        </div>
+    <section className="mc-faq-section" id="mc-faq">
+      <div className="mc-section-heading">
+        <p className="mc-eyebrow">NEED A LITTLE CLARITY?</p>
+        <h2>Frequently Asked <span>Questions</span></h2>
+        <p>Everything you need to know about our courses and learning methodology.</p>
       </div>
-    </motion.section>
+      <div className="mc-faq-list">
+        {faqs.map((f, i) => (
+          <MCFAQItem key={i} q={f.q} a={f.a} />
+        ))}
+      </div>
+    </section>
   );
 }
 
-// ── Final CTA Strip ───────────────────────────────────────────────────────────
-
-function FinalCTAStrip({ course, courseId, buying, onBuy }: {
-  course: any; courseId: string; buying: boolean; onBuy: () => void;
-}) {
-  const hasPrice = course.price != null && Number(course.price) > 0;
-
+function MCFAQItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <motion.section
-      initial={{ opacity: 0 }}
-      whileInView={{ opacity: 1 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.5 }}
-      className="py-20"
-      style={{ background: "var(--color-bg-primary)" }}
-    >
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        <h2
-          className="text-3xl sm:text-4xl font-extrabold mb-4 leading-tight"
-          style={{ color: "var(--color-text-normal)" }}
-        >
-          Ready to Get Started?
-        </h2>
-        <p className="text-base mb-8" style={{ color: "var(--color-text-secondary)" }}>
-          {hasPrice && !course.hasAccess
-            ? `Join for ₹${Number(course.price).toLocaleString("en-IN")} and start learning immediately.`
-            : course.hasAccess
-            ? "Jump back into your learning journey."
-            : "Start learning for free today."}
-        </p>
-        <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
-      </div>
-    </motion.section>
+    <article className="mc-faq-item">
+      <button aria-expanded={open} onClick={() => setOpen(o => !o)}>
+        {q}
+        <span>⌄</span>
+      </button>
+      <div className="mc-faq-answer">{a}</div>
+    </article>
   );
 }
 
@@ -1598,6 +884,7 @@ function FinalCTAStrip({ course, courseId, buying, onBuy }: {
 function StickyBuyBar({ course, courseId, buying, onBuy }: {
   course: any; courseId: string; buying: boolean; onBuy: () => void;
 }) {
+  const router = useRouter();
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     const fn = () => setVisible(window.scrollY > 500);
@@ -1605,43 +892,39 @@ function StickyBuyBar({ course, courseId, buying, onBuy }: {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  if (!visible) return null;
+
+  const hasPrice = course.price != null && Number(course.price) > 0;
+  const razorpayOn = isRazorpayEnabled(course);
+  const origPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
+
   return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          initial={{ y: 80, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: 80, opacity: 0 }}
-          transition={{ duration: 0.28 }}
-          className="fixed bottom-0 inset-x-0 z-50 lg:hidden"
-          style={{
-            background: "var(--color-modal-bg, var(--color-bg-surface))",
-            borderTop: "1px solid var(--color-surface-overlay-md)",
-            boxShadow: "0 -4px 24px rgba(0,0,0,0.4)",
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
-          }}
-        >
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold truncate" style={{ color: "var(--color-text-normal)" }}>
-                {course.title}
-              </p>
-              {Number(course.price ?? 0) > 0 && !course.hasAccess && (
-                <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--color-text-subtle)" }}>
-                  <span className="font-semibold" style={{ color: "var(--color-text-normal)" }}>
-                    ₹{Number(course.price).toLocaleString("en-IN")}
-                  </span>
-                  {course.originalPrice != null && Number(course.originalPrice) > Number(course.price) && (
-                    <span className="line-through">₹{Number(course.originalPrice).toLocaleString("en-IN")}</span>
-                  )}
-                </p>
-              )}
-            </div>
-            <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="sm" />
+    <div className="mc-sticky-bar lg:hidden">
+      <div className="mc-sticky-bar-inner">
+        <div className="mc-sticky-title">{course.title}</div>
+        {hasPrice && !course.hasAccess && (
+          <div>
+            <span className="mc-sticky-price">₹{Number(course.price).toLocaleString("en-IN")}</span>
+            {origPrice && origPrice > Number(course.price) && (
+              <span className="mc-sticky-orig">₹{origPrice.toLocaleString("en-IN")}</span>
+            )}
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+        {course.hasAccess ? (
+          <button className="mc-btn mc-btn-green" style={{ padding: "10px 16px", fontSize: "10px" }} onClick={() => router.push(`/learning/${courseId}`)}>
+            Continue →
+          </button>
+        ) : hasPrice && razorpayOn ? (
+          <button className="mc-btn mc-btn-red" style={{ padding: "10px 16px", fontSize: "10px" }} disabled={buying} onClick={onBuy}>
+            {buying ? "…" : "Buy Now"}
+          </button>
+        ) : (
+          <button className="mc-btn mc-btn-red" style={{ padding: "10px 16px", fontSize: "10px" }} onClick={() => router.push(`/learning/${courseId}`)}>
+            Start →
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1661,6 +944,7 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
   const [buying, setBuying] = useState(false);
   const [buyingBundle, setBuyingBundle] = useState(false);
   const [buyingAllAccess, setBuyingAllAccess] = useState(false);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
 
   useEffect(() => {
     if (!course) return;
@@ -1854,7 +1138,7 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--color-bg-primary)" }}>
+      <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <Loader2 size={32} className="animate-spin" style={{ color: "var(--color-accent)" }} />
       </div>
     );
@@ -1862,10 +1146,10 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
 
   if (!course) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: "var(--color-bg-primary)" }}>
+      <div style={{ minHeight: "60vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem" }}>
         <BookOpen size={40} style={{ color: "var(--color-text-subtle)" }} />
         <p style={{ color: "var(--color-text-secondary)" }}>Course not found.</p>
-        <button onClick={() => router.push("/courses")} className="text-sm font-semibold" style={{ color: "var(--color-accent)" }}>
+        <button onClick={() => router.push("/courses")} style={{ color: "var(--color-accent)", fontWeight: 600, fontSize: "14px" }}>
           ← Back to Courses
         </button>
       </div>
@@ -1877,28 +1161,52 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
     (x: any, i: number, arr: any[]) => arr.findIndex((y: any) => y.id === x.id) === i
   );
 
-  const highlights: string[] = Array.isArray(c.keyHighlights) ? c.keyHighlights : [];
-
   return (
-    <div className="min-h-screen" style={{ background: "var(--color-bg-primary)" }}>
-      <HeroSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
-      <SocialProofSection course={c} />
-      <MarqueeStrip course={c} />
-      {c.videoPreviewUrl && <VideoPreviewSection videoUrl={c.videoPreviewUrl} />}
-      {highlights.length > 0 && <KeyHighlightsSection highlights={highlights} />}
-      <CurriculumSection course={c} />
-      {related.length > 0 && <RelatedCourses courses={related} />}
-      <PricingSection
-        course={c} courseId={courseId} buying={buying} onBuy={handleBuy}
-        buyingBundle={buyingBundle} onBuyBundle={handleBundleBuy}
-        buyingAllAccess={buyingAllAccess} onBuyAllAccess={handleAllAccessBuy}
-      />
-      <JourneySection />
-      <QuoteSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
-      <FAQSection course={c} />
-      <FinalCTAStrip course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
+    <>
+      <style dangerouslySetInnerHTML={{ __html: MC_CSS }} />
+      <div
+        className="mc-page"
+        style={{
+          marginLeft: "calc(50% - 50vw)",
+          marginRight: "calc(50% - 50vw)",
+          width: "100vw",
+          marginTop: "-1.5rem",
+        }}
+      >
+        <MCHeroSection
+          course={c}
+          courseId={courseId}
+          buying={buying}
+          onBuy={handleBuy}
+          onVideoPreview={() => setVideoModalOpen(true)}
+        />
+        <MCTickerSection course={c} />
+        <MCCurriculumSection course={c} />
+        {related.length > 0 && <MCRelatedSection courses={related} />}
+        <MCPlansSection
+          course={c}
+          courseId={courseId}
+          buying={buying}
+          onBuy={handleBuy}
+          buyingBundle={buyingBundle}
+          onBuyBundle={handleBundleBuy}
+          buyingAllAccess={buyingAllAccess}
+          onBuyAllAccess={handleAllAccessBuy}
+        />
+        <MCEarningSection course={c} onBuy={handleBuy} />
+        <MCQuoteSection course={c} onBuy={handleBuy} />
+        <MCFAQSection course={c} />
+        <div style={{ height: "5rem" }} className="lg:hidden" />
+      </div>
+
+      {videoModalOpen && (
+        <MCVideoModal
+          url={c.videoPreviewUrl ?? null}
+          onClose={() => setVideoModalOpen(false)}
+        />
+      )}
+
       <StickyBuyBar course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
-      <div className="h-20 lg:hidden" />
-    </div>
+    </>
   );
 }
