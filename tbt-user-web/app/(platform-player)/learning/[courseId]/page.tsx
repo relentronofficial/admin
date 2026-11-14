@@ -3583,12 +3583,15 @@ export default function CourseDetailPage({
                   : (activeTimerSecs ?? 0) < 60 ? "#f59e0b"
                   : "#22c55e";
                 return (
+                  // Size only: 56px on phones, 64px on short landscape screens
+                  // (e.g. phone fullscreen), 88px from sm up (desktop unchanged).
+                  // Countdown, ring colours and hearts logic are untouched.
                   <div className={cn(
-                    "absolute top-3 right-3 z-[55] pointer-events-none flex flex-col items-center gap-1.5",
+                    "absolute top-2 right-2 sm:top-3 sm:right-3 z-[55] pointer-events-none flex flex-col items-center gap-1 sm:gap-1.5",
                     (activeTimerSecs ?? 0) < 30 ? "animate-pulse" : ""
                   )}>
-                    <div className="relative w-[88px] h-[88px] drop-shadow-lg">
-                      <svg width="88" height="88" viewBox="0 0 88 88">
+                    <div className="relative w-14 h-14 sm:w-[88px] sm:h-[88px] [@media(max-height:500px)]:w-16 [@media(max-height:500px)]:h-16 drop-shadow-lg">
+                      <svg width="100%" height="100%" viewBox="0 0 88 88" className="block">
                         <circle cx="44" cy="44" r={R} fill="rgba(0,0,0,0.65)" stroke="rgba(255,255,255,0.12)" strokeWidth="5" />
                         <circle
                           cx="44" cy="44" r={R}
@@ -3599,18 +3602,18 @@ export default function CourseDetailPage({
                           style={{ transition: "stroke-dashoffset 0.5s linear, stroke 0.3s ease" }}
                         />
                       </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
-                        <span className="text-white font-mono font-bold text-sm tabular-nums leading-none"
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-px sm:gap-0.5">
+                        <span className="text-white font-mono font-bold text-[11px] sm:text-sm [@media(max-height:500px)]:text-xs tabular-nums leading-none"
                           style={{ textShadow: "0 1px 4px rgba(0,0,0,0.9)" }}>
                           {fmtTime(activeTimerSecs!)}
                         </span>
-                        <Timer size={10} className="text-white/60" />
+                        <Timer size={10} className="text-white/60 w-2 h-2 sm:w-2.5 sm:h-2.5" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 px-2 py-1 rounded-full"
+                    <div className="flex items-center gap-0.5 sm:gap-1 px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full"
                       style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
                       {Array.from({ length: maxLifelines }).map((_, i) => (
-                        <Heart key={i} size={12}
+                        <Heart key={i} size={12} className="w-2.5 h-2.5 sm:w-3 sm:h-3"
                           fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
                           stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.3)"}
                           style={{ transition: "fill 0.3s, stroke 0.3s" }}

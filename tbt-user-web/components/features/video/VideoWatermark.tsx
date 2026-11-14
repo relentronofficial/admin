@@ -56,6 +56,40 @@ function makeTileBg(text: string): string {
   return `url("data:image/svg+xml;base64,${b64(svg)}")`;
 }
 
+// ─── Fullscreen + orientation helpers ─────────────────────────────────────────
+// Standard API first, WebKit prefix as a fallback (older iPad Safari).
+
+type WebkitElement = HTMLElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+type WebkitDocument = Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+type LockableOrientation = ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void };
+
+function fullscreenElement(): Element | null {
+  const d = document as WebkitDocument;
+  return d.fullscreenElement ?? d.webkitFullscreenElement ?? null;
+}
+
+function exitFullscreen(): void {
+  const d = document as WebkitDocument;
+  try {
+    const r = d.exitFullscreen ? d.exitFullscreen() : d.webkitExitFullscreen?.();
+    if (r && typeof (r as Promise<void>).catch === "function") (r as Promise<void>).catch(() => {});
+  } catch { /* already exited */ }
+}
+
+/** Touch devices only; a refused or unsupported lock leaves fullscreen as-is. */
+function lockLandscape(lockedRef: { current: boolean }): void {
+  if (typeof window === "undefined" || !window.matchMedia?.("(pointer: coarse)").matches) return;
+  const o = screen.orientation as LockableOrientation | undefined;
+  if (!o?.lock) return;
+  o.lock("landscape").then(() => { lockedRef.current = true; }, () => {});
+}
+
+function releaseOrientation(lockedRef: { current: boolean }): void {
+  if (!lockedRef.current) return;
+  lockedRef.current = false;
+  try { (screen.orientation as LockableOrientation | undefined)?.unlock?.(); } catch { /* not locked */ }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface VideoWatermarkProps {
@@ -124,22 +158,58 @@ export function VideoWatermark({
     return () => clearTimeout(timer);
   }, [user, applyNextPosition]);
 
+  // Browsers with no element Fullscreen API (iPhone Safari): the player fills
+  // the viewport with CSS instead. It sits at z-45, under every page modal
+  // (z-50+), so cue quizzes and enforcement modals still show over it.
+  const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
+  const orientationLockedRef = useRef(false);
+
   // ── Fullscreen sync ───────────────────────────────────────────────────────
+  // One listener pair for the lifetime of the component (standard + WebKit
+  // prefix). Leaving fullscreen by any route (button, Esc, back gesture, a
+  // cue quiz calling document.exitFullscreen) releases the landscape lock.
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    const handler = () => {
+      const active = !!fullscreenElement();
+      setIsFullscreen(active);
+      if (!active) releaseOrientation(orientationLockedRef);
+    };
     document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
+    document.addEventListener("webkitfullscreenchange", handler);
+    return () => {
+      document.removeEventListener("fullscreenchange", handler);
+      document.removeEventListener("webkitfullscreenchange", handler);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!isPseudoFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setIsPseudoFullscreen(false); };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [isPseudoFullscreen]);
 
   const toggleFullscreen = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen().catch(() => {});
-    } else {
-      document.exitFullscreen();
-    }
-  }, []);
+    if (fullscreenElement()) { exitFullscreen(); return; }
+    if (isPseudoFullscreen) { setIsPseudoFullscreen(false); return; }
+
+    const request = el.requestFullscreen ?? (el as WebkitElement).webkitRequestFullscreen;
+    if (!request) { setIsPseudoFullscreen(true); return; }
+    Promise.resolve()
+      .then(() => request.call(el))
+      // Landscape only once fullscreen is active — browsers refuse the lock otherwise.
+      .then(() => lockLandscape(orientationLockedRef))
+      .catch(() => setIsPseudoFullscreen(true));
+  }, [isPseudoFullscreen]);
+
+  const fullscreenActive = isFullscreen || isPseudoFullscreen;
 
   // ── Forensic payload (base64-encoded; embedded invisibly in DOM) ──────────
   const forensicToken = user
@@ -161,12 +231,15 @@ export function VideoWatermark({
       className={[
         "relative group/wm",
         isFullscreen ? "fixed inset-0 z-[9999] bg-black flex items-center justify-center" : "",
+        // `!` beats the `relative`, `aspect-video` and `rounded-*` the caller passes in.
+        !isFullscreen && isPseudoFullscreen ? "!fixed !inset-0 !w-auto !h-auto !aspect-auto !rounded-none z-[45] bg-black flex items-center justify-center" : "",
+        showFullscreenButton ? "tbt-wm-fs" : "",
         className,
       ].join(" ")}
-      style={{ isolation: "isolate", ...(!isFullscreen ? style : {}) }}
+      style={{ isolation: "isolate", ...(!fullscreenActive ? style : {}) }}
     >
       {/* ── Main content (iframe / video) ──────────────────────────────────── */}
-      <div className={isFullscreen ? "w-full h-full" : "contents"}>
+      <div className={fullscreenActive ? "w-full h-full" : "contents"}>
         {children}
       </div>
 
@@ -245,13 +318,13 @@ export function VideoWatermark({
       {showFullscreenButton && (
         <button
           onClick={(e) => { e.stopPropagation(); toggleFullscreen(); }}
-          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-          className="absolute bottom-3 right-3 z-[80] p-2 rounded-lg
+          aria-label={fullscreenActive ? "Exit fullscreen" : "Enter fullscreen"}
+          className="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 z-[80] p-2.5 sm:p-2 rounded-lg
                      bg-black/50 hover:bg-black/75 text-white
-                     opacity-40 group-hover/wm:opacity-100
+                     opacity-70 sm:opacity-40 group-hover/wm:opacity-100
                      transition-opacity duration-200 backdrop-blur-sm"
         >
-          {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          {fullscreenActive ? <Minimize size={18} /> : <Maximize size={18} />}
         </button>
       )}
 
