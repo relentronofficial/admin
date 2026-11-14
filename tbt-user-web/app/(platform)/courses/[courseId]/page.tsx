@@ -141,7 +141,7 @@ const MC_CSS = `
 .mc-course-card{min-width:0;cursor:pointer}
 .mc-course-art{height:175px;border-radius:13px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 25px #16030570;isolation:isolate}
 .mc-course-art::before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,#ffffff20,transparent 50%);z-index:0}
-.mc-course-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+.mc-course-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;background:#111;z-index:0}
 .mc-course-art-overlay{position:absolute;inset:0;background:linear-gradient(0deg,#000a,transparent 50%);z-index:1}
 .mc-course-art-text{position:relative;z-index:2;text-align:center;padding:12px}
 .mc-course-art b{font:800 clamp(18px,2.5vw,28px)/.95 Outfit;text-align:center;letter-spacing:-1px;text-shadow:0 3px 12px #0007;color:#fff}
