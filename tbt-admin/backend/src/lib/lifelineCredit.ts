@@ -19,6 +19,7 @@
 //   • payment_id is UNIQUE, so one Razorpay payment can never pay two orders.
 import { getRazorpay } from './razorpay.js';
 import { checkLifelinePayment, type LifelineOrderRow } from './lifelinePurchaseLogic.js';
+import { MAX_LIFELINES_HELD, lifelineRoomLeft } from './lifelineCap.js';
 
 /** What we read from Razorpay. The live implementation wraps the SDK; tests pass a fake. */
 export interface LifelineRazorpayReader {
@@ -86,6 +87,37 @@ export async function readLifelineState(prisma: any, memberId: string, batchId: 
   return { lifelinesTotal: total, lifelinesUsed: used, lifelinesRemaining: Math.max(0, total - used) };
 }
 
+/** Unpaid Extra Lifeline orders younger than this still count against the cap (checkout may complete). */
+export const OPEN_ORDER_WINDOW_MINUTES = 30;
+
+/**
+ * How many more program lifelines the member may buy right now under the
+ * holding cap (lib/lifelineCap.ts): remaining lifelines, recent unpaid
+ * Razorpay orders and pending manual credit requests all count, so two
+ * checkouts opened at 4/5 can't both end up crediting.
+ */
+export async function programLifelineRoom(
+  prisma: any, memberId: string, batchId: string, opts: { excludePurchaseId?: string } = {},
+): Promise<{ room: number; state: LifelineState }> {
+  const state = await readLifelineState(prisma, memberId, batchId);
+  const [orders, requests] = await Promise.all([
+    prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::int AS n FROM lifeline_razorpay_orders
+       WHERE member_id = $1::uuid AND batch_id = $2::uuid AND status = 'created'
+         AND created_at > NOW() - INTERVAL '${OPEN_ORDER_WINDOW_MINUTES} minutes'`,
+      memberId, batchId,
+    ).catch(() => [{ n: 0 }]),
+    prisma.$queryRawUnsafe(
+      `SELECT COALESCE(SUM(quantity), 0)::int AS n FROM credit_purchases
+       WHERE member_id = $1::uuid AND credit_type = 'lifeline' AND status = 'pending'
+         AND ($2::uuid IS NULL OR id <> $2::uuid)`,
+      memberId, opts.excludePurchaseId ?? null,
+    ).catch(() => [{ n: 0 }]),
+  ]);
+  const inFlight = Number((orders as any[])[0]?.n ?? 0) + Number((requests as any[])[0]?.n ?? 0);
+  return { room: Math.max(0, lifelineRoomLeft(state.lifelinesRemaining) - inFlight), state };
+}
+
 /**
  * Credit one lifeline for `orderId` paid by `paymentId`, at most once.
  * `actingMemberId` (browser verify) must own the order; the webhook and the
@@ -147,10 +179,14 @@ export async function creditLifelineOrder(
         order!.memberId, order!.batchId,
       );
       const [settings] = await tx.$queryRawUnsafe(
-        `UPDATE member_batch_settings SET lifelines_total = lifelines_total + 1
+        // Refill toward the holding cap, never past it (lib/lifelineCap.ts). The
+        // create-order guard (programLifelineRoom) keeps a paid order from landing
+        // on a full balance; GREATEST keeps legacy over-cap balances untouched.
+        `UPDATE member_batch_settings
+         SET lifelines_total = GREATEST(lifelines_total, LEAST(lifelines_total + 1, lifelines_used + $3))
          WHERE member_id = $1::uuid AND batch_id = $2::uuid
          RETURNING lifelines_total, lifelines_used`,
-        order!.memberId, order!.batchId,
+        order!.memberId, order!.batchId, MAX_LIFELINES_HELD,
       );
       return settings;
     });

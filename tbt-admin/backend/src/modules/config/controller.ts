@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { clampLifelineCount } from '../../lib/lifelineCap.js';
 import { invalidateCache } from '../../lib/cache.js';
 import { invalidateModuleOptions } from '../../lib/memberModuleAccess.js';
 
@@ -69,7 +70,7 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
   if (freeLifelinesPerSession !== undefined) {
     await req.server.prisma.$executeRawUnsafe(
       'UPDATE site_configs SET free_lifelines_per_session = $1 WHERE id = $2::uuid',
-      Math.max(0, Math.min(20, Number(freeLifelinesPerSession))), config.id
+      clampLifelineCount(Number(freeLifelinesPerSession)), config.id
     );
   }
   if (hiddenMenuKeys !== undefined) {

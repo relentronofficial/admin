@@ -110,6 +110,11 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return m ? [{ batchId: m.batchId }] : [];
   }
   if (q.startsWith('SELECT price_inr, label FROM credit_pricing')) return db.pricing[a[0]] ? [db.pricing[a[0]]] : [];
+  // Holding-cap guard (programLifelineRoom): open orders in the window + pending credit requests.
+  if (q.startsWith('SELECT COUNT(*)::int AS n FROM lifeline_razorpay_orders')) {
+    return [{ n: db.orders.filter((o) => o.memberId === a[0] && o.batchId === a[1] && o.status === 'created' && o.createdAt > Date.now() - 30 * MIN).length }];
+  }
+  if (q.startsWith('SELECT COALESCE(SUM(quantity), 0)::int AS n FROM credit_purchases')) return [{ n: 0 }];
   if (q.startsWith('INSERT INTO lifeline_razorpay_orders')) {
     db.orders.push({ orderId: a[0], memberId: a[1], batchId: a[2], amountPaise: a[3], currency: 'INR', status: 'created', paymentId: null, createdAt: Date.now(), lastCheckedAt: null });
     return 1;
@@ -149,9 +154,9 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     if (!db.settings.some((s) => s.memberId === a[0] && s.batchId === a[1])) db.settings.push({ memberId: a[0], batchId: a[1], total: 3, used: 0 });
     return 1;
   }
-  if (q.startsWith('UPDATE member_batch_settings SET lifelines_total = lifelines_total + 1')) {
+  if (q.startsWith('UPDATE member_batch_settings SET lifelines_total = GREATEST(')) {
     const s = db.settings.find((x) => x.memberId === a[0] && x.batchId === a[1])!;
-    s.total += 1;
+    s.total = Math.max(s.total, Math.min(s.total + 1, s.used + a[2]));
     return [{ lifelines_total: s.total, lifelines_used: s.used }];
   }
   // The shared webhook also runs the TBT coin-order branch (controller.ts →
@@ -178,12 +183,11 @@ const prisma = {
       const q = text.replace(/\s+/g, ' ').trim();
       const order = q.startsWith("UPDATE lifeline_razorpay_orders SET status = 'paid'") ? db.orders.find((o) => o.orderId === a[0]) : undefined;
       const before = order ? { status: order.status, paymentId: order.paymentId } : null;
+      const sRow = q.startsWith('UPDATE member_batch_settings SET lifelines_total = GREATEST(') ? db.settings.find((x) => x.memberId === a[0] && x.batchId === a[1]) : undefined;
+      const settingsBefore = sRow ? { s: sRow, total: sRow.total } : null;
       const result = await sql(text, ...a);
       if (order && before && order.status !== before.status) undo.push(() => Object.assign(order, before));
-      if (q.startsWith('UPDATE member_batch_settings SET lifelines_total = lifelines_total + 1')) {
-        const s = db.settings.find((x) => x.memberId === a[0] && x.batchId === a[1]);
-        if (s) undo.push(() => { s.total -= 1; });
-      }
+      if (settingsBefore) { const s = settingsBefore.s; const t = settingsBefore.total; undo.push(() => { s.total = t; }); }
       return result;
     };
     try {
@@ -276,6 +280,37 @@ describe('POST /api/user/lifelines/razorpay/create-order', () => {
     env.RAZORPAY_KEY_SECRET = undefined;
     expect(await createOrder()).toMatchObject({ status: 503, body: { error: { message: 'RAZORPAY_NOT_CONFIGURED' } } });
     expect(rzp.orders.size).toBe(0);
+  });
+});
+
+describe('lifeline holding cap (max 5 held)', () => {
+  it('refuses a new order when the member already holds 5, before anything is charged', async () => {
+    db.settings[0] = { memberId: ME, batchId: BATCH, total: 5, used: 0 };
+    expect(await createOrder()).toMatchObject({ status: 409, body: { error: { message: 'LIFELINE_CAP_REACHED' } } });
+    expect(rzp.orders.size).toBe(0);
+  });
+
+  it('counts open checkouts: holding 4, a second order is refused while the first is unpaid', async () => {
+    db.settings[0] = { memberId: ME, batchId: BATCH, total: 6, used: 2 };
+    expect((await createOrder()).status).toBe(200);
+    expect(await createOrder()).toMatchObject({ status: 409, body: { error: { message: 'LIFELINE_CAP_REACHED' } } });
+  });
+
+  it('4 held + 1 bought refills to exactly 5', async () => {
+    db.settings[0] = { memberId: ME, batchId: BATCH, total: 6, used: 2 };
+    const { orderId } = (await createOrder()).body.data;
+    const paymentId = pay(orderId);
+    const res = await verify(ME, orderId, paymentId);
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ lifelineAdded: true, lifelinesRemaining: 5 });
+  });
+
+  it('a payment that lands on a full balance never takes it past 5', async () => {
+    const { orderId } = (await createOrder()).body.data;
+    db.settings[0] = { memberId: ME, batchId: BATCH, total: 5, used: 0 }; // filled by another path meanwhile
+    const res = await verify(ME, orderId, pay(orderId));
+    expect(res.body.data.lifelinesRemaining).toBe(5);
+    expect(lifelines()).toBe(5);
   });
 });
 
@@ -592,10 +627,11 @@ describe('Reconciliation job', () => {
     for (const [over, orderStatus] of cases) {
       const { orderId } = (await createOrder()).body.data;
       pay(orderId, over, orderStatus);
-      age(orderId, 20 * MIN);
+      // Older than the 30-minute open-order window, so it no longer counts against the holding cap.
+      age(orderId, 40 * MIN);
     }
     const { orderId: unpaid } = (await createOrder()).body.data;
-    age(unpaid, 20 * MIN);
+    age(unpaid, 40 * MIN);
     const summary = await reconcile();
     expect(summary.claimed).toBe(6);
     expect(summary.credited).toBe(0);

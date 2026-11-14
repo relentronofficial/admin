@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { MAX_LIFELINES_HELD, heldLifelines } from '@/lib/lifelines';
 import DailyTimeSpentModal from "./DailyTimeSpentModal";
 import {
   TrendingUp, TrendingDown, ChevronRight, Play, Lock, Plus, Loader2, Coins,
@@ -86,10 +87,10 @@ function MentorshipHeader({
   /** Required program videos (mentorship stats). The "+" shows only when every one is completed. */
   programVideos?: { total: number; completed: number } | null;
 }) {
-  // lifelinesTotal = original 3 + any bought (member_batch_settings.lifelines_total);
-  // lifelinesUsed = lifelines spent. Remaining = total − used (never below 0).
-  const totalHearts = lifelinesTotal ?? 0;
-  const filledHearts = lifelinesTotal != null ? Math.min(totalHearts, Math.max(0, lifelinesTotal - (lifelinesUsed ?? 0))) : 0;
+  // Hearts always show the holding cap (5 slots); filled = lifelines held now.
+  // Buying refills toward 5 and never stacks past it (lib/lifelines.ts).
+  const totalHearts = lifelinesTotal != null ? MAX_LIFELINES_HELD : 0;
+  const filledHearts = lifelinesTotal != null ? heldLifelines(lifelinesTotal - (lifelinesUsed ?? 0)) : 0;
   // A single "+" — shown only once the member has completed EVERY required
   // program video (backend programVideos). Not tied to the lifeline balance;
   // hidden while loading, when the field is missing, or with zero required videos.

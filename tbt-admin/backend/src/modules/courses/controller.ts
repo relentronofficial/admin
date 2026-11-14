@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { clampLifelineCount } from '../../lib/lifelineCap.js';
 import {
   notifyCourseAccessGranted,
   notifyBadgeAwarded,
@@ -525,7 +526,7 @@ export async function listCourseEpisodesHandler(req: FastifyRequest, reply: Fast
     timerSeconds: e.timer_seconds != null ? Number(e.timer_seconds) : null,
     streakPoints: Number(e.streak_points ?? 0),
     lifelineEnabled: e.lifeline_enabled !== false,
-    lifelineCount: Number(e.lifeline_count ?? 3),
+    lifelineCount: clampLifelineCount(Number(e.lifeline_count ?? 3)),
     lifelineCoinCost: Number(e.lifeline_coin_cost ?? 50),
     maxPurchasedLifelines: Number(e.max_purchased_lifelines ?? 5),
     sectionId: e.section_id ?? null, sectionTitle: e.section_title ?? null,
@@ -643,7 +644,7 @@ export async function updateCourseEpisodeHandler(req: FastifyRequest, reply: Fas
   const streakPoints = 'streakPoints' in body ? (Number(body.streakPoints) || 0) : undefined;
   const sectionId = 'sectionId' in body ? (body.sectionId || null) : undefined;
   const lifelineEnabled = 'lifelineEnabled' in body ? Boolean(body.lifelineEnabled) : undefined;
-  const lifelineCount = 'lifelineCount' in body ? (Number(body.lifelineCount) || 3) : undefined;
+  const lifelineCount = 'lifelineCount' in body ? clampLifelineCount(Number(body.lifelineCount) || 3) : undefined;
   const lifelineCoinCost = 'lifelineCoinCost' in body ? (Number(body.lifelineCoinCost) || 50) : undefined;
   const maxPurchasedLifelines = 'maxPurchasedLifelines' in body ? (Number(body.maxPurchasedLifelines) || 5) : undefined;
   const moduleIds: string[] | undefined = 'moduleIds' in body && Array.isArray(body.moduleIds) ? body.moduleIds : undefined;

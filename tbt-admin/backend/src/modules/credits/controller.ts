@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 import { getActingAdmin } from '../../lib/adminRole.js';
 import { isFullAccessRole } from '../../lib/supportCallLogic.js';
+import { MAX_LIFELINES_HELD, LifelineCapError } from '../../lib/lifelineCap.js';
+import { programLifelineRoom } from '../../lib/lifelineCredit.js';
 
 function ok(reply: FastifyReply, data: any) {
   return reply.send({ success: true, data, error: null });
@@ -100,9 +102,12 @@ export async function approvePurchaseHandler(
 
   if (credit_type === 'lifeline') {
     if (purchase.mbs_id) {
+      // Refill toward the holding cap, never past it (lib/lifelineCap.ts).
       await req.server.prisma.$executeRawUnsafe(
-        `UPDATE member_batch_settings SET lifelines_total = lifelines_total + $1 WHERE id = $2::uuid`,
-        quantity, purchase.mbs_id,
+        `UPDATE member_batch_settings
+         SET lifelines_total = GREATEST(lifelines_total, LEAST(lifelines_total + $1, lifelines_used + $3))
+         WHERE id = $2::uuid`,
+        quantity, purchase.mbs_id, MAX_LIFELINES_HELD,
       );
     }
   }
@@ -230,6 +235,22 @@ export async function createCreditPurchaseHandler(req: FastifyRequest, reply: Fa
   );
   if (!pricing.length) {
     return reply.status(400).send({ success: false, data: null, error: 'Unknown credit type' });
+  }
+
+  if (creditType === 'lifeline') {
+    const qty = Number(quantity);
+    if (!Number.isInteger(qty) || qty < 1) {
+      return reply.status(400).send({ success: false, data: null, error: 'quantity must be a positive whole number' });
+    }
+    const [m] = await req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT batch_id::text AS "batchId" FROM members WHERE id = $1::uuid`, memberId,
+    );
+    if (m?.batchId) {
+      const { room } = await programLifelineRoom(req.server.prisma, memberId, m.batchId);
+      if (qty > room) {
+        return reply.status(409).send({ success: false, data: null, error: new LifelineCapError(room).message });
+      }
+    }
   }
 
   const amountInr = Number(pricing[0].price_inr) * Number(quantity);

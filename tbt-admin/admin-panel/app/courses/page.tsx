@@ -1987,7 +1987,7 @@ function EpisodesTab({ course }: { course: any }) {
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Free Lifelines</label>
-                  <input type="number" min={0} max={99} value={epForm.lifelineCount} onChange={e => setEpField("lifelineCount", Math.max(0, parseInt(e.target.value) || 0))}
+                  <input type="number" min={0} max={5} value={epForm.lifelineCount} onChange={e => setEpField("lifelineCount", Math.min(5, Math.max(0, parseInt(e.target.value) || 0)))}
                     className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded h-9 px-3 text-white outline-none focus:border-[#dc2626] text-xs" />
                 </div>
                 <div>

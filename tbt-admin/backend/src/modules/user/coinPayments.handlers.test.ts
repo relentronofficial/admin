@@ -147,9 +147,9 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     if (c) c.status = 'approved';
     return q.includes('RETURNING') ? (c ? [{ id: c.id }] : []) : c ? 1 : 0;
   }
-  if (q.startsWith('UPDATE member_batch_settings SET lifelines_total = lifelines_total + $1')) {
+  if (q.startsWith('UPDATE member_batch_settings SET lifelines_total = GREATEST(')) {
     const s = db.batchSettings.find((x) => x.id === a[1]);
-    if (s) s.lifelinesTotal += a[0];
+    if (s) s.lifelinesTotal = Math.max(s.lifelinesTotal, Math.min(s.lifelinesTotal + a[0], ((s as any).lifelinesUsed ?? 0) + a[2]));
     return s ? 1 : 0;
   }
   if (q.includes('b.coin_cost IS NOT NULL') && q.includes('GROUP BY s.category')) {

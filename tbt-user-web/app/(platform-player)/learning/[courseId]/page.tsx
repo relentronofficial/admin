@@ -1,6 +1,7 @@
 "use client";
 
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { MAX_LIFELINES_HELD } from '@/lib/lifelines';
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -3167,9 +3168,8 @@ export default function CourseDetailPage({
   const activeDuration = liveRealDuration > 0 ? liveRealDuration : (selectedLesson?.durationSeconds ?? 0);
   const activeTimerSecs = selectedLesson ? lessonTimers[selectedLesson.id] : undefined;
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
-  const maxLifelines = courseLifelinesData
-    ? courseLifelinesData.freeTotal + courseLifelinesData.purchasedTotal
-    : MAX_FREE_LIFELINES;
+  // Heart rows always show the holding cap (5): buying refills toward it, never past it.
+  const maxLifelines = MAX_LIFELINES_HELD;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];

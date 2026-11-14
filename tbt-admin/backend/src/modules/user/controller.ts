@@ -79,6 +79,7 @@ import {
   purchaseCourseLifelines,
   type CourseLifelineState,
 } from '../../lib/courseLifelines.js';
+import { clampLifelineCount } from '../../lib/lifelineCap.js';
 import {
   creditCoinOrder,
   isLegacyCoinOrderFor,
@@ -5365,7 +5366,9 @@ export async function getEpisodeLifelinesHandler(request: FastifyRequest, reply:
       memberId, episodeId,
     ),
   ]);
-  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const cfgRaw = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  // Holding cap (lib/lifelineCap.ts): never more than 5 free lifelines per episode.
+  const cfg = { ...cfgRaw, lifelineCount: clampLifelineCount(Number(cfgRaw.lifelineCount ?? 3)) };
   const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
   const freeRemaining = Math.max(0, cfg.lifelineCount - state.freeUsed);
   return reply.send({
@@ -5394,7 +5397,9 @@ export async function useEpisodeLifelineHandler(request: FastifyRequest, reply: 
       memberId, episodeId,
     ),
   ]);
-  const cfg = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  const cfgRaw = configRows[0] ?? { lifelineEnabled: true, lifelineCount: 3, lifelineCoinCost: 50, maxPurchasedLifelines: 5 };
+  // Holding cap (lib/lifelineCap.ts): never more than 5 free lifelines per episode.
+  const cfg = { ...cfgRaw, lifelineCount: clampLifelineCount(Number(cfgRaw.lifelineCount ?? 3)) };
   const state = stateRows[0] ?? { freeUsed: 0, purchasedUsed: 0, totalUsed: 0 };
   if (!cfg.lifelineEnabled) return fail(reply, 403, 'Lifelines disabled for this episode');
 

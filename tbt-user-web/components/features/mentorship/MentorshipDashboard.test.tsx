@@ -450,13 +450,24 @@ describe("MentorshipDashboard — lifeline hearts", () => {
   };
   const ALL_DONE = { total: 10, completed: 10 };
 
-  it("hearts keep showing the lifeline balance (filled = remaining, faded = used)", () => {
-    for (const used of [0, 1, 2, 3]) {
-      withLifelines(3, used);
+  it("hearts always show 5 slots (filled = held, faded = empty)", () => {
+    for (const used of [0, 1, 2, 3, 4, 5]) {
+      withLifelines(5, used);
       render(<MentorshipDashboard />);
-      expect(pill()).toMatchObject({ filled: 3 - used, used });
+      expect(pill()).toMatchObject({ filled: 5 - used, used });
       cleanup();
     }
+  });
+
+  it("never shows more than 5 hearts, even with lifelines bought before the cap", () => {
+    // Manoj-style legacy balance: 5 free + 3 bought = 8 slots before the cap.
+    state.courseLifs = { data: { freeTotal: 5, freeUsed: 0, purchasedTotal: 3, purchasedUsed: 0, remaining: 8, coinCost: 50 } };
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 5, used: 0 });
+    cleanup();
+    state.courseLifs = { data: { freeTotal: 5, freeUsed: 5, purchasedTotal: 3, purchasedUsed: 3, remaining: 0, coinCost: 50 } };
+    render(<MentorshipDashboard />);
+    expect(pill()).toMatchObject({ filled: 0, used: 5 });
   });
 
   it("no required videos completed: no +", () => {
@@ -498,14 +509,14 @@ describe("MentorshipDashboard — lifeline hearts", () => {
     withLifelines(3, 3);
     withVideos({ total: 10, completed: 4 });
     render(<MentorshipDashboard />);
-    expect(pill()).toMatchObject({ filled: 0, used: 3 });
+    expect(pill()).toMatchObject({ filled: 0, used: 5 });
     expect(plusCount()).toBe(0);
     cleanup();
     // videos finished with hearts still unused → one +
     withLifelines(3, 0);
     withVideos(ALL_DONE);
     render(<MentorshipDashboard />);
-    expect(pill()).toMatchObject({ filled: 3, used: 0 });
+    expect(pill()).toMatchObject({ filled: 3, used: 2 });
     expect(plusCount()).toBe(1);
   });
 

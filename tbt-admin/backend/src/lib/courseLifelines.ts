@@ -1,4 +1,5 @@
 import { debitCoins } from './supportCallData.js';
+import { lifelineRoomLeft, LifelineCapError, MAX_LIFELINES_HELD } from './lifelineCap.js';
 
 export interface CourseLifelineState {
   freeTotal: number;
@@ -12,7 +13,8 @@ export interface CourseLifelineState {
 type Db = { $queryRawUnsafe: <T = any>(q: string, ...v: any[]) => Promise<T> };
 type TxDb = Db & { $executeRawUnsafe: (q: string, ...v: any[]) => Promise<number> };
 
-export const FREE_LIFELINES_PER_COURSE = 5;
+// Each course starts full: the free pool equals the holding cap.
+export const FREE_LIFELINES_PER_COURSE = MAX_LIFELINES_HELD;
 
 async function loadCoinCost(db: Db): Promise<number> {
   const rows = await db.$queryRawUnsafe<any[]>(
@@ -112,6 +114,25 @@ export async function purchaseCourseLifelines(
   if (expectedCoinCostEach !== coinCostEach) {
     throw Object.assign(new Error('Coin price has changed — please refresh and try again'), { code: 'price_changed' });
   }
+  // Holding cap (lib/lifelineCap.ts): lock the member's row so parallel buys
+  // can't both pass, then refuse anything that would hold more than 5.
+  await tx.$executeRawUnsafe(
+    `INSERT INTO member_course_lifelines (member_id, course_id, updated_at)
+     VALUES ($1::uuid, $2::uuid, NOW())
+     ON CONFLICT ON CONSTRAINT uq_mcl_member_course DO NOTHING`,
+    memberId, courseId,
+  );
+  const [locked] = await tx.$queryRawUnsafe<any[]>(
+    `SELECT free_used, purchased_total, purchased_used FROM member_course_lifelines
+     WHERE member_id = $1::uuid AND course_id = $2::uuid FOR UPDATE`,
+    memberId, courseId,
+  );
+  const heldNow = Math.max(0,
+    (FREE_LIFELINES_PER_COURSE - Math.max(0, Number(locked?.free_used ?? 0)))
+    + (Math.max(0, Number(locked?.purchased_total ?? 0)) - Math.max(0, Number(locked?.purchased_used ?? 0))));
+  const room = lifelineRoomLeft(heldNow);
+  if (quantity > room) throw new LifelineCapError(room);
+
   const totalCost = coinCostEach * quantity;
   const debit = await debitCoins(tx, memberId, totalCost, 'course_lifeline_purchase');
   if (!debit.ok) {

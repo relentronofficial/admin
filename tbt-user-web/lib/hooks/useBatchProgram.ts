@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_LIFELINES_HELD } from "@/lib/lifelines";
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/lib/api/client";
@@ -275,6 +276,7 @@ export function extraLifelineMessage(r: ExtraLifelineResult): { kind: "success" 
       if (r.stage === "checkout") return { kind: "error", text: "Couldn't load the payment window. Check your connection and try again — no payment was taken." };
       if (r.stage === "order") {
         if (r.code === "NOT_IN_BATCH") return { kind: "error", text: "Extra lifelines are available to batch program members only." };
+        if (r.code === "LIFELINE_CAP_REACHED") return { kind: "info", text: `You already hold the maximum of ${MAX_LIFELINES_HELD} lifelines — use one before buying more. No payment was taken.` };
         if (r.code && UNAVAILABLE_CODES.has(r.code)) return { kind: "error", text: `Lifeline purchases are temporarily unavailable — no payment was taken. Please try again later${ref}.` };
         return { kind: "error", text: `Couldn't start the payment — no payment was taken. Please try again${ref}.` };
       }

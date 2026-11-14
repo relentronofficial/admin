@@ -16,7 +16,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { getRazorpay, verifyPaymentSignature } from '../../lib/razorpay.js';
 import { LIFELINE_CREDIT_TYPE, LIFELINE_ORDER_TYPE, priceInrToPaise } from '../../lib/lifelinePurchaseLogic.js';
-import { creditLifelineOrder, liveLifelineRazorpayReader } from '../../lib/lifelineCredit.js';
+import { creditLifelineOrder, liveLifelineRazorpayReader, programLifelineRoom } from '../../lib/lifelineCredit.js';
 
 function ok(reply: FastifyReply, data: unknown) {
   return reply.send({ success: true, data, error: null });
@@ -55,6 +55,14 @@ export async function createLifelineOrderHandler(request: FastifyRequest, reply:
   );
   const batchId: string | null = member?.batchId ?? null;
   if (!batchId) return orderFail(request, reply, 400, 'NOT_IN_BATCH');
+
+  // Holding cap: refuse before anything is charged (lib/lifelineCap.ts).
+  try {
+    const { room } = await programLifelineRoom(prisma, memberId, batchId);
+    if (room < 1) return orderFail(request, reply, 409, 'LIFELINE_CAP_REACHED');
+  } catch {
+    return orderFail(request, reply, 503, 'DB_UNAVAILABLE');
+  }
 
   let pricing: any;
   try {
