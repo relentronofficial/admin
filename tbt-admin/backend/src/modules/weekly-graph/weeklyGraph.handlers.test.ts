@@ -19,6 +19,8 @@ const OTHER_MEMBER = '30000000-0000-0000-0000-000000000002';
 const NO_PROGRAM_BATCH = '20000000-0000-0000-0000-000000000002';
 const UNLINKED_MEMBER = '30000000-0000-0000-0000-000000000003';
 const NO_BATCH_MEMBER = '30000000-0000-0000-0000-000000000004';
+/** A second member of the program-less batch, to prove records never cross members. */
+const UNLINKED_MEMBER_2 = '30000000-0000-0000-0000-000000000005';
 const DAY = 86_400_000;
 const TASK_ADS = '40000000-0000-4000-8000-000000000001';
 const TASK_W2 = '40000000-0000-4000-8000-000000000002';
@@ -29,8 +31,8 @@ const uuid = () => `9${String(++seq).padStart(7, '0')}-0000-4000-8000-0000000000
 interface Store {
   admins: Record<string, { id: string; fullName: string; role: string }>;
   programs: Array<{ id: string; name: string; durationDays: number }>;
-  weeks: Array<{ id: string; programId: string; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }>;
-  milestones: Array<{ id: string; programId: string; label: string; kind: string; sortOrder: number; isActive: boolean; threshold?: number | null }>;
+  weeks: Array<{ id: string; programId: string | null; label: string; startDay: number; endDay: number; sortOrder: number; isActive: boolean }>;
+  milestones: Array<{ id: string; programId: string | null; label: string; kind: string; sortOrder: number; isActive: boolean; threshold?: number | null }>;
   tasks: Array<{ id: string; programId: string | null; batchId: string | null; title: string; dayNumber: number; sortOrder: number;
     isRequired: boolean; isActive: boolean; memberId: string | null; weekId: string | null; milestoneId: string | null;
     isMilestone: boolean; milestoneLabel: string | null; deletedAt?: Date | null }>;
@@ -59,8 +61,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   const q = text.replace(/\s+/g, ' ').trim();
   if (q.startsWith('SELECT id::text, name, duration_days')) return db.programs.filter((p) => p.id === a[0]);
   if (q.startsWith('SELECT duration_days AS "durationDays" FROM programs')) return db.programs.filter((p) => p.id === a[0]);
-  if (q.startsWith('SELECT') && q.includes('FROM graph_weeks WHERE program_id')) return sorted(db.weeks.filter((w) => w.programId === a[0])).map(weekOut);
-  if (q.startsWith('SELECT') && q.includes('FROM graph_milestones WHERE program_id')) return sorted(db.milestones.filter((m) => m.programId === a[0])).map(msOut);
+  if (q.startsWith('SELECT') && /FROM graph_weeks WHERE \(?program_id/.test(q)) return sorted(db.weeks.filter((w) => w.programId === a[0])).map(weekOut);
+  if (q.startsWith('SELECT') && /FROM graph_milestones WHERE \(?program_id/.test(q)) return sorted(db.milestones.filter((m) => m.programId === a[0])).map(msOut);
   if (q.startsWith('UPDATE graph_milestones SET sort_order = sort_order + 1')) {
     const lakh = db.milestones.find((m) => m.programId === a[0] && m.label === '1 lakh' && m.kind === 'revenue');
     const has5 = db.milestones.some((m) => m.programId === a[0] && m.label === '5 Lakhs' && m.kind === 'revenue');
@@ -205,6 +207,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     const taskDays = db.tasks.filter((t) => t.isActive && t.programId === a[0]).map((t) => t.dayNumber);
     return [{ days: Math.max(p?.durationDays ?? 0, batchDays, ...taskDays, 0) }];
   }
+  if (q.startsWith('SELECT MAX(COALESCE(b.snapshot_days, 90)')) return [{ days: null }]; // Default graph span → 90
   if (q.startsWith('SELECT id::text, title, day_number, sort_order, is_required')) {
     const [batchId, programId, memberId] = a;
     return db.tasks.filter((t) => t.isActive && (t.batchId === batchId || (programId && t.programId === programId && !t.batchId)) && (!t.memberId || t.memberId === memberId))
@@ -256,7 +259,14 @@ function server() {
         }),
         findMany: vi.fn(async () => []),
       },
-      batch: { findUnique: vi.fn(async () => ({ programId: PROGRAM, snapshotDays: db.batchSnapshotDays, startsAt: new Date(Date.now() - 19 * DAY), program: { durationDays: db.programs[0].durationDays } })) },
+      batch: {
+        findUnique: vi.fn(async ({ where }: any) => {
+          const b = db.batches.find((x) => x.id === where.id);
+          if (!b) return null;
+          const p = b.programId ? db.programs.find((x) => x.id === b.programId) ?? null : null;
+          return { programId: b.programId, snapshotDays: db.batchSnapshotDays, startsAt: new Date(Date.now() - 19 * DAY), program: p ? { durationDays: p.durationDays } : null };
+        }),
+      },
       memberDayProgress: { findMany: vi.fn(async () => []) },
     },
   };
@@ -276,7 +286,9 @@ async function call(handler: any, opts: { clerk?: string; memberId?: string; par
   return sent;
 }
 const P = { programId: PROGRAM };
-const config = async (clerk = 'clerk_admin') => (await call(graph.getConfigHandler, { clerk, params: P })).body.data;
+/** The shared Default graph (members whose batch has no program, or no batch). */
+const DEF = { programId: 'default' };
+const config = async (clerk = 'clerk_admin', params: { programId: string } = P) => (await call(graph.getConfigHandler, { clerk, params })).body.data;
 const memberGraph = async (memberId = MEMBER) => (await call(userBatch.getMyWeeklyGraphHandler, { memberId })).body.data;
 
 beforeEach(() => {
@@ -303,11 +315,12 @@ beforeEach(() => {
       { id: MEMBER, firstName: 'Priya', lastName: 'K', batchId: BATCH },
       { id: OTHER_MEMBER, firstName: 'Ravi', lastName: 'S', batchId: BATCH },
       { id: UNLINKED_MEMBER, firstName: 'Nila', lastName: 'R', batchId: NO_PROGRAM_BATCH },
+      { id: UNLINKED_MEMBER_2, firstName: 'Kavin', lastName: 'P', batchId: NO_PROGRAM_BATCH },
       { id: NO_BATCH_MEMBER, firstName: 'Arun', lastName: 'M', batchId: null },
     ],
     batches: [
       { id: BATCH, name: 'Batch 7', programId: PROGRAM },
-      { id: NO_PROGRAM_BATCH, name: 'Loose batch', programId: null },
+      { id: NO_PROGRAM_BATCH, name: 'TBT Batch 54', programId: null },
     ],
     revenues: [],
     batchSnapshotDays: null,
@@ -587,7 +600,7 @@ describe('member-first selection: the program is resolved from the member', () =
     const res = await records(MEMBER);
     expect(res.status).toBe(200);
     expect(res.body.data.member).toMatchObject({ batchId: BATCH, batchName: 'Batch 7', programId: PROGRAM, programName: 'eComm Mastery' });
-    expect(res.body.data.noProgramReason).toBeNull();
+    expect(res.body.data.scope).toBe('program');
   });
 
   it('a record saved via the member lands in their program and shows in their own graph', async () => {
@@ -600,26 +613,28 @@ describe('member-first selection: the program is resolved from the member', () =
     expect((await memberGraph(MEMBER)).weeks[0].progressLevel).toBe(4);
   });
 
-  it("a member whose batch has no program gets a clear reason, and nothing can be saved", async () => {
-    await call(graph.initializeHandler, { params: P });
-    const c = await config();
+  it("a member whose batch has no program uses the Default graph — no 'link the batch' error", async () => {
     const res = await records(UNLINKED_MEMBER);
     expect(res.status).toBe(200);
-    expect(res.body.data.member).toMatchObject({ batchName: 'Loose batch', programId: null });
-    expect(res.body.data.noProgramReason).toMatch(/"Loose batch" is not linked to a program/);
+    expect(res.body.data.member).toMatchObject({ batchName: 'TBT Batch 54', programId: null });
+    expect(res.body.data.scope).toBe('default');
+    expect(JSON.stringify(res.body.data)).not.toMatch(/not linked to a program|Batches → edit batch/);
+    // A program's milestone can't be recorded against the Default graph.
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
     const save = await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: c.milestones[3].id, weekId: c.weeks[0].id } });
     expect(save.status).toBe(400);
-    expect(save.body.error).toMatch(/not linked to a program/);
     expect(db.records).toHaveLength(0);
   });
 
-  it('a member with no batch gets a clear reason, and nothing can be saved', async () => {
-    await call(graph.initializeHandler, { params: P });
-    const c = await config();
-    expect((await records(NO_BATCH_MEMBER)).body.data.noProgramReason).toMatch(/not in a batch/);
-    const save = await call(graph.upsertRecordHandler, { params: { memberId: NO_BATCH_MEMBER }, body: { milestoneId: c.milestones[3].id, weekId: c.weeks[0].id } });
-    expect(save.status).toBe(400);
-    expect(db.records).toHaveLength(0);
+  it('a member with no batch can still have milestones recorded (Default graph); they have no graph yet', async () => {
+    await call(graph.initializeHandler, { params: DEF });
+    const d = await config('clerk_admin', DEF);
+    expect((await records(NO_BATCH_MEMBER)).body.data.scope).toBe('default');
+    const save = await call(graph.upsertRecordHandler, { params: { memberId: NO_BATCH_MEMBER }, body: { milestoneId: d.milestones[0].id, weekId: d.weeks[0].id } });
+    expect(save.status).toBe(200);
+    expect(db.records).toEqual([expect.objectContaining({ memberId: NO_BATCH_MEMBER, milestoneId: d.milestones[0].id })]);
+    expect((await call(graph.memberGraphHandler, { params: { memberId: NO_BATCH_MEMBER } })).body.data.graph).toBeNull();
   });
 
   it('an unknown member is a 404', async () => {
@@ -674,6 +689,123 @@ describe("admin view of a member's own graph (GET /admin/members/:memberId/graph
     await adminGraph(MEMBER);
     await adminGraph(OTHER_MEMBER);
     expect(db.records).toHaveLength(before);
+  });
+});
+
+describe("Default graph — batch with no linked program (the 'TBT Batch 54' case)", () => {
+  const records = (memberId: string) => call(graph.listRecordsHandler, { params: { memberId } });
+  const adminGraph = (memberId: string) => call(graph.memberGraphHandler, { params: { memberId } });
+
+  it('1–2. selecting the member loads their details and their graph, with no error', async () => {
+    const r = await records(UNLINKED_MEMBER);
+    expect(r.status).toBe(200);
+    expect(r.body.data).toMatchObject({ scope: 'default', member: { batchName: 'TBT Batch 54', programId: null }, records: [] });
+    const g = await adminGraph(UNLINKED_MEMBER);
+    expect(g.status).toBe(200);
+    expect(g.body.data.graph).not.toBeNull();
+    expect(g.body.data.graph.config.source).toBe('default');
+    // The Default graph's settings load without a program: built-in weeks/milestones, no activities.
+    const d = await config('clerk_admin', DEF);
+    expect(d).toMatchObject({ scope: 'default', saved: false, program: { id: null, name: 'Default graph' }, activities: [] });
+    expect(d.weeks.length).toBeGreaterThan(0);
+    expect(d.milestones.map((m: any) => m.label)).toContain('1 lakh');
+  });
+
+  it('3–5. add a milestone, save it, and it persists on reload and on the member\'s own graph', async () => {
+    await call(graph.initializeHandler, { params: DEF });
+    const d = await config('clerk_admin', DEF);
+    expect(d.saved).toBe(true);
+    expect(db.milestones.every((m) => m.programId === null)).toBe(true); // stored program-less, nothing on any program
+    const lakh = d.milestones.find((m: any) => m.label === '1 lakh');
+    const save = await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: lakh.id, weekId: d.weeks[1].id, note: 'Verified invoices' } });
+    expect(save.status).toBe(200);
+    // "Refresh": a fresh read returns it
+    const listed = (await records(UNLINKED_MEMBER)).body.data.records;
+    expect(listed).toEqual([expect.objectContaining({ milestoneId: lakh.id, weekId: d.weeks[1].id, note: 'Verified invoices', programId: null })]);
+    // …and the member sees it on /batch-program
+    const mine = await memberGraph(UNLINKED_MEMBER);
+    expect(mine.weeks[1].progressLevel).toBe(4);
+    expect((await adminGraph(UNLINKED_MEMBER)).body.data.graph).toEqual(mine);
+  });
+
+  it('6. edit an existing milestone record (moves week, still one record) and a Default graph milestone', async () => {
+    await call(graph.initializeHandler, { params: DEF });
+    const d = await config('clerk_admin', DEF);
+    const lakh = d.milestones.find((m: any) => m.label === '1 lakh');
+    await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: lakh.id, weekId: d.weeks[0].id } });
+    await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: lakh.id, weekId: d.weeks[2].id, note: 'Moved' } });
+    const listed = (await records(UNLINKED_MEMBER)).body.data.records;
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ weekId: d.weeks[2].id, note: 'Moved' });
+    // Weeks and milestones of the Default graph are editable like a program's
+    const ren = await call(graph.updateMilestoneHandler, { params: { ...DEF, id: lakh.id }, body: { label: '₹1 Lakh' } });
+    expect(ren.status).toBe(200);
+    const wk = await call(graph.createWeekHandler, { params: DEF, body: { label: 'Bonus', startDay: 200, endDay: 206 } });
+    expect(wk.status).toBe(200);
+    expect(db.weeks.find((w) => w.label === 'Bonus')?.programId).toBeNull();
+    expect((await call(graph.reorderWeeksHandler, { params: DEF, body: { ids: [...db.weeks.filter((w) => w.programId === null)].reverse().map((w) => w.id) } })).status).toBe(200);
+  });
+
+  it("7. other members' milestones are unaffected — same batch and program members", async () => {
+    await call(graph.initializeHandler, { params: P });
+    await call(graph.initializeHandler, { params: DEF });
+    const c = await config();
+    const d = await config('clerk_admin', DEF);
+    const progLakh = c.milestones.find((m: any) => m.label === '1 lakh');
+    await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: progLakh.id, weekId: c.weeks[1].id } });
+    const before = structuredClone(db.records);
+    await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: d.milestones.find((m: any) => m.label === '1 crore').id, weekId: d.weeks[0].id } });
+    // The program member's record is untouched; the other TBT Batch 54 member has nothing.
+    expect(db.records.filter((r) => r.memberId === MEMBER)).toEqual(before.filter((r) => r.memberId === MEMBER));
+    expect((await records(UNLINKED_MEMBER_2)).body.data.records).toEqual([]);
+    expect((await memberGraph(UNLINKED_MEMBER_2)).weeks[0].progressLevel).toBe(0);
+    expect((await memberGraph(MEMBER)).weeks[1].progressLevel).toBe(4);
+  });
+
+  it('8. program-linked batches keep working, and the two graphs never mix', async () => {
+    await call(graph.initializeHandler, { params: P });
+    await call(graph.initializeHandler, { params: DEF });
+    const c = await config();
+    const d = await config('clerk_admin', DEF);
+    // Program config holds only its own rows; the Default graph only program-less rows.
+    expect(c.milestones.every((m: any) => db.milestones.find((x) => x.id === m.id)?.programId === PROGRAM)).toBe(true);
+    expect(d.milestones.every((m: any) => db.milestones.find((x) => x.id === m.id)?.programId === null)).toBe(true);
+    // A program member still records against their program…
+    expect((await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: c.milestones[0].id, weekId: c.weeks[0].id } })).status).toBe(200);
+    // …and can't be given a Default graph milestone (nor the reverse).
+    expect((await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: d.milestones[0].id, weekId: d.weeks[0].id } })).status).toBe(400);
+    expect((await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: c.milestones[0].id, weekId: c.weeks[0].id } })).status).toBe(400);
+    // Editing the Default graph never changes the program's milestones.
+    const progLabels = c.milestones.map((m: any) => m.label);
+    await call(graph.updateMilestoneHandler, { params: { ...DEF, id: d.milestones[0].id }, body: { label: 'Ads (default)' } });
+    expect((await config()).milestones.map((m: any) => m.label)).toEqual(progLabels);
+    // The program member's graph still comes from the program.
+    expect((await memberGraph(MEMBER)).config.source).toBe('program');
+  });
+
+  it('the Default graph has no activities: creating one is refused and no task is written', async () => {
+    await call(graph.initializeHandler, { params: DEF });
+    const d = await config('clerk_admin', DEF);
+    const tasksBefore = db.tasks.length;
+    const res = await call(graph.createActivityHandler, { params: DEF, body: { title: 'X', weekId: d.weeks[0].id } });
+    expect(res.status).toBe(400);
+    expect(db.tasks).toHaveLength(tasksBefore);
+    expect((await call(graph.deleteActivityHandler, { params: { ...DEF, id: TASK_ADS } })).status).toBe(400);
+    expect(db.tasks.find((t) => t.id === TASK_ADS)).toBeTruthy();
+  });
+
+  it('saving the Default graph twice never duplicates its rows', async () => {
+    await call(graph.initializeHandler, { params: DEF });
+    const n = { w: db.weeks.length, m: db.milestones.length };
+    await call(graph.initializeHandler, { params: DEF });
+    await call(graph.upsertRecordHandler, { params: { memberId: UNLINKED_MEMBER }, body: { milestoneId: db.milestones[0].id, weekId: db.weeks[0].id } });
+    expect({ w: db.weeks.length, m: db.milestones.length }).toEqual(n);
+  });
+
+  it('moderators can view but not change the Default graph', async () => {
+    expect((await call(graph.getConfigHandler, { clerk: 'clerk_mod', params: DEF })).status).toBe(200);
+    expect((await call(graph.initializeHandler, { clerk: 'clerk_mod', params: DEF })).status).toBe(403);
+    expect(db.milestones).toHaveLength(0);
   });
 });
 

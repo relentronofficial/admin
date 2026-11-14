@@ -2715,6 +2715,15 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE graph_milestones ADD COLUMN IF NOT EXISTS threshold_amount NUMERIC(15,2)`
     ).catch(() => {});
+    // Default graph: rows with program_id NULL hold the weeks/milestones used by
+    // members whose batch has no program (or who have no batch). Additive and
+    // idempotent — existing program rows are unchanged; the FK still applies when set.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE graph_weeks ALTER COLUMN program_id DROP NOT NULL`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE graph_milestones ALTER COLUMN program_id DROP NOT NULL`
+    ).catch(() => {});
 
     // Self-registration waits here until its phone OTP is verified; only then is
     // a member created (lib/registrationLogic.ts). Keyed by the E.164 phone; a
