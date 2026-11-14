@@ -702,61 +702,71 @@ function MCPlansSection({
           )}
         </article>
 
-        {/* Bundle card */}
-        {hasBundlePrice && (
-          <article className="mc-plan-card mc-popular">
-            <div className="mc-popular-label">✦ BEST VALUE FOR CREATORS</div>
-            <div className="mc-plan-top">
-              <span>CURATED BUNDLE</span>
-              <span className="mc-pill">Most Popular</span>
-            </div>
-            <h3>Creative Skill Bundle</h3>
-            <p>Get this course plus a curated set of complementary courses at a special bundle price.</p>
-            <div className="mc-plan-price">
-              {`₹${Number(course.bundlePrice).toLocaleString("en-IN")}`}
-              <small>Bundle Discount</small>
-            </div>
-            <div className="mc-plan-subtitle">INCLUDES:</div>
-            <b className="mc-plan-feature-title">{course.title} + Bundle Courses</b>
-            <ul>
-              <li>Everything in the standalone course</li>
-              {(course.bundleCourses ?? []).slice(0, 3).map((bc: any) => <li key={bc.id}>{bc.title}</li>)}
-              <li>Bundle discount applied</li>
-              ...{basePerks.slice(0, 2).map((p, i) => <li key={i}>{p}</li>)}
-            </ul>
-            <button className="mc-btn mc-btn-red mc-plan-btn" disabled={buyingBundle} onClick={onBuyBundle}>
-              {buyingBundle ? "Processing…" : `Get Bundle →`}
-            </button>
-          </article>
-        )}
+        {/* Bundle card — this course + the courses the admin ticked for its bundle */}
+        {hasBundlePrice && (() => {
+          const bundleCourses: any[] = course.bundleCourses ?? [];
+          const bundlePrice = Number(course.bundlePrice);
+          const separateTotal = price + bundleCourses.reduce((sum, bc) => sum + (Number(bc.price) || 0), 0);
+          const savings = separateTotal - bundlePrice;
+          return (
+            <article className="mc-plan-card mc-popular">
+              <div className="mc-popular-label">✦ MOST POPULAR</div>
+              <div className="mc-plan-top">
+                <span>COURSE BUNDLE</span>
+                <span className="mc-pill">{bundleCourses.length + 1} Courses</span>
+              </div>
+              <h3>{course.title} Bundle</h3>
+              <p>Get this course together with {bundleCourses.length} hand-picked course{bundleCourses.length !== 1 ? "s" : ""} at one bundle price.</p>
+              <div className="mc-plan-price">
+                {`₹${bundlePrice.toLocaleString("en-IN")}`}
+                {savings > 0 && <del>{`₹${separateTotal.toLocaleString("en-IN")}`}</del>}
+                {savings > 0 && <small>{`Save ₹${savings.toLocaleString("en-IN")}`}</small>}
+              </div>
+              <div className="mc-plan-subtitle">INCLUDES:</div>
+              <b className="mc-plan-feature-title">{bundleCourses.length + 1} courses</b>
+              <ul>
+                <li>{course.title}</li>
+                {bundleCourses.map((bc: any) => <li key={bc.id}>{bc.title}</li>)}
+                {basePerks.slice(2, 4).map((p, i) => <li key={`perk-${i}`}>{p}</li>)}
+              </ul>
+              <button className="mc-btn mc-btn-red mc-plan-btn" disabled={buyingBundle} onClick={onBuyBundle}>
+                {buyingBundle ? "Processing…" : `Get Bundle →`}
+              </button>
+            </article>
+          );
+        })()}
 
-        {/* All-access card */}
-        {hasAllAccessPrice && (
-          <article className="mc-plan-card">
-            <div className="mc-plan-top">
-              <span>ALL-ACCESS</span>
-              <span className="mc-pill">Maximum Value</span>
-            </div>
-            <h3>All-Access Pass</h3>
-            <p>Get access to every published course on the platform. Best for serious learners and business builders.</p>
-            <div className="mc-plan-price">
-              {`₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`}
-              <small>All Courses</small>
-            </div>
-            <div className="mc-plan-subtitle">INCLUDES:</div>
-            <b className="mc-plan-feature-title">All Published Courses</b>
-            <ul>
-              <li>All currently published courses</li>
-              <li>Future courses included</li>
-              <li>Best value for serious learners</li>
-              <li>Priority support access</li>
-              {basePerks.slice(0, 2).map((p, i) => <li key={i}>{p}</li>)}
-            </ul>
-            <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buyingAllAccess} onClick={onBuyAllAccess}>
-              {buyingAllAccess ? "Processing…" : `Get All Access →`}
-            </button>
-          </article>
-        )}
+        {/* All Packages card — every published mini course (what the purchase grants) */}
+        {hasAllAccessPrice && (() => {
+          const allCourses: { id: string; title: string }[] = course.allAccessCourses ?? [];
+          const SHOW = 6;
+          return (
+            <article className="mc-plan-card">
+              <div className="mc-plan-top">
+                <span>ALL PACKAGES</span>
+                <span className="mc-pill">Full Access</span>
+              </div>
+              <h3>All Packages</h3>
+              <p>Unlock every mini course in one purchase — full access to all {allCourses.length || ""} published mini courses.</p>
+              <div className="mc-plan-price">
+                {`₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`}
+                <small>All Mini Courses</small>
+              </div>
+              <div className="mc-plan-subtitle">INCLUDES:</div>
+              <b className="mc-plan-feature-title">
+                {allCourses.length ? `All ${allCourses.length} mini courses` : "All published mini courses"}
+              </b>
+              <ul>
+                {allCourses.slice(0, SHOW).map((c) => <li key={c.id}>{c.title}</li>)}
+                {allCourses.length > SHOW && <li>{`+ ${allCourses.length - SHOW} more`}</li>}
+                {basePerks.slice(2, 4).map((p, i) => <li key={`perk-${i}`}>{p}</li>)}
+              </ul>
+              <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buyingAllAccess} onClick={onBuyAllAccess}>
+                {buyingAllAccess ? "Processing…" : `Get All Packages →`}
+              </button>
+            </article>
+          );
+        })()}
       </div>
     </section>
   );

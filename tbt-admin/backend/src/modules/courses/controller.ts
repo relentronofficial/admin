@@ -69,6 +69,24 @@ async function resolveAdminId(req: FastifyRequest): Promise<string | null> {
 
 // ── COURSES ───────────────────────────────────────────────────────────
 
+// Mini-course purchase page + bundle columns (raw SQL, not in Prisma). The admin
+// edit form is filled from the list/detail responses, so they must carry these —
+// otherwise the form opens blank and Save wipes the saved values.
+const PURCHASE_COLS = `purchase_headline, video_preview_url, thank_you_note, key_highlights,
+  bundle_course_ids, bundle_price, all_access_price, original_price`;
+function purchaseFields(r: any) {
+  return {
+    purchaseHeadline: r?.purchase_headline ?? null,
+    videoPreviewUrl: r?.video_preview_url ?? null,
+    thankYouNote: r?.thank_you_note ?? null,
+    keyHighlights: (r?.key_highlights as string[] | null) ?? [],
+    bundleCourseIds: (r?.bundle_course_ids as string[] | null) ?? [],
+    bundlePrice: r?.bundle_price != null ? Number(r.bundle_price) : null,
+    allAccessPrice: r?.all_access_price != null ? Number(r.all_access_price) : null,
+    originalPrice: r?.original_price != null ? Number(r.original_price) : null,
+  };
+}
+
 export async function listCoursesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { page = 1, limit = 20, search, type } = req.query as any;
   const where: any = search ? { title: { contains: search, mode: 'insensitive' } } : {};
@@ -93,8 +111,9 @@ export async function listCoursesHandler(req: FastifyRequest, reply: FastifyRepl
   ]);
   const ids = courses.map((c) => c.id);
   const moduleRows = ids.length
-    ? await req.server.prisma.$queryRawUnsafe<{ id: string; module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]>(
-        `SELECT id, module, applicable_business_types, batch_visibility_ids, course_type FROM courses WHERE id = ANY($1::uuid[])`, ids,
+    ? await req.server.prisma.$queryRawUnsafe<any[]>(
+        `SELECT id, module, applicable_business_types, batch_visibility_ids, course_type, ${PURCHASE_COLS}
+         FROM courses WHERE id = ANY($1::uuid[])`, ids,
       ).catch(() => [])
     : [];
   const moduleMap = new Map(moduleRows.map((r) => [r.id, {
@@ -102,9 +121,12 @@ export async function listCoursesHandler(req: FastifyRequest, reply: FastifyRepl
     applicableBusinessTypes: r.applicable_business_types ?? null,
     batchVisibilityIds: (r.batch_visibility_ids as string[] | null) ?? null,
     courseType: r.course_type ?? 'mentorship',
+    ...purchaseFields(r),
   }]));
   const data = courses.map((c) => ({
     ...c,
+    ...purchaseFields(null),
+    ...moduleMap.get(c.id),
     module: moduleMap.get(c.id)?.module ?? null,
     applicableBusinessTypes: moduleMap.get(c.id)?.applicableBusinessTypes ?? null,
     batchVisibilityIds: moduleMap.get(c.id)?.batchVisibilityIds ?? null,
@@ -185,13 +207,15 @@ export async function getCourseHandler(req: FastifyRequest, reply: FastifyReply)
       where: { id },
       include: { courseEpisodes: { orderBy: { order: 'asc' } } },
     }),
-    req.server.prisma.$queryRawUnsafe<{ module: string | null; applicable_business_types: string[] | null; batch_visibility_ids: string[] | null; course_type: string }[]>(
-      `SELECT module, applicable_business_types, batch_visibility_ids, course_type FROM courses WHERE id = $1::uuid`, id,
+    req.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT module, applicable_business_types, batch_visibility_ids, course_type, ${PURCHASE_COLS}
+       FROM courses WHERE id = $1::uuid`, id,
     ).catch(() => []),
   ]);
   if (!course) return reply.status(404).send({ success: false, data: null, error: 'Not found' });
   return reply.send({ success: true, data: {
     ...course,
+    ...purchaseFields(moduleRows[0]),
     module: moduleRows[0]?.module ?? null,
     applicableBusinessTypes: moduleRows[0]?.applicable_business_types ?? null,
     batchVisibilityIds: (moduleRows[0]?.batch_visibility_ids as string[] | null) ?? null,

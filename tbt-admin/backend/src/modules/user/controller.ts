@@ -1186,12 +1186,21 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   if (allRelatedIds.length > 0) {
     const related = await prisma.course.findMany({
       where: { id: { in: allRelatedIds }, isPublished: true },
-      select: { id: true, title: true, slug: true, thumbnailUrl: true, level: true, totalLessons: true },
+      select: { id: true, title: true, slug: true, thumbnailUrl: true, level: true, totalLessons: true, price: true },
     });
     const relatedMap = new Map(related.map((c) => [c.id, c]));
     upsellCourses = upsellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
     crossSellCourses = crossSellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
     bundleCourses = bundleIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];
+  }
+
+  // "All Packages" tier: exactly what verifyAllAccessPaymentHandler grants —
+  // every published mini course. Only fetched when the tier is on sale here.
+  let allAccessCourses: { id: string; title: string }[] = [];
+  if ((visRows[0] as any)?.all_access_price != null) {
+    allAccessCourses = await prisma.$queryRawUnsafe<{ id: string; title: string }[]>(
+      `SELECT id, title FROM courses WHERE course_type = 'mini_course' AND is_published = true ORDER BY sort_order, title`,
+    ).catch(() => []);
   }
 
   const LESSON_BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;
@@ -1394,6 +1403,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     bundleCourses,
     bundlePrice: (visRows[0] as any)?.bundle_price != null ? Number((visRows[0] as any).bundle_price) : null,
     allAccessPrice: (visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null,
+    allAccessCourses,
     originalPrice: (visRows[0] as any)?.original_price != null ? Number((visRows[0] as any).original_price) : null,
   });
 }

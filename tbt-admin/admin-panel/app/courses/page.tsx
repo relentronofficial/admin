@@ -172,7 +172,8 @@ function FileUploadBtn({
 export default function CoursesPage() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
-  const { data, isLoading } = useListVodCourses({ search });
+  // limit: the course list also feeds the bundle / upsell pickers, which must see every course.
+  const { data, isLoading } = useListVodCourses({ search, limit: 200 });
   const { data: tiersData } = useListTiers();
   const tiers: any[] = (tiersData as any)?.data || [];
   const { data: businessTypesData } = useBusinessTypes();
@@ -768,14 +769,43 @@ export default function CoursesPage() {
                           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">All-Access Price (₹)</label>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">All Packages Price (₹)</label>
                         <input type="number" min="0" value={(courseForm as any).allAccessPrice} onChange={e => setCourseField("allAccessPrice", e.target.value)} placeholder="—"
                           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
                       </div>
                     </div>
+                    <p className="text-[10px] text-[#666] -mt-1">
+                      Leave a price empty to hide that plan. <b className="text-[#888]">All Packages</b> unlocks every published mini course in one purchase.
+                    </p>
                     <div>
-                      <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Bundle Courses (included in Curated Bundle)</label>
-                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1 bg-[#141414] border border-[#222] rounded p-2">
+                      {(() => {
+                        const others = courses.filter((c: any) => c.id !== editingCourse?.id && c.courseType === 'mini_course');
+                        const selIds: string[] = (courseForm as any).bundleCourseIds ?? [];
+                        const selected = others.filter((c: any) => selIds.includes(c.id));
+                        const separateTotal = (Number(courseForm.price) || 0) + selected.reduce((s: number, c: any) => s + (Number(c.price) || 0), 0);
+                        const bundlePrice = Number((courseForm as any).bundlePrice) || 0;
+                        return (
+                          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1.5">
+                            <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest font-rajdhani">
+                              Bundle — mini courses included with this one ({selected.length} selected)
+                            </label>
+                            {selected.length > 0 && (
+                              <span className="text-[10px] text-[#888]">
+                                Bought separately: ₹{separateTotal.toLocaleString("en-IN")}
+                                {bundlePrice > 0 && bundlePrice < separateTotal && (
+                                  <span className="text-green-400"> · saves ₹{(separateTotal - bundlePrice).toLocaleString("en-IN")}</span>
+                                )}
+                              </span>
+                            )}
+                            {bundlePrice > 0 && selected.length === 0 && (
+                              <span className="text-[10px] text-orange-400 w-full">
+                                Bundle price is set but no courses are ticked — the bundle would only contain this course.
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1 bg-[#141414] border border-[#222] rounded p-2">
                         {courses.filter((c: any) => c.id !== editingCourse?.id && c.courseType === 'mini_course').map((c: any) => {
                           const sel = ((courseForm as any).bundleCourseIds ?? []).includes(c.id);
                           return (
@@ -785,7 +815,8 @@ export default function CoursesPage() {
                                   const cur: string[] = (courseForm as any).bundleCourseIds ?? [];
                                   setCourseField("bundleCourseIds", sel ? cur.filter((id: string) => id !== c.id) : [...cur, c.id]);
                                 }} />
-                              <span className="text-[11px] text-[#a0a0a0] truncate">{c.title}</span>
+                              <span className="text-[11px] text-[#a0a0a0] truncate flex-1">{c.title}</span>
+                              <span className="text-[10px] text-[#666] shrink-0">{c.price != null && Number(c.price) > 0 ? `₹${Number(c.price).toLocaleString("en-IN")}` : "Free"}</span>
                             </label>
                           );
                         })}
