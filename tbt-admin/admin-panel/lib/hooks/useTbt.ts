@@ -2841,6 +2841,8 @@ export interface WeeklyGraphConfig {
 }
 export interface GraphMemberRecord {
   id: string; milestoneId: string; milestoneLabel: string; kind: GraphMilestoneKind;
+  /** The program the record's milestone belongs to (may differ from the member's current program after a batch move). */
+  programId: string | null;
   weekId: string | null; weekLabel: string | null; note: string | null; recordedBy: string | null; recordedAt: string;
 }
 
@@ -2906,17 +2908,27 @@ export const useGraphMemberRecords = (memberId: string) =>
     queryKey: graphRecordsKey(memberId),
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/weekly-graph/admin/members/${memberId}/records`);
-      return res.data as { member: { id: string; firstName: string; lastName: string | null; programId: string | null }; records: GraphMemberRecord[] };
+      return res.data as { member: GraphMemberProgram; noProgramReason: string | null; records: GraphMemberRecord[] };
     },
     enabled: !!memberId,
   });
+
+/** The selected member with their batch and program, resolved server-side (members.batch_id → batches.program_id). */
+export interface GraphMemberProgram {
+  id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null;
+  batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
+}
 
 export const useSaveGraphMemberRecord = (memberId: string) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (body: { milestoneId: string; weekId: string; note?: string }) =>
       (await apiClient.put(`/api/weekly-graph/admin/members/${memberId}/records`, body) as any).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) });
+      // Saving can write the program's default rows (ensureProgramGraphConfig) — refresh any loaded config.
+      qc.invalidateQueries({ queryKey: ['weekly-graph-config'] });
+    },
   });
 };
 
