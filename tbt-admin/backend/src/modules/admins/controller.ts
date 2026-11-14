@@ -150,7 +150,7 @@ export async function createAdminHandler(request: FastifyRequest, reply: Fastify
           status: body.status,
           notes: body.notes,
           tags: body.tags,
-          permissions: body.permissions,
+          permissions: (body.rbac ?? body.permissions) as any,
           reportingManagerId: body.reportingManagerId,
           createdBy: creatorAdmin?.id ?? undefined,
         }
@@ -190,7 +190,9 @@ export async function updateAdminHandler(request: FastifyRequest, reply: Fastify
     const body = updateAdminSchema.parse(request.body);
 
     // password is Clerk-managed — never write it to the DB
-    const { password, ...fields } = body as any;
+    // `rbac` (Security Matrix rows) is not a DB column — persist it as `permissions`
+    const { password, rbac, ...fields } = body as any;
+    if (Array.isArray(rbac)) fields.permissions = rbac;
 
     // Drop empty-string enum/optional fields so Prisma doesn't write blank strings
     const data: any = {};
