@@ -10,6 +10,7 @@ import {
   getConfigHandler,
   initializeHandler,
   listRecordsHandler,
+  memberGraphHandler,
   reorderMilestonesHandler,
   reorderWeeksHandler,
   updateActivityHandler,
@@ -43,6 +44,7 @@ export async function weeklyGraphRoutes(fastify: FastifyInstance) {
   fastify.delete(`${base}/activities/:id`, deleteActivityHandler);
 
   fastify.get('/admin/members/:memberId/records', listRecordsHandler);
+  fastify.get('/admin/members/:memberId/graph', memberGraphHandler);
   fastify.put('/admin/members/:memberId/records', upsertRecordHandler);
   fastify.delete('/admin/members/:memberId/records/:recordId', deleteRecordHandler);
 }

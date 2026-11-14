@@ -2857,12 +2857,15 @@ export const useWeeklyGraphConfig = (programId: string) =>
     staleTime: 10_000,
   });
 
-/** Every config mutation refetches the program's config afterwards. */
+/** Every config mutation refetches the program's config, and any member graph shown, afterwards. */
 const useWeeklyGraphMutation = <V,>(programId: string, fn: (v: V) => Promise<any>) => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => qc.invalidateQueries({ queryKey: weeklyGraphKey(programId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: weeklyGraphKey(programId) });
+      qc.invalidateQueries({ queryKey: ['weekly-graph-member-graph'] });
+    },
   });
 };
 
@@ -2916,6 +2919,8 @@ export const useGraphMemberRecords = (memberId: string) =>
 /** The selected member with their batch and program, resolved server-side (members.batch_id → batches.program_id). */
 export interface GraphMemberProgram {
   id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null;
+  /** members.member_id (human-readable code) and members.status */
+  memberCode: string | null; status: string | null;
   batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
 }
 
@@ -2926,6 +2931,7 @@ export const useSaveGraphMemberRecord = (memberId: string) => {
       (await apiClient.put(`/api/weekly-graph/admin/members/${memberId}/records`, body) as any).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) });
+      qc.invalidateQueries({ queryKey: memberGraphKey(memberId) });
       // Saving can write the program's default rows (ensureProgramGraphConfig) — refresh any loaded config.
       qc.invalidateQueries({ queryKey: ['weekly-graph-config'] });
     },
@@ -2937,9 +2943,39 @@ export const useDeleteGraphMemberRecord = (memberId: string) => {
   return useMutation({
     mutationFn: async (recordId: string) =>
       (await apiClient.delete(`/api/weekly-graph/admin/members/${memberId}/records/${recordId}`) as any).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: graphRecordsKey(memberId) });
+      qc.invalidateQueries({ queryKey: memberGraphKey(memberId) });
+    },
   });
 };
+
+/** One member's graph exactly as they see it on /batch-program (subset of backend lib/weeklyGraphLogic.ts WeeklyGraph). */
+export interface MemberWeeklyGraph {
+  currentWeek: number;
+  hasActivities: boolean;
+  weeks: Array<{
+    weekNumber: number; label: string; isCurrent: boolean; total: number; completed: number;
+    completionPercent: number | null; progressLevel: number | null;
+    activities: Array<{ taskId: string; title: string; completed: boolean; level: number; milestoneLabel: string | null }>;
+  }>;
+  summary: { total: number; completed: number; completionPercent: number | null };
+  config: { source: 'program' | 'default'; milestones: Array<{ id: string | null; label: string; kind: GraphMilestoneKind; reached: boolean; reachedBy: 'activity' | 'revenue' | 'record' | null; reachedWeek: number | null }> };
+  revenue: { totalToDate: number | null };
+}
+
+const memberGraphKey = (memberId: string) => ['weekly-graph-member-graph', memberId];
+
+/** Read-only: GET /api/weekly-graph/admin/members/:memberId/graph. graph is null when the member has no batch. */
+export const useGraphMemberGraph = (memberId: string) =>
+  useQuery({
+    queryKey: memberGraphKey(memberId),
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/weekly-graph/admin/members/${memberId}/graph`);
+      return res.data as { memberId: string; graph: MemberWeeklyGraph | null };
+    },
+    enabled: !!memberId,
+  });
 
 // ── Course Page FAQs ──────────────────────────────────────────────────────
 

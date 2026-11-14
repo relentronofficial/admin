@@ -19,6 +19,7 @@ import {
 } from '../../lib/weeklyGraphConfig.js';
 import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
+import { loadMemberWeeklyGraph } from '../../lib/memberWeeklyGraph.js';
 
 type P = { programId: string };
 type PI = P & { id: string };
@@ -408,6 +409,8 @@ type M = { memberId: string };
 
 type MemberProgram = {
   id: string; firstName: string; lastName: string | null; phone: string | null; email: string | null;
+  /** members.member_id — the human-readable member code; status is members.status. */
+  memberCode: string | null; status: string | null;
   batchId: string | null; batchName: string | null; programId: string | null; programName: string | null;
 };
 
@@ -422,6 +425,7 @@ async function memberProgram(req: FastifyRequest<{ Params: M }>, reply: FastifyR
   if (!UUID.test(memberId)) { fail(reply, 400, 'Invalid member id'); return null; }
   const [m] = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT m.id::text, m.first_name AS "firstName", m.last_name AS "lastName", m.phone, m.email,
+            m.member_id AS "memberCode", m.status::text AS status,
             m.batch_id::text AS "batchId", b.name AS "batchName",
             b.program_id::text AS "programId", p.name AS "programName"
      FROM members m
@@ -459,6 +463,16 @@ export async function listRecordsHandler(req: FastifyRequest<{ Params: M }>, rep
   const member = await memberProgram(req, reply);
   if (!member) return;
   return ok(reply, { member, noProgramReason: noProgramReason(member), records: await listRecords(req.server.prisma, member.id) });
+}
+
+// GET /api/weekly-graph/admin/members/:memberId/graph — read-only: exactly the
+// graph this member sees on /batch-program (same loader, lib/memberWeeklyGraph.ts).
+// graph is null when the member is not in a batch.
+export async function memberGraphHandler(req: FastifyRequest<{ Params: M }>, reply: FastifyReply) {
+  if (!(await requireViewer(req, reply))) return;
+  const member = await memberProgram(req, reply);
+  if (!member) return;
+  return ok(reply, { memberId: member.id, graph: await loadMemberWeeklyGraph(req.server.prisma, member.id) });
 }
 
 // PUT /api/weekly-graph/admin/members/:memberId/records  { milestoneId, weekId, note? } — one record per milestone

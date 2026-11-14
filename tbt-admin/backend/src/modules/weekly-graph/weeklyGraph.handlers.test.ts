@@ -174,7 +174,8 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return db.members.filter((m) => m.id === a[0]).map((m) => {
       const b = db.batches.find((x) => x.id === m.batchId) ?? null;
       const p = b?.programId ? db.programs.find((x) => x.id === b.programId) ?? null : null;
-      return { id: m.id, firstName: m.firstName, lastName: m.lastName, phone: null, email: null, batchId: b?.id ?? null, batchName: b?.name ?? null,
+      return { id: m.id, firstName: m.firstName, lastName: m.lastName, phone: null, email: null, memberCode: `TBT-${m.id.slice(-3)}`, status: 'active',
+        batchId: b?.id ?? null, batchName: b?.name ?? null,
         programId: p?.id ?? null, programName: p?.name ?? null };
     });
   }
@@ -623,6 +624,56 @@ describe('member-first selection: the program is resolved from the member', () =
 
   it('an unknown member is a 404', async () => {
     expect((await records('30000000-0000-0000-0000-000000000099')).status).toBe(404);
+  });
+
+  it('the selected member comes back with their member code and status for the details panel', async () => {
+    expect((await records(MEMBER)).body.data.member).toMatchObject({ id: MEMBER, memberCode: `TBT-${MEMBER.slice(-3)}`, status: 'active' });
+  });
+});
+
+describe("admin view of a member's own graph (GET /admin/members/:memberId/graph)", () => {
+  const adminGraph = (memberId: string, clerk = 'clerk_admin') => call(graph.memberGraphHandler, { clerk, params: { memberId } });
+
+  it('is exactly the graph the member sees on /batch-program', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    const lakh = c.milestones.find((m: any) => m.label === '1 lakh');
+    await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: lakh.id, weekId: c.weeks[1].id } });
+    const res = await adminGraph(MEMBER);
+    expect(res.status).toBe(200);
+    expect(res.body.data.memberId).toBe(MEMBER);
+    expect(res.body.data.graph).toEqual(await memberGraph(MEMBER));
+    expect(res.body.data.graph.weeks[1].progressLevel).toBe(4);
+  });
+
+  it('switching members switches the data — no record leaks across members', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const c = await config();
+    const lakh = c.milestones.find((m: any) => m.label === '1 lakh');
+    await call(graph.upsertRecordHandler, { params: { memberId: MEMBER }, body: { milestoneId: lakh.id, weekId: c.weeks[1].id } });
+    const mine = (await adminGraph(MEMBER)).body.data;
+    const other = (await adminGraph(OTHER_MEMBER)).body.data;
+    expect(other.memberId).toBe(OTHER_MEMBER);
+    expect(other.graph).toEqual(await memberGraph(OTHER_MEMBER));
+    expect(other.graph.weeks[1].progressLevel).toBe(0);
+    expect(mine.graph.weeks[1].progressLevel).toBe(4);
+  });
+
+  it('a member with no batch has no graph; bad or unknown ids and unknown admins are refused', async () => {
+    const none = await adminGraph(NO_BATCH_MEMBER);
+    expect(none.status).toBe(200);
+    expect(none.body.data.graph).toBeNull();
+    expect((await adminGraph('nope')).status).toBe(400);
+    expect((await adminGraph('30000000-0000-0000-0000-000000000099')).status).toBe(404);
+    expect((await adminGraph(MEMBER, 'clerk_nobody')).status).toBe(403);
+  });
+
+  it('reading the graph writes no member records', async () => {
+    await call(graph.initializeHandler, { params: P });
+    const before = db.records.length;
+    await adminGraph(MEMBER);
+    await adminGraph(OTHER_MEMBER);
+    expect(db.records).toHaveLength(before);
   });
 });
 
