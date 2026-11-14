@@ -71,9 +71,9 @@ const MC_CSS = `
 .mc-hero h1 span,.mc-section-heading h2 span,.mc-earning-copy h2 span{color:var(--mc-red)}
 .mc-hero-copy{max-width:720px;margin:0 auto 26px;color:#625b62;font-size:14px}
 .mc-hero-showcase{display:grid;grid-template-columns:1.5fr .75fr;gap:28px;align-items:center;max-width:850px;margin:0 auto 22px}
-.mc-video-preview{height:250px;border:0;padding:0;position:relative;overflow:hidden;border-radius:17px;background:#18151a;cursor:pointer;box-shadow:0 15px 35px #29101320;width:100%}
-.mc-video-preview img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .7s}
-.mc-video-preview:hover img{transform:scale(1.06)}
+.mc-hero-showcase>*{min-width:0}
+.mc-video-preview{aspect-ratio:16/9;height:auto;border:0;padding:0;position:relative;overflow:hidden;border-radius:17px;background:#18151a;cursor:pointer;box-shadow:0 15px 35px #29101320;width:100%;display:block}
+.mc-video-preview img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;display:block}
 .mc-video-preview::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#0008,transparent 45%);pointer-events:none}
 .mc-play-button{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:58px;height:58px;border:2px solid white;border-radius:50%;display:grid;place-items:center;background:#ffffff20;backdrop-filter:blur(4px);transition:.25s}
 .mc-play-button span{width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:14px solid #fff;margin-left:4px;display:block}
@@ -223,7 +223,6 @@ const MC_CSS = `
 
 @media(max-width:900px){
   .mc-hero-showcase{max-width:740px}
-  .mc-video-preview{height:220px}
   .mc-plan-card{padding:20px 15px}
   .mc-plan-price{font-size:25px}
   .mc-module-trigger{gap:6px}
@@ -234,7 +233,6 @@ const MC_CSS = `
   .mc-hero h1{font-size:35px;letter-spacing:-1px}
   .mc-hero-copy{font-size:12px}
   .mc-hero-showcase{grid-template-columns:1fr;gap:17px}
-  .mc-video-preview{height:210px}
   .mc-hero-facts{grid-template-columns:1fr 1fr;gap:13px}
   .mc-offer-strip{padding:14px;gap:12px;align-items:flex-start;flex-wrap:wrap}
   .mc-offer-actions{width:100%;grid-template-columns:1fr 1fr}
@@ -367,7 +365,12 @@ function MCHeroSection({
         <h1>
           {course.purchaseHeadline
             ? course.purchaseHeadline
-            : (<>{course.title.split(" ").slice(0, -2).join(" ") || course.title}{" "}<span>{course.title.split(" ").slice(-2).join(" ")}</span></>)
+            : (() => {
+                // Highlight the last two words; short titles are highlighted whole (no repeated words).
+                const words = course.title.trim().split(/\s+/);
+                const lead = words.slice(0, -2).join(" ");
+                return (<>{lead && <>{lead}{" "}</>}<span>{words.slice(-2).join(" ")}</span></>);
+              })()
           }
         </h1>
         {course.description && (
