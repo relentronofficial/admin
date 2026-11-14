@@ -221,6 +221,8 @@ export type TaskSubmissionFilters = {
   dayNumber?: number;
   search?: string;
   limit?: number;
+  page?: number;              // 1-based
+  order?: 'batch' | 'recent'; // default 'batch'
 };
 
 /** All task submissions across batches — GET /api/tasks/submissions */
@@ -234,7 +236,10 @@ export const useListAllTaskSubmissions = (filters: TaskSubmissionFilters) => {
       const res: any = await apiClient.get('/api/tasks/submissions', { params });
       return res as {
         data: any[];
-        meta: { total: number; returned: number; limit: number; statusCounts: Record<string, number> };
+        meta: {
+          total: number; returned: number; limit: number; page: number; totalPages: number;
+          statusCounts: Record<string, number>;
+        };
       };
     },
     staleTime: 1000 * 30,

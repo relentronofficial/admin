@@ -68,7 +68,7 @@ const emptyInlineTaskForm = () => ({
 type Tab = "tasks" | "programs" | "batch-checklist" | "submissions" | "overview";
 
 export default function TasksPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("tasks");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   // ── Task Initiative state ─────────────────────────────────────────────────────
   const [programFilter, setProgramFilter] = useState("");
@@ -97,8 +97,6 @@ export default function TasksPage() {
   const dragFrom = useRef<{ dayNumber: number; idx: number } | null>(null);
   const [dragOverMap, setDragOverMap] = useState<Record<number, number>>({});
 
-  // ── Overview state ────────────────────────────────────────────────────────────
-  const [overviewBatchId, setOverviewBatchId] = useState("");
 
   // ── Hooks ─────────────────────────────────────────────────────────────────────
   const { data: tasksData, isLoading: tasksLoading } = useListTasks(programFilter ? { programId: programFilter } : undefined);
@@ -112,7 +110,6 @@ export default function TasksPage() {
   const { data: batchTasksData } = useListBatchTasks(selectedBatchId);
   const { data: checklistAllTasksData, isLoading: checklistAllLoading } = useGetAllBatchTasks(selectedBatchId);
 
-  const { data: overviewTasksData, isLoading: overviewLoading } = useGetAllBatchTasks(overviewBatchId);
 
   const createTask    = useCreateTaskInitiative();
   const updateTask    = useUpdateTask();
@@ -132,7 +129,6 @@ export default function TasksPage() {
   const batches: any[]  = (batchesData as any)?.data  || batchesData  || [];
   const batchDays: any[] = (batchDaysData as any)?.data || batchDaysData || [];
   const checklistAllTasks: any[] = checklistAllTasksData ?? [];
-  const overviewTasks: any[] = overviewTasksData ?? [];
   const members: any[] = (membersData as any)?.data || [];
 
   const filteredTasks = tasks.filter(t =>
@@ -460,7 +456,7 @@ export default function TasksPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-[#2a2a2a]">
-          {(["tasks", "programs", "batch-checklist", "submissions", "overview"] as Tab[]).map((tab) => (
+          {(["overview", "submissions", "tasks", "programs", "batch-checklist"] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -855,86 +851,8 @@ export default function TasksPage() {
         {/* ── SUBMISSIONS TAB ───────────────────────────────────────────────────── */}
         {activeTab === "submissions" && <SubmissionsPanel batches={batches} />}
 
-        {/* ── OVERVIEW TAB ─────────────────────────────────────────────────────────── */}
-        {activeTab === "overview" && (
-          <>
-            {/* Batch selector */}
-            <div className="flex items-center gap-4">
-              <div className="relative w-72">
-                <select
-                  value={overviewBatchId}
-                  onChange={e => setOverviewBatchId(e.target.value)}
-                  className="w-full bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 pl-4 pr-9 text-sm text-white outline-none focus:border-[#dc2626] appearance-none cursor-pointer"
-                >
-                  <option value="">Select a batch…</option>
-                  {batches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#606060] pointer-events-none" />
-              </div>
-              {overviewBatchId && (
-                <span className="text-[12px] text-[#606060]">
-                  {overviewLoading ? "Loading…" : `${overviewTasks.length} task${overviewTasks.length !== 1 ? "s" : ""}`}
-                </span>
-              )}
-            </div>
-
-            {!overviewBatchId ? (
-              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
-                <Eye size={36} className="text-[#444] mx-auto mb-3" />
-                <p className="text-[#606060] text-sm">Select a batch to see all its tasks (program + batch-specific) in one view.</p>
-              </div>
-            ) : overviewLoading ? (
-              <div className="flex justify-center py-20"><Loader2 size={28} className="animate-spin text-[#dc2626]" /></div>
-            ) : overviewTasks.length === 0 ? (
-              <div className="bg-[#141414] border border-[#1f1f1f] rounded-xl p-16 text-center">
-                <ListChecks size={36} className="text-[#444] mx-auto mb-3" />
-                <p className="text-[#606060] text-sm">No tasks found for this batch.</p>
-              </div>
-            ) : (
-              (() => {
-                const dayGroups: Record<number, any[]> = {};
-                overviewTasks.forEach((t: any) => {
-                  const d = t.dayNumber ?? 0;
-                  if (!dayGroups[d]) dayGroups[d] = [];
-                  dayGroups[d].push(t);
-                });
-                return (
-                  <div className="space-y-4">
-                    {Object.keys(dayGroups).sort((a, b) => Number(a) - Number(b)).map(day => (
-                      <div key={day} className="bg-[#141414] border border-[#1f1f1f] rounded-xl overflow-hidden">
-                        <div className="px-5 py-3 bg-[#1a1a1a] border-b border-[#1f1f1f] flex items-center gap-3">
-                          <Calendar size={14} className="text-[#dc2626]" />
-                          <span className="text-[13px] font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wider">
-                            Day {day}
-                          </span>
-                          <span className="text-[11px] text-[#606060]">{dayGroups[Number(day)].length} task{dayGroups[Number(day)].length !== 1 ? "s" : ""}</span>
-                        </div>
-                        <div className="divide-y divide-[#1f1f1f]">
-                          {dayGroups[Number(day)].map((t: any) => (
-                            <div key={t.id} className="px-5 py-3 flex items-center gap-4">
-                              <span
-                                className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider flex-shrink-0"
-                                style={t.source === "batch"
-                                  ? { background: "rgba(34,197,94,0.12)", color: "#22c55e" }
-                                  : { background: "rgba(59,130,246,0.12)", color: "#60a5fa" }}
-                              >
-                                {t.source === "batch" ? "Batch" : "Program"}
-                              </span>
-                              <span className="flex-1 text-[13px] text-[#f0f0f0] min-w-0 truncate">{t.title}</span>
-                              <span className="text-[11px] text-[#606060] flex-shrink-0">{t.proofType}</span>
-                              <span className="text-[11px] text-[#dc2626] font-bold flex-shrink-0">{t.basePoints} XP</span>
-                              {t.isMilestone && <Star size={12} className="text-yellow-500 flex-shrink-0" />}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()
-            )}
-          </>
-        )}
+        {/* ── OVERVIEW TAB — recent submissions, paginated ───────────────────────── */}
+        {activeTab === "overview" && <SubmissionsPanel batches={batches} variant="recent" />}
       </div>
 
       {/* ── Task Initiative Create / Edit Modal ──────────────────────────────────── */}

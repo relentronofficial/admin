@@ -294,8 +294,10 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
 }
 
 // ── Task submissions across all batches (admin Tasks → Submissions tab) ──────
-// GET /api/tasks/submissions?batchId=&status=&from=YYYY-MM-DD&to=YYYY-MM-DD&dayNumber=&search=&limit=
+// GET /api/tasks/submissions?batchId=&status=&from=YYYY-MM-DD&to=YYYY-MM-DD&dayNumber=&search=&limit=&page=&order=
 // batchId: a batch uuid, or "none" for submissions with no batch at all.
+// order: "batch" (default — batch name, then newest) or "recent" (newest first).
+// page: 1-based; rows are offset by (page-1)*limit.
 // A submission's batch is its own batch_id, falling back to the member's batch
 // (program-task submissions are stored without batch_id).
 // from/to are IST calendar dates, both inclusive.
@@ -306,9 +308,12 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export async function listAllTaskSubmissionsHandler(request: FastifyRequest, reply: FastifyReply) {
   const q = request.query as {
     batchId?: string; status?: string; from?: string; to?: string;
-    dayNumber?: string; search?: string; limit?: string;
+    dayNumber?: string; search?: string; limit?: string; page?: string; order?: string;
   };
 
+  if (q.order && q.order !== 'batch' && q.order !== 'recent') {
+    return reply.status(400).send({ success: false, data: null, error: 'order must be "batch" or "recent"' });
+  }
   if (q.batchId && q.batchId !== 'none' && !UUID_RE.test(q.batchId)) {
     return reply.status(400).send({ success: false, data: null, error: 'batchId must be a batch id or "none"' });
   }
@@ -323,6 +328,10 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
     return reply.status(400).send({ success: false, data: null, error: 'dayNumber must be a positive integer' });
   }
   const limit = Math.min(1000, Math.max(1, parseInt(q.limit ?? '500', 10) || 500));
+  const page = Math.max(1, parseInt(q.page ?? '1', 10) || 1);
+  const orderBy = q.order === 'recent'
+    ? 'ts.created_at DESC, ts.id'
+    : 'b.name ASC NULLS LAST, ts.created_at DESC, ts.id';
   const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
 
   // Filters shared by the rows query and the per-status counts. Status itself is
@@ -353,6 +362,7 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
     ? `${baseWhere ? `${baseWhere} AND` : 'WHERE'} ts.status::text = ${p(q.status)}`
     : baseWhere;
   const limitParam = p(limit);
+  const offsetParam = p((page - 1) * limit);
 
   const [rows, counts] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
@@ -372,8 +382,8 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
               b.id AS "batchId", b.name AS "batchName"
        ${fromSql}
        ${rowWhere}
-       ORDER BY b.name ASC NULLS LAST, ts.created_at DESC
-       LIMIT ${limitParam}::int`,
+       ORDER BY ${orderBy}
+       LIMIT ${limitParam}::int OFFSET ${offsetParam}::int`,
       ...params,
     ),
     request.server.prisma.$queryRawUnsafe<{ status: string; count: bigint }[]>(
@@ -391,7 +401,7 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
   return reply.send({
     success: true,
     data: rows,
-    meta: { total, returned: rows.length, limit, statusCounts },
+    meta: { total, returned: rows.length, limit, page, totalPages: Math.max(1, Math.ceil(total / limit)), statusCounts },
     error: null,
   });
 }

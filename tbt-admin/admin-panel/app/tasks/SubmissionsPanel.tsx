@@ -2,15 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertTriangle, Calendar, Check, ChevronDown, ChevronRight, ClipboardList, Clock,
+  AlertTriangle, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock,
   FileText, Filter, GraduationCap, Link, Loader2, RefreshCw, Search, X,
 } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { useListAllTaskSubmissions, useReviewTaskSubmission } from "@/lib/hooks/useTasks";
 import { cn } from "@/lib/utils";
 
-// Tasks → Submissions: every member task submission, grouped batch-wise, with
-// batch / date-range / status / day / search filters and the approve-reject review flow.
+// Member task submissions with batch / date-range / status / day / search filters
+// and the approve-reject review flow.
+//   variant="grouped" (Submissions tab): status cards + submissions grouped batch-wise.
+//   variant="recent"  (Overview tab):    one newest-first list, paginated.
+
+const PAGE_SIZE = 20;
 
 const STATUSES = [
   { value: "pending", label: "Pending", cls: "text-yellow-400 bg-yellow-400/10", ring: "border-yellow-500/40" },
@@ -41,7 +45,9 @@ const inputCls =
   "bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 px-3 text-sm text-white outline-none focus:border-[#dc2626] [color-scheme:dark]";
 const labelCls = "block text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1";
 
-export function SubmissionsPanel({ batches }: { batches: any[] }) {
+export function SubmissionsPanel({ batches, variant = "grouped" }: { batches: any[]; variant?: "grouped" | "recent" }) {
+  const isRecent = variant === "recent";
+  const [page, setPage] = useState(1);
   const [batchId, setBatchId] = useState("");
   const [status, setStatus] = useState("");
   const [from, setFrom] = useState("");
@@ -61,6 +67,9 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
 
   const dateError = from && to && from > to ? "Start date is after end date" : "";
 
+  // Any filter change starts again from page 1.
+  useEffect(() => { setPage(1); }, [batchId, status, from, to, day, search]);
+
   const { data, isLoading, isFetching, isError, error, refetch } = useListAllTaskSubmissions({
     batchId: batchId === NO_BATCH ? "none" : batchId || undefined,
     status: status || undefined,
@@ -68,12 +77,20 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
     to: dateError ? undefined : to || undefined,
     dayNumber: day ? Number(day) : undefined,
     search: search || undefined,
+    ...(isRecent ? { order: "recent" as const, limit: PAGE_SIZE, page } : {}),
   });
   const review = useReviewTaskSubmission();
 
   const rows: any[] = useMemo(() => data?.data ?? [], [data]);
   const meta = data?.meta;
   const counts = meta?.statusCounts ?? {};
+
+  // If a review shrinks the result set (e.g. approving the last pending row on the
+  // last page while filtered to Pending), step back to the last page that exists.
+  const lastPage = meta?.totalPages;
+  useEffect(() => {
+    if (isRecent && lastPage && page > lastPage) setPage(lastPage);
+  }, [isRecent, lastPage, page]);
   const allCount = Object.values(counts).reduce((a: number, b: any) => a + Number(b || 0), 0);
 
   // Batch-wise grouping, in the order the API returns (batch name A→Z, "No batch" last).
@@ -127,7 +144,8 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
 
   return (
     <>
-      {/* ── Status summary (click to filter) ─────────────────────────────── */}
+      {/* ── Status summary (click to filter) — Submissions tab only ──────── */}
+      {!isRecent && (
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <button
           onClick={() => setStatus("")}
@@ -153,6 +171,7 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
           </button>
         ))}
       </div>
+      )}
 
       {/* ── Filters ───────────────────────────────────────────────────────── */}
       <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 space-y-3">
@@ -227,7 +246,13 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
             {isFetching && !isLoading && <Loader2 size={13} className="animate-spin text-[#666]" />}
             {meta && (
               <span className="text-[11px] text-[#666] font-rajdhani font-bold uppercase tracking-widest">
-                {meta.returned < meta.total ? `Showing latest ${meta.returned} of ${meta.total}` : `${meta.total} submission${meta.total !== 1 ? "s" : ""}`}
+                {isRecent
+                  ? meta.total === 0
+                    ? "0 submissions"
+                    : `Showing ${(meta.page - 1) * meta.limit + 1}–${(meta.page - 1) * meta.limit + meta.returned} of ${meta.total}`
+                  : meta.returned < meta.total
+                    ? `Showing latest ${meta.returned} of ${meta.total}`
+                    : `${meta.total} submission${meta.total !== 1 ? "s" : ""}`}
               </span>
             )}
             {hasFilters && (
@@ -262,6 +287,28 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
             {hasFilters ? "No submissions match these filters" : "No task submissions yet"}
           </p>
         </div>
+      ) : isRecent ? (
+        <section className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
+          <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2.5 bg-[#1a1a1a] border-b border-[#2a2a2a] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+            <span>Student</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
+          </div>
+          <div className="divide-y divide-[#1e1e1e]">
+            {rows.map((sub) => (
+              <SubmissionRow
+                key={sub.id}
+                sub={sub}
+                expanded={expandedId === sub.id}
+                onToggle={() => setExpandedId(expandedId === sub.id ? null : sub.id)}
+                onApprove={() => approve(sub.id)}
+                onReject={() => setRejectModal({ subId: sub.id, name: memberName(sub), feedback: "" })}
+                busy={review.isPending}
+              />
+            ))}
+          </div>
+          {meta && meta.totalPages > 1 && (
+            <Pagination page={meta.page} totalPages={meta.totalPages} onPage={(n) => { setPage(n); setExpandedId(null); }} />
+          )}
+        </section>
       ) : (
         <div className="space-y-4">
           {groups.map((g) => {
@@ -288,7 +335,7 @@ export function SubmissionsPanel({ batches }: { batches: any[] }) {
 
                 {!isCollapsed && (
                   <>
-                    <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-12 py-2 border-b border-[#1e1e1e] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+                    <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2 border-b border-[#1e1e1e] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
                       <span>Student</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
                     </div>
                     <div className="divide-y divide-[#1e1e1e]">
@@ -472,6 +519,48 @@ function SubmissionRow({
         </div>
       )}
     </div>
+  );
+}
+
+function Pagination({ page, totalPages, onPage }: { page: number; totalPages: number; onPage: (n: number) => void }) {
+  // Compact page list: first, last, current ±1, with "…" gaps.
+  const nums = [...new Set([1, page - 1, page, page + 1, totalPages])]
+    .filter((n) => n >= 1 && n <= totalPages)
+    .sort((a, b) => a - b);
+  const items: (number | "gap")[] = [];
+  nums.forEach((n, i) => {
+    if (i > 0 && n - nums[i - 1] > 1) items.push("gap");
+    items.push(n);
+  });
+  const btn = "h-8 min-w-8 px-2 rounded-lg text-[12px] font-bold font-rajdhani flex items-center justify-center transition-colors";
+
+  return (
+    <nav className="flex items-center justify-center gap-1.5 px-5 py-3 border-t border-[#2a2a2a] bg-[#1a1a1a]" aria-label="Pagination">
+      <button
+        onClick={() => onPage(page - 1)} disabled={page <= 1} aria-label="Previous page"
+        className={cn(btn, "border border-[#2a2a2a] text-[#a0a0a0] hover:text-white disabled:opacity-30 disabled:hover:text-[#a0a0a0]")}
+      >
+        <ChevronLeft size={14} />
+      </button>
+      {items.map((it, i) =>
+        it === "gap" ? (
+          <span key={`gap-${i}`} className="px-1 text-[#555]">…</span>
+        ) : (
+          <button
+            key={it} onClick={() => onPage(it)} aria-current={it === page ? "page" : undefined}
+            className={cn(btn, it === page ? "bg-[#dc2626] text-white" : "border border-[#2a2a2a] text-[#a0a0a0] hover:text-white")}
+          >
+            {it}
+          </button>
+        ),
+      )}
+      <button
+        onClick={() => onPage(page + 1)} disabled={page >= totalPages} aria-label="Next page"
+        className={cn(btn, "border border-[#2a2a2a] text-[#a0a0a0] hover:text-white disabled:opacity-30 disabled:hover:text-[#a0a0a0]")}
+      >
+        <ChevronRight size={14} />
+      </button>
+    </nav>
   );
 }
 
