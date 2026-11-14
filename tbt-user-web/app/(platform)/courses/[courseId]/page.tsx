@@ -339,8 +339,11 @@ function MCHeroSection({
 
   function handleHeroCta() {
     if (course.hasAccess) { router.push(`/learning/${courseId}`); return; }
-    if (isMultiTier) {
-      document.getElementById("mc-plans")?.scrollIntoView({ behavior: "smooth" });
+    // Hero CTA never opens checkout directly — it takes the member to the
+    // pricing plans, where each plan's own button starts payment.
+    const plans = document.getElementById("mc-plans");
+    if (plans) {
+      plans.scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
       onBuy();
     }
@@ -441,11 +444,8 @@ function MCHeroSection({
             <button
               className={`mc-btn ${course.hasAccess ? "mc-btn-green" : "mc-btn-red"}`}
               onClick={handleHeroCta}
-              disabled={buying && !course.hasAccess && !isMultiTier}
             >
-              {buying && !course.hasAccess && !isMultiTier
-                ? <><Loader2 size={12} style={{ display: "inline-block", animation: "spin 1s linear infinite" }} /> Processing…</>
-                : heroCtaLabel}
+              {heroCtaLabel}
             </button>
             <a className="mc-btn mc-btn-outline" href="#mc-curriculum">
               Explore Curriculum →
