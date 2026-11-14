@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  approvalMissingProfilePhoto,
   canApproveMember,
   canEditOnboarding,
   canReviewOnboarding,
   canSubmitOnboarding,
   checkOnboardingReadyToSubmit,
+  detectProfilePhotoType,
+  hasProfilePhoto,
+  MAX_PROFILE_PHOTO_BYTES,
   REQUIRED_ONBOARDING_FIELDS,
+  validateProfilePhotoUpload,
 } from './onboardingLogic.js';
 
 describe('canEditOnboarding / canSubmitOnboarding', () => {
@@ -74,17 +79,27 @@ describe('checkOnboardingReadyToSubmit', () => {
     productServiceType: 'Retail',
     city: 'Chennai',
     state: 'Tamil Nadu',
+    profilePhotoUrl: 'https://cdn.example.com/members/m1/photo.jpg',
   };
 
-  it('is valid when every required field is present and at least one document exists', () => {
+  it('is valid when every required field and the photo are present and at least one document exists', () => {
     const result = checkOnboardingReadyToSubmit(completeProfile, 1);
-    expect(result).toEqual({ valid: true, missingFields: [], hasDocument: true, unwatchedVideoSteps: [] });
+    expect(result).toEqual({ valid: true, missingFields: [], hasDocument: true, hasProfilePhoto: true, unwatchedVideoSteps: [] });
   });
 
-  it('lists every missing required field', () => {
+  it('lists every missing required field, photo first', () => {
     const result = checkOnboardingReadyToSubmit({ firstName: 'Priya' }, 1);
     expect(result.valid).toBe(false);
-    expect(result.missingFields).toEqual(['businessName', 'productServiceType', 'city', 'state']);
+    expect(result.missingFields).toEqual(['profilePhotoUrl', 'businessName', 'productServiceType', 'city', 'state']);
+  });
+
+  it('is invalid without a profile photo even when everything else is complete', () => {
+    for (const photo of [undefined, null, '', '   ', 'not-a-url', 'javascript:alert(1)']) {
+      const result = checkOnboardingReadyToSubmit({ ...completeProfile, profilePhotoUrl: photo }, 1);
+      expect(result.valid).toBe(false);
+      expect(result.hasProfilePhoto).toBe(false);
+      expect(result.missingFields).toEqual(['profilePhotoUrl']);
+    }
   });
 
   it('treats empty string the same as missing, not as provided', () => {
@@ -122,5 +137,45 @@ describe('checkOnboardingReadyToSubmit', () => {
 
   it('required field list matches the documented minimal set', () => {
     expect(REQUIRED_ONBOARDING_FIELDS).toEqual(['firstName', 'businessName', 'productServiceType', 'city', 'state']);
+  });
+});
+
+describe('profile photo (mandatory in onboarding)', () => {
+  const jpeg = Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10]);
+  const png = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+  const gif = Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 1, 0]);
+  const webp = Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]);
+
+  it('hasProfilePhoto accepts only an http(s) URL', () => {
+    expect(hasProfilePhoto('https://cdn.example.com/a.jpg')).toBe(true);
+    expect(hasProfilePhoto('  http://x.y/z.png  ')).toBe(true);
+    for (const v of [undefined, null, '', '  ', 'a.jpg', 'ftp://x/y', 'data:image/png;base64,xx', 42]) expect(hasProfilePhoto(v)).toBe(false);
+  });
+
+  it('detects JPEG / PNG / GIF / WebP from the bytes, and nothing else', () => {
+    expect(detectProfilePhotoType(jpeg)).toBe('jpeg');
+    expect(detectProfilePhotoType(png)).toBe('png');
+    expect(detectProfilePhotoType(gif)).toBe('gif');
+    expect(detectProfilePhotoType(webp)).toBe('webp');
+    expect(detectProfilePhotoType(new TextEncoder().encode('%PDF-1.7 not an image'))).toBeNull();
+    expect(detectProfilePhotoType(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg"/>'))).toBeNull();
+    expect(detectProfilePhotoType(new Uint8Array(0))).toBeNull();
+  });
+
+  it('upload validation refuses empty, oversized and non-image files', () => {
+    expect(validateProfilePhotoUpload(jpeg)).toBeNull();
+    expect(validateProfilePhotoUpload(null)?.status).toBe(400);
+    expect(validateProfilePhotoUpload(new Uint8Array(0))?.error).toBe('No file received');
+    const big = new Uint8Array(MAX_PROFILE_PHOTO_BYTES + 1); big.set(jpeg);
+    expect(validateProfilePhotoUpload(big)?.status).toBe(413);
+    expect(validateProfilePhotoUpload(new TextEncoder().encode('hello'))?.error).toMatch(/not a valid image/);
+  });
+
+  it('approval of a self-registered member needs a photo (saved or supplied); admin-created members are unaffected', () => {
+    expect(approvalMissingProfilePhoto({ createdBy: null, profilePhotoUrl: null })).toBe(true);
+    expect(approvalMissingProfilePhoto({ createdBy: null, profilePhotoUrl: '' })).toBe(true);
+    expect(approvalMissingProfilePhoto({ createdBy: null, profilePhotoUrl: 'https://cdn/x.jpg' })).toBe(false);
+    expect(approvalMissingProfilePhoto({ createdBy: null, profilePhotoUrl: null, suppliedPhotoUrl: 'https://cdn/y.jpg' })).toBe(false);
+    expect(approvalMissingProfilePhoto({ createdBy: 'admin-1', profilePhotoUrl: null })).toBe(false);
   });
 });

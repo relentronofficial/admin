@@ -104,4 +104,50 @@ describe('POST /api/onboarding/submit', () => {
     expect(r.status).toBe(400);
     expect(updates).toHaveLength(0);
   });
+
+  describe('profile photo is mandatory', () => {
+    const complete = { businessName: 'Kavi Crafts', productServiceType: 'Retail', city: 'Madurai', state: 'Tamil Nadu' };
+
+    it('everything complete except the photo → refused with "Profile photo is required.", nothing changes', async () => {
+      Object.assign(member!, complete, { profilePhotoUrl: null });
+      const r = await call(onboarding.submitOnboardingHandler);
+      expect(r.status).toBe(400);
+      expect(r.body.error).toBe('Profile photo is required. Please upload your photo before submitting.');
+      expect(r.body.data).toMatchObject({ missingFields: ['profilePhotoUrl'], hasProfilePhoto: false });
+      expect(updates).toHaveLength(0);
+      expect(member!.verificationStatus).toBe('awaiting_kyc');
+      expect(emitted).toHaveLength(0);
+    });
+
+    it('a blank or non-URL photo value does not count', async () => {
+      for (const photo of ['', '   ', 'photo.jpg']) {
+        Object.assign(member!, complete, { profilePhotoUrl: photo });
+        expect((await call(onboarding.submitOnboardingHandler)).status).toBe(400);
+      }
+      expect(updates).toHaveLength(0);
+    });
+
+    it('other fields missing too → the general message mentions the photo', async () => {
+      member!.profilePhotoUrl = null;
+      const r = await call(onboarding.submitOnboardingHandler);
+      expect(r.status).toBe(400);
+      expect(r.body.error).toMatch(/including your profile photo/);
+      expect(r.body.data.missingFields[0]).toBe('profilePhotoUrl');
+    });
+
+    it('with a saved photo the application goes to review', async () => {
+      Object.assign(member!, complete, { profilePhotoUrl: 'https://cdn.example.test/members/m/photo.jpg' });
+      const r = await call(onboarding.submitOnboardingHandler);
+      expect(r.status).toBe(200);
+      expect(member!.verificationStatus).toBe('under_review');
+      expect(member!.profilePhotoUrl).toBe('https://cdn.example.test/members/m/photo.jpg'); // untouched
+    });
+
+    it('a verified member without a photo is not forced to add one (no new review)', async () => {
+      Object.assign(member!, { verificationStatus: 'verified', profilePhotoUrl: null });
+      const r = await call(onboarding.submitOnboardingHandler);
+      expect(r.status).toBe(200);
+      expect(updates).toHaveLength(0);
+    });
+  });
 });

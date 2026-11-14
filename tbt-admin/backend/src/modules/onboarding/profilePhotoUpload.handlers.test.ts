@@ -83,6 +83,38 @@ describe('POST /api/onboarding/photo/upload', () => {
     expect(updates).toHaveLength(0);
   });
 
+  it('a file labelled as an image but not really one is rejected (bytes are checked)', async () => {
+    const r = await upload(Buffer.from('this is plain text, not a photo'), 'image/png', 'fake.png');
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/not a valid image/);
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+    expect(member!.profilePhotoUrl).toBeNull();
+  });
+
+  it('a photo over 10 MB is rejected', async () => {
+    const big = Buffer.alloc(10 * 1024 * 1024 + 1);
+    JPEG.copy(big);
+    const r = await upload(big, 'image/jpeg');
+    expect(r.status).toBe(413);
+    expect(s3Send).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+  });
+
+  it('stores the photo with the type its bytes show, not the header', async () => {
+    const r = await upload(JPEG, 'image/png', 'x.png');
+    expect(r.status).toBe(201);
+    expect(s3Send.mock.calls[0][0].input.ContentType).toBe('image/jpeg');
+  });
+
+  it('a replacement photo overwrites the saved URL', async () => {
+    const first = await upload(JPEG, 'image/jpeg', 'one.jpg');
+    const second = await upload(JPEG, 'image/jpeg', 'two.jpg');
+    expect(second.status).toBe(201);
+    expect(second.body.data.publicUrl).not.toBe(first.body.data.publicUrl);
+    expect(member!.profilePhotoUrl).toBe(second.body.data.publicUrl);
+  });
+
   it('an empty body is rejected', async () => {
     const r = await upload(Buffer.alloc(0), 'image/jpeg');
     expect(r.status).toBe(400);

@@ -7,7 +7,7 @@ import { invalidateMemberModuleAccess, saveMemberAdminOverride } from '../../lib
 import { parseModuleList } from '../../lib/mentorshipModules.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { normalizeMasterName } from '../masters/controller.js';
-import { canApproveMember, canReviewOnboarding } from '../../lib/onboardingLogic.js';
+import { canApproveMember, canReviewOnboarding, approvalMissingProfilePhoto } from '../../lib/onboardingLogic.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { revokeAllForMember } from '../../plugins/jwt.js';
@@ -1641,7 +1641,7 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
 
     const existing = await request.server.prisma.member.findUnique({
       where: { id },
-      select: { id: true, status: true, createdBy: true, verificationStatus: true } as any,
+      select: { id: true, status: true, createdBy: true, verificationStatus: true, profilePhotoUrl: true } as any,
     });
     if (!existing) return reply.status(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Member not found' } });
     // Admin-direct-created members (createdBy set) skip self-onboarding entirely and
@@ -1654,6 +1654,15 @@ export async function approveMemberHandler(request: FastifyRequest, reply: Fasti
       verificationStatus: (existing as any).verificationStatus,
     })) {
       return reply.status(400).send({ success: false, error: { code: 'BAD_REQUEST', message: 'Member is not eligible for approval yet' } });
+    }
+    // Approval completes onboarding, which requires a profile photo for a
+    // self-registered member (the saved one, or one uploaded with this approval).
+    if (approvalMissingProfilePhoto({
+      createdBy: (existing as any).createdBy,
+      profilePhotoUrl: (existing as any).profilePhotoUrl,
+      suppliedPhotoUrl: body.profilePhotoUrl,
+    })) {
+      return reply.status(400).send({ success: false, error: { code: 'PROFILE_PHOTO_REQUIRED', message: 'Profile photo is required. Ask the member to upload their photo (Request changes), or upload one here, before approving.' } });
     }
 
     const {

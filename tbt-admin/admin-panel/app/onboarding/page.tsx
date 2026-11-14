@@ -386,7 +386,12 @@ function ApplicationDetail({ id, onBack, onOpenRoom, onOpenDetail }: { id: strin
 
   const handleApprove = async () => {
     if (!window.confirm(`Approve ${member?.firstName} ${member?.lastName ?? ""}? This activates their account.`)) return;
-    await approve.mutateAsync({ id, data: {} });
+    try {
+      await approve.mutateAsync({ id, data: {} });
+    } catch (err: any) {
+      // e.g. "Profile photo is required…" — the member must upload one first.
+      window.alert(err?.message || "Could not approve this member.");
+    }
   };
 
   const handleReject = async () => {

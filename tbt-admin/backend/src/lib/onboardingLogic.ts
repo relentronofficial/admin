@@ -54,9 +54,59 @@ export const REQUIRED_ONBOARDING_FIELDS = ['firstName', 'businessName', 'product
 
 export interface OnboardingReadyCheck {
   valid: boolean;
+  /** Includes 'profilePhotoUrl' (first) when the photo is missing. */
   missingFields: string[];
   hasDocument: boolean;
+  hasProfilePhoto: boolean;
   unwatchedVideoSteps: string[];
+}
+
+// ── Profile photo (mandatory in the onboarding flow) ─────────────────────────
+
+export const PROFILE_PHOTO_REQUIRED_MESSAGE = 'Profile photo is required.';
+/** Largest profile photo the member upload endpoint accepts. */
+export const MAX_PROFILE_PHOTO_BYTES = 10 * 1024 * 1024;
+
+/** A saved photo is a non-empty http(s) URL (what the upload endpoints store). */
+export function hasProfilePhoto(url: unknown): boolean {
+  return typeof url === 'string' && /^https?:\/\/\S+$/i.test(url.trim());
+}
+
+export type ProfilePhotoType = 'jpeg' | 'png' | 'webp' | 'gif';
+
+/** The image type from the file's own bytes, or null when it isn't a JPEG/PNG/WebP/GIF
+ * (the Content-Type header alone can't be trusted). */
+export function detectProfilePhotoType(b: Uint8Array): ProfilePhotoType | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpeg';
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+    && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return 'png';
+  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38
+    && (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61) return 'gif';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return 'webp';
+  return null;
+}
+
+/** Why a member profile photo upload is refused, or null when it is acceptable. */
+export function validateProfilePhotoUpload(body: Uint8Array | null | undefined): { status: number; error: string } | null {
+  if (!body || body.length === 0) return { status: 400, error: 'No file received' };
+  if (body.length > MAX_PROFILE_PHOTO_BYTES) return { status: 413, error: 'Photo must be 10 MB or smaller' };
+  if (!detectProfilePhotoType(body)) {
+    return { status: 400, error: 'That file is not a valid image. Please upload a JPG, PNG, WebP or GIF photo.' };
+  }
+  return null;
+}
+
+/** Approving a self-registered member completes their onboarding, so it needs a
+ * photo — the saved one, or one the admin supplies with the approval. An
+ * admin-created member (createdBy set) never went through onboarding: unaffected. */
+export function approvalMissingProfilePhoto(params: {
+  createdBy: string | null;
+  profilePhotoUrl: unknown;
+  suppliedPhotoUrl?: unknown;
+}): boolean {
+  if (params.createdBy) return false;
+  return !hasProfilePhoto(params.profilePhotoUrl) && !hasProfilePhoto(params.suppliedPhotoUrl);
 }
 
 function isBlank(value: unknown): boolean {
@@ -68,7 +118,11 @@ export function checkOnboardingReadyToSubmit(
   documentCount: number,
   requiredVideoStepKeys: string[] = [],
 ): OnboardingReadyCheck {
-  const missingFields = REQUIRED_ONBOARDING_FIELDS.filter((field) => isBlank(profile[field]));
+  const photo = hasProfilePhoto(profile.profilePhotoUrl);
+  const missingFields: string[] = [
+    ...(photo ? [] : ['profilePhotoUrl']),
+    ...REQUIRED_ONBOARDING_FIELDS.filter((field) => isBlank(profile[field])),
+  ];
   const hasDocument = documentCount > 0;
   const watched = Array.isArray(profile.watchedVideoSteps) ? (profile.watchedVideoSteps as string[]) : [];
   const unwatchedVideoSteps = requiredVideoStepKeys.filter((k) => !watched.includes(k));
@@ -76,6 +130,7 @@ export function checkOnboardingReadyToSubmit(
     valid: missingFields.length === 0 && hasDocument && unwatchedVideoSteps.length === 0,
     missingFields,
     hasDocument,
+    hasProfilePhoto: photo,
     unwatchedVideoSteps,
   };
 }

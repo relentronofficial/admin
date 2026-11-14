@@ -44,7 +44,18 @@ const learningHoursPerDay = (v: unknown): number =>
     ? Math.min(LEARNING_HOURS_MAX, Math.max(LEARNING_HOURS_MIN, Math.round(v)))
     : LEARNING_HOURS_MIN;
 
-const REQUIRED_FIELDS = ["firstName", "businessName", "productServiceType", "city", "state"] as const;
+const REQUIRED_FIELDS = ["profilePhotoUrl", "firstName", "businessName", "productServiceType", "city", "state"] as const;
+
+/** Profile photo is mandatory. Same limits as the backend (onboardingLogic.ts). */
+const PHOTO_REQUIRED_MSG = "Profile photo is required.";
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const photoFileError = (f: File): string | null =>
+  !f || f.size === 0 ? "That file is empty. Please choose a photo."
+  : !PHOTO_TYPES.includes(f.type) ? "Please choose a JPG, PNG, WebP or GIF photo."
+  : f.size > PHOTO_MAX_BYTES ? "Photo must be 10 MB or smaller."
+  : null;
+const missingFieldLabel = (f: string) => (f === "profilePhotoUrl" ? "Profile photo" : f);
 
 const DOCUMENT_TYPES = [
   { value: "business_proof", label: "Business Proof" },
@@ -627,7 +638,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const validateProfileStep = (): boolean => {
     const errs: Record<string, string> = {};
     const str = (k: string) => (profile[k] ?? "").toString().trim();
-    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = "Please upload a photo";
+    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = PHOTO_REQUIRED_MSG;
     if (!str("firstName")) errs.firstName = "First name is required";
     if (!str("city")) errs.city = "City is required";
     if (!str("state")) errs.state = "State is required";
@@ -714,13 +725,23 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const handlePhotoUpload = async (file: File) => {
+    // Check the file before uploading; an invalid one never replaces a good photo.
+    const invalid = photoFileError(file);
+    if (invalid) {
+      setErrors((prev) => ({ ...prev, profilePhotoUrl: invalid }));
+      toast.error(invalid);
+      return;
+    }
     setPhotoUploading(true);
     try {
       const { data } = await uploadPhoto.mutateAsync(file);
+      if (!data?.publicUrl) throw new Error("Photo upload failed. Please try again.");
       setField("profilePhotoUrl", data.publicUrl);
       toast.success("Photo uploaded");
     } catch (err: any) {
-      toast.error(err?.message || "Photo upload failed. Please try again.");
+      const msg = err?.message || "Photo upload failed. Please try again.";
+      if (!profile.profilePhotoUrl) setErrors((prev) => ({ ...prev, profilePhotoUrl: msg }));
+      toast.error(msg);
     } finally {
       setPhotoUploading(false);
     }
@@ -930,13 +951,19 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {/* ── Personal ── */}
               <SectionHeader icon={Users} title="Personal Info" />
 
-              {/* Profile photo */}
+              {/* Profile photo (required) */}
               <div className="flex flex-col items-center gap-3 py-2" data-field-error={errors.profilePhotoUrl ? true : undefined}>
+                <label htmlFor="onboarding-profile-photo" className="text-xs font-medium" style={{ color: "var(--color-text-subtle)" }}>
+                  Profile Photo <span aria-hidden="true" style={{ color: "var(--color-alert, #ef4444)" }}>*</span>
+                  <span className="sr-only"> (required)</span>
+                </label>
                 <div
+                  role="button" tabIndex={0} aria-label={profile.profilePhotoUrl ? "Change profile photo" : "Upload profile photo"}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); photoInputRef.current?.click(); } }}
                   className="relative w-28 h-28 rounded-full overflow-hidden cursor-pointer group"
                   style={{
                     background: OVERLAY,
-                    border: `2px solid ${profile.profilePhotoUrl ? "var(--color-accent)" : BORDER}`,
+                    border: `2px solid ${profile.profilePhotoUrl ? "var(--color-accent)" : errors.profilePhotoUrl ? "var(--color-alert, #ef4444)" : BORDER}`,
                     boxShadow: profile.profilePhotoUrl ? "0 0 20px color-mix(in srgb, var(--color-accent) 20%, transparent)" : undefined,
                   }}
                   onClick={() => photoInputRef.current?.click()}
@@ -957,13 +984,20 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     )}
                   </div>
                 </div>
-                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {profile.profilePhotoUrl ? "Tap to change photo" : "Add profile photo"}
-                </p>
+                <button
+                  type="button" disabled={photoUploading}
+                  onClick={() => photoInputRef.current?.click()}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-opacity disabled:opacity-50"
+                  style={{ color: "var(--color-accent)", border: `1px solid ${BORDER}` }}
+                >
+                  {photoUploading ? "Uploading…" : profile.profilePhotoUrl ? "Change photo" : "Upload photo"}
+                </button>
+                <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>JPG, PNG, WebP or GIF · up to 10 MB</p>
                 <FieldError error={errors.profilePhotoUrl} />
                 <input
+                  id="onboarding-profile-photo"
                   ref={photoInputRef as React.RefObject<HTMLInputElement>}
-                  type="file" accept="image/*" className="hidden" disabled={photoUploading}
+                  type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" disabled={photoUploading}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePhotoUpload(f); e.target.value = ""; }}
                 />
               </div>
@@ -1695,7 +1729,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
               {!readyToSubmit && missingFields.length > 0 && (
                 <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
-                  Please fill in: {missingFields.join(", ")}
+                  Please fill in: {missingFields.map(missingFieldLabel).join(", ")}
                 </p>
               )}
               {mentorshipMissing && (
