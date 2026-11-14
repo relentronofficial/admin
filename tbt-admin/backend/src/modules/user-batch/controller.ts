@@ -2,12 +2,11 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { sendPushToMember } from '../../lib/pushNotifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
-import { checklistAvailableActionUrl, getCurrentDayNumber } from '../../lib/weekChecklistLogic.js';
-import { buildWeeklyGraph, isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
+import { checklistAvailableActionUrl } from '../../lib/weekChecklistLogic.js';
+import { isTaskVisibleToMember } from '../../lib/weeklyGraphLogic.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
-import { backfillNewDefaultMilestones, loadGraphConfig, loadMemberGraphRecords, loadMemberRevenueRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
-import { revenueEntriesForProgram } from '../../lib/weeklyGraphRevenue.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
+import { loadMemberWeeklyGraph } from '../../lib/memberWeeklyGraph.js';
 import { resolveProgramTimezone } from '../../lib/activityDays.js';
 import { debitCoins } from '../../lib/supportCallData.js';
 import { invalidateCache } from '../../lib/cache.js';
@@ -261,82 +260,8 @@ export async function getMyWeeklyGraphHandler(req: FastifyRequest, reply: Fastif
     return reply.send({ success: true, data: (await buildDemoOverlay(req)).graph, error: null });
   }
 
-  const member = await prisma.member.findUnique({ where: { id: memberId }, select: { batchId: true } });
-  if (!member?.batchId) return reply.send({ success: true, data: null, error: null });
-  const batchId = member.batchId;
-
-  const batch = await prisma.batch.findUnique({
-    where: { id: batchId },
-    select: { programId: true, snapshotDays: true, startsAt: true, program: { select: { durationDays: true } } },
-  });
-  if (!batch) return reply.send({ success: true, data: null, error: null });
-
-  const [settings, taskRows, submissions, dayProgress] = await Promise.all([
-    prisma.$queryRawUnsafe<Array<{ extended_days: number | null }>>(
-      `SELECT extended_days FROM member_batch_settings WHERE batch_id=$1::uuid AND member_id=$2::uuid LIMIT 1`,
-      batchId, memberId,
-    ),
-    // Same task set as GET /api/user-batch (active, this batch's inline tasks
-    // OR the program's shared tasks), filtered to global or own assignments.
-    prisma.$queryRawUnsafe<Array<{
-      id: string; title: string; day_number: number; sort_order: number; is_required: boolean; member_id: string | null;
-      is_milestone: boolean | null; milestone_label: string | null; graph_week_id: string | null; graph_milestone_id: string | null;
-    }>>(
-      `SELECT id::text, title, day_number, sort_order, is_required, member_id::text, is_milestone, milestone_label,
-              graph_week_id::text, graph_milestone_id::text
-       FROM tasks
-       WHERE is_active = true
-         AND (batch_id = $1::uuid OR ($2::uuid IS NOT NULL AND program_id = $2::uuid AND batch_id IS NULL))
-         AND (member_id IS NULL OR member_id = $3::uuid)`,
-      batchId, batch.programId ?? null, memberId,
-    ),
-    prisma.$queryRawUnsafe<Array<{ taskId: string; dayNumber: number | null; status: string }>>(
-      `SELECT task_id::text AS "taskId", day_number AS "dayNumber", status::text AS status
-       FROM task_submissions WHERE batch_id=$1::uuid AND member_id=$2::uuid`,
-      batchId, memberId,
-    ),
-    prisma.memberDayProgress.findMany({
-      where: { batchId, memberId },
-      select: { dayNumber: true, status: true, completedTaskIds: true },
-    }),
-  ]);
-
-  if (batch.programId) await backfillNewDefaultMilestones(prisma, batch.programId).catch(() => {});
-
-  const [graphConfig, graphRecords, revenueRows] = await Promise.all([
-    loadGraphConfig(prisma, batch.programId ?? null),
-    loadMemberGraphRecords(prisma, memberId),
-    loadMemberRevenueRows(prisma, memberId),
-  ]);
-  // Program never configured: default weeks over the same span the admin page shows.
-  const defaultSpanDays = !graphConfig.weeks && batch.programId
-    ? await loadProgramWeekSpanDays(prisma, batch.programId)
-    : undefined;
-
-  const baseDays = batch.snapshotDays ?? batch.program?.durationDays ?? 90;
-  const totalDays = baseDays + (settings[0]?.extended_days ?? 0);
-
-  const graph = buildWeeklyGraph({
-    memberId,
-    tasks: taskRows.map((t) => ({
-      id: t.id, title: t.title, dayNumber: t.day_number, sortOrder: t.sort_order,
-      isRequired: t.is_required, memberId: t.member_id,
-      isMilestone: t.is_milestone ?? false, milestoneLabel: t.milestone_label,
-      graphWeekId: t.graph_week_id, graphMilestoneId: t.graph_milestone_id,
-    })),
-    submissions,
-    dayProgress: dayProgress.map((p) => ({ dayNumber: p.dayNumber, status: p.status, completedTaskIds: p.completedTaskIds ?? [] })),
-    totalDays,
-    currentDay: getCurrentDayNumber(new Date(batch.startsAt)),
-    // Admin-configured weeks/milestones of the member's program (defaults when
-    // not configured) and this member's own admin-recorded achievements.
-    config: graphConfig,
-    records: graphRecords,
-    // This member's own reported revenue (Your Revenue Stats), for revenue milestones.
-    revenue: revenueEntriesForProgram(revenueRows, new Date(batch.startsAt)),
-    defaultSpanDays,
-  });
-
+  // Same loader as the admin's view of this member (lib/memberWeeklyGraph.ts).
+  const graph = await loadMemberWeeklyGraph(prisma, memberId);
   return reply.send({ success: true, data: graph, error: null });
 }
 
