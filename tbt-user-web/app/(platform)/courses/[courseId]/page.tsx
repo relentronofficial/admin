@@ -884,8 +884,8 @@ function MCFAQItem({ q, a }: { q: string; a: string }) {
 
 // ── Sticky Mobile Bar ─────────────────────────────────────────────────────────
 
-function StickyBuyBar({ course, courseId, buying, onBuy }: {
-  course: any; courseId: string; buying: boolean; onBuy: () => void;
+function StickyBuyBar({ course, courseId, onBuy }: {
+  course: any; courseId: string; onBuy: () => void;
 }) {
   const router = useRouter();
   const [visible, setVisible] = useState(false);
@@ -918,8 +918,17 @@ function StickyBuyBar({ course, courseId, buying, onBuy }: {
             Continue →
           </button>
         ) : hasPrice && razorpayOn ? (
-          <button className="mc-btn mc-btn-red" style={{ padding: "10px 16px", fontSize: "10px" }} disabled={buying} onClick={onBuy}>
-            {buying ? "…" : "Buy Now"}
+          <button
+            className="mc-btn mc-btn-red"
+            style={{ padding: "10px 16px", fontSize: "10px" }}
+            onClick={() => {
+              // Like the hero CTA: go to the pricing plans; payment starts from a plan card.
+              const plans = document.getElementById("mc-plans");
+              if (plans) plans.scrollIntoView({ behavior: "smooth", block: "start" });
+              else onBuy();
+            }}
+          >
+            Buy Now
           </button>
         ) : (
           <button className="mc-btn mc-btn-red" style={{ padding: "10px 16px", fontSize: "10px" }} onClick={() => router.push(`/learning/${courseId}`)}>
@@ -1209,7 +1218,7 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
         />
       )}
 
-      <StickyBuyBar course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
+      <StickyBuyBar course={c} courseId={courseId} onBuy={handleBuy} />
     </>
   );
 }
