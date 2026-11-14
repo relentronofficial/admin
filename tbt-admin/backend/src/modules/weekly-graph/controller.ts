@@ -17,7 +17,7 @@ import {
   type GraphMilestoneRow,
   type GraphWeekRow,
 } from '../../lib/weeklyGraphConfig.js';
-import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows, loadProgramWeekSpanDays } from '../../lib/weeklyGraphConfigData.js';
+import { backfillNewDefaultMilestones, ensureProgramGraphConfig, loadProgramGraphRows, loadProgramWeekSpanDays, scopeSql } from '../../lib/weeklyGraphConfigData.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 import { loadMemberWeeklyGraph } from '../../lib/memberWeeklyGraph.js';
 
@@ -41,9 +41,19 @@ const requireRecorder = (req: FastifyRequest, reply: FastifyReply) =>
 const requireViewer = (req: FastifyRequest, reply: FastifyReply) =>
   requireRole(req, reply, () => true, '');
 
-/** 404s unknown / malformed program ids. */
-async function loadProgram(req: FastifyRequest<{ Params: P }>, reply: FastifyReply) {
+/** The shared Default graph — weeks/milestones for members whose batch has no program (or no batch). */
+export const DEFAULT_GRAPH_SCOPE = 'default';
+const DEFAULT_GRAPH_NAME = 'Default graph';
+
+type GraphProgram = { id: string | null; name: string; durationDays: number };
+
+/**
+ * The graph scope from the URL: a program id, or "default" for the Default graph
+ * (id null). 404s unknown / malformed program ids.
+ */
+async function loadProgram(req: FastifyRequest<{ Params: P }>, reply: FastifyReply): Promise<GraphProgram | null> {
   const { programId } = req.params;
+  if (programId === DEFAULT_GRAPH_SCOPE) return { id: null, name: DEFAULT_GRAPH_NAME, durationDays: 0 };
   if (!UUID.test(programId)) { fail(reply, 400, 'Invalid program id'); return null; }
   const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT id::text, name, duration_days AS "durationDays" FROM programs WHERE id = $1::uuid`, programId,
@@ -52,10 +62,26 @@ async function loadProgram(req: FastifyRequest<{ Params: P }>, reply: FastifyRep
   return rows[0] as { id: string; name: string; durationDays: number };
 }
 
-const changed = (req: FastifyRequest, programId: string, reason: string) =>
-  void notifyWeeklyGraphChanged(req.server, { programIds: [programId] }, reason);
+const changed = (req: FastifyRequest, programId: string | null, reason: string) => {
+  if (programId) { void notifyWeeklyGraphChanged(req.server, { programIds: [programId] }, reason); return; }
+  // Default graph: its audience is every member whose batch has no program.
+  void (async () => {
+    const rows = await req.server.prisma.$queryRawUnsafe(
+      `SELECT m.id::text AS id FROM members m JOIN batches b ON b.id = m.batch_id WHERE b.program_id IS NULL`,
+    ).catch(() => []) as Array<{ id: string }>;
+    if (rows.length) await notifyWeeklyGraphChanged(req.server, { memberIds: rows.map((r) => r.id) }, reason);
+  })();
+};
 
-async function listActivities(prisma: any, programId: string) {
+/** Activities are program tasks; the Default graph has none (refused so no program-less task is ever created). */
+const refuseDefaultActivities = (program: GraphProgram, reply: FastifyReply) => {
+  if (program.id) return false;
+  fail(reply, 400, 'The Default graph has no activities. Activities belong to a program.');
+  return true;
+};
+
+async function listActivities(prisma: any, programId: string | null) {
+  if (!programId) return [];
   return prisma.$queryRawUnsafe(
     `SELECT id::text, title, day_number AS "dayNumber", sort_order AS "sortOrder", is_required AS "isRequired",
             is_active AS "isActive", member_id::text AS "memberId", graph_week_id::text AS "weekId",
@@ -79,8 +105,10 @@ export async function getConfigHandler(req: FastifyRequest<{ Params: P }>, reply
   // Default weeks span the longest any member of the program runs — the same span
   // the member graph uses (loadProgramWeekSpanDays), not just the program's length.
   const spanDays = rows.weeks.length ? 0 : Math.max(program.durationDays, await loadProgramWeekSpanDays(prisma, program.id));
+  // scope tells the page whether this is a program's graph or the shared Default graph.
   return ok(reply, {
     program,
+    scope: program.id ? 'program' : 'default',
     saved,
     // Until the first edit, show what members currently see (built-in defaults, no ids yet).
     weeks: rows.weeks.length ? rows.weeks : defaultWeeks(spanDays).map((w, i) => ({ id: null, ...w, sortOrder: i, isActive: true })),
@@ -101,7 +129,7 @@ export async function initializeHandler(req: FastifyRequest<{ Params: P }>, repl
 
 // ── Weeks ────────────────────────────────────────────────────────────────────
 
-async function weekRows(prisma: any, programId: string): Promise<GraphWeekRow[]> {
+async function weekRows(prisma: any, programId: string | null): Promise<GraphWeekRow[]> {
   return (await loadProgramGraphRows(prisma, programId)).weeks;
 }
 
@@ -119,7 +147,7 @@ export async function createWeekHandler(req: FastifyRequest<{ Params: P }>, repl
   if (clash) return fail(reply, 409, `Days ${v.value.startDay}–${v.value.endDay} overlap "${clash.label}"`);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO graph_weeks (program_id, label, start_day, end_day, sort_order, is_active)
-     VALUES ($1::uuid, $2, $3, $4, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_weeks WHERE program_id = $1::uuid), $5)
+     VALUES ($1::uuid, $2, $3, $4, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_weeks WHERE ${scopeSql('program_id', 1)}), $5)
      RETURNING id::text, label, start_day AS "startDay", end_day AS "endDay", sort_order AS "sortOrder", is_active AS "isActive"`,
     program.id, v.value.label, v.value.startDay, v.value.endDay, v.value.isActive,
   );
@@ -142,7 +170,7 @@ export async function updateWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
   if (clash) return fail(reply, 409, `Days ${v.value.startDay}–${v.value.endDay} overlap "${clash.label}"`);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `UPDATE graph_weeks SET label = $3, start_day = $4, end_day = $5, is_active = $6, updated_at = NOW()
-     WHERE id = $2::uuid AND program_id = $1::uuid
+     WHERE id = $2::uuid AND ${scopeSql('program_id', 1)}
      RETURNING id::text, label, start_day AS "startDay", end_day AS "endDay", sort_order AS "sortOrder", is_active AS "isActive"`,
     program.id, current.id, v.value.label, v.value.startDay, v.value.endDay, v.value.isActive,
   );
@@ -190,19 +218,19 @@ export async function deleteWeekHandler(req: FastifyRequest<{ Params: PI }>, rep
         `UPDATE member_graph_milestone_records SET week_id = $2::uuid WHERE week_id = $1::uuid`,
         week.id, target.id,
       );
-      await tx.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
+      await tx.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND ${scopeSql('program_id', 1)}`, program.id, week.id);
     });
     changed(req, program.id, 'graph_week_deleted');
     return ok(reply, { deleted: week.id, movedTo: target.id, activities, records: use.records });
   }
-  await prisma.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, week.id);
+  await prisma.$executeRawUnsafe(`DELETE FROM graph_weeks WHERE id = $2::uuid AND ${scopeSql('program_id', 1)}`, program.id, week.id);
   changed(req, program.id, 'graph_week_deleted');
   return ok(reply, { deleted: week.id });
 }
 
 // ── Milestones ───────────────────────────────────────────────────────────────
 
-async function milestoneRows(prisma: any, programId: string): Promise<GraphMilestoneRow[]> {
+async function milestoneRows(prisma: any, programId: string | null): Promise<GraphMilestoneRow[]> {
   return (await loadProgramGraphRows(prisma, programId)).milestones;
 }
 
@@ -219,7 +247,7 @@ export async function createMilestoneHandler(req: FastifyRequest<{ Params: P }>,
   }
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `INSERT INTO graph_milestones (program_id, label, kind, sort_order, is_active, threshold_amount)
-     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE program_id = $1::uuid), $4, $5)
+     VALUES ($1::uuid, $2, $3, (SELECT COALESCE(MAX(sort_order) + 1, 0) FROM graph_milestones WHERE ${scopeSql('program_id', 1)}), $4, $5)
      RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
     program.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
@@ -240,7 +268,7 @@ export async function updateMilestoneHandler(req: FastifyRequest<{ Params: PI }>
   if (hasDuplicateLabel(all, v.value.label, current.id)) return fail(reply, 409, `A milestone named "${v.value.label}" already exists`);
   const rows = await prisma.$queryRawUnsafe<any[]>(
     `UPDATE graph_milestones SET label = $3, kind = $4, is_active = $5, threshold_amount = $6, updated_at = NOW()
-     WHERE id = $2::uuid AND program_id = $1::uuid
+     WHERE id = $2::uuid AND ${scopeSql('program_id', 1)}
      RETURNING id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive", threshold_amount::float8 AS "threshold"`,
     program.id, current.id, v.value.label, v.value.kind, v.value.isActive, v.value.threshold,
   );
@@ -269,7 +297,7 @@ export async function deleteMilestoneHandler(req: FastifyRequest<{ Params: PI }>
   if (use.linked + use.records > 0) {
     return fail(reply, 409, `"${m.label}" is linked to ${use.linked} activities and ${use.records} member records. Disable it instead of deleting.`);
   }
-  await prisma.$executeRawUnsafe(`DELETE FROM graph_milestones WHERE id = $2::uuid AND program_id = $1::uuid`, program.id, m.id);
+  await prisma.$executeRawUnsafe(`DELETE FROM graph_milestones WHERE id = $2::uuid AND ${scopeSql('program_id', 1)}`, program.id, m.id);
   changed(req, program.id, 'graph_milestone_deleted');
   return ok(reply, { deleted: m.id });
 }
@@ -288,7 +316,7 @@ async function reorder(req: FastifyRequest<{ Params: P }>, reply: FastifyReply, 
   await prisma.$executeRawUnsafe(
     `UPDATE ${table} AS t SET sort_order = o.ord - 1, updated_at = NOW()
      FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id, ord)
-     WHERE t.id = o.id AND t.program_id = $1::uuid`,
+     WHERE t.id = o.id AND ${scopeSql('t.program_id', 1)}`,
     program.id, v.value,
   );
   changed(req, program.id, `${table}_reordered`);
@@ -304,6 +332,7 @@ export async function createActivityHandler(req: FastifyRequest<{ Params: P }>, 
   if (!acting) return;
   const program = await loadProgram(req, reply);
   if (!program) return;
+  if (refuseDefaultActivities(program, reply)) return;
   const v = validateActivityInput(req.body);
   if (!v.ok) return fail(reply, 400, v.error);
   if (!v.value.weekId) return fail(reply, 400, 'Choose the week for this activity');
@@ -332,6 +361,7 @@ export async function updateActivityHandler(req: FastifyRequest<{ Params: PI }>,
   if (!(await requireEditor(req, reply))) return;
   const program = await loadProgram(req, reply);
   if (!program) return;
+  if (refuseDefaultActivities(program, reply)) return;
   const prisma = req.server.prisma;
   const [task] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT id::text, title, day_number AS "dayNumber", is_required AS "isRequired", is_active AS "isActive",
@@ -365,6 +395,7 @@ export async function deleteActivityHandler(req: FastifyRequest<{ Params: PI }>,
   if (!(await requireEditor(req, reply))) return;
   const program = await loadProgram(req, reply);
   if (!program) return;
+  if (refuseDefaultActivities(program, reply)) return;
   const prisma = req.server.prisma;
   const [task] = await prisma.$queryRawUnsafe<any[]>(
     `SELECT id::text, title FROM tasks WHERE id = $2::uuid AND program_id = $1::uuid AND batch_id IS NULL AND deleted_at IS NULL`,
@@ -418,7 +449,8 @@ type MemberProgram = {
  * The member's program is never chosen by the admin: it is resolved here from
  * members.batch_id → batches.program_id — the same mapping the member's own
  * graph uses (GET /api/user-batch/weekly-graph). A member has one batch and a
- * batch at most one program, so the mapping is unambiguous.
+ * batch at most one program, so the mapping is unambiguous. No program (or no
+ * batch) → the Default graph.
  */
 async function memberProgram(req: FastifyRequest<{ Params: M }>, reply: FastifyReply) {
   const { memberId } = req.params;
@@ -438,11 +470,12 @@ async function memberProgram(req: FastifyRequest<{ Params: M }>, reply: FastifyR
   return m as MemberProgram;
 }
 
-/** Why a member's milestones can't be recorded, or null when they can. */
-const noProgramReason = (m: MemberProgram) =>
-  !m.batchId ? 'This member is not in a batch, so they have no program. Add them to a batch first (Members → edit member → Batch).'
-  : !m.programId ? `This member's batch "${m.batchName ?? ''}" is not linked to a program. Link the batch to a program first (Batches → edit batch → Program).`
-  : null;
+/**
+ * Which graph a member's milestones are recorded against: their batch's program,
+ * or — when the batch has no program, or there is no batch — the shared Default
+ * graph. Never blocks recording.
+ */
+const graphScopeOf = (m: MemberProgram) => (m.programId ? 'program' as const : 'default' as const);
 
 async function listRecords(prisma: any, memberId: string) {
   return prisma.$queryRawUnsafe(
@@ -462,7 +495,7 @@ export async function listRecordsHandler(req: FastifyRequest<{ Params: M }>, rep
   if (!(await requireViewer(req, reply))) return;
   const member = await memberProgram(req, reply);
   if (!member) return;
-  return ok(reply, { member, noProgramReason: noProgramReason(member), records: await listRecords(req.server.prisma, member.id) });
+  return ok(reply, { member, scope: graphScopeOf(member), records: await listRecords(req.server.prisma, member.id) });
 }
 
 // GET /api/weekly-graph/admin/members/:memberId/graph — read-only: exactly the
@@ -481,16 +514,15 @@ export async function upsertRecordHandler(req: FastifyRequest<{ Params: M }>, re
   if (!acting) return;
   const member = await memberProgram(req, reply);
   if (!member) return;
-  const blocked = noProgramReason(member);
-  if (blocked || !member.programId) return fail(reply, 400, blocked ?? 'This member has no program');
+  const scope = member.programId ?? null; // null = the Default graph
   const { milestoneId, weekId, note } = (req.body ?? {}) as { milestoneId?: unknown; weekId?: unknown; note?: unknown };
   if (typeof milestoneId !== 'string' || typeof weekId !== 'string') return fail(reply, 400, 'Choose a milestone and a week');
   if (note != null && (typeof note !== 'string' || note.length > 500)) return fail(reply, 400, 'Note must be text up to 500 characters');
   const prisma = req.server.prisma;
-  await ensureProgramGraphConfig(prisma, member.programId);
-  const rows = await loadProgramGraphRows(prisma, member.programId);
-  if (!rows.milestones.some((m) => m.id === milestoneId)) return fail(reply, 400, "That milestone is not in this member's program");
-  if (!rows.weeks.some((w) => w.id === weekId)) return fail(reply, 400, "That week is not in this member's program");
+  await ensureProgramGraphConfig(prisma, scope);
+  const rows = await loadProgramGraphRows(prisma, scope);
+  if (!rows.milestones.some((m) => m.id === milestoneId)) return fail(reply, 400, "That milestone is not in this member's graph");
+  if (!rows.weeks.some((w) => w.id === weekId)) return fail(reply, 400, "That week is not in this member's graph");
   await prisma.$executeRawUnsafe(
     `INSERT INTO member_graph_milestone_records (member_id, milestone_id, week_id, note, recorded_by)
      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5)

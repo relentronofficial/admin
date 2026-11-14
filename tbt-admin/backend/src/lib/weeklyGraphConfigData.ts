@@ -15,26 +15,45 @@ import type { RevenueWeekRow } from './weeklyGraphRevenue.js';
 
 type Prisma = any;
 
-export async function loadProgramGraphRows(prisma: Prisma, programId: string): Promise<{ weeks: GraphWeekRow[]; milestones: GraphMilestoneRow[] }> {
+/**
+ * Graph scope: a program id, or null for the shared Default graph — the weeks and
+ * milestones used by every member whose batch has no program (or who has no
+ * batch). Matches the program's rows, or the program-less rows when $n is null.
+ * Only graph_weeks / graph_milestones use this; task queries keep `program_id = $n`,
+ * so the Default graph never touches any task.
+ */
+export const scopeSql = (col: string, n: number) => `(${col} = $${n}::uuid OR ($${n}::uuid IS NULL AND ${col} IS NULL))`;
+
+/** Day span of the Default graph's built-in weeks: the longest program-less batch (as the member graph counts it), else 90. */
+async function loadDefaultWeekSpanDays(prisma: Prisma): Promise<number> {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT MAX(COALESCE(b.snapshot_days, 90) + COALESCE(s.extended_days, 0))::int AS "days"
+     FROM batches b LEFT JOIN member_batch_settings s ON s.batch_id = b.id
+     WHERE b.program_id IS NULL`,
+  ).catch(() => []);
+  const days = Number((rows as any[])[0]?.days ?? 0);
+  return Number.isFinite(days) && days > 0 ? days : 90;
+}
+
+export async function loadProgramGraphRows(prisma: Prisma, programId: string | null): Promise<{ weeks: GraphWeekRow[]; milestones: GraphMilestoneRow[] }> {
   const [weeks, milestones] = await Promise.all([
     prisma.$queryRawUnsafe(
       `SELECT id::text, label, start_day AS "startDay", end_day AS "endDay", sort_order AS "sortOrder", is_active AS "isActive"
-       FROM graph_weeks WHERE program_id = $1::uuid ORDER BY sort_order, label`,
+       FROM graph_weeks WHERE ${scopeSql('program_id', 1)} ORDER BY sort_order, label`,
       programId,
     ).catch(() => []),
     prisma.$queryRawUnsafe(
       `SELECT id::text, label, kind, sort_order AS "sortOrder", is_active AS "isActive",
               threshold_amount::float8 AS "threshold"
-       FROM graph_milestones WHERE program_id = $1::uuid ORDER BY sort_order, label`,
+       FROM graph_milestones WHERE ${scopeSql('program_id', 1)} ORDER BY sort_order, label`,
       programId,
     ).catch(() => []),
   ]);
   return { weeks: weeks as GraphWeekRow[], milestones: milestones as GraphMilestoneRow[] };
 }
 
-/** The graph config for a program; no program (or no rows) → built-in defaults. */
+/** The graph config for a program, or the Default graph for no program; no saved rows → built-in defaults. */
 export async function loadGraphConfig(prisma: Prisma, programId: string | null): Promise<GraphConfig> {
-  if (!programId) return resolveGraphConfig({ weeks: [], milestones: [] });
   return resolveGraphConfig(await loadProgramGraphRows(prisma, programId));
 }
 
@@ -79,7 +98,8 @@ export async function loadMemberRevenueRows(prisma: Prisma, memberId: string): P
  * Graph page, "save the defaults", and the member graph all use this one span,
  * so they list the same weeks. A failed read yields 0 (callers keep their own span).
  */
-export async function loadProgramWeekSpanDays(prisma: Prisma, programId: string): Promise<number> {
+export async function loadProgramWeekSpanDays(prisma: Prisma, programId: string | null): Promise<number> {
+  if (!programId) return loadDefaultWeekSpanDays(prisma);
   const rows = await prisma.$queryRawUnsafe(
     `SELECT GREATEST(
        COALESCE((SELECT duration_days FROM programs WHERE id = $1::uuid), 0),
@@ -105,7 +125,9 @@ export async function loadProgramWeekSpanDays(prisma: Prisma, programId: string)
  *
  * Currently handles: '5 Lakhs' revenue milestone (added Oct 2026).
  */
-export async function backfillNewDefaultMilestones(prisma: Prisma, programId: string): Promise<void> {
+export async function backfillNewDefaultMilestones(prisma: Prisma, programId: string | null): Promise<void> {
+  // The Default graph is always created with the current defaults; nothing to backfill.
+  if (!programId) return;
   // Shift milestones above '1 lakh' up by one to make room.
   await prisma.$executeRawUnsafe(
     `UPDATE graph_milestones
@@ -140,10 +162,10 @@ export async function backfillNewDefaultMilestones(prisma: Prisma, programId: st
  * linked to the new milestone ids by their label, so renaming a milestone later
  * keeps them linked.
  */
-export async function ensureProgramGraphConfig(prisma: Prisma, programId: string): Promise<void> {
-  const programRows = await prisma.$queryRawUnsafe(
-    `SELECT duration_days AS "durationDays" FROM programs WHERE id = $1::uuid`, programId,
-  );
+export async function ensureProgramGraphConfig(prisma: Prisma, programId: string | null): Promise<void> {
+  const programRows = programId
+    ? await prisma.$queryRawUnsafe(`SELECT duration_days AS "durationDays" FROM programs WHERE id = $1::uuid`, programId)
+    : [];
   const durationDays = Number((programRows as any[])[0]?.durationDays ?? 0);
 
   const ms = DEFAULT_GRAPH_MILESTONES;
@@ -151,7 +173,7 @@ export async function ensureProgramGraphConfig(prisma: Prisma, programId: string
   await prisma.$executeRawUnsafe(
     `INSERT INTO graph_milestones (program_id, label, kind, sort_order)
      SELECT $1::uuid, v.label, v.kind, v.sort_order FROM (VALUES ${msValues}) AS v(label, kind, sort_order)
-     WHERE NOT EXISTS (SELECT 1 FROM graph_milestones WHERE program_id = $1::uuid)`,
+     WHERE NOT EXISTS (SELECT 1 FROM graph_milestones WHERE ${scopeSql('program_id', 1)})`,
     programId, ...ms.flatMap((m, i) => [m.label, m.kind, i]),
   );
 
@@ -165,7 +187,7 @@ export async function ensureProgramGraphConfig(prisma: Prisma, programId: string
     await prisma.$executeRawUnsafe(
       `INSERT INTO graph_weeks (program_id, label, start_day, end_day, sort_order)
        SELECT $1::uuid, v.label, v.start_day, v.end_day, v.sort_order FROM (VALUES ${wValues}) AS v(label, start_day, end_day, sort_order)
-       WHERE NOT EXISTS (SELECT 1 FROM graph_weeks WHERE program_id = $1::uuid)`,
+       WHERE NOT EXISTS (SELECT 1 FROM graph_weeks WHERE ${scopeSql('program_id', 1)})`,
       programId, ...weeks.flatMap((w, i) => [w.label, w.startDay, w.endDay, i]),
     );
   }

@@ -2832,7 +2832,9 @@ export interface GraphActivityItem {
   memberId: string | null; weekId: string | null; milestoneId: string | null; isMilestone: boolean; milestoneLabel: string | null;
 }
 export interface WeeklyGraphConfig {
-  program: { id: string; name: string; durationDays: number };
+  /** id null = the shared Default graph (members whose batch has no program, or no batch). */
+  program: { id: string | null; name: string; durationDays: number };
+  scope?: 'program' | 'default';
   /** false = the program still uses the built-in defaults (items have id null until saved) */
   saved: boolean;
   weeks: GraphWeekItem[];
@@ -2911,7 +2913,8 @@ export const useGraphMemberRecords = (memberId: string) =>
     queryKey: graphRecordsKey(memberId),
     queryFn: async () => {
       const res: any = await apiClient.get(`/api/weekly-graph/admin/members/${memberId}/records`);
-      return res.data as { member: GraphMemberProgram; noProgramReason: string | null; records: GraphMemberRecord[] };
+      // scope 'default' = no program on the member's batch (or no batch): the shared Default graph.
+      return res.data as { member: GraphMemberProgram; scope: 'program' | 'default'; records: GraphMemberRecord[] };
     },
     enabled: !!memberId,
   });

@@ -11,7 +11,7 @@
 // graph on /batch-program reads it on every load — no redeploy per change.
 // Role rules are enforced server-side; the UI surfaces the server's messages.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BarChart3, Plus, Loader2, X, Edit2, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, Search, Sparkles, AlertTriangle, UserRound } from "lucide-react";
+import { BarChart3, Plus, Loader2, X, Edit2, Trash2, GripVertical, CheckCircle2, Eye, EyeOff, Search, Sparkles, UserRound, Info } from "lucide-react";
 import { toast } from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -49,6 +49,8 @@ const BTN_GHOST = cn(BTN, "bg-[#1a1a1a] border border-[#2a2a2a] text-[#a0a0a0] h
 const ICON_BTN = "p-1.5 rounded-md text-[#a0a0a0] hover:text-white hover:bg-[#222] disabled:opacity-40";
 
 const errMsg = (e: any, fallback: string) => e?.message || fallback;
+/** Scope key for the shared Default graph (backend: weekly-graph controller DEFAULT_GRAPH_SCOPE). */
+const DEFAULT_GRAPH = "default";
 const formatInr = (n: number) => `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n)}`;
 
 export default function WeeklyGraphPage() {
@@ -57,11 +59,14 @@ export default function WeeklyGraphPage() {
   const { data: memberData, isLoading: memberLoading, isError: memberIsError, error: memberError, refetch: refetchMember } = useGraphMemberRecords(memberId);
   // Guard against a previous member's response ever rendering for the current one.
   const member = memberData?.member && memberData.member.id === memberId ? memberData.member : null;
-  const programId = member && !memberData?.noProgramReason ? member.programId ?? "" : "";
+  // The member's program, or — when their batch has no program (or they have no
+  // batch) — the shared Default graph. Never blocks the admin.
+  const isDefaultGraph = !!member && !member.programId;
+  const programId = member ? member.programId ?? DEFAULT_GRAPH : "";
 
   const { data: config, isLoading, isError, error, refetch } = useWeeklyGraphConfig(programId);
   const initialize = useInitializeWeeklyGraph(programId);
-  const programConfig = member && config && config.program.id === member.programId ? config : null;
+  const programConfig = member && config && (config.program.id ?? null) === (member.programId ?? null) ? config : null;
 
   return (
     <DashboardLayout>
@@ -101,10 +106,13 @@ export default function WeeklyGraphPage() {
               <MemberSummary member={member} />
             </div>
 
-            {memberData?.noProgramReason && (
-              <div className="flex items-start gap-2 rounded-lg border border-[#ef4444]/40 bg-[#ef4444]/10 px-4 py-3 text-[13px] text-[#fca5a5]">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-[#ef4444]" />
-                <span>{memberData.noProgramReason} Milestones can&apos;t be recorded until then.</span>
+            {isDefaultGraph && (
+              <div className="flex items-start gap-2 rounded-lg border border-[#2a2a2a] bg-[#181818] px-4 py-3 text-[12px] text-[#a0a0a0]">
+                <Info size={15} className="mt-0.5 shrink-0 text-[#60a5fa]" />
+                <span>
+                  {member.batchId ? <>Batch &ldquo;{member.batchName}&rdquo; has no program</> : <>Not in a batch</>}, so {member.firstName} uses the shared
+                  <b className="text-[#f0f0f0]"> Default graph</b>. You can record and edit their milestones here as usual.
+                </span>
               </div>
             )}
 
@@ -133,15 +141,24 @@ export default function WeeklyGraphPage() {
         {member && programConfig && (
           <>
             <div className="pt-2">
-              <h2 className="font-rajdhani text-xl font-bold uppercase tracking-tight text-[#f0f0f0]">Program settings · {programConfig.program.name}</h2>
-              <p className="text-[12px] text-[#f59e0b] mt-0.5">These apply to every member of {programConfig.program.name}, not just {member.firstName}.</p>
+              {isDefaultGraph ? (
+                <>
+                  <h2 className="font-rajdhani text-xl font-bold uppercase tracking-tight text-[#f0f0f0]">Default graph settings</h2>
+                  <p className="text-[12px] text-[#f59e0b] mt-0.5">These apply to every member without a program (batch not linked to a program, or no batch), not just {member.firstName}.</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="font-rajdhani text-xl font-bold uppercase tracking-tight text-[#f0f0f0]">Program settings · {programConfig.program.name}</h2>
+                  <p className="text-[12px] text-[#f59e0b] mt-0.5">These apply to every member of {programConfig.program.name}, not just {member.firstName}.</p>
+                </>
+              )}
             </div>
             {!programConfig.saved ? (
               <div className={cn(CARD, "p-5 flex flex-wrap items-center justify-between gap-4 border-[#f59e0b]/40")}>
                 <div>
                   <p className="text-[#f0f0f0] font-semibold flex items-center gap-2"><Sparkles size={16} className="text-[#f59e0b]" /> Using the built-in defaults</p>
                   <p className="text-[13px] text-[#a0a0a0] mt-1">
-                    Members of {programConfig.program.name} currently see 7-day weeks and the default milestones below. Start customizing to save them as editable items.
+                    {isDefaultGraph ? "Members without a program" : `Members of ${programConfig.program.name}`} currently see 7-day weeks and the default milestones below. Start customizing to save them as editable items.
                   </p>
                 </div>
                 <button
@@ -158,7 +175,11 @@ export default function WeeklyGraphPage() {
 
             <WeeksSection config={programConfig} programId={programId} />
             <MilestonesSection config={programConfig} programId={programId} />
-            <ActivitiesSection config={programConfig} programId={programId} />
+            {isDefaultGraph ? (
+              <p className="text-[12px] text-[#606060]">Activities belong to a program, so the Default graph has none. {member.firstName}&apos;s milestones are recorded above.</p>
+            ) : (
+              <ActivitiesSection config={programConfig} programId={programId} />
+            )}
           </>
         )}
       </div>
@@ -815,8 +836,8 @@ function MemberSummary({ member }: { member: GraphMemberProgram }) {
       {cell("Phone", member.phone)}
       {cell("Member ID", member.memberCode)}
       {cell("Status", status)}
-      {cell("Batch", member.batchName, "No batch", true)}
-      {cell("Program", member.programName, member.batchId ? "Batch not linked" : "—", true)}
+      {cell("Batch", member.batchName, "No batch")}
+      {cell("Program", member.programName, "Default graph")}
     </div>
   );
 }
@@ -824,7 +845,7 @@ function MemberSummary({ member }: { member: GraphMemberProgram }) {
 function MemberRecords({ member, records, config }: { member: GraphMemberProgram; records: GraphMemberRecord[]; config: WeeklyGraphConfig }) {
   const saveRecord = useSaveGraphMemberRecord(member.id);
   const delRecord = useDeleteGraphMemberRecord(member.id);
-  const initialize = useInitializeWeeklyGraph(config.program.id);
+  const initialize = useInitializeWeeklyGraph(config.program.id ?? DEFAULT_GRAPH);
   const [milestone, setMilestone] = useState("");
   const [week, setWeek] = useState("");
   const [note, setNote] = useState("");
@@ -854,13 +875,14 @@ function MemberRecords({ member, records, config }: { member: GraphMemberProgram
       ) : (
         <ul className="space-y-2">
           {records.map((r) => {
-            const otherProgram = !!r.programId && r.programId !== config.program.id;
+            // Recorded on another graph (e.g. before a batch/program change): shown, not editable here.
+            const otherProgram = (r.programId ?? null) !== (config.program.id ?? null);
             return (
               <li key={r.id} className={cn("flex items-center justify-between bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-[13px]", otherProgram && "opacity-60")}>
                 <span className="text-[#f0f0f0]">
                   {r.milestoneLabel}{r.kind === "revenue" && <span className="text-[#606060]"> (revenue)</span>}
                   <span className="text-[#606060]"> · {r.weekLabel ?? "week removed"}{r.note ? ` · ${r.note}` : ""}{r.recordedBy ? ` · by ${r.recordedBy}` : ""}</span>
-                  {otherProgram && <span className="ml-2 text-[10px] uppercase tracking-widest text-[#f59e0b]">previous program · not on their graph</span>}
+                  {otherProgram && <span className="ml-2 text-[10px] uppercase tracking-widest text-[#f59e0b]">{r.programId ? "previous program" : "default graph"} · not on their graph</span>}
                 </span>
                 <span className="flex items-center gap-1">
                   {!otherProgram && (
@@ -926,7 +948,7 @@ function MemberGraphPreview({ memberId }: { memberId: string }) {
   // Never render another member's response.
   if (!data || data.memberId !== memberId) return null;
   const g = data.graph;
-  if (!g) return <p className="text-[13px] text-[#606060]">No graph yet — this member is not in a batch.</p>;
+  if (!g) return <p className="text-[13px] text-[#606060]">No graph yet — this member is not in a batch, so there are no weeks to plot. You can still record their milestones below.</p>;
 
   const levels = ["Start", ...g.config.milestones.map((m) => m.label)];
   const rowH = 34, padL = 118, padR = 16, padT = 12, padB = 30;
