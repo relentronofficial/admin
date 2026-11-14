@@ -56,7 +56,9 @@ function getVideoEmbed(url: string): { type: "iframe" | "video"; src: string } {
 const MC_CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap');
 
-.mc-page{--mc-red:var(--color-accent,#f21f2b);--mc-red-dark:#d91420;--mc-maroon:#4b080b;overflow-x:hidden;background:#fff;color:#17151a;font-family:"DM Sans",sans-serif;line-height:1.55}
+/* The sticky bar renders outside .mc-page, so it needs the same palette variables. */
+.mc-page,.mc-sticky-bar{--mc-red:var(--color-accent,#f21f2b);--mc-red-dark:#d91420;--mc-maroon:#4b080b}
+.mc-page{overflow-x:hidden;background:#fff;color:#17151a;font-family:"DM Sans",sans-serif;line-height:1.55}
 .mc-page *,.mc-page *::before,.mc-page *::after{box-sizing:border-box}
 .mc-page a{color:inherit;text-decoration:none}
 .mc-page button{font:inherit}
