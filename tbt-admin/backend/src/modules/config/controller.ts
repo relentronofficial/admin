@@ -26,6 +26,9 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
   const navOrderRows = await req.server.prisma.$queryRawUnsafe<Array<{ nav_order: unknown }>>(
     'SELECT nav_order FROM site_configs WHERE id = $1::uuid', config.id
   ).catch(() => []);
+  const allPackagesRows = await req.server.prisma.$queryRawUnsafe<Array<{ all_packages_price: unknown }>>(
+    'SELECT all_packages_price FROM site_configs WHERE id = $1::uuid', config.id
+  ).catch(() => []);
   return reply.send({
     success: true,
     data: {
@@ -37,13 +40,20 @@ export async function getSiteConfigHandler(req: FastifyRequest, reply: FastifyRe
       hiddenMenuKeys: (Array.isArray(extraRows[0]?.hidden_menu_keys) ? extraRows[0].hidden_menu_keys : []) as string[],
       earlyCompletionBonusXp: extraRows[0]?.early_completion_bonus_xp ?? 5,
       coursesBannerUrl: extraRows[0]?.courses_banner_url ?? null,
+      allPackagesPrice: allPackagesRows[0]?.all_packages_price != null ? Number(allPackagesRows[0].all_packages_price) : null,
     },
     error: null,
   });
 }
 
 export async function updateSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, coursesBannerUrl, themeMode, ...prismaBody } = req.body as any;
+  const { taskTimerSeconds, freeLifelinesPerSession, hiddenMenuKeys, earlyCompletionBonusXp, coursesBannerUrl, themeMode, allPackagesPrice, ...prismaBody } = req.body as any;
+  if (allPackagesPrice !== undefined && allPackagesPrice !== null && allPackagesPrice !== '') {
+    const n = Number(allPackagesPrice);
+    if (!Number.isFinite(n) || n <= 0 || n > 10_000_000) {
+      return reply.status(400).send({ success: false, data: null, error: 'allPackagesPrice must be a positive amount (or null to turn All Packages off)' });
+    }
+  }
   let config = await req.server.prisma.siteConfig.findFirst();
   if (!config) {
     config = await req.server.prisma.siteConfig.create({ data: prismaBody });
@@ -86,9 +96,15 @@ export async function updateSiteConfigHandler(req: FastifyRequest, reply: Fastif
       themeMode, config.id
     );
   }
+  if (allPackagesPrice !== undefined) {
+    await req.server.prisma.$executeRawUnsafe(
+      'UPDATE site_configs SET all_packages_price = $1::numeric WHERE id = $2::uuid',
+      allPackagesPrice === null || allPackagesPrice === '' ? null : Number(allPackagesPrice), config.id
+    );
+  }
   void invalidateCache(req.server.redis ?? null, PUB_SITE_CONFIG_CACHE_KEY);
   void invalidateCache(req.server.redis ?? null, PUB_NAV_CACHE_KEY);
-  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 5, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
+  return reply.send({ success: true, data: { ...config, taskTimerSeconds: taskTimerSeconds ?? 300, freeLifelinesPerSession: freeLifelinesPerSession ?? 5, hiddenMenuKeys: hiddenMenuKeys ?? [], coursesBannerUrl: coursesBannerUrl ?? null, ...(allPackagesPrice !== undefined ? { allPackagesPrice: allPackagesPrice === null || allPackagesPrice === '' ? null : Number(allPackagesPrice) } : {}), ...(themeMode === 'light' || themeMode === 'dark' ? { themeMode } : {}) }, error: null });
 }
 
 // ── UI STRINGS ────────────────────────────────────────────────────────

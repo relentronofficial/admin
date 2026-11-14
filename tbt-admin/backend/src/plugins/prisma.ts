@@ -206,6 +206,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       // Admin-controlled light/dark mode for web + mobile (Admin → Navigation)
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(10) NOT NULL DEFAULT 'light'`).catch(() => {}),
       prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS courses_banner_url TEXT`).catch((err) => fastify.log.error({ err }, "[startup] failed to add site_configs.courses_banner_url")),
+      // Global "All Packages" price (every published mini course). courses.all_access_price overrides it per course.
+      prisma.$executeRawUnsafe(`ALTER TABLE site_configs ADD COLUMN IF NOT EXISTS all_packages_price DECIMAL(10,2)`).catch((err) => fastify.log.error({ err }, "[startup] failed to add site_configs.all_packages_price")),
       prisma.$executeRawUnsafe(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS timer_seconds INT`).catch(() => {}),
       // Archived (soft-deleted) program activity: set when an admin deletes an
       // activity that has member submissions — the row and its submissions are kept.

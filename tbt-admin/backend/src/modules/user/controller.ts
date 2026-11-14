@@ -1195,9 +1195,13 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   }
 
   // "All Packages" tier: exactly what verifyAllAccessPaymentHandler grants —
-  // every published mini course. Only fetched when the tier is on sale here.
+  // every published mini course. Price = this course's own all_access_price,
+  // else the global site_configs.all_packages_price (mini courses only).
+  const allAccessPrice = (visRows[0] as any)?.course_type === 'mini_course'
+    ? await resolveAllPackagesPrice(prisma, (visRows[0] as any)?.all_access_price)
+    : ((visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null);
   let allAccessCourses: { id: string; title: string }[] = [];
-  if ((visRows[0] as any)?.all_access_price != null) {
+  if (allAccessPrice != null) {
     allAccessCourses = await prisma.$queryRawUnsafe<{ id: string; title: string }[]>(
       `SELECT id, title FROM courses WHERE course_type = 'mini_course' AND is_published = true ORDER BY sort_order, title`,
     ).catch(() => []);
@@ -1402,7 +1406,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     bundleCourseIds: bundleIds,
     bundleCourses,
     bundlePrice: (visRows[0] as any)?.bundle_price != null ? Number((visRows[0] as any).bundle_price) : null,
-    allAccessPrice: (visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null,
+    allAccessPrice,
     allAccessCourses,
     originalPrice: (visRows[0] as any)?.original_price != null ? Number((visRows[0] as any).original_price) : null,
   });
@@ -8092,6 +8096,19 @@ export async function verifyBundlePaymentHandler(request: FastifyRequest, reply:
   return ok(reply, { accessGranted: true, courseId });
 }
 
+/**
+ * "All Packages" price for a mini course: its own all_access_price override if set,
+ * otherwise the global site_configs.all_packages_price. null = All Packages not on sale.
+ */
+async function resolveAllPackagesPrice(prisma: any, courseOverride: unknown): Promise<number | null> {
+  if (courseOverride != null && Number(courseOverride) > 0) return Number(courseOverride);
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT all_packages_price FROM site_configs ORDER BY created_at ASC LIMIT 1`,
+  ).catch(() => []) as { all_packages_price: unknown }[];
+  const global = rows[0]?.all_packages_price;
+  return global != null && Number(global) > 0 ? Number(global) : null;
+}
+
 // POST /api/user/courses/:id/razorpay/all-access-order
 export async function createAllAccessOrderHandler(request: FastifyRequest, reply: FastifyReply) {
   const { id: courseId } = request.params as { id: string };
@@ -8102,9 +8119,12 @@ export async function createAllAccessOrderHandler(request: FastifyRequest, reply
   }
 
   const [priceRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT all_access_price FROM courses WHERE id = $1::uuid`, courseId,
+    `SELECT all_access_price, COALESCE(course_type, 'mentorship') AS course_type FROM courses WHERE id = $1::uuid`, courseId,
   );
-  const allAccessPrice = priceRow?.all_access_price != null ? Number(priceRow.all_access_price) : null;
+  // Same price the course page shows: the course's own override, else the global price (mini courses).
+  const allAccessPrice = priceRow?.course_type === 'mini_course'
+    ? await resolveAllPackagesPrice(request.server.prisma, priceRow?.all_access_price)
+    : (priceRow?.all_access_price != null ? Number(priceRow.all_access_price) : null);
   if (allAccessPrice == null || allAccessPrice <= 0) return fail(reply, 400, 'ALL_ACCESS_PRICE_NOT_CONFIGURED');
 
   // Expire stale pending all-access orders

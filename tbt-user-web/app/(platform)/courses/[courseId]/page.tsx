@@ -175,6 +175,10 @@ const MC_CSS = `
 .mc-plan-card li{font-size:10px;color:#5e575e;padding:7px 0 7px 18px;position:relative;border-bottom:1px solid #f6f1f1}
 .mc-plan-card li::before{content:"✓";position:absolute;left:0;color:var(--mc-red);font-weight:900}
 .mc-plan-btn{width:100%;margin-top:auto;border-radius:8px!important}
+.mc-plan-card.mc-soon{background:#faf8f8;border-style:dashed;box-shadow:none}
+.mc-plan-card.mc-soon:hover{transform:none;box-shadow:none}
+.mc-plan-card.mc-soon h3,.mc-plan-card.mc-soon>p{color:#9a9397}
+.mc-soon-price{color:#b9b2b5;font-size:22px}
 
 .mc-earning-section{display:grid;grid-template-columns:.9fr 1.1fr;gap:35px;align-items:center;padding:75px 5vw 60px}
 .mc-earning-copy h2{max-width:480px;font:700 clamp(27px,3vw,38px)/1.15 Outfit,sans-serif;letter-spacing:-.8px;margin:0 0 10px}
@@ -656,7 +660,11 @@ function MCPlansSection({
   ].filter(Boolean) as string[];
 
   const headline = course.purchaseHeadline || "Choose Your Learning Plan";
-  const tierCount = 1 + (hasBundlePrice ? 1 : 0) + (hasAllAccessPrice ? 1 : 0);
+  // Mini courses always show the same three plan slots (Standalone / Bundle /
+  // All Packages) so every course page has an identical layout; a plan that is
+  // not on sale for this course renders as a "coming soon" card in its slot.
+  const fullLayout = course.courseType === "mini_course";
+  const tierCount = fullLayout ? 3 : 1 + (hasBundlePrice ? 1 : 0) + (hasAllAccessPrice ? 1 : 0);
   const gridClass = tierCount === 1 ? "mc-plans-grid mc-g1" : tierCount === 2 ? "mc-plans-grid mc-g2" : "mc-plans-grid";
 
   return (
@@ -737,6 +745,14 @@ function MCPlansSection({
             </article>
           );
         })()}
+        {!hasBundlePrice && fullLayout && (
+          <ComingSoonPlan
+            tag="COURSE BUNDLE"
+            pill="Coming Soon"
+            title={`${course.title} Bundle`}
+            text="A bundle of this course with hand-picked companion courses at one discounted price is on its way."
+          />
+        )}
 
         {/* All Packages card — every published mini course (what the purchase grants) */}
         {hasAllAccessPrice && (() => {
@@ -769,8 +785,33 @@ function MCPlansSection({
             </article>
           );
         })()}
+        {!hasAllAccessPrice && fullLayout && (
+          <ComingSoonPlan
+            tag="ALL PACKAGES"
+            pill="Coming Soon"
+            title="All Packages"
+            text="Full access to every mini course in one purchase is on its way."
+          />
+        )}
       </div>
     </section>
+  );
+}
+
+/** A plan slot that isn't on sale for this course yet — same card shape, greyed out. */
+function ComingSoonPlan({ tag, pill, title, text }: { tag: string; pill: string; title: string; text: string }) {
+  return (
+    <article className="mc-plan-card mc-soon" aria-disabled="true">
+      <div className="mc-plan-top">
+        <span>{tag}</span>
+        <span className="mc-pill">{pill}</span>
+      </div>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <div className="mc-plan-price mc-soon-price">Coming Soon</div>
+      <ul />
+      <button className="mc-btn mc-btn-dark mc-plan-btn" disabled>Coming Soon</button>
+    </article>
   );
 }
 

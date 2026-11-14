@@ -42,6 +42,7 @@ import { Upload as TusUpload } from "tus-js-client";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { useListBatches } from "@/lib/hooks/useTbt";
 import { useBusinessTypes } from "@/lib/hooks/useMasters";
+import { AllPackagesPriceControl } from "./AllPackagesPriceControl";
 import apiClient from "@/lib/api/apiClient";
 import { toast } from "react-hot-toast";
 import { getAdminSocket } from "@/lib/socket/client";
@@ -361,7 +362,8 @@ export default function CoursesPage() {
               </button>
             </div>
             {viewMode === "courses" && (
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <AllPackagesPriceControl />
                 <button onClick={() => openCreateCourse("mentorship")}
                   className="flex items-center gap-2 bg-[#dc2626] text-white px-4 py-2.5 rounded-md font-rajdhani font-bold text-[12px] tracking-widest uppercase hover:bg-red-700 transition-all">
                   <Plus size={15} /> Mentorship
@@ -769,13 +771,14 @@ export default function CoursesPage() {
                           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">All Packages Price (₹)</label>
-                        <input type="number" min="0" value={(courseForm as any).allAccessPrice} onChange={e => setCourseField("allAccessPrice", e.target.value)} placeholder="—"
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">All Packages (₹) <span className="text-[#555] normal-case">override</span></label>
+                        <input type="number" min="0" value={(courseForm as any).allAccessPrice} onChange={e => setCourseField("allAccessPrice", e.target.value)} placeholder="Global"
                           className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
                       </div>
                     </div>
                     <p className="text-[10px] text-[#666] -mt-1">
-                      Leave a price empty to hide that plan. <b className="text-[#888]">All Packages</b> unlocks every published mini course in one purchase.
+                      Every mini course page shows Standalone, Bundle and All Packages. With no Bundle Price the bundle card shows &quot;coming soon&quot;.
+                      <b className="text-[#888]"> All Packages</b> (every published mini course) uses the global price next to the &quot;+ Mini Course&quot; button — fill the override only to charge differently on this course.
                     </p>
                     <div>
                       {(() => {
