@@ -1081,7 +1081,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     prisma.$queryRawUnsafe<any[]>(
       `SELECT applicable_business_types, batch_visibility_ids, COALESCE(course_type, 'mentorship') AS course_type,
               purchase_headline, video_preview_url, thank_you_note, key_highlights,
-              bundle_course_ids, bundle_price, all_access_price
+              bundle_course_ids, bundle_price, all_access_price, original_price
        FROM courses WHERE id = $1::uuid`, id,
     ).catch(() => [] as any[]),
     prisma.$queryRawUnsafe<{ business_categories: string[] | null; batch_id: string | null; current_tier: number | null }[]>(
@@ -1394,6 +1394,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     bundleCourses,
     bundlePrice: (visRows[0] as any)?.bundle_price != null ? Number((visRows[0] as any).bundle_price) : null,
     allAccessPrice: (visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null,
+    originalPrice: (visRows[0] as any)?.original_price != null ? Number((visRows[0] as any).original_price) : null,
   });
 }
 

@@ -6,8 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Play, Lock, ChevronDown, ChevronUp, CheckCircle2,
   BookOpen, Clock, Zap, Award, ArrowRight, Users,
-  ShoppingCart, Loader2, ExternalLink, ChevronRight,
-  Target, TrendingUp, Layers, Star,
+  ShoppingCart, Loader2, ChevronRight,
+  Target, TrendingUp, Layers, Star, Flame, Badge,
 } from "lucide-react";
 import {
   useCourse, useCreateRazorpayOrder, useVerifyRazorpayPayment,
@@ -99,17 +99,6 @@ function BuyButton({
       </button>
     );
   }
-  if (course.paymentLinkUrl) {
-    return (
-      <a
-        href={course.paymentLinkUrl} target="_blank" rel="noopener noreferrer"
-        className={`${cls} font-bold flex items-center gap-2 transition-opacity hover:opacity-90`}
-        style={{ background: "var(--color-accent)", color: "#fff" }}
-      >
-        <ExternalLink size={15} /> Buy Now
-      </a>
-    );
-  }
   return (
     <button
       onClick={() => router.push(`/learning/${courseId}`)}
@@ -129,223 +118,308 @@ function HeroSection({ course, courseId, buying, onBuy }: {
   const lessons: any[] = course.lessons ?? [];
   const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
   const hasPrice = course.price != null && Number(course.price) > 0;
+  const price = hasPrice ? Number(course.price) : 0;
+  const originalPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
+  const discountPct = originalPrice && originalPrice > price && price > 0
+    ? Math.round(((originalPrice - price) / originalPrice) * 100)
+    : null;
 
   return (
     <section
-      className="pt-10 pb-0 overflow-hidden"
+      className="relative pt-10 pb-0 overflow-hidden"
       style={{ background: "var(--color-bg-surface)" }}
     >
-      {/* Radial glow behind headline */}
+      {/* Subtle radial glow */}
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-[500px]"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[600px]"
         style={{
           background:
-            "radial-gradient(ellipse 60% 40% at 50% 0%, color-mix(in srgb, var(--color-accent) 7%, transparent), transparent)",
+            "radial-gradient(ellipse 70% 50% at 30% 0%, color-mix(in srgb, var(--color-accent) 8%, transparent), transparent)",
         }}
       />
 
-      <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <div className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Breadcrumb */}
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35 }}
-          className="flex items-center justify-center gap-2 text-xs mb-6"
+          className="flex items-center gap-2 text-xs mb-8"
           style={{ color: "var(--color-text-subtle)" }}
         >
           <span className="cursor-pointer hover:underline" onClick={() => window.history.back()}>
             Courses
           </span>
           <ChevronRight size={11} />
-          <span style={{ color: "var(--color-text-secondary)" }}>{course.title}</span>
+          <span className="truncate max-w-[200px]" style={{ color: "var(--color-text-secondary)" }}>{course.title}</span>
         </motion.div>
 
-        {/* Category badges */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.05 }}
-          className="flex items-center justify-center gap-2 flex-wrap mb-5"
-        >
-          {course.courseType === "mini_course" && (
-            <span
-              className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-              style={{
-                background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
-                color: "var(--color-accent)",
-                border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
-              }}
+        {/* Two-column split */}
+        <div className="flex flex-col lg:flex-row lg:items-center gap-10 lg:gap-16 pb-0">
+
+          {/* ── LEFT: Text Content ───────────────────────────────── */}
+          <div className="flex-1 min-w-0">
+            {/* Badges */}
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.05 }}
+              className="flex items-center gap-2 flex-wrap mb-5"
             >
-              Mini Course
-            </span>
-          )}
-          <span
-            className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-            style={{
-              background: "var(--color-surface-overlay)",
-              color: "var(--color-text-secondary)",
-              border: "1px solid var(--color-surface-overlay-xs)",
-            }}
-          >
-            Self-Paced
-          </span>
-          {course.level && (
-            <span
-              className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
-              style={{
-                background: "var(--color-surface-overlay)",
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-surface-overlay-xs)",
-              }}
-            >
-              {levelLabel(course.level)}
-            </span>
-          )}
-        </motion.div>
-
-        {/* Big Headline */}
-        <motion.h1
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.08 }}
-          className="text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight mb-5"
-          style={{ color: "var(--color-text-normal)" }}
-        >
-          {course.title}
-        </motion.h1>
-
-        {/* Description */}
-        {course.description && (
-          <motion.p
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.14 }}
-            className="text-lg leading-relaxed max-w-2xl mx-auto mb-8"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            {course.description}
-          </motion.p>
-        )}
-
-        {/* CTA row */}
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="flex items-center justify-center gap-4 flex-wrap mb-8"
-        >
-          <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
-          <a
-            href="#curriculum"
-            className="text-sm font-semibold flex items-center gap-1.5 transition-colors hover:opacity-80"
-            style={{ color: "var(--color-text-secondary)" }}
-          >
-            Explore What&apos;s Inside <ChevronDown size={14} />
-          </a>
-        </motion.div>
-
-        {/* Price display */}
-        {hasPrice && !course.hasAccess && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="flex items-center justify-center gap-3 mb-8"
-          >
-            <span
-              className="text-5xl font-black"
-              style={{ color: "var(--color-text-normal)" }}
-            >
-              ₹{Number(course.price).toLocaleString("en-IN")}
-            </span>
-            <div className="flex flex-col items-start gap-1">
-              <span
-                className="text-xs font-bold px-2.5 py-1 rounded-full"
-                style={{
-                  background: "color-mix(in srgb, var(--color-accent) 15%, transparent)",
-                  color: "var(--color-accent)",
-                  border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
-                }}
-              >
-                One-time
-              </span>
-              {course._count?.enrollments > 0 && (
-                <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {course._count.enrollments} enrolled
+              {course.courseType === "mini_course" && (
+                <span
+                  className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
+                  style={{
+                    background: "color-mix(in srgb, var(--color-accent) 12%, transparent)",
+                    color: "var(--color-accent)",
+                    border: "1px solid color-mix(in srgb, var(--color-accent) 25%, transparent)",
+                  }}
+                >
+                  Mini Course
                 </span>
               )}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Instructor */}
-        {course.instructor && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, delay: 0.28 }}
-            className="flex items-center justify-center gap-3 mb-10"
-          >
-            {course.instructor.profilePhotoUrl ? (
-              <img
-                src={course.instructor.profilePhotoUrl}
-                alt={course.instructor.fullName}
-                className="w-10 h-10 rounded-full object-cover"
-                style={{ border: "2px solid var(--color-surface-overlay-md)" }}
-              />
-            ) : (
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm"
-                style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)" }}
+              {discountPct && (
+                <span
+                  className="text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full"
+                  style={{ background: "var(--color-accent)", color: "#fff" }}
+                >
+                  {discountPct}% OFF
+                </span>
+              )}
+              <span
+                className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
+                style={{
+                  background: "var(--color-surface-overlay)",
+                  color: "var(--color-text-secondary)",
+                  border: "1px solid var(--color-surface-overlay-xs)",
+                }}
               >
-                {course.instructor.fullName?.charAt(0) ?? "?"}
-              </div>
+                Self-Paced
+              </span>
+              {course.level && (
+                <span
+                  className="text-[11px] font-bold uppercase tracking-widest px-3 py-1 rounded-full"
+                  style={{
+                    background: "var(--color-surface-overlay)",
+                    color: "var(--color-text-secondary)",
+                    border: "1px solid var(--color-surface-overlay-xs)",
+                  }}
+                >
+                  {levelLabel(course.level)}
+                </span>
+              )}
+            </motion.div>
+
+            {/* Title */}
+            <motion.h1
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.55, delay: 0.08 }}
+              className="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight tracking-tight mb-4"
+              style={{ color: "var(--color-text-normal)" }}
+            >
+              {course.title}
+            </motion.h1>
+
+            {/* Description */}
+            {course.description && (
+              <motion.p
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.14 }}
+                className="text-base leading-relaxed mb-6 max-w-xl"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                {course.description}
+              </motion.p>
             )}
-            <div className="text-left">
-              <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
-                {course.instructor.fullName}
-              </p>
-              {course.instructor.designation && (
-                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  {course.instructor.designation}
-                </p>
+
+            {/* Price row */}
+            {hasPrice && !course.hasAccess && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, delay: 0.18 }}
+                className="flex items-baseline gap-3 mb-6"
+              >
+                <span
+                  className="text-4xl font-black"
+                  style={{ color: "var(--color-text-normal)" }}
+                >
+                  ₹{price.toLocaleString("en-IN")}
+                </span>
+                {originalPrice && originalPrice > price && (
+                  <span
+                    className="text-xl font-semibold line-through"
+                    style={{ color: "var(--color-text-subtle)" }}
+                  >
+                    ₹{originalPrice.toLocaleString("en-IN")}
+                  </span>
+                )}
+                <span
+                  className="text-xs font-bold px-2.5 py-1 rounded-full"
+                  style={{
+                    background: "color-mix(in srgb, var(--color-success, #22c55e) 12%, transparent)",
+                    color: "var(--color-success, #22c55e)",
+                    border: "1px solid color-mix(in srgb, var(--color-success, #22c55e) 25%, transparent)",
+                  }}
+                >
+                  One-time
+                </span>
+              </motion.div>
+            )}
+
+            {/* CTA row */}
+            <motion.div
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.22 }}
+              className="flex items-center gap-4 flex-wrap mb-6"
+            >
+              <BuyButton course={course} courseId={courseId} buying={buying} onBuy={onBuy} size="lg" />
+              <a
+                href="#curriculum"
+                className="text-sm font-semibold flex items-center gap-1.5 transition-colors hover:opacity-80"
+                style={{ color: "var(--color-text-secondary)" }}
+              >
+                See curriculum <ChevronDown size={14} />
+              </a>
+            </motion.div>
+
+            {/* Enrollment count */}
+            {(course._count?.enrollments ?? 0) > 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.4, delay: 0.28 }}
+                className="flex items-center gap-2 mb-6"
+              >
+                <div className="flex -space-x-1.5">
+                  {[0,1,2].map(i => (
+                    <div
+                      key={i}
+                      className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-[9px] font-bold"
+                      style={{
+                        background: `hsl(${i * 40 + 10}, 60%, 55%)`,
+                        borderColor: "var(--color-bg-surface)",
+                        color: "#fff",
+                      }}
+                    >
+                      {String.fromCharCode(65 + i)}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                  <span className="font-semibold" style={{ color: "var(--color-text-secondary)" }}>
+                    {course._count.enrollments.toLocaleString("en-IN")}
+                  </span>{" "}
+                  already enrolled
+                </span>
+              </motion.div>
+            )}
+
+            {/* Instructor */}
+            {course.instructor && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.4, delay: 0.3 }}
+                className="flex items-center gap-3"
+              >
+                {course.instructor.profilePhotoUrl ? (
+                  <img
+                    src={course.instructor.profilePhotoUrl}
+                    alt={course.instructor.fullName}
+                    className="w-9 h-9 rounded-full object-cover shrink-0"
+                    style={{ border: "2px solid var(--color-surface-overlay-md)" }}
+                  />
+                ) : (
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
+                    style={{ background: "var(--color-surface-overlay)", color: "var(--color-text-secondary)" }}
+                  >
+                    {course.instructor.fullName?.charAt(0) ?? "?"}
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-semibold" style={{ color: "var(--color-text-normal)" }}>
+                    {course.instructor.fullName}
+                  </p>
+                  {course.instructor.designation && (
+                    <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                      {course.instructor.designation}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          {/* ── RIGHT: Thumbnail ──────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, x: 24, scale: 0.97 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            transition={{ duration: 0.65, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+            className="lg:w-[46%] lg:shrink-0 relative"
+          >
+            {/* Glow behind thumbnail */}
+            <div
+              className="pointer-events-none absolute -inset-6 rounded-3xl"
+              style={{
+                background: "radial-gradient(ellipse 80% 60% at 50% 50%, color-mix(in srgb, var(--color-accent) 12%, transparent), transparent)",
+                filter: "blur(24px)",
+              }}
+            />
+            <div
+              className="relative rounded-2xl overflow-hidden aspect-video"
+              style={{
+                border: "1px solid var(--color-surface-overlay-md)",
+                boxShadow: "0 24px 64px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3)",
+              }}
+            >
+              {course.thumbnailUrl ? (
+                <img
+                  src={course.thumbnailUrl}
+                  alt={course.title}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div
+                  className="w-full h-full flex items-center justify-center"
+                  style={{ background: "var(--color-surface-overlay)" }}
+                >
+                  <BookOpen size={64} style={{ color: "var(--color-text-subtle)" }} />
+                </div>
+              )}
+              {/* Gradient overlay at bottom */}
+              <div
+                className="absolute inset-x-0 bottom-0 h-24"
+                style={{ background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent)" }}
+              />
+              {/* Play button */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <motion.div
+                  whileHover={{ scale: 1.08 }}
+                  transition={{ type: "spring", stiffness: 300 }}
+                  className="w-16 h-16 rounded-full flex items-center justify-center cursor-pointer"
+                  style={{ background: "rgba(255,255,255,0.18)", backdropFilter: "blur(8px)", border: "1.5px solid rgba(255,255,255,0.35)" }}
+                  onClick={() => { const el = document.getElementById("video-preview"); el?.scrollIntoView({ behavior: "smooth" }); }}
+                >
+                  <Play size={26} className="text-white ml-1" fill="white" />
+                </motion.div>
+              </div>
+              {/* Discount badge on thumbnail */}
+              {discountPct && (
+                <div
+                  className="absolute top-3 right-3 px-3 py-1.5 rounded-full text-xs font-black text-white"
+                  style={{ background: "var(--color-accent)", boxShadow: "0 2px 12px rgba(0,0,0,0.4)" }}
+                >
+                  {discountPct}% OFF
+                </div>
               )}
             </div>
           </motion.div>
-        )}
-
-        {/* Thumbnail — below text, full width of container */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="relative mx-auto rounded-t-2xl overflow-hidden aspect-video max-w-3xl"
-          style={{
-            border: "1px solid var(--color-surface-overlay-md)",
-            borderBottom: "none",
-            boxShadow: "0 -4px 48px rgba(0,0,0,0.5)",
-          }}
-        >
-          {course.thumbnailUrl ? (
-            <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
-          ) : (
-            <div
-              className="w-full h-full flex items-center justify-center"
-              style={{ background: "var(--color-surface-overlay)" }}
-            >
-              <BookOpen size={64} style={{ color: "var(--color-text-subtle)" }} />
-            </div>
-          )}
-          {/* Play overlay */}
-          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.25)" }}>
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center"
-              style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(6px)" }}
-            >
-              <Play size={28} className="text-white" fill="white" />
-            </div>
-          </div>
-        </motion.div>
+        </div>
       </div>
 
       {/* 4-col Details Strip */}
@@ -410,12 +484,20 @@ function DetailsStrip({ course, lessons, totalSecs }: { course: any; lessons: an
 
 // ── Marquee ───────────────────────────────────────────────────────────────────
 
-function MarqueeStrip() {
-  const items = [
-    "LEARN THE SKILL", "✦", "BUILD YOUR PORTFOLIO", "✦",
-    "SELL YOUR SERVICE", "✦", "START IMMEDIATELY", "✦",
-    "GROW YOUR BUSINESS", "✦", "LEARN AT YOUR OWN PACE", "✦",
-  ];
+function MarqueeStrip({ course }: { course?: any }) {
+  const title = course?.title ? course.title.toUpperCase() : null;
+  const module = course?.module ? course.module.toUpperCase() : null;
+  const items = title
+    ? [
+        title, "✦", "LEARN THE SKILL", "✦",
+        module ?? "BUILD YOUR BUSINESS", "✦", "START TODAY", "✦",
+        "GROW FASTER", "✦", "SELF-PACED LEARNING", "✦",
+      ]
+    : [
+        "LEARN THE SKILL", "✦", "BUILD YOUR PORTFOLIO", "✦",
+        "SELL YOUR SERVICE", "✦", "START IMMEDIATELY", "✦",
+        "GROW YOUR BUSINESS", "✦", "LEARN AT YOUR OWN PACE", "✦",
+      ];
   const repeated = [...items, ...items, ...items];
 
   return (
@@ -439,6 +521,68 @@ function MarqueeStrip() {
         ))}
       </motion.div>
     </div>
+  );
+}
+
+// ── Social Proof ─────────────────────────────────────────────────────────────
+
+function SocialProofSection({ course }: { course: any }) {
+  const count = course._count?.enrollments ?? 0;
+  if (count === 0) return null;
+  const lessons: any[] = course.lessons ?? [];
+  const totalSecs = lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
+
+  const stats = [
+    { icon: <Users size={18} />, value: `${count.toLocaleString("en-IN")}+`, label: "Students Enrolled" },
+    { icon: <BookOpen size={18} />, value: `${lessons.length}`, label: "Lessons" },
+    totalSecs > 0 && { icon: <Clock size={18} />, value: fmtDurationSecs(totalSecs), label: "Total Duration" },
+    { icon: <Award size={18} />, value: "Certificate", label: "On Completion" },
+  ].filter(Boolean) as { icon: React.ReactNode; value: string; label: string }[];
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.5 }}
+      className="py-14"
+      style={{ background: "var(--color-bg-primary)" }}
+    >
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+          {stats.map((s, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-20px" }}
+              transition={{ duration: 0.4, delay: i * 0.07 }}
+              className="flex flex-col items-center text-center p-5 rounded-2xl"
+              style={{
+                background: "var(--color-bg-surface)",
+                border: "1px solid var(--color-surface-overlay)",
+              }}
+            >
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                style={{
+                  background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                  color: "var(--color-accent)",
+                }}
+              >
+                {s.icon}
+              </div>
+              <p className="text-2xl font-black mb-0.5" style={{ color: "var(--color-text-normal)" }}>
+                {s.value}
+              </p>
+              <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
+                {s.label}
+              </p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </motion.section>
   );
 }
 
@@ -681,6 +825,7 @@ function VideoPreviewSection({ videoUrl }: { videoUrl: string }) {
 
   return (
     <motion.section
+      id="video-preview"
       initial={{ opacity: 0, y: 32 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
@@ -931,10 +1076,17 @@ function PricingSection({
               </div>
               {hasPrice && !course.hasAccess ? (
                 <div className="mb-6">
-                  <div className="text-4xl font-black mb-1" style={{ color: "var(--color-text-normal)" }}>
-                    ₹{Number(course.price).toLocaleString("en-IN")}
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <div className="text-4xl font-black" style={{ color: "var(--color-text-normal)" }}>
+                      ₹{Number(course.price).toLocaleString("en-IN")}
+                    </div>
+                    {course.originalPrice != null && Number(course.originalPrice) > Number(course.price) && (
+                      <span className="text-lg font-semibold line-through" style={{ color: "var(--color-text-subtle)" }}>
+                        ₹{Number(course.originalPrice).toLocaleString("en-IN")}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>One-time · Instant access</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--color-text-subtle)" }}>One-time · Instant access</p>
                 </div>
               ) : course.hasAccess ? (
                 <div className="mb-6">
@@ -968,12 +1120,18 @@ function PricingSection({
   // 3-tier layout
   const bundleCourses: any[] = course.bundleCourses ?? [];
 
+  const origPrice = course.originalPrice != null ? Number(course.originalPrice) : null;
+  const discountPct2 = origPrice && origPrice > Number(course.price ?? 0) && Number(course.price ?? 0) > 0
+    ? Math.round(((origPrice - Number(course.price)) / origPrice) * 100)
+    : null;
+
   const tiers = [
     {
       key: "single",
       label: "Single Course",
-      badge: course.hasAccess ? "✓ Enrolled" : "Get Started",
+      badge: course.hasAccess ? "✓ Enrolled" : discountPct2 ? `${discountPct2}% OFF` : "Get Started",
       price: hasPrice ? `₹${Number(course.price).toLocaleString("en-IN")}` : "Free",
+      originalPrice: origPrice && origPrice > Number(course.price ?? 0) ? `₹${origPrice.toLocaleString("en-IN")}` : null,
       priceNote: hasPrice ? "One-time · Instant access" : "No payment needed",
       perks: [`This course only`, ...basePerkItems],
       cta: course.hasAccess
@@ -986,6 +1144,7 @@ function PricingSection({
       label: "Curated Bundle",
       badge: "Best Value",
       price: `₹${Number(course.bundlePrice).toLocaleString("en-IN")}`,
+      originalPrice: null as string | null,
       priceNote: "One-time · All bundled courses",
       perks: [
         `${bundleCourses.length + 1} courses included`,
@@ -1001,6 +1160,7 @@ function PricingSection({
       label: "All-Access",
       badge: "Maximum Value",
       price: `₹${Number(course.allAccessPrice).toLocaleString("en-IN")}`,
+      originalPrice: null as string | null,
       priceNote: "One-time · Every mini course",
       perks: [
         "All published mini courses",
@@ -1071,13 +1231,20 @@ function PricingSection({
 
               {/* Price */}
               <div className="mb-5">
-                <div
-                  className="text-3xl font-black mb-1"
-                  style={{ color: tier.featured ? "var(--color-accent)" : "var(--color-text-normal)" }}
-                >
-                  {tier.price}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <div
+                    className="text-3xl font-black"
+                    style={{ color: tier.featured ? "var(--color-accent)" : "var(--color-text-normal)" }}
+                  >
+                    {tier.price}
+                  </div>
+                  {(tier as any).originalPrice && (
+                    <span className="text-sm font-semibold line-through" style={{ color: "var(--color-text-subtle)" }}>
+                      {(tier as any).originalPrice}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>{tier.priceNote}</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>{tier.priceNote}</p>
               </div>
 
               {/* Bundle course names */}
@@ -1459,9 +1626,14 @@ function StickyBuyBar({ course, courseId, buying, onBuy }: {
               <p className="text-xs font-semibold truncate" style={{ color: "var(--color-text-normal)" }}>
                 {course.title}
               </p>
-              {course.price > 0 && !course.hasAccess && (
-                <p className="text-xs" style={{ color: "var(--color-text-subtle)" }}>
-                  ₹{Number(course.price).toLocaleString("en-IN")} · One-time
+              {Number(course.price ?? 0) > 0 && !course.hasAccess && (
+                <p className="text-xs flex items-center gap-1.5" style={{ color: "var(--color-text-subtle)" }}>
+                  <span className="font-semibold" style={{ color: "var(--color-text-normal)" }}>
+                    ₹{Number(course.price).toLocaleString("en-IN")}
+                  </span>
+                  {course.originalPrice != null && Number(course.originalPrice) > Number(course.price) && (
+                    <span className="line-through">₹{Number(course.originalPrice).toLocaleString("en-IN")}</span>
+                  )}
                 </p>
               )}
             </div>
@@ -1710,7 +1882,8 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
   return (
     <div className="min-h-screen" style={{ background: "var(--color-bg-primary)" }}>
       <HeroSection course={c} courseId={courseId} buying={buying} onBuy={handleBuy} />
-      <MarqueeStrip />
+      <SocialProofSection course={c} />
+      <MarqueeStrip course={c} />
       {c.videoPreviewUrl && <VideoPreviewSection videoUrl={c.videoPreviewUrl} />}
       {highlights.length > 0 && <KeyHighlightsSection highlights={highlights} />}
       <CurriculumSection course={c} />

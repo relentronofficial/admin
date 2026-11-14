@@ -3083,6 +3083,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_course_ids JSONB DEFAULT '[]'::jsonb`);
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS bundle_price DECIMAL(10,2)`);
     await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS all_access_price DECIMAL(10,2)`);
+    await safeAlter(`ALTER TABLE courses ADD COLUMN IF NOT EXISTS original_price DECIMAL(10,2)`);
     await safeAlter(`ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS payment_type VARCHAR(20) NOT NULL DEFAULT 'single'`);
     await safeAlter(`ALTER TABLE course_payments ADD COLUMN IF NOT EXISTS bundle_data JSONB`);
 

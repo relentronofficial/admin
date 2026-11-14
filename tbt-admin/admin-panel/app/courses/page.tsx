@@ -70,6 +70,7 @@ const EMPTY_COURSE = {
   bundleCourseIds: [] as string[],
   bundlePrice: "",
   allAccessPrice: "",
+  originalPrice: "",
 };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const secsToTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -260,6 +261,7 @@ export default function CoursesPage() {
       bundleCourseIds: c.bundleCourseIds ?? [],
       bundlePrice: c.bundlePrice != null ? String(c.bundlePrice) : "",
       allAccessPrice: c.allAccessPrice != null ? String(c.allAccessPrice) : "",
+      originalPrice: c.originalPrice != null ? String(c.originalPrice) : "",
     });
     setEditingCourse(c); setShowCourseForm(true);
   };
@@ -292,6 +294,7 @@ export default function CoursesPage() {
     payload.bundleCourseIds = (courseForm as any).bundleCourseIds ?? [];
     payload.bundlePrice = (courseForm as any).bundlePrice !== "" ? Number((courseForm as any).bundlePrice) : null;
     payload.allAccessPrice = (courseForm as any).allAccessPrice !== "" ? Number((courseForm as any).allAccessPrice) : null;
+    payload.originalPrice = (courseForm as any).originalPrice !== "" ? Number((courseForm as any).originalPrice) : null;
     try {
       if (editingCourse) {
         const updated = await updateCourse.mutateAsync({ id: editingCourse.id, data: payload });
@@ -753,7 +756,12 @@ export default function CoursesPage() {
                         rows={4} placeholder={"30 lessons\nLifetime access\nCertificate included"}
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white outline-none focus:border-purple-500 text-sm resize-none font-mono" />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Original Price (₹) <span className="text-[#555] normal-case">strikethrough</span></label>
+                        <input type="number" min="0" value={(courseForm as any).originalPrice} onChange={e => setCourseField("originalPrice", e.target.value)} placeholder="—"
+                          className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-9 px-3 text-white outline-none focus:border-purple-500 text-sm" />
+                      </div>
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Bundle Price (₹)</label>
                         <input type="number" min="0" value={(courseForm as any).bundlePrice} onChange={e => setCourseField("bundlePrice", e.target.value)} placeholder="—"
