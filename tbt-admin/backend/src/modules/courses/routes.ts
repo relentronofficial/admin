@@ -6,6 +6,7 @@ import {
   listCourseEpisodesHandler, createCourseEpisodeHandler,
   updateCourseEpisodeHandler, deleteCourseEpisodeHandler, reorderCourseEpisodesHandler,
   listCoursePaymentsHandler,
+  repairPackageAccessHandler,
   listCourseAccessHandler, grantCourseAccessHandler, revokeCourseAccessHandler,
   approveCoursePaymentHandler, refundCoursePaymentHandler,
   getCourseAnalyticsHandler, getCourseLeaderboardAdminHandler,
@@ -31,6 +32,7 @@ export async function courseRoutes(fastify: FastifyInstance) {
 
   // Static paths before /:id to prevent param capture
   fastify.get('/payments', listCoursePaymentsHandler);
+  fastify.post('/payments/repair-package-access', repairPackageAccessHandler);
 
   fastify.get('/', listCoursesHandler);
   fastify.post('/', createCourseHandler);

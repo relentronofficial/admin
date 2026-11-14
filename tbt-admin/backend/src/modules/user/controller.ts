@@ -25,7 +25,7 @@ import { computeStreakSummary, type StreakActivityRow } from '../../lib/streakSu
 import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday, localDayKey, computeTierActiveDays } from '../../lib/activityDays.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
-import { grantCourseAccessAfterPayment } from '../../lib/coursePaymentGrant.js';
+import { grantCourseAccessAfterPayment, grantPaymentAccess, loadPaymentForGrant } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute, ACTIVITY_TIMEZONE, getActivityToday, getTrackingStartDate, getMemberDailyRows } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat, buildUsageHistory } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
@@ -8056,44 +8056,10 @@ export async function verifyBundlePaymentHandler(request: FastifyRequest, reply:
   ).catch(() => [] as any[]);
 
   if (!paymentRow) return fail(reply, 404, 'Payment record not found');
-  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
-
-  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
-    return fail(reply, 400, 'SIGNATURE_INVALID');
-  }
-
-  const bundleData: { courseIds?: string[] } = (() => {
-    try { return typeof paymentRow.bundle_data === 'string' ? JSON.parse(paymentRow.bundle_data) : (paymentRow.bundle_data ?? {}); } catch { return {}; }
-  })();
-  const courseIds: string[] = bundleData.courseIds ?? [courseId];
-
-  // Mark payment completed
-  await request.server.prisma.$executeRawUnsafe(
-    `UPDATE course_payments SET status='completed', updated_at=NOW() WHERE id=$1::uuid`,
-    paymentRecordId,
-  );
-
-  // Grant access to all bundle courses (including anchor)
-  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, courseId,
-  ).catch(() => [] as any[]);
-  const accessDurationDays = courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null;
-
-  await Promise.all(courseIds.map((cid) =>
-    grantCourseAccessAfterPayment({
-      prisma: request.server.prisma,
-      io: (request.server as any).io ?? null,
-      redis,
-      paymentRecordId,
-      razorpayPaymentId,
-      razorpaySignature,
-      memberId,
-      courseId: cid,
-      accessDurationDays,
-    }).catch(() => {}),
-  ));
-
-  return ok(reply, { accessGranted: true, courseId });
+  return completePackagePayment(request, reply, {
+    paymentRecordId, courseId, razorpayOrderId, razorpayPaymentId, razorpaySignature,
+    alreadyCompleted: paymentRow.status === 'completed', redis,
+  });
 }
 
 /**
@@ -8200,41 +8166,47 @@ export async function verifyAllAccessPaymentHandler(request: FastifyRequest, rep
   ).catch(() => [] as any[]);
 
   if (!paymentRow) return fail(reply, 404, 'Payment record not found');
-  if (paymentRow.status === 'completed') return ok(reply, { accessGranted: true, courseId });
+  return completePackagePayment(request, reply, {
+    paymentRecordId, courseId, razorpayOrderId, razorpayPaymentId, razorpaySignature,
+    alreadyCompleted: paymentRow.status === 'completed', redis,
+  });
+}
 
-  if (!verifyPaymentSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)) {
+/**
+ * Shared tail of the Bundle / All Packages /verify handlers. Grants every course
+ * the payment covers via grantPaymentAccess. If the Razorpay webhook already
+ * completed the payment, this repairs any course it missed instead of returning
+ * early (the webhook used to grant only the anchor course).
+ */
+async function completePackagePayment(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  p: {
+    paymentRecordId: string; courseId: string;
+    razorpayOrderId: string; razorpayPaymentId: string; razorpaySignature: string;
+    alreadyCompleted: boolean; redis: any;
+  },
+) {
+  if (!p.alreadyCompleted && !verifyPaymentSignature(p.razorpayOrderId, p.razorpayPaymentId, p.razorpaySignature)) {
     return fail(reply, 400, 'SIGNATURE_INVALID');
   }
+  const payment = await loadPaymentForGrant(request.server.prisma, p.paymentRecordId);
+  if (!payment) return fail(reply, 404, 'Payment record not found');
 
-  // Fetch all published mini_courses to grant all-access
-  const allMiniCourses = await request.server.prisma.$queryRawUnsafe<{ id: string }[]>(
-    `SELECT id FROM courses WHERE course_type = 'mini_course' AND is_published = true`,
-  ).catch(() => [] as { id: string }[]);
-
-  const courseIds = allMiniCourses.map((c) => c.id);
-  if (!courseIds.includes(courseId)) courseIds.push(courseId);
-
-  // Mark payment completed
-  await request.server.prisma.$executeRawUnsafe(
-    `UPDATE course_payments SET status='completed', updated_at=NOW() WHERE id=$1::uuid`,
-    paymentRecordId,
-  );
-
-  await Promise.all(courseIds.map((cid) =>
-    grantCourseAccessAfterPayment({
-      prisma: request.server.prisma,
-      io: (request.server as any).io ?? null,
-      redis,
-      paymentRecordId,
-      razorpayPaymentId,
-      razorpaySignature,
-      memberId,
-      courseId: cid,
-      accessDurationDays: null,
-    }).catch(() => {}),
-  ));
-
-  return ok(reply, { accessGranted: true, courseId });
+  const result = await grantPaymentAccess({
+    prisma: request.server.prisma,
+    io: (request.server as any).io ?? null,
+    redis: p.redis,
+    payment,
+    razorpayPaymentId: p.alreadyCompleted ? undefined : p.razorpayPaymentId,
+    razorpaySignature: p.alreadyCompleted ? undefined : p.razorpaySignature,
+    mode: p.alreadyCompleted ? 'repair' : 'complete',
+    log: request.log,
+  });
+  if (result.failed.length) {
+    return fail(reply, 500, 'Payment received but some course access could not be granted. Please contact support.');
+  }
+  return ok(reply, { accessGranted: true, courseId: p.courseId, courseIds: result.courseIds });
 }
 
 // POST /api/user/courses/razorpay/webhook — unauthenticated, raw body required
@@ -8347,26 +8319,27 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
     rzpOrderId,
   ).catch(() => [] as any[]);
 
-  if (!paymentRow || paymentRow.status === 'completed') return reply.send({ ok: true });
+  if (!paymentRow) return reply.send({ ok: true });
 
-  const [courseRow] = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, paymentRow.course_id,
-  ).catch(() => [] as any[]);
-
+  // Grant everything the payment covers — a Bundle / All Packages order unlocks
+  // more than its anchor course. Already completed (verify ran first) → repair only.
+  const payment = await loadPaymentForGrant(request.server.prisma, paymentRow.id).catch(() => null);
+  if (!payment) return reply.send({ ok: true });
   const rzpPaymentId: string = body?.payload?.payment?.entity?.id ?? '';
-  const redis = (request.server as any).redis ?? null;
-
-  await grantCourseAccessAfterPayment({
+  const result = await grantPaymentAccess({
     prisma: request.server.prisma,
     io: (request.server as any).io ?? null,
-    redis,
-    paymentRecordId: paymentRow.id,
-    razorpayPaymentId: rzpPaymentId,
-    razorpaySignature: undefined,
-    memberId: paymentRow.member_id,
-    courseId: paymentRow.course_id,
-    accessDurationDays: courseRow?.access_duration_days != null ? Number(courseRow.access_duration_days) : null,
-  }).catch(() => {});
+    redis: (request.server as any).redis ?? null,
+    payment,
+    razorpayPaymentId: rzpPaymentId || undefined,
+    mode: paymentRow.status === 'completed' ? 'repair' : 'complete',
+    log: request.log,
+  }).catch((err) => {
+    request.log.error({ err, paymentId: paymentRow.id }, 'webhook course grant failed');
+    return null;
+  });
+  // A failed grant is answered 500 so Razorpay retries the event later.
+  if (!result || result.failed.length) return reply.status(500).send({ ok: false });
 
   return reply.send({ ok: true });
 }

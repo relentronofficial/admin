@@ -94,3 +94,114 @@ export async function grantCourseAccessAfterPayment(params: GrantParams): Promis
   // 8. Invalidate me cache
   void invalidateCache(redis, `me:${memberId}`);
 }
+
+// ── Package purchases (Bundle / All Packages) ───────────────────────────────
+//
+// A course_payments row is anchored to the course page it was bought from
+// (course_id), but a package covers more courses. Every grant path — the
+// Razorpay webhook and the /verify handlers — must resolve the full set from
+// here, or whichever path completes the payment first decides what the member
+// gets. (Bug 2026-11-14: the webhook beat /verify and granted only the anchor.)
+
+export interface PaymentForGrant {
+  id: string;
+  member_id: string;
+  course_id: string;
+  payment_type: string | null;
+  bundle_data: unknown;
+  razorpay_payment_id?: string | null;
+  razorpay_signature?: string | null;
+}
+
+/** Courses a payment unlocks: all published mini courses (all_access), the bundle's courses (bundle), else the anchor. */
+export async function resolvePaymentCourseIds(prisma: PrismaClient, payment: PaymentForGrant): Promise<string[]> {
+  const ids = new Set<string>([payment.course_id]);
+  if (payment.payment_type === 'all_access') {
+    const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+      `SELECT id FROM courses WHERE course_type = 'mini_course' AND is_published = true`,
+    );
+    for (const r of rows) ids.add(r.id);
+  } else if (payment.payment_type === 'bundle') {
+    let data: any = payment.bundle_data;
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
+    for (const id of Array.isArray(data?.courseIds) ? data.courseIds : []) if (typeof id === 'string') ids.add(id);
+  }
+  return [...ids];
+}
+
+export async function loadPaymentForGrant(prisma: PrismaClient, paymentRecordId: string): Promise<PaymentForGrant | null> {
+  const [row] = await prisma.$queryRawUnsafe<PaymentForGrant[]>(
+    `SELECT id, member_id, course_id, payment_type, bundle_data, razorpay_payment_id, razorpay_signature
+     FROM course_payments WHERE id = $1::uuid`,
+    paymentRecordId,
+  );
+  return row ?? null;
+}
+
+/**
+ * Grants every course a payment covers.
+ *  mode 'complete' — first completion: grant all (access duration from the anchor
+ *                    course for single/bundle; lifetime for All Packages).
+ *  mode 'repair'   — payment already completed: grant only courses the member has
+ *                    no active access to (no duplicate notifications), so a late
+ *                    /verify or an admin repair fills in what an earlier path missed.
+ */
+export async function grantPaymentAccess(params: {
+  prisma: PrismaClient;
+  io: Server | null;
+  redis: any;
+  payment: PaymentForGrant;
+  /** Omit (admin repair) to keep the ids already stored on the payment row. */
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  mode: 'complete' | 'repair';
+  log?: { error: (obj: unknown, msg?: string) => void };
+}): Promise<{ courseIds: string[]; granted: string[]; failed: string[] }> {
+  const { prisma, payment, mode } = params;
+  const courseIds = await resolvePaymentCourseIds(prisma, payment);
+
+  let targets = courseIds;
+  if (mode === 'repair') {
+    const active = await (prisma as any).courseAccess.findMany({
+      where: {
+        memberId: payment.member_id,
+        courseId: { in: courseIds },
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { courseId: true },
+    });
+    const have = new Set(active.map((a: { courseId: string }) => a.courseId));
+    targets = courseIds.filter((id) => !have.has(id));
+  }
+
+  let accessDurationDays: number | null = null;
+  if (payment.payment_type !== 'all_access') {
+    const [c] = await prisma.$queryRawUnsafe<{ access_duration_days: number | null }[]>(
+      `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, payment.course_id,
+    ).catch(() => []);
+    accessDurationDays = c?.access_duration_days != null ? Number(c.access_duration_days) : null;
+  }
+
+  const granted: string[] = [];
+  const failed: string[] = [];
+  // Sequential: each grant also stamps the same payment row; no need to race them.
+  for (const courseId of targets) {
+    try {
+      await grantCourseAccessAfterPayment({
+        prisma, io: params.io, redis: params.redis,
+        paymentRecordId: payment.id,
+        razorpayPaymentId: params.razorpayPaymentId || payment.razorpay_payment_id || '',
+        razorpaySignature: params.razorpaySignature ?? payment.razorpay_signature ?? undefined,
+        memberId: payment.member_id,
+        courseId,
+        accessDurationDays,
+      });
+      granted.push(courseId);
+    } catch (err) {
+      failed.push(courseId);
+      params.log?.error({ err, paymentId: payment.id, courseId }, 'package course grant failed');
+    }
+  }
+  return { courseIds, granted, failed };
+}

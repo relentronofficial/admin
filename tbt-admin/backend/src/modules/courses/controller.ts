@@ -4,6 +4,7 @@ import {
   notifyBadgeAwarded,
 } from '../../lib/courseNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
+import { grantPaymentAccess, loadPaymentForGrant, resolvePaymentCourseIds } from '../../lib/coursePaymentGrant.js';
 import { resourceUrlError } from '../../lib/resourceUrl.js';
 import { notifyMembers } from '../../lib/notifications.js';
 import { validateCoursePrice } from '../../lib/coursePriceValidation.js';
@@ -65,6 +66,58 @@ async function resolveAdminId(req: FastifyRequest): Promise<string | null> {
     .findFirst({ where: { clerkId: req.user as string }, select: { id: true } })
     .catch(() => null);
   return admin?.id ?? null;
+}
+
+// ── PACKAGE ACCESS REPAIR ─────────────────────────────────────────────
+// POST /api/courses/payments/repair-package-access?dryRun=true|false[&paymentId=]
+// For completed Bundle / All Packages payments, grants every covered course the
+// buyer has no active access to (before 2026-11-14 the Razorpay webhook could
+// complete such a payment granting only its anchor course). Idempotent; dryRun
+// (default true) only reports. All Packages resolves to the mini courses
+// published now.
+export async function repairPackageAccessHandler(req: FastifyRequest, reply: FastifyReply) {
+  const q = req.query as { dryRun?: string; paymentId?: string };
+  const dryRun = q.dryRun !== 'false';
+  const prisma = req.server.prisma;
+
+  const rows = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT id FROM course_payments
+      WHERE status = 'completed' AND payment_type IN ('bundle', 'all_access')
+        AND ($1::uuid IS NULL OR id = $1::uuid)
+      ORDER BY created_at`,
+    q.paymentId ?? null,
+  );
+
+  const report: any[] = [];
+  for (const { id } of rows) {
+    const payment = await loadPaymentForGrant(prisma, id);
+    if (!payment) continue;
+    const courseIds = await resolvePaymentCourseIds(prisma, payment);
+    const active = await prisma.courseAccess.findMany({
+      where: {
+        memberId: payment.member_id, courseId: { in: courseIds }, isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+      select: { courseId: true },
+    });
+    const have = new Set(active.map((a) => a.courseId));
+    const missing = courseIds.filter((c) => !have.has(c));
+    const entry: any = { paymentId: id, memberId: payment.member_id, type: payment.payment_type, covers: courseIds.length, missing: missing.length };
+    if (!dryRun && missing.length) {
+      const r = await grantPaymentAccess({
+        prisma, io: (req.server as any).io ?? null, redis: req.server.redis ?? null,
+        payment, mode: 'repair', log: req.log,
+      });
+      entry.granted = r.granted.length;
+      entry.failed = r.failed.length;
+    }
+    report.push(entry);
+  }
+  return reply.send({
+    success: true,
+    data: { dryRun, payments: report.length, needingRepair: report.filter((r) => r.missing > 0).length, report },
+    error: null,
+  });
 }
 
 // ── COURSES ───────────────────────────────────────────────────────────
