@@ -186,11 +186,16 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   if (action !== 'approve' && action !== 'reject') {
     return reply.status(400).send({ success: false, data: null, error: 'action must be approve or reject' });
   }
+  if (!UUID_RE.test(subId)) {
+    return reply.status(400).send({ success: false, data: null, error: 'Invalid submission id' });
+  }
 
+  // Raw-SQL uuid params need explicit ::uuid casts — Postgres has no uuid = text
+  // operator (this query 500'd on every approve/reject without it).
   const sub = await request.server.prisma.$queryRawUnsafe<any[]>(
-    `SELECT ts.*, t.base_points as "basePoints", t.bonus_points as "bonusPoints",
+    `SELECT ts.*, ts.status::text AS status, t.base_points as "basePoints", t.bonus_points as "bonusPoints",
             t.is_milestone as "isMilestone", t.milestone_label as "milestoneLabel"
-     FROM task_submissions ts JOIN tasks t ON t.id = ts.task_id WHERE ts.id = $1`,
+     FROM task_submissions ts JOIN tasks t ON t.id = ts.task_id WHERE ts.id = $1::uuid`,
     subId,
   );
   if (!sub[0]) return reply.status(404).send({ success: false, data: null, error: 'Submission not found' });
@@ -208,9 +213,13 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   }
 
   const newStatus = action === 'approve' ? 'approved' : 'rejected';
+  // newStatus is one of two fixed literals, inlined so Postgres coerces it to the
+  // SubmissionStatus enum (a text parameter would not be); ids cast to uuid.
   await request.server.prisma.$executeRawUnsafe(
-    `UPDATE task_submissions SET status=$1, reviewed_by=$2, reviewed_at=NOW(), feedback=$3, updated_at=NOW() WHERE id=$4`,
-    newStatus, adminId, feedback ?? null, subId,
+    `UPDATE task_submissions
+        SET status='${newStatus}', reviewed_by=$1::uuid, reviewed_at=NOW(), feedback=$2, updated_at=NOW()
+      WHERE id=$3::uuid`,
+    adminId, feedback ?? null, subId,
   );
 
   if (action === 'approve') {
