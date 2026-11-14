@@ -4,15 +4,15 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import {
   Plus, Pencil, Trash2, X, Loader2, CheckSquare, Star, Clock, Zap, Search,
   ChevronDown, ChevronRight, BookOpen, Calendar, ListChecks, Save, GripVertical,
-  ClipboardList, Check, Eye, Link, FileText, RefreshCw, Filter, AlertTriangle,
+  ClipboardList, Check, Eye, RefreshCw,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListTasks, useCreateTaskInitiative, useUpdateTask, useDeleteTask, TaskInitiativeInput,
   useListBatchTasks, useCreateBatchTask, useUpdateBatchTask, useDeleteBatchTask,
-  useReorderBatchTasks, useMigrateJsonTasks, useGetBatchSubmissions, useReviewTaskSubmission,
-  useGetAllBatchTasks,
+  useReorderBatchTasks, useMigrateJsonTasks, useGetAllBatchTasks,
 } from "@/lib/hooks/useTasks";
+import { SubmissionsPanel } from "./SubmissionsPanel";
 import {
   useListPrograms, useCreateProgram, useUpdateProgram, useDeleteProgram,
   useListBatches, useListBatchDays,
@@ -22,13 +22,6 @@ import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
 const PROOF_TYPES = ["watch", "text", "image", "video", "link", "file"];
-
-const STATUS_COLORS: Record<string, string> = {
-  pending:  "text-yellow-400 bg-yellow-400/10",
-  approved: "text-green-400 bg-green-400/10",
-  rejected: "text-red-400 bg-red-400/10",
-  resubmission_required: "text-orange-400 bg-orange-400/10",
-};
 
 const emptyTaskForm = (): Partial<TaskInitiativeInput> => ({
   programId: "",
@@ -104,13 +97,6 @@ export default function TasksPage() {
   const dragFrom = useRef<{ dayNumber: number; idx: number } | null>(null);
   const [dragOverMap, setDragOverMap] = useState<Record<number, number>>({});
 
-  // ── Submissions state ─────────────────────────────────────────────────────────
-  const [subBatchId, setSubBatchId] = useState("");
-  const [subDayFilter, setSubDayFilter] = useState("");
-  const [subStatusFilter, setSubStatusFilter] = useState("");
-  const [expandedSubId, setExpandedSubId] = useState<string | null>(null);
-  const [rejectModal, setRejectModal] = useState<{ subId: string; feedback: string } | null>(null);
-
   // ── Overview state ────────────────────────────────────────────────────────────
   const [overviewBatchId, setOverviewBatchId] = useState("");
 
@@ -126,13 +112,6 @@ export default function TasksPage() {
   const { data: batchTasksData } = useListBatchTasks(selectedBatchId);
   const { data: checklistAllTasksData, isLoading: checklistAllLoading } = useGetAllBatchTasks(selectedBatchId);
 
-  const { data: submissionsData, isLoading: submissionsLoading, isError: submissionsError, error: submissionsErrorObj, refetch: refetchSubmissions } = useGetBatchSubmissions(
-    subBatchId,
-    {
-      dayNumber: subDayFilter ? Number(subDayFilter) : undefined,
-      status:    subStatusFilter || undefined,
-    },
-  );
   const { data: overviewTasksData, isLoading: overviewLoading } = useGetAllBatchTasks(overviewBatchId);
 
   const createTask    = useCreateTaskInitiative();
@@ -147,14 +126,12 @@ export default function TasksPage() {
   const deleteInlineTask   = useDeleteBatchTask();
   const reorderInlineTasks = useReorderBatchTasks();
   const migrateJson        = useMigrateJsonTasks();
-  const reviewSubmission   = useReviewTaskSubmission();
 
   const tasks: any[]    = tasksData?.data || tasksData || [];
   const programs: any[] = (programsData as any)?.data || programsData || [];
   const batches: any[]  = (batchesData as any)?.data  || batchesData  || [];
   const batchDays: any[] = (batchDaysData as any)?.data || batchDaysData || [];
   const checklistAllTasks: any[] = checklistAllTasksData ?? [];
-  const submissions: any[] = (submissionsData as any)?.data ?? submissionsData ?? [];
   const overviewTasks: any[] = overviewTasksData ?? [];
   const members: any[] = (membersData as any)?.data || [];
 
@@ -425,33 +402,6 @@ export default function TasksPage() {
       toast.success(`Migrated ${res?.created ?? 0} tasks from JSON`);
     } catch (err: any) {
       toast.error(err.message || "Migration failed");
-    }
-  };
-
-  // ── Submission handlers ───────────────────────────────────────────────────────
-  const handleApprove = async (subId: string) => {
-    try {
-      await reviewSubmission.mutateAsync({ subId, action: "approve" });
-      toast.success("Submission approved");
-      setExpandedSubId(null);
-    } catch {
-      toast.error("Failed to approve");
-    }
-  };
-
-  const handleRejectSubmit = async () => {
-    if (!rejectModal) return;
-    try {
-      await reviewSubmission.mutateAsync({
-        subId:    rejectModal.subId,
-        action:   "reject",
-        feedback: rejectModal.feedback || undefined,
-      });
-      toast.success("Submission rejected");
-      setRejectModal(null);
-      setExpandedSubId(null);
-    } catch {
-      toast.error("Failed to reject");
     }
   };
 
@@ -903,217 +853,7 @@ export default function TasksPage() {
         )}
 
         {/* ── SUBMISSIONS TAB ───────────────────────────────────────────────────── */}
-        {activeTab === "submissions" && (
-          <>
-            {/* Filters */}
-            <div className="flex flex-wrap gap-3 items-center">
-              <div className="relative">
-                <select
-                  value={subBatchId}
-                  onChange={e => { setSubBatchId(e.target.value); setSubDayFilter(""); setExpandedSubId(null); }}
-                  className="bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 pl-4 pr-9 text-sm text-white outline-none focus:border-[#dc2626] appearance-none cursor-pointer min-w-[200px]"
-                >
-                  <option value="">Select batch…</option>
-                  {batches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
-                <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#666] pointer-events-none" />
-              </div>
-              <div className="relative">
-                <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#666]" />
-                <input
-                  type="number"
-                  min={1}
-                  value={subDayFilter}
-                  onChange={e => setSubDayFilter(e.target.value)}
-                  placeholder="Day #"
-                  className="bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 pl-9 pr-4 text-sm text-white outline-none focus:border-[#dc2626] w-24"
-                />
-              </div>
-              <div className="relative">
-                <select
-                  value={subStatusFilter}
-                  onChange={e => setSubStatusFilter(e.target.value)}
-                  className="bg-[#181818] border border-[#2a2a2a] rounded-lg h-10 pl-4 pr-9 text-sm text-white outline-none focus:border-[#dc2626] appearance-none cursor-pointer"
-                >
-                  <option value="">All Statuses</option>
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="rejected">Rejected</option>
-                </select>
-                <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#666] pointer-events-none" />
-              </div>
-              {submissions.length > 0 && (
-                <span className="text-[12px] text-[#666] font-rajdhani font-bold uppercase tracking-widest ml-auto">
-                  {submissions.length} submission{submissions.length !== 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-
-            {!subBatchId ? (
-              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-20 gap-3">
-                <ClipboardList size={36} className="text-[#333]" />
-                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">Select a batch to view task submissions</p>
-              </div>
-            ) : submissionsLoading ? (
-              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex items-center justify-center py-20">
-                <Loader2 size={32} className="animate-spin text-[#dc2626]" />
-              </div>
-            ) : submissionsError ? (
-              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">
-                <AlertTriangle size={36} className="text-red-500/60" />
-                <p className="text-red-400 font-rajdhani font-bold uppercase tracking-widest text-sm">Failed to load submissions</p>
-                <p className="text-[#666] text-xs max-w-sm text-center">
-                  {(submissionsErrorObj as any)?.response?.data?.error?.message
-                    ?? (submissionsErrorObj as any)?.message
-                    ?? "An unexpected error occurred."}
-                </p>
-                <button
-                  onClick={() => refetchSubmissions()}
-                  className="flex items-center gap-2 bg-[#2a2a2a] hover:bg-[#333] text-white px-4 py-2 rounded-lg font-rajdhani font-bold text-[12px] tracking-[1px] uppercase transition-all"
-                >
-                  <RefreshCw size={13} /> Retry
-                </button>
-              </div>
-            ) : submissions.length === 0 ? (
-              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl flex flex-col items-center justify-center py-16 gap-3">
-                <ClipboardList size={36} className="text-[#333]" />
-                <p className="text-[#555] font-rajdhani font-bold uppercase tracking-widest text-sm">No submissions found</p>
-              </div>
-            ) : (
-              <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden divide-y divide-[#1e1e1e]">
-                {submissions.map((sub: any) => {
-                  const isExpanded = expandedSubId === sub.id;
-                  const statusCls  = STATUS_COLORS[sub.status] ?? "text-[#888] bg-[#888]/10";
-
-                  return (
-                    <div key={sub.id}>
-                      <button
-                        onClick={() => setExpandedSubId(isExpanded ? null : sub.id)}
-                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-[#1f1f1f] transition-colors text-left"
-                      >
-                        <span className={cn("transition-transform duration-150", isExpanded ? "rotate-90" : "rotate-0")}>
-                          <ChevronRight size={14} className="text-[#555]" />
-                        </span>
-                        <div className="flex-1 min-w-0 grid grid-cols-4 gap-4 items-center">
-                          <div>
-                            <p className="text-[13px] text-[#f0f0f0] font-medium truncate">{sub.memberName || sub.member?.name || "—"}</p>
-                            <p className="text-[11px] text-[#666]">{sub.memberPhone || sub.member?.phone || ""}</p>
-                          </div>
-                          <div>
-                            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-[#dc2626]/10 text-[#dc2626] text-[12px] font-bold font-rajdhani">
-                              {sub.dayNumber}
-                            </span>
-                          </div>
-                          <div>
-                            <p className="text-[12px] text-[#a0a0a0] truncate">{sub.taskTitle || sub.task?.title || "—"}</p>
-                            <p className="text-[10px] text-[#555] uppercase font-rajdhani font-bold">{sub.proofType || sub.task?.proofType || ""}</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className={cn("px-2.5 py-1 rounded-full text-[10px] font-bold font-rajdhani uppercase tracking-wider", statusCls)}>
-                              {sub.status}
-                            </span>
-                            {sub.submittedAfterExpiry && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold font-rajdhani uppercase tracking-wider bg-orange-500/15 text-orange-400">
-                                ⚠ Late
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-
-                      {isExpanded && (
-                        <div className="px-8 pb-5 pt-2 bg-[#141414] border-t border-[#1e1e1e]">
-                          {/* Timer enforcement warning */}
-                          {sub.submittedAfterExpiry && (
-                            <div className="mb-4 p-3 bg-orange-900/10 border border-orange-700/30 rounded-lg flex items-start gap-3">
-                              <span className="text-orange-400 mt-0.5">⚠</span>
-                              <div>
-                                <p className="text-[11px] font-bold text-orange-400 uppercase tracking-widest font-rajdhani mb-0.5">Timer Violation</p>
-                                <p className="text-[12px] text-orange-300/80">
-                                  This task was submitted after the {sub.timerSeconds ? `${Math.round(sub.timerSeconds / 60)}-minute` : ""} focus timer expired.
-                                  {sub.timerStartedAt && ` Timer started: ${new Date(sub.timerStartedAt).toLocaleString()}.`}
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          {/* Proof display */}
-                          <div className="mb-4 space-y-2">
-                            <p className="text-[11px] font-bold text-[#666] uppercase tracking-widest font-rajdhani">Proof</p>
-                            {sub.responseValue && (
-                              <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4">
-                                <div className="flex items-start gap-2">
-                                  <FileText size={14} className="text-[#666] mt-0.5 shrink-0" />
-                                  <p className="text-[13px] text-[#d0d0d0] leading-relaxed whitespace-pre-wrap">{sub.responseValue}</p>
-                                </div>
-                              </div>
-                            )}
-                            {sub.proofUrl && (
-                              <a
-                                href={sub.proofUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="flex items-center gap-2 px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[12px] text-[#3b82f6] hover:text-blue-300 hover:border-blue-800 transition-all w-fit"
-                              >
-                                <Link size={13} />
-                                View proof file / link
-                              </a>
-                            )}
-                            {!sub.responseValue && !sub.proofUrl && (
-                              <p className="text-[12px] text-[#555] italic">No proof submitted</p>
-                            )}
-                          </div>
-
-                          {/* Task deliverables (reference for review) */}
-                          {(sub.deliverables || sub.task?.deliverables) && (
-                            <div className="mb-4 p-3 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
-                              <p className="text-[10px] font-bold text-[#555] uppercase tracking-widest font-rajdhani mb-1">Expected deliverables</p>
-                              <p className="text-[12px] text-[#888]">{sub.deliverables || sub.task?.deliverables}</p>
-                            </div>
-                          )}
-
-                          {/* Feedback (if rejected) */}
-                          {sub.feedback && (
-                            <div className="mb-4 p-3 bg-red-900/10 border border-red-900/30 rounded-lg">
-                              <p className="text-[10px] font-bold text-red-400/70 uppercase tracking-widest font-rajdhani mb-1">Admin feedback</p>
-                              <p className="text-[12px] text-red-300">{sub.feedback}</p>
-                            </div>
-                          )}
-
-                          {/* Actions */}
-                          {sub.status === "pending" && (
-                            <div className="flex gap-3">
-                              <button
-                                onClick={() => handleApprove(sub.id)}
-                                disabled={reviewSubmission.isPending}
-                                className="flex items-center gap-2 px-5 py-2 rounded-lg bg-green-600 text-white text-[12px] font-bold font-rajdhani uppercase tracking-wider hover:bg-green-700 transition-all disabled:opacity-50"
-                              >
-                                {reviewSubmission.isPending ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => setRejectModal({ subId: sub.id, feedback: "" })}
-                                className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#1a1a1a] border border-[#333] text-red-400 text-[12px] font-bold font-rajdhani uppercase tracking-wider hover:bg-red-900/20 hover:border-red-800 transition-all"
-                              >
-                                <X size={13} />
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                          {sub.status !== "pending" && (
-                            <p className="text-[12px] text-[#555] font-rajdhani font-bold uppercase tracking-wider">
-                              {sub.status === "approved" ? "✓ Approved" : "✗ Rejected"}
-                              {sub.reviewedAt ? ` · ${new Date(sub.reviewedAt).toLocaleDateString()}` : ""}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
+        {activeTab === "submissions" && <SubmissionsPanel batches={batches} />}
 
         {/* ── OVERVIEW TAB ─────────────────────────────────────────────────────────── */}
         {activeTab === "overview" && (
@@ -1533,37 +1273,6 @@ export default function TasksPage() {
               <button onClick={handleProgramSubmit} disabled={isSavingProgram} className="flex items-center gap-2 bg-[#dc2626] text-white px-6 py-2 rounded-lg font-rajdhani font-bold text-[13px] tracking-[1.5px] uppercase hover:bg-red-700 transition-all disabled:opacity-50">
                 {isSavingProgram && <Loader2 size={14} className="animate-spin" />}
                 {editingProgram ? "Save Changes" : "Create Program"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Reject Submission Modal ───────────────────────────────────────────────── */}
-      {rejectModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4">
-          <div className="bg-[#141414] border border-[#2a2a2a] w-full max-w-md rounded-2xl overflow-hidden shadow-2xl">
-            <div className="px-7 py-5 border-b border-[#2a2a2a] flex justify-between items-center bg-[#1a1a1a]">
-              <h3 className="font-rajdhani text-lg font-bold uppercase tracking-widest text-red-400">Reject Submission</h3>
-              <button onClick={() => setRejectModal(null)} className="text-[#888] hover:text-white transition-colors"><X size={20} /></button>
-            </div>
-            <div className="p-7 space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">Feedback (optional)</label>
-                <textarea
-                  value={rejectModal.feedback}
-                  onChange={e => setRejectModal(m => m ? { ...m, feedback: e.target.value } : m)}
-                  rows={4}
-                  placeholder="Explain what needs to be revised…"
-                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-white outline-none focus:border-[#dc2626] text-sm resize-none"
-                />
-              </div>
-            </div>
-            <div className="px-7 py-5 border-t border-[#2a2a2a] bg-[#1a1a1a] flex justify-end gap-3">
-              <button onClick={() => setRejectModal(null)} className="px-5 py-2 rounded-lg border border-[#333] text-[#888] hover:text-white hover:border-[#555] text-[13px] font-bold font-rajdhani uppercase tracking-wider transition-all">Cancel</button>
-              <button onClick={handleRejectSubmit} disabled={reviewSubmission.isPending} className="flex items-center gap-2 bg-red-600 text-white px-6 py-2 rounded-lg font-rajdhani font-bold text-[13px] tracking-[1.5px] uppercase hover:bg-red-700 transition-all disabled:opacity-50">
-                {reviewSubmission.isPending && <Loader2 size={14} className="animate-spin" />}
-                Reject
               </button>
             </div>
           </div>

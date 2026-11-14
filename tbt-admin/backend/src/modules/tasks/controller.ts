@@ -292,3 +292,106 @@ export async function reviewTaskSubmissionHandler(request: FastifyRequest, reply
   void notifyWeeklyGraphChanged(request.server, { memberIds: [s.member_id] }, 'task_reviewed');
   return reply.send({ success: true, data: { id: subId, status: newStatus }, error: null });
 }
+
+// ── Task submissions across all batches (admin Tasks → Submissions tab) ──────
+// GET /api/tasks/submissions?batchId=&status=&from=YYYY-MM-DD&to=YYYY-MM-DD&dayNumber=&search=&limit=
+// batchId: a batch uuid, or "none" for submissions with no batch at all.
+// A submission's batch is its own batch_id, falling back to the member's batch
+// (program-task submissions are stored without batch_id).
+// from/to are IST calendar dates, both inclusive.
+const SUBMISSION_STATUSES = ['pending', 'approved', 'rejected', 'resubmission_required'];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function listAllTaskSubmissionsHandler(request: FastifyRequest, reply: FastifyReply) {
+  const q = request.query as {
+    batchId?: string; status?: string; from?: string; to?: string;
+    dayNumber?: string; search?: string; limit?: string;
+  };
+
+  if (q.batchId && q.batchId !== 'none' && !UUID_RE.test(q.batchId)) {
+    return reply.status(400).send({ success: false, data: null, error: 'batchId must be a batch id or "none"' });
+  }
+  if (q.status && !SUBMISSION_STATUSES.includes(q.status)) {
+    return reply.status(400).send({ success: false, data: null, error: `status must be one of ${SUBMISSION_STATUSES.join(', ')}` });
+  }
+  if ((q.from && !ISO_DATE.test(q.from)) || (q.to && !ISO_DATE.test(q.to))) {
+    return reply.status(400).send({ success: false, data: null, error: 'from/to must be YYYY-MM-DD' });
+  }
+  const dayNumber = q.dayNumber ? parseInt(q.dayNumber, 10) : null;
+  if (q.dayNumber && (!Number.isFinite(dayNumber) || (dayNumber as number) < 1)) {
+    return reply.status(400).send({ success: false, data: null, error: 'dayNumber must be a positive integer' });
+  }
+  const limit = Math.min(1000, Math.max(1, parseInt(q.limit ?? '500', 10) || 500));
+  const search = q.search?.trim() ? `%${q.search.trim()}%` : null;
+
+  // Filters shared by the rows query and the per-status counts. Status itself is
+  // applied to the rows only, so the count cards always show every status.
+  const params: unknown[] = [];
+  const p = (v: unknown) => { params.push(v); return `$${params.length}`; };
+  const where: string[] = [];
+  if (q.batchId === 'none') where.push('COALESCE(ts.batch_id, m.batch_id) IS NULL');
+  else if (q.batchId) where.push(`COALESCE(ts.batch_id, m.batch_id) = ${p(q.batchId)}::uuid`);
+  if (q.from) where.push(`ts.created_at >= (${p(q.from)}::date)::timestamp AT TIME ZONE 'Asia/Kolkata'`);
+  if (q.to) where.push(`ts.created_at < ((${p(q.to)}::date + 1))::timestamp AT TIME ZONE 'Asia/Kolkata'`);
+  if (dayNumber) where.push(`ts.day_number = ${p(dayNumber)}::int`);
+  if (search) {
+    const s = p(search);
+    where.push(`(m.first_name ILIKE ${s} OR m.last_name ILIKE ${s}
+                 OR (m.first_name || ' ' || COALESCE(m.last_name, '')) ILIKE ${s}
+                 OR m.phone ILIKE ${s} OR m.member_id ILIKE ${s} OR t.title ILIKE ${s})`);
+  }
+  const baseWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const fromSql = `FROM task_submissions ts
+     JOIN tasks t ON t.id = ts.task_id
+     JOIN members m ON m.id = ts.member_id
+     LEFT JOIN batches b ON b.id = COALESCE(ts.batch_id, m.batch_id)
+     LEFT JOIN admins r ON r.id = ts.reviewed_by`;
+
+  const countParams = [...params];
+  const rowWhere = q.status
+    ? `${baseWhere ? `${baseWhere} AND` : 'WHERE'} ts.status::text = ${p(q.status)}`
+    : baseWhere;
+  const limitParam = p(limit);
+
+  const [rows, counts] = await Promise.all([
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT ts.id, ts.task_id AS "taskId", ts.member_id AS "memberId",
+              ts.response_value AS "responseValue", ts.proof_url AS "proofUrl",
+              ts.proof_type AS "proofType", ts.status::text AS status, ts.feedback,
+              ts.day_number AS "dayNumber", ts.created_at AS "submittedAt",
+              ts.updated_at AS "updatedAt", ts.reviewed_at AS "reviewedAt",
+              r.full_name AS "reviewerName",
+              ts.submitted_after_expiry AS "submittedAfterExpiry",
+              ts.timer_started_at AS "timerStartedAt",
+              t.title AS "taskTitle", t.base_points AS "basePoints",
+              t.proof_type AS "taskProofType", t.deliverables, t.is_milestone AS "isMilestone",
+              t.timer_seconds AS "timerSeconds",
+              m.first_name AS "firstName", m.last_name AS "lastName", m.phone AS "memberPhone",
+              m.member_id AS "memberCode", m.profile_photo_url AS "profilePhotoUrl",
+              b.id AS "batchId", b.name AS "batchName"
+       ${fromSql}
+       ${rowWhere}
+       ORDER BY b.name ASC NULLS LAST, ts.created_at DESC
+       LIMIT ${limitParam}::int`,
+      ...params,
+    ),
+    request.server.prisma.$queryRawUnsafe<{ status: string; count: bigint }[]>(
+      `SELECT ts.status::text AS status, COUNT(*) AS count ${fromSql} ${baseWhere} GROUP BY ts.status`,
+      ...countParams,
+    ),
+  ]);
+
+  const statusCounts: Record<string, number> = Object.fromEntries(SUBMISSION_STATUSES.map((s) => [s, 0]));
+  for (const c of counts) statusCounts[c.status] = Number(c.count);
+  const total = q.status
+    ? statusCounts[q.status] ?? 0
+    : Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
+  return reply.send({
+    success: true,
+    data: rows,
+    meta: { total, returned: rows.length, limit, statusCounts },
+    error: null,
+  });
+}

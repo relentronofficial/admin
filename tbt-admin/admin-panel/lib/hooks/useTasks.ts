@@ -208,6 +208,36 @@ export const useReviewTaskSubmission = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['batch-submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['task-submissions'] });
     },
+  });
+};
+
+export type TaskSubmissionFilters = {
+  batchId?: string;       // batch uuid, or "none" for submissions with no batch
+  status?: string;        // pending | approved | rejected | resubmission_required
+  from?: string;          // YYYY-MM-DD (IST, inclusive)
+  to?: string;            // YYYY-MM-DD (IST, inclusive)
+  dayNumber?: number;
+  search?: string;
+  limit?: number;
+};
+
+/** All task submissions across batches — GET /api/tasks/submissions */
+export const useListAllTaskSubmissions = (filters: TaskSubmissionFilters) => {
+  return useQuery({
+    queryKey: ['task-submissions', filters],
+    queryFn: async () => {
+      const params = Object.fromEntries(
+        Object.entries(filters).filter(([, v]) => v !== undefined && v !== ''),
+      );
+      const res: any = await apiClient.get('/api/tasks/submissions', { params });
+      return res as {
+        data: any[];
+        meta: { total: number; returned: number; limit: number; statusCounts: Record<string, number> };
+      };
+    },
+    staleTime: 1000 * 30,
+    placeholderData: (prev) => prev,
   });
 };
