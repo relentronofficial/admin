@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getPresignedUrlHandler } from '../upload/controller.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
-import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit } from '../../lib/onboardingLogic.js';
+import { canEditOnboarding, canSubmitOnboarding, checkOnboardingReadyToSubmit, detectProfilePhotoType, PROFILE_PHOTO_REQUIRED_MESSAGE, validateProfilePhotoUpload } from '../../lib/onboardingLogic.js';
 import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { onboardingButtonSchema, onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
 import { env } from '../../config/env.js';
@@ -259,9 +259,10 @@ export async function uploadProfilePhotoHandler(req: FastifyRequest, reply: Fast
     return reply.status(400).send({ success: false, data: null, error: 'Please choose an image file' });
   }
   const body = req.body as Buffer;
-  if (!Buffer.isBuffer(body) || body.length === 0) {
-    return reply.status(400).send({ success: false, data: null, error: 'No file received' });
-  }
+  // Empty, oversized, or not really an image (checked from the file's bytes) → refused.
+  const invalid = validateProfilePhotoUpload(Buffer.isBuffer(body) ? body : null);
+  if (invalid) return reply.status(invalid.status).send({ success: false, data: null, error: invalid.error });
+  const photoType = detectProfilePhotoType(body)!;
 
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `members/${memberId}/${Date.now()}-${safeFilename}`;
@@ -273,7 +274,7 @@ export async function uploadProfilePhotoHandler(req: FastifyRequest, reply: Fast
     try {
       const res = await fetch(`https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`, {
         method: 'PUT',
-        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': contentType },
+        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': `image/${photoType}` },
         body: new Uint8Array(body),
       });
       if (res.ok) {
@@ -294,7 +295,7 @@ export async function uploadProfilePhotoHandler(req: FastifyRequest, reply: Fast
         endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
         credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY },
       });
-      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: contentType }));
+      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: `image/${photoType}` }));
       publicUrl = env.BUNNY_CDN_URL ? `https://${env.BUNNY_CDN_URL}/${key}` : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
     } catch (e: any) {
       req.log.error(`R2 profile photo upload failed: ${e.message}`);
@@ -380,10 +381,13 @@ export async function submitOnboardingHandler(req: FastifyRequest, reply: Fastif
   const profileWithWatched = { ...(member as any), watchedVideoSteps: extras.watchedVideoSteps ?? [] };
   const check = checkOnboardingReadyToSubmit(profileWithWatched, documentCount, requiredVideoStepKeys);
   if (!check.valid) {
+    const onlyPhotoMissing = !check.hasProfilePhoto && check.missingFields.length === 1 && check.hasDocument && check.unwatchedVideoSteps.length === 0;
     return reply.status(400).send({
       success: false,
-      data: { missingFields: check.missingFields, hasDocument: check.hasDocument, unwatchedVideoSteps: check.unwatchedVideoSteps },
-      error: 'Please complete all required fields, upload at least one document, and watch all required videos before submitting',
+      data: { missingFields: check.missingFields, hasDocument: check.hasDocument, hasProfilePhoto: check.hasProfilePhoto, unwatchedVideoSteps: check.unwatchedVideoSteps },
+      error: onlyPhotoMissing
+        ? `${PROFILE_PHOTO_REQUIRED_MESSAGE} Please upload your photo before submitting.`
+        : `Please complete all required fields${check.hasProfilePhoto ? '' : ' (including your profile photo)'}, upload at least one document, and watch all required videos before submitting`,
     });
   }
 
