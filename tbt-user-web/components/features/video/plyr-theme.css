@@ -108,6 +108,67 @@
   color: rgba(255, 255, 255, 0.45);
 }
 
+/* ── Phones (< 640px): keep every control inside the player ─────────────────
+   Plyr lays the bar out with justify-content: flex-end, so on a narrow
+   screen the row overflowed to the LEFT and the rounded overflow-hidden
+   video box clipped the play/pause button. Start-align instead, keep the
+   buttons from shrinking, let only the progress bar flex, and drop the
+   volume slider (phones use hardware volume; mute stays). Desktop and
+   landscape fullscreen (>= 640px wide) are unchanged. */
+@media (max-width: 639px) {
+  .plyr--video .plyr__controls {
+    justify-content: flex-start;
+    padding: 24px 8px 8px;
+  }
+  .plyr--video .plyr__controls > .plyr__controls__item {
+    flex-shrink: 0;
+  }
+  .plyr--video .plyr__controls > .plyr__controls__item.plyr__progress__container {
+    flex: 1 1 auto;
+    min-width: 48px;
+  }
+  .plyr--video .plyr__controls .plyr__volume {
+    min-width: 0;
+    max-width: none;
+    width: auto;
+  }
+  .plyr--video .plyr__controls .plyr__volume input[type="range"] {
+    display: none;
+  }
+  /* Comfortable tap target for play/pause (~38px) */
+  .plyr--video .plyr__controls [data-plyr="play"] {
+    padding: 10px;
+  }
+}
+
+/* Smallest phones (< 360px, e.g. iPhone SE): tighten the secondary buttons
+   and the progress minimum so an hour-long time label still fits. */
+@media (max-width: 359px) {
+  .plyr--video .plyr__controls > .plyr__controls__item.plyr__progress__container {
+    min-width: 28px;
+  }
+  .plyr--video .plyr__controls .plyr__control:not([data-plyr="play"]) {
+    padding: 5px;
+  }
+  .plyr--video .plyr__controls .plyr__controls__item.plyr__time {
+    padding: 0 3px;
+  }
+}
+
+/* Touch devices in any orientation (incl. landscape fullscreen): room for the
+   watermark's fullscreen button, which overlays the bar's bottom-right corner,
+   so it never covers the settings button. Mouse/desktop layout unchanged. */
+@media (max-width: 639px), (pointer: coarse) {
+  .tbt-wm-fs .plyr--video .plyr__controls {
+    padding-right: 52px;
+  }
+}
+@media (max-width: 359px) {
+  .tbt-wm-fs .plyr--video .plyr__controls {
+    padding-right: 46px;
+  }
+}
+
 @keyframes plyr-hint-fade {
   0%, 60% { opacity: 0.88; }
   100%     { opacity: 0; }
