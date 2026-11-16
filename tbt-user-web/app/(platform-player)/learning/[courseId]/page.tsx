@@ -2,7 +2,7 @@
 
 import { apiBase } from "@/lib/api/base";
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { MAX_LIFELINES_HELD } from '@/lib/lifelines';
+import { MAX_LIFELINES_HELD, heldLifelines } from '@/lib/lifelines';
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -3170,6 +3170,9 @@ export default function CourseDetailPage({
   const showTimerOverlay = typeof activeTimerSecs === "number" && activeTimerSecs > 0;
   // Heart rows always show the holding cap (5): buying refills toward it, never past it.
   const maxLifelines = MAX_LIFELINES_HELD;
+  // What the member sees: the server's course-pool count, clamped to the cap the hearts
+  // show. null until the server answers, so no page shows the placeholder 5 as a real count.
+  const shownLifelines: number | null = courseLifelinesData != null ? heldLifelines(lifelinesLeft) : null;
 
   // Sections — group lessons by sectionId when sections exist
   const courseSections: any[] = (course as any)?.sections ?? [];
@@ -3228,8 +3231,12 @@ export default function CourseDetailPage({
                 <>
                   This lesson will be <strong style={{ color: "var(--color-accent)" }}>locked</strong> after{" "}
                   <strong>{fmtTime(focusDialog.duration)}</strong> if not completed.
-                  You have <strong>{lifelinesLeft} free lifeline{lifelinesLeft !== 1 ? "s" : ""}</strong> remaining.
-                  After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+                  {shownLifelines != null && (
+                    <>
+                      {" "}You have <strong>{shownLifelines} of {maxLifelines} lifelines</strong> left.
+                      After that, lifelines cost <strong>{LIFELINE_COIN_COST} TBT coins</strong> each.
+                    </>
+                  )}
                 </>
               ) : focusDialog.lesson.videoUrl ? (
                 "The video will start playing once you confirm."
@@ -3369,7 +3376,7 @@ export default function CourseDetailPage({
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
               {(() => {
-                const usedLifelines = maxLifelines - lifelinesLeft;
+                const usedLifelines = maxLifelines - heldLifelines(lifelinesLeft);
                 return usedLifelines === 0 ? (
                   <>Your allotted time has ended. Please use your <strong style={{ color: "var(--color-text-normal)" }}>{ordinal(1)} Lifeline</strong> to continue watching this video.</>
                 ) : (
@@ -3614,8 +3621,8 @@ export default function CourseDetailPage({
                       style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
                       {Array.from({ length: maxLifelines }).map((_, i) => (
                         <Heart key={i} size={12} className="w-2.5 h-2.5 sm:w-3 sm:h-3"
-                          fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
-                          stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.3)"}
+                          fill={i < (shownLifelines ?? 0) ? "#ef4444" : "transparent"}
+                          stroke={i < (shownLifelines ?? 0) ? "#ef4444" : "rgba(255,255,255,0.3)"}
                           style={{ transition: "fill 0.3s, stroke 0.3s" }}
                         />
                       ))}
@@ -3633,7 +3640,7 @@ export default function CourseDetailPage({
               <LearningChallengeCard
                 timerSecs={activeTimerSecs ?? 0}
                 totalSeconds={timerDurationRef.current || getLessonTimerDuration(selectedLesson)}
-                lifelinesLeft={lifelinesLeft}
+                lifelinesLeft={shownLifelines ?? 0}
                 maxLifelines={maxLifelines}
                 coinBalance={coinBalance ?? undefined}
                 lifelineCoinCost={LIFELINE_COIN_COST}
@@ -4104,13 +4111,13 @@ export default function CourseDetailPage({
               )}
               <span
                 className="flex items-center gap-0.5 px-2 py-1 rounded-full"
-                style={{ background: lifelinesLeft > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
-                title={`${lifelinesLeft} of ${maxLifelines} lifelines remaining`}
+                style={{ background: (shownLifelines ?? 0) > 0 ? "rgba(239,68,68,0.1)" : "rgba(251,191,36,0.1)" }}
+                title={shownLifelines != null ? `${shownLifelines} of ${maxLifelines} lifelines remaining` : undefined}
               >
                 {Array.from({ length: maxLifelines }).map((_, i) => (
                   <Heart key={i} size={10}
-                    fill={i < lifelinesLeft ? "#ef4444" : "transparent"}
-                    stroke={i < lifelinesLeft ? "#ef4444" : "rgba(255,255,255,0.2)"}
+                    fill={i < (shownLifelines ?? 0) ? "#ef4444" : "transparent"}
+                    stroke={i < (shownLifelines ?? 0) ? "#ef4444" : "rgba(255,255,255,0.2)"}
                     style={{ transition: "fill 0.3s, stroke 0.3s" }}
                   />
                 ))}
@@ -4355,7 +4362,7 @@ export default function CourseDetailPage({
                             style={{ background: lifelinesLeft > 0 ? "var(--color-accent)" : "#d97706" }}
                           >
                             <Zap size={9} />
-                            {lifelinesLeft > 0 ? `${lifelinesLeft} free` : `${LIFELINE_COIN_COST}c`}
+                            {lifelinesLeft > 0 ? `${heldLifelines(lifelinesLeft)} left` : `${LIFELINE_COIN_COST}c`}
                           </button>
                         </div>
                       )}

@@ -16,6 +16,7 @@ import { AnswersReview } from "@/components/features/psychometric/AnswersReview"
 import { useMe, useUpdateProfile, useUploadAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, type CreditPricingItem } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
+import { useMemberLifelines } from "@/lib/hooks/useMemberLifelines";
 import { cn } from "@/lib/utils/cn";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import { ProfileOnboardingSection } from "@/components/features/profile/ProfileOnboardingSection";
@@ -388,6 +389,9 @@ function CreditPurchaseModal({
 
 function MentorshipBenefitsSection() {
   const { data: quota, isLoading } = useUserSupportQuota();
+  // Lifelines come from the course pool the video player spends (same as the Mentorship
+  // hearts and the course page), not the separate program pool in the quota (QA-04).
+  const lifelines = useMemberLifelines();
   const [buyModal, setBuyModal] = useState<string | null>(null);
   const qc = useQueryClient();
   const { socket } = useSocket();
@@ -426,7 +430,9 @@ function MentorshipBenefitsSection() {
     { quotaKey: "adSupport",    icon: Megaphone,  label: "Ad Support",    allocated: quota.adSupport.allocated,    used: quota.adSupport.used,    remaining: quota.adSupport.remaining,    color: "#8b5cf6", buyable: true },
     { quotaKey: "groupCall",    icon: Users,      label: "Group Calls",   allocated: quota.groupCall.allocated,    used: quota.groupCall.used,    remaining: quota.groupCall.remaining,    color: "#10b981", buyable: true },
     { quotaKey: "callCredits",  icon: Phone,      label: "Extra Calls",   allocated: quota.callCredits.allocated,  used: quota.callCredits.used,  remaining: quota.callCredits.remaining,  color: "#f59e0b", buyable: true },
-    { quotaKey: "lifelines",    icon: Zap,        label: "Lifelines",     allocated: quota.lifelines.total,        used: quota.lifelines.used,    remaining: quota.lifelines.remaining,    color: "#dc2626", buyable: true },
+    ...(lifelines.held != null
+      ? [{ quotaKey: "lifelines", icon: Zap, label: "Lifelines", allocated: lifelines.max, used: lifelines.max - lifelines.held, remaining: lifelines.held, color: "#dc2626", buyable: true }]
+      : []),
   ];
 
   return (
