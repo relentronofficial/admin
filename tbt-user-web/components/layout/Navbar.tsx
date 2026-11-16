@@ -310,24 +310,21 @@ interface DrawerContentProps {
   setSidebarOpen: (v: boolean) => void;
   pathname: string;
   navMenu: { id: string; href: string; label: string }[];
-  hiddenMenuKeys: string[];
   homeHref: string;
   siteName: string;
   lightLogoSrc: string;
   darkLogoSrc: string;
 }
 
-const PLATFORM_LINKS = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/learning", label: "My Learning" },
-  { href: "/batch-program", label: "Batch Program" },
-  { href: "/Resources", label: "Resources" },
-  { href: "/history", label: "Watch History" },
-  { href: "/profile", label: "Profile" },
-] as const;
+// Messages and Notifications are top-bar icons on every screen size, so neither
+// menu repeats them. The desktop bar and the mobile drawer both render exactly
+// this list, so phones show the same menu items as laptops.
+function menuItems<T extends { href: string }>(navMenu: T[]): T[] {
+  return navMenu.filter((n) => n.href !== "/messages" && n.href !== "/notifications");
+}
 
 function DrawerContent({
-  sidebarOpen, setSidebarOpen, pathname, navMenu, hiddenMenuKeys,
+  sidebarOpen, setSidebarOpen, pathname, navMenu,
   homeHref, siteName, lightLogoSrc, darkLogoSrc,
 }: DrawerContentProps) {
   const { data: me } = useMe();
@@ -351,10 +348,6 @@ function DrawerContent({
   const memberName = me ? ((me as any).name || `${me.firstName ?? ""} ${me.lastName ?? ""}`.trim() || "Member") : "";
   const memberPlan = (me as any)?.membershipPlan;
 
-  // Nav items already rendered from admin navMenu
-  const navHrefs = new Set(navMenu.map((n) => n.href));
-  // Only show platform links that aren't already in the admin nav
-  const extraLinks = PLATFORM_LINKS.filter((l) => !navHrefs.has(l.href));
 
   return (
     <div
@@ -418,7 +411,7 @@ function DrawerContent({
 
       {/* Nav items */}
       <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
-        {navMenu.map(({ id, href, label }) => {
+        {menuItems(navMenu).map(({ id, href, label }) => {
           const active =
             pathname === href ||
             pathname.startsWith(`${href}/`) ||
@@ -438,48 +431,6 @@ function DrawerContent({
             </Link>
           );
         })}
-
-        {/* Extra platform pages not in admin nav */}
-        {extraLinks.length > 0 && (
-          <>
-            <div className="my-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }} />
-            {extraLinks.map(({ href, label }) => {
-              const active = pathname === href || pathname.startsWith(`${href}/`);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <GlowBg active={active} />
-                  <span className="relative z-10">{label}</span>
-                </Link>
-              );
-            })}
-          </>
-        )}
-
-        {/* Support */}
-        {!hiddenMenuKeys.includes("support") && !navHrefs.has("/support") && (
-          <>
-            {extraLinks.length === 0 && <div className="my-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }} />}
-            <Link
-              href="/support"
-              onClick={() => setSidebarOpen(false)}
-              className={cn(
-                "relative flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group overflow-hidden",
-                pathname === "/support" || pathname.startsWith("/support/") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
-              <span className="relative z-10">Support</span>
-            </Link>
-          </>
-        )}
 
         {/* Sign out */}
         <div className="mt-2 pt-2 border-t" style={{ borderColor: "var(--color-border-subtle)" }}>
@@ -637,7 +588,6 @@ export function Navbar() {
         setSidebarOpen={setSidebarOpen}
         pathname={pathname}
         navMenu={navMenu}
-        hiddenMenuKeys={hiddenMenuKeys}
         homeHref={homeHref}
         siteName={siteName}
         lightLogoSrc={lightLogoSrc}
@@ -680,9 +630,7 @@ export function Navbar() {
 
         {/* Desktop: inline nav */}
         <nav className="hidden lg:flex items-center gap-0.5 flex-1">
-          {/* Messages and Notifications are already right-side icons;
-              drop them here to avoid duplication. */}
-          {navMenu.filter((n) => n.href !== "/messages" && n.href !== "/notifications").map(({ id, href, label }) => {
+          {menuItems(navMenu).map(({ id, href, label }) => {
             const active =
               pathname === href ||
               pathname.startsWith(`${href}/`) ||
@@ -762,13 +710,12 @@ export function Navbar() {
             </Link>
           )}
 
-          {/* Support — top-bar icon from `sm` up; on phones it is in the drawer and profile menu,
-              so the streak + Tier Access indicators fit beside the other icons. */}
+          {/* Support — top-bar icon on every screen size (the mobile drawer shows only the desktop menu items). */}
           {!hiddenMenuKeys.includes("support") && (
             <Link
               href="/support"
               className={cn(
-                "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0 hidden sm:block",
+                "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
                 pathname === "/support" || pathname.startsWith("/support/")
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground"
