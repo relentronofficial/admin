@@ -13,10 +13,11 @@ import {
   useInstagramStatus, useInstagramConnect, useInstagramDisconnect, useInstagramSync,
 } from "@/lib/hooks/useMentorship";
 import { CHART_PERIODS, buildPeriodPoints, type ChartPeriod, type PeriodPoint } from "./revenuePeriods";
-import { useCourseLifelines, useCourse } from "@/lib/hooks/useCourses";
+import { useCourse } from "@/lib/hooks/useCourses";
 import { sumLessonDurations, formatSeconds, formatMinutes } from "@/lib/utils/courseDurations";
 import { useMyBatchProgram, useBuyExtraLifeline, extraLifelineMessage } from "@/lib/hooks/useBatchProgram";
 import { useContinueLearning } from "@/lib/hooks/useDashboard";
+import { useMemberLifelines } from "@/lib/hooks/useMemberLifelines";
 import { useUserSupportQuota, useCreditPricing } from "@/lib/hooks/useUser";
 import { useSupportCallsSummary } from "@/lib/hooks/useSupportCalls";
 import { useCountUp, formatINR, growthPct } from "@/lib/hooks/useCountUp";
@@ -1240,17 +1241,14 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
 
   const isLoading = statsLoading || batchLoading || quotaLoading;
 
-  // When no courseId is provided (e.g. /batch-program/mentorship or /profile), fall back to
-  // the most recently watched in-progress course so hearts still reflect a real lifeline balance.
-  const { data: continueLearning } = useContinueLearning();
-  const resolvedCourseId = courseId ??
-    ((continueLearning as any[] | undefined)?.find((i: any) => i.type === "course" && !i.isCompleted)?.id ?? null);
+  // Course-pool lifelines (useMemberLifelines) — the same pool and course the video player
+  // and Profile show, so the count matches everywhere (QA-04). With no courseId it falls back
+  // to the most recently watched in-progress course.
+  const { data: courseLifelines } = useMemberLifelines(courseId);
 
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
   const weeklyReportSubmitted = stats?.weeklyReportSubmitted ?? false;
-  // Course-scoped lifelines — same courseId the video player uses, so counts always match.
-  const { data: courseLifelines } = useCourseLifelines(resolvedCourseId);
   const lifelinesTotal: number | null =
     courseLifelines != null ? courseLifelines.freeTotal + courseLifelines.purchasedTotal : null;
   // Use server-authoritative .remaining (same as video player), not recomputed from parts
