@@ -29,6 +29,7 @@ import {
   hashRefreshToken,
   setActiveLoginId,
   isRefreshHashLive,
+  peekRefreshToken,
 } from '../../plugins/jwt.js';
 import { classifyLoginSessions } from '../../lib/sessionRevocation.js';
 import crypto from 'crypto';
@@ -728,6 +729,81 @@ export async function refresh(fastify: FastifyInstance, request: any, reply: any
     : null;
   const existingLoginId = rawLoginId && rawLoginId !== 'REVOKED' ? rawLoginId : undefined;
   await issueTokens(fastify, reply, memberId, refreshMeta, existingLoginId);
+  return reply.send({ success: true, data: null });
+}
+
+// ── Session handoff: backend-origin cookies → app-origin cookies ───────────────
+//
+// User-web used to call this backend directly on its run.app origin, so the
+// auth cookies were stored for that origin: third-party cookies from the app's
+// point of view, which Safari / blocked-3P-cookie browsers drop (the sign-in
+// loop). User-web now calls the backend through its own origin (Next.js
+// rewrite), so new cookies are first-party. Members who are already signed in
+// still hold the old run.app cookies, which the proxied path can't see. To
+// move them over without signing anyone out:
+//   1. the app calls POST /session-handoff DIRECTLY on the backend origin
+//      (cross-site, credentials) — the old refresh cookie is sent; we return a
+//      single-use handoff token (CORS lets only allowed origins read it);
+//   2. the app posts that token to /session-handoff/redeem THROUGH the proxy;
+//      we rotate the old refresh token and issue cookies on the app origin.
+const HANDOFF_TTL_SECONDS = 120;
+
+// POST /api/user-auth/session-handoff   (called cross-site on the backend origin)
+export async function sessionHandoffStart(fastify: FastifyInstance, request: any, reply: any) {
+  const refreshToken = parseCookies(request.headers.cookie)['tbt_refresh'];
+  if (!refreshToken) return reply.status(401).send({ success: false, data: null, error: 'No session to hand off' });
+
+  const memberId = await peekRefreshToken(getRedis(fastify), hashRefreshToken(refreshToken));
+  if (!memberId) return reply.status(401).send({ success: false, data: null, error: 'No session to hand off' });
+
+  const handoffToken = crypto.randomBytes(32).toString('hex');
+  const key = `session_handoff:${handoffToken}`;
+  const value = JSON.stringify({ refreshToken });
+  storePending(key, value, HANDOFF_TTL_SECONDS); // in-memory mirror (Upstash ETIMEDOUT resilience)
+  const redis = getRedis(fastify);
+  if (redis) await redis.set(key, value, 'EX', HANDOFF_TTL_SECONDS).catch(() => {});
+  return reply.send({ success: true, data: { handoffToken } });
+}
+
+// POST /api/user-auth/session-handoff/redeem   (called through the app-origin proxy)
+export async function sessionHandoffRedeem(fastify: FastifyInstance, request: any, reply: any) {
+  const { handoffToken } = (request.body ?? {}) as { handoffToken?: string };
+  if (!handoffToken || typeof handoffToken !== 'string') {
+    return reply.status(400).send({ success: false, data: null, error: 'handoffToken is required' });
+  }
+  const redis = getRedis(fastify);
+  const key = `session_handoff:${handoffToken}`;
+  let raw: string | null = redis ? await redis.get(key).catch(() => null) : null;
+  if (!raw) raw = getPending(key);
+  // Single use.
+  if (redis) await redis.del(key).catch(() => {});
+  deletePending(key);
+  if (!raw) return reply.status(401).send({ success: false, data: null, error: 'Handoff expired' });
+
+  const { refreshToken } = JSON.parse(raw) as { refreshToken: string };
+  // Rotate the old (backend-origin) refresh token exactly as /refresh does.
+  const memberId = await consumeRefreshToken(redis, refreshToken);
+  if (!memberId) return reply.status(401).send({ success: false, data: null, error: 'Session expired' });
+  (fastify.prisma.memberSession as any).deleteMany({ where: { tokenHash: hashRefreshToken(refreshToken) } }).catch(() => {});
+
+  let member: { id: string; status: string } | null;
+  try {
+    member = (await fastify.prisma.member.findUnique({ where: { id: memberId }, select: { id: true, status: true } as any })) as any;
+  } catch (err: any) {
+    request.server.log.warn({ err: err.message }, 'session-handoff: member lookup failed');
+    return reply.status(503).send({ success: false, data: null, error: 'Service temporarily unavailable' });
+  }
+  if (!member || ['inactive', 'suspended', 'paused'].includes(member.status)) {
+    return reply.status(401).send({ success: false, data: null, error: 'Session expired' });
+  }
+
+  const rawLoginId: string | null = redis ? await redis.get(`active_login:${memberId}`).catch(() => null) : null;
+  const existingLoginId = rawLoginId && rawLoginId !== 'REVOKED' ? rawLoginId : undefined;
+  await issueTokens(fastify, reply, memberId, {
+    deviceId: request.headers['x-device-id'] as string | undefined,
+    userAgent: request.headers['user-agent'] as string | undefined,
+    ip: request.ip,
+  }, existingLoginId);
   return reply.send({ success: true, data: null });
 }
 

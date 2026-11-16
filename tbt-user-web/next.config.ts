@@ -1,8 +1,22 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
+// The Fastify backend. Browsers reach it through this app's own origin (the
+// rewrites below), so the auth cookies it sets are first-party. See
+// lib/api/base.ts for why calling its run.app origin directly broke sign-in.
+const BACKEND_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  async rewrites() {
+    return [
+      // REST API — this app has no /api routes of its own.
+      { source: "/api/:path*", destination: `${BACKEND_URL}/api/:path*` },
+      // Socket.IO (HTTP polling + WebSocket upgrade; Next proxies both).
+      { source: "/socket.io", destination: `${BACKEND_URL}/socket.io` },
+      { source: "/socket.io/:path*", destination: `${BACKEND_URL}/socket.io/:path*` },
+    ];
+  },
   async headers() {
     return [
       {
@@ -48,6 +62,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ["lucide-react", "framer-motion"],
+    // Proxied API calls (rewrites above) default to a 30 s timeout; AI and
+    // report endpoints can take longer.
+    proxyTimeout: 120_000,
   },
 };
 

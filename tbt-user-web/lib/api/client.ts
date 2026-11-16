@@ -1,4 +1,5 @@
 import axios from "axios";
+import { BACKEND_URL, apiBase } from "./base";
 
 // Generate and persist a stable device ID in localStorage on first load.
 if (typeof window !== "undefined") {
@@ -12,7 +13,9 @@ if (typeof window !== "undefined") {
 }
 
 const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+  // Browser: same origin, proxied to the backend by next.config rewrites, so the
+  // auth cookies are first-party (Safari & co. drop the backend-origin ones).
+  baseURL: apiBase(),
   timeout: 15000,
   withCredentials: true, // send HttpOnly auth cookies on every request
   headers: { "Content-Type": "application/json" },
@@ -50,14 +53,43 @@ export function markSessionRevoked(): void {
   }
 }
 
+// ── One-time session handoff ─────────────────────────────────────────────────────
+// Members signed in before the API moved behind the app's own origin still hold
+// their cookies on the backend origin, which the proxied requests can't see.
+// When a refresh finds no app-origin session, ask the backend directly (that
+// request still carries the old cookie) for a single-use handoff token and redeem
+// it through the proxy, which sets the cookies on the app origin. Browsers that
+// never stored the old cookie (Safari) just get a 401 and nothing changes.
+// At most once per tab session.
+const HANDOFF_TRIED_KEY = "tbt_session_handoff_tried";
+
+async function tryLegacySessionHandoff(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  try {
+    if (sessionStorage.getItem(HANDOFF_TRIED_KEY)) return false;
+    sessionStorage.setItem(HANDOFF_TRIED_KEY, "1");
+  } catch {
+    /* storage unavailable — still try once in this page load */
+  }
+  try {
+    const start = await axios.post(`${BACKEND_URL}/api/user-auth/session-handoff`, {}, { withCredentials: true });
+    const handoffToken = start.data?.data?.handoffToken;
+    if (!handoffToken) return false;
+    await axios.post(`${apiBase()}/api/user-auth/session-handoff/redeem`, { handoffToken }, { withCredentials: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function scheduleRefresh(): Promise<void> {
   if (!_refreshPromise) {
     _refreshPromise = axios
-      .post(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/user-auth/refresh`,
-        {},
-        { withCredentials: true },
-      )
+      .post(`${apiBase()}/api/user-auth/refresh`, {}, { withCredentials: true })
+      .catch(async (err) => {
+        if (await tryLegacySessionHandoff()) return;
+        throw err;
+      })
       .then(() => {
         if (typeof window !== "undefined")
           localStorage.setItem(ACCESS_EXP_KEY, String(Date.now() + ACCESS_LIFETIME_MS));

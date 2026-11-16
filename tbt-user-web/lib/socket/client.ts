@@ -1,11 +1,16 @@
 import { io, Socket } from "socket.io-client";
+import { BACKEND_URL } from "@/lib/api/base";
 
 let _socket: Socket | null = null;
 
 export async function getSocket(): Promise<Socket> {
   if (_socket?.connected) return _socket;
 
-  _socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000", {
+  // Same origin as the app (proxied by next.config rewrites) so the first-party
+  // auth cookies are sent on the handshake. No trailing slash on the path:
+  // Next.js would redirect `/socket.io/` before the rewrite runs.
+  _socket = io(typeof window !== "undefined" ? window.location.origin : BACKEND_URL, {
+    addTrailingSlash: false,
     withCredentials: true, // send HttpOnly auth cookies automatically
     transports: ["websocket"],
     reconnection: true,

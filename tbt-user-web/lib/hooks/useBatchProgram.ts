@@ -1,5 +1,6 @@
 "use client";
 
+import { apiBase } from '@/lib/api/base';
 import { MAX_LIFELINES_HELD } from "@/lib/lifelines";
 import { useCallback, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -196,7 +197,7 @@ export const useUseProgramLifeline = () => {
 export const useDownloadBatchCertificate = () => {
   return useMutation({
     mutationFn: async () => {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const baseUrl = apiBase();
       const deviceId = typeof window !== 'undefined' ? (localStorage.getItem('tbt_device_id') ?? '') : '';
       const response = await fetch(`${baseUrl}/api/user-batch/certificate`, {
         credentials: 'include',

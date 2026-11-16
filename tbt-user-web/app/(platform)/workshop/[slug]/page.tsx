@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { apiBase } from "@/lib/api/base";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -1758,7 +1759,7 @@ function WatchChallengeView({
       if (saved <= 3) return;
       const token = getCachedTokenSync();
       if (!token) return;
-      const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const base = apiBase();
       fetch(`${base}/api/user/episodes/${curEp.id}/progress`, {
         method: "POST",
         keepalive: true,

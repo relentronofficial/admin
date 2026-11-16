@@ -28,6 +28,10 @@ async function socketPlugin(fastify: FastifyInstance, _opts: FastifyPluginOption
     ? env.CORS_EXTRA_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
     : [];
   const io = new Server(fastify.server, {
+    // Matches both `/socket.io/` (mobile app, older web builds) and
+    // `/socket.io?...`: the web app now connects through its own origin, and
+    // Next.js would 308-redirect a trailing-slash `/socket.io/` request.
+    addTrailingSlash: false,
     cors: {
       origin: [env.USER_WEB_URL, env.ADMIN_WEB_URL, ...extraOrigins],
       credentials: true,

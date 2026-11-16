@@ -115,7 +115,7 @@ export async function storeRefreshToken(
 /// the token is currently valid (either full-TTL or grace-window entry).
 /// Used by `consumeRefreshToken` internally and also exposed for
 /// non-rotating peek use cases (session-revoke check).
-async function peekRefreshToken(redis: any, hash: string): Promise<string | null> {
+export async function peekRefreshToken(redis: any, hash: string): Promise<string | null> {
   if (redis) {
     try {
       // Check full-TTL entry first, then grace entry as fallback.

@@ -88,7 +88,7 @@ function ResourceRow({ resource }: { resource: Resource }) {
               key={action.type}
               href={
                 action.type === "download"
-                  ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
+                  ? `/api/user/resources/${resource.id}/download`
                   : (resource.previewUrl ?? resource.fileUrl)
               }
               target="_blank"
@@ -165,7 +165,7 @@ function ResourceGridCard({ resource }: { resource: Resource }) {
               key={action.type}
               href={
                 action.type === "download"
-                  ? `${process.env.NEXT_PUBLIC_API_URL}/api/user/resources/${resource.id}/download`
+                  ? `/api/user/resources/${resource.id}/download`
                   : (resource.previewUrl ?? resource.fileUrl)
               }
               target="_blank"

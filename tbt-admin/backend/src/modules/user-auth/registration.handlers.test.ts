@@ -22,7 +22,7 @@ vi.mock('../../plugins/jwt.js', () => ({
   setAuthCookies: vi.fn(), clearAuthCookies: vi.fn(), generateRefreshToken: () => 'refresh-token',
   storeRefreshToken: vi.fn(async () => {}), consumeRefreshToken: vi.fn(), revokeRefreshToken: vi.fn(),
   revokeRefreshTokenByHash: vi.fn(), revokeAllForMember: vi.fn(async () => 0), hashRefreshToken: () => 'hash',
-  setActiveLoginId: vi.fn(async () => {}), isRefreshHashLive: vi.fn(async () => null),
+  setActiveLoginId: vi.fn(async () => {}), isRefreshHashLive: vi.fn(async () => null), peekRefreshToken: vi.fn(async () => null),
 }));
 
 const auth = await import('./controller.js');

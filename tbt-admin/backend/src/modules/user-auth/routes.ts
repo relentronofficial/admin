@@ -14,6 +14,10 @@ export async function userAuthRoutes(fastify: FastifyInstance) {
   // Session management during login-conflict flow (unauthenticated — validated by pendingToken)
   fastify.post('/session-revoke', (req, reply) => controller.sessionRevokeDuringLogin(fastify, req, reply));
   fastify.post('/complete-login', (req, reply) => controller.completeLogin(fastify, req, reply));
+  // One-time move of a signed-in member's cookies from the backend origin to the
+  // app origin (user-web now calls the API through its own domain). See controller.
+  fastify.post('/session-handoff', (req, reply) => controller.sessionHandoffStart(fastify, req, reply));
+  fastify.post('/session-handoff/redeem', (req, reply) => controller.sessionHandoffRedeem(fastify, req, reply));
   // Member-facing "sign out on all devices". Requires the current
   // access token (authenticateUser) and kills every refresh token
   // for the member across all devices — any other device holding a

@@ -1,5 +1,6 @@
 "use client";
 
+import { apiBase } from "@/lib/api/base";
 import React, { use, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { MAX_LIFELINES_HELD } from '@/lib/lifelines';
 import Link from "next/link";
@@ -2492,8 +2493,7 @@ export default function CourseDetailPage({
       if (lesson && isPlayingRef.current) {
         const delta = Math.min(liveWatchedRef.current - lastHeartbeatWatchedRef.current, 30);
         if (delta > 0) {
-          const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-          fetch(`${apiBase}/api/user/enrollments/${courseId}/progress/${lesson.id}`, {
+                    fetch(`${apiBase()}/api/user/enrollments/${courseId}/progress/${lesson.id}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -4490,8 +4490,7 @@ export default function CourseDetailPage({
               onClick={async () => {
                 setDownloadingCert(true);
                 try {
-                  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-                  const res = await fetch(`${apiBase}/api/user/courses/${courseId}/certificate`, { credentials: "include" });
+                                    const res = await fetch(`${apiBase()}/api/user/courses/${courseId}/certificate`, { credentials: "include" });
                   if (!res.ok) { toast.error("Certificate not ready yet."); return; }
                   const blob = await res.blob();
                   const url = URL.createObjectURL(blob);
