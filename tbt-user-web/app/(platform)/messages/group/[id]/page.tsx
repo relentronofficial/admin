@@ -64,6 +64,7 @@ import { ForwardPickerSheet } from "@/components/features/chat/ForwardPickerShee
 import { PinStrip } from "@/components/features/chat/PinStrip";
 import { ReactorsSheet } from "@/components/features/chat/ReactorsSheet";
 import { senderColor } from "@/components/features/chat/senderColor";
+import { chatSenderName } from "@/lib/api/services/chatGroups.service";
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -1370,7 +1371,7 @@ function MessageBubble({
   }
 
   const senderName =
-    [message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(" ") || "Member";
+    chatSenderName(message);
   const time = new Date(message.createdAt).toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -1971,7 +1972,7 @@ function SearchPanel({
         <div className="max-h-64 overflow-y-auto space-y-1">
           {results.map((m: ChatGroupMessage) => {
             const senderName =
-              [m.sender?.firstName, m.sender?.lastName].filter(Boolean).join(" ") || "Member";
+              chatSenderName(m);
             const when = new Date(m.createdAt).toLocaleDateString(undefined, {
               month: "short",
               day: "numeric",

@@ -25,6 +25,7 @@ import { StreakButton } from "./StreakButton";
 import { TierAccessIndicator } from "./TierAccessIndicator";
 import { CoinBalanceIndicator } from "./CoinBalanceIndicator";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
+import { timeAgo } from "@/lib/utils/format";
 import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
 
@@ -108,6 +109,7 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
                   {/* Content */}
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold text-foreground leading-snug truncate">{n.title}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{timeAgo(n.createdAt)}</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
                   </div>
 
@@ -254,6 +256,20 @@ function ProfileButton() {
             >
               Profile
             </Link>
+            <Link
+              href="/dashboard"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/history"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              Watch History
+            </Link>
             {!hiddenMenuKeys.includes("community") && (
               <Link
                 href="/community"
@@ -317,11 +333,10 @@ interface DrawerContentProps {
   darkLogoSrc: string;
 }
 
+// Only pages members can actually open — My Learning, Batch Program and
+// Resources redirect to /mentorship, so they are not listed (QA BUG-18).
 const PLATFORM_LINKS = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/learning", label: "My Learning" },
-  { href: "/batch-program", label: "Batch Program" },
-  { href: "/Resources", label: "Resources" },
   { href: "/history", label: "Watch History" },
   { href: "/profile", label: "Profile" },
 ] as const;

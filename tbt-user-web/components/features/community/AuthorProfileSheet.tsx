@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 import { useEffect } from "react";
 import { Loader2, MapPin, UserMinus, UserPlus, X } from "lucide-react";
 
@@ -45,7 +47,10 @@ export function AuthorProfileSheet({
         profile?.member.businessType ??
         (profile?.member.city ?? null);
 
-  return (
+  // Portal to <body> so the backdrop covers the fixed navbar whatever the
+  // page's stacking context (QA BUG-26).
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-4">
       <div
         className="w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden"
@@ -188,7 +193,7 @@ export function AuthorProfileSheet({
         )}
       </div>
     </div>
-  );
+  , document.body);
 }
 
 function Stat({ label, value }: { label: string; value: number }) {

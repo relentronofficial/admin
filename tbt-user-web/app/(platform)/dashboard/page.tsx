@@ -155,7 +155,7 @@ export default function DashboardPage() {
                     </p>
                     {!item.isCompleted && item.progressPercent > 0 && (
                       <p className="text-xs mt-0.5" style={{ color: "var(--color-text-tertiary)" }}>
-                        {item.progressPercent}% watched
+                        {item.progressPercent}% {(uiStrings as any)?.courseProgressCompleteSuffix ?? "complete"}
                       </p>
                     )}
                   </div>

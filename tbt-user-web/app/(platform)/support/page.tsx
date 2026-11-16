@@ -280,7 +280,9 @@ function SupportPageInner() {
         </div>
       </div>
 
-      {/* Category chips */}
+      {/* Category chips — the whole section is hidden while there are no help
+          topics and no FAQs at all, instead of an empty heading (QA BUG-28). */}
+      {(faqsLoading || categories.length > 0 || displayFaqs.length > 0 || !!selectedCategoryId) && (
       <div className="space-y-3">
         <SectionLabel>BROWSE HELP TOPICS</SectionLabel>
         {categories.length > 0 && (
@@ -340,6 +342,7 @@ function SupportPageInner() {
           </div>
         )}
       </div>
+      )}
 
       {/* Recent tickets */}
       <div className="space-y-3">

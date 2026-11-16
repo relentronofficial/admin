@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { SignupScreen } from "@/components/auth/SignupScreen";
 
 export const metadata: Metadata = {
-  title: "Sign Up | TBT",
+  title: "Sign Up", // root layout template adds " | TBT"
   description: "Create your Tamil Business Tribe account.",
 };
 

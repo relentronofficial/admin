@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Clock, Image as ImageIcon, Loader2, Video, X } from "lucide-react";
 
@@ -189,7 +191,10 @@ export function ComposerModal({
 
   if (!open) return null;
 
-  return (
+  // Portal to <body> so the backdrop covers the fixed navbar whatever the
+  // page's stacking context (QA BUG-26).
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-0 sm:p-6 overflow-y-auto">
       <div
         className="w-full sm:max-w-lg rounded-none sm:rounded-2xl overflow-hidden"
@@ -362,5 +367,5 @@ export function ComposerModal({
         )}
       </div>
     </div>
-  );
+  , document.body);
 }

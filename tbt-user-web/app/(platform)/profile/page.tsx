@@ -118,11 +118,11 @@ function BadgeChip({ badge }: { badge: ProfileBadge }) {
 function StatsStrip({ profile }: { profile: MemberProfile }) {
   const stats = [
     {
-      label: "Points",
-      value: (profile.totalPoints ?? 0).toLocaleString(),
+      label: "TBT Coins",
+      value: (profile.totalPoints ?? 0).toLocaleString("en-IN"),
       Icon: Trophy,
       color: "#eab308",
-      tooltip: "XP earned by completing lessons and passing quizzes",
+      tooltip: "Your TBT coin balance — the same number shown in the header",
     },
     {
       label: "Streak",

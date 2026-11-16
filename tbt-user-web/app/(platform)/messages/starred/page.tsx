@@ -6,6 +6,7 @@ import { ArrowLeft, FileText, Loader2, MessageSquare, Star, Users } from "lucide
 import { useStarredMessages } from "@/lib/hooks/useChatGroups";
 import { useDmStarredMessages } from "@/lib/hooks/useDashboard";
 import type { StarredMessage } from "@/lib/api/services/chatGroups.service";
+import { chatSenderName } from "@/lib/api/services/chatGroups.service";
 
 type DmStarred = {
   id: string;
@@ -163,7 +164,7 @@ function DmStarredRow({ message }: { message: DmStarred }) {
 
 function StarredRow({ message }: { message: StarredMessage }) {
   const senderName =
-    [message.sender?.firstName, message.sender?.lastName].filter(Boolean).join(" ") || "Member";
+    chatSenderName(message);
   const when = new Date(message.starredAt || message.createdAt).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",

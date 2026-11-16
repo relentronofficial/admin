@@ -28,6 +28,18 @@ export const QUALIFYING_ACTIVITY_SOURCES = [
 /** SQL list for `source IN (...)` — fixed constants, safe to inline. */
 export const QUALIFYING_SOURCES_SQL = QUALIFYING_ACTIVITY_SOURCES.map((s) => `'${s}'`).join(', ');
 
+/**
+ * Ledger sources that count toward leaderboards (WINS, the mentorship rank): points
+ * a member earned by learning, plus the early-completion bonus. Coin bookkeeping is
+ * left out — coin purchases, lifeline / support-call spends and admin coin grants
+ * (whose `source` is the admin's free-text reason) — so a leaderboard is never just
+ * a coin balance and never goes negative. Allow-list, not deny-list, for that reason.
+ */
+export const LEADERBOARD_POINT_SOURCES: readonly string[] = [...QUALIFYING_ACTIVITY_SOURCES, 'early_completion'];
+
+/** SQL list for `source IN (...)` — fixed constants, safe to inline. */
+export const LEADERBOARD_SOURCES_SQL = LEADERBOARD_POINT_SOURCES.map((s) => `'${s}'`).join(', ');
+
 export const DEFAULT_PROGRAM_TIMEZONE = 'Asia/Kolkata';
 
 /**

@@ -73,7 +73,7 @@ export default function OnboardingMeetingPage() {
       {meeting.hostAdmin && <p className="text-sm text-muted-foreground mb-1">Host: {meeting.hostAdmin.fullName}</p>}
       <p className="text-sm text-muted-foreground flex items-center justify-center gap-1.5 mb-1">
         <Calendar size={13} />
-        {new Date(meeting.scheduledAt).toLocaleString()}
+        {new Date(meeting.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
       </p>
       {typeof meeting._count?.participants === "number" && (
         <p className="text-sm text-muted-foreground flex items-center justify-center gap-1.5 mb-6">

@@ -131,7 +131,7 @@ export async function adminCreateMeetingHandler(req: FastifyRequest, reply: Fast
   const fullName = `${member.firstName} ${member.lastName ?? ''}`.trim();
   await notifyMemberIds(req, [memberId, ...(participantMemberIds ?? [])], meeting.id, {
     title: 'Onboarding Meeting Scheduled',
-    body: `A verification call "${meeting.title}" has been scheduled for ${new Date(meeting.scheduledAt).toLocaleString()}.`,
+    body: `A verification call "${meeting.title}" has been scheduled for ${new Date(meeting.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' })}.`,
   });
   req.server.io.to('admin').emit('admin:onboarding_meeting_scheduled', { meetingId: meeting.id, memberId, fullName });
 

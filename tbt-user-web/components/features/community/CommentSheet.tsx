@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Heart, Loader2, Send, Trash2, X } from "lucide-react";
 
@@ -95,7 +97,10 @@ export function CommentSheet({
 
   if (!open || !post) return null;
 
-  return (
+  // Portal to <body> so the backdrop covers the fixed navbar whatever the
+  // page's stacking context (QA BUG-26).
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
       <div
         className="w-full sm:max-w-lg h-[85vh] sm:h-[80vh] flex flex-col rounded-t-2xl sm:rounded-2xl overflow-hidden"
@@ -226,7 +231,7 @@ export function CommentSheet({
         </div>
       </div>
     </div>
-  );
+  , document.body);
 }
 
 // ── One comment row ─────────────────────────────────────────────────────────

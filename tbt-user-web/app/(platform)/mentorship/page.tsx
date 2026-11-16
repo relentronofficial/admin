@@ -1509,7 +1509,9 @@ export default function MentorshipPage() {
         thumbnail: secLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
         ...sumLessonDurations(secLessons),
       };
-    });
+    // A section with no videos yet is nothing to open — hide it rather than show
+    // an empty, locked card (QA BUG-32).
+    }).filter((c) => c.totalEpisodes > 0);
   }, [primaryCourseDetail]);
 
   // Course-module cards — actual topic modules from course_modules table.
@@ -1540,7 +1542,8 @@ export default function MentorshipPage() {
         thumbnail: mod.thumbnailUrl ?? modLessons.find((l: any) => l.thumbnailUrl)?.thumbnailUrl ?? null,
         ...sumLessonDurations(modLessons),
       };
-    });
+    // Topics with no videos yet are hidden (QA BUG-32).
+    }).filter((c) => c.totalEpisodes > 0);
   }, [primaryCourseDetail]);
 
   // Learning Roadmap course: the most recently watched in-progress course, scoped to

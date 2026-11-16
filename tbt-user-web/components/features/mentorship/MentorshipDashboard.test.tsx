@@ -373,7 +373,7 @@ describe("MentorshipDashboard", () => {
     state.revenue = { data: null };
     render(<MentorshipDashboard />);
     fireEvent.change(screen.getByRole("combobox", { name: "Chart period" }), { target: { value: "daily" } });
-    expect(screen.getByText("No revenue numbers saved for this week yet.")).toBeTruthy();
+    expect(screen.getByText("No revenue numbers saved yet.")).toBeTruthy();
     expect(screen.getByText("No daily revenue saved for this week yet")).toBeTruthy();
     expect(screen.queryByTestId("peak-callout")).toBeNull();
   });

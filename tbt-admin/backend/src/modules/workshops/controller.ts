@@ -1074,7 +1074,7 @@ export async function sendRemindersHandler(req: FastifyRequest, reply: FastifyRe
   });
 
   const { env } = await import('../../config/env.js');
-  const scheduledTime = lc.scheduledAt ? new Date(lc.scheduledAt).toLocaleString() : 'soon';
+  const scheduledTime = lc.scheduledAt ? new Date(lc.scheduledAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : 'soon';
 
   // Lazy-init shared clients once
   const resend = env.RESEND_API_KEY ? new (await import('resend')).Resend(env.RESEND_API_KEY) : null;

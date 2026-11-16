@@ -173,7 +173,7 @@ function CourseCard({ c, index, onCourseClick }: { c: any; index: number; onCour
             className="w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-opacity hover:opacity-90"
             style={{ background: "var(--color-success, #22c55e)", color: "#fff" }}
           >
-            <Play size={13} fill="currentColor" /> Continue Learning
+            <Play size={13} fill="currentColor" /> {c.started ? "Continue Learning" : "Start Learning"}
           </button>
         ) : hasPrice ? (
           <button
@@ -220,12 +220,14 @@ export default function CoursesPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
 
-  const { data, isLoading } = useCourses({ limit: 100, courseType: "mini_course", search: search || undefined });
+  const searchTerm = search.trim();
+  const { data, isLoading } = useCourses({ limit: 100, courseType: "mini_course", search: searchTerm || undefined });
   const courses: any[] = data?.data ?? [];
 
   const { data: enrollmentsData } = useMyEnrollments();
   const enrollments: any[] = (enrollmentsData as any) ?? [];
   const enrolledIds = new Set(enrollments.map((e: any) => e.courseId));
+  const enrollmentByCourse = new Map(enrollments.map((e: any) => [e.courseId, e]));
 
   const { isError: isAuthError } = useMe();
 
@@ -242,10 +244,18 @@ export default function CoursesPage() {
   };
 
   // Merge server hasAccess with local enrollment set
-  const enriched = courses.map((c: any) => ({
-    ...c,
-    hasAccess: c.hasAccess || enrolledIds.has(c.id),
-  }));
+  const enriched = courses.map((c: any) => {
+    const enr: any = enrollmentByCourse.get(c.id);
+    return {
+      ...c,
+      hasAccess: c.hasAccess || enrolledIds.has(c.id),
+      // The list API puts the episode count in _count.lessons; totalLessons is
+      // a stored column that is often 0.
+      totalLessons: Number(c.totalLessons) || Number(c._count?.lessons) || 0,
+      // "Continue" only once the member has actually made progress.
+      started: !!enr && ((enr.completedLessons ?? 0) > 0 || (enr.progressPercent ?? 0) > 0),
+    };
+  });
 
   const enrolledCount = enriched.filter(c => c.hasAccess).length;
 
@@ -302,12 +312,14 @@ export default function CoursesPage() {
             </p>
 
             {/* Stats */}
+            {/* Fixed-height slot so the search box doesn't jump when results are empty */}
+            <div className="mb-8 min-h-[28px]">
             {!isLoading && enriched.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: 0.15 }}
-                className="flex items-center justify-center gap-6 mb-8 flex-wrap"
+                className="flex items-center justify-center gap-6 flex-wrap"
               >
                 {[
                   { value: enriched.length, label: "Courses" },
@@ -326,6 +338,7 @@ export default function CoursesPage() {
                 ))}
               </motion.div>
             )}
+            </div>
 
             {/* Search */}
             <motion.div
@@ -376,7 +389,7 @@ export default function CoursesPage() {
               <BookOpen size={28} />
             </div>
             <p className="font-semibold" style={{ color: "var(--color-text-secondary)" }}>
-              {search ? `No courses match "${search}"` : "No mini courses available yet"}
+              {searchTerm ? `No courses match "${searchTerm}"` : "No mini courses available yet"}
             </p>
             {search && (
               <button

@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { clampLifelineCount } from '../../lib/lifelineCap.js';
 import {
   notifyCourseAccessGranted,
+  hasLiveCourseAccess,
   notifyBadgeAwarded,
 } from '../../lib/courseNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
@@ -882,6 +883,7 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
       paymentId = payment.id;
     }
 
+    const alreadyHadAccess = await hasLiveCourseAccess(req.server.prisma, memberId, courseId);
     const access = await req.server.prisma.courseAccess.upsert({
       where: { memberId_courseId: { memberId, courseId } },
       create: {
@@ -919,6 +921,7 @@ export async function grantCourseAccessHandler(req: FastifyRequest, reply: Fasti
       memberId,
       courseId,
       courseTitle: course.title,
+      alreadyHadAccess,
     }).catch(() => {});
 
     void invalidateCache(req.server.redis ?? null, `courses:access:${memberId}`);
@@ -974,6 +977,7 @@ export async function approveCoursePaymentHandler(req: FastifyRequest, reply: Fa
       effectiveMethod, adminId, paymentId,
     );
 
+    const alreadyHadAccess = await hasLiveCourseAccess(req.server.prisma, payment.memberId, courseId);
     await req.server.prisma.courseAccess.upsert({
       where: { memberId_courseId: { memberId: payment.memberId, courseId } },
       create: { memberId: payment.memberId, courseId, accessType: 'lifetime', isActive: true, paymentId, grantedBy: adminId },
@@ -993,6 +997,7 @@ export async function approveCoursePaymentHandler(req: FastifyRequest, reply: Fa
       memberId: payment.memberId,
       courseId,
       courseTitle: course?.title ?? 'the course',
+      alreadyHadAccess,
     }).catch(() => {});
 
     void invalidateCache(req.server.redis ?? null, `courses:access:${payment.memberId}`);

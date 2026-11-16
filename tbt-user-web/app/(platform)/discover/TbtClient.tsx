@@ -501,7 +501,7 @@ function ContinueWatchingCard({ item }: { item: ContinueLearningItem }) {
           <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.lastLessonTitle}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[10px] text-muted-foreground tabular-nums">
-              Ep {item.episodeOrder} of {item.episodeCount}
+              Ep {item.type === "course" ? (item.episodeOrder ?? 0) + 1 : item.episodeOrder} of {item.episodeCount}
             </span>
             <span className="text-muted-foreground/40 text-[10px]">·</span>
             <span className="text-[10px] text-muted-foreground">{relativeTimeFromEpoch(item.updatedAt)}</span>
@@ -701,7 +701,7 @@ function WatchHistoryCard({
           <p className="text-xs font-semibold text-foreground truncate leading-tight">{item.episodeTitle}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-[10px] text-muted-foreground tabular-nums">
-              Ep {item.episodeOrder} of {item.episodeCount}
+              Ep {item.type === "course" ? (item.episodeOrder ?? 0) + 1 : item.episodeOrder} of {item.episodeCount}
             </span>
             <span className="text-muted-foreground/40 text-[10px]">·</span>
             <span className="text-[10px] text-muted-foreground">{relativeTime(item.updatedAt)}</span>

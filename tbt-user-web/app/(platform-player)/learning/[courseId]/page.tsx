@@ -629,8 +629,9 @@ function XpStreakWidget({ courseId }: { courseId: string }) {
       <div className="p-3 grid grid-cols-3 gap-3">
         {[
           { label: "Total XP", value: isLoading ? "—" : (xp?.totalXp ?? 0), icon: <Zap size={16} />, accent: true },
-          { label: "Streak", value: isLoading ? "—" : `${xp?.currentStreak ?? 0}d`, icon: <TrendingUp size={16} />, accent: false },
-          { label: "Best", value: isLoading ? "—" : `${xp?.longestStreak ?? 0}d`, icon: <Trophy size={16} />, accent: false },
+          // Course-only streak (days with a lesson in THIS course) — not the global learning streak in the header.
+          { label: "Course streak", value: isLoading ? "—" : `${xp?.currentStreak ?? 0}d`, icon: <TrendingUp size={16} />, accent: false },
+          { label: "Course best", value: isLoading ? "—" : `${xp?.longestStreak ?? 0}d`, icon: <Trophy size={16} />, accent: false },
         ].map(({ label, value, icon, accent }) => (
           <div
             key={label}
@@ -1447,7 +1448,7 @@ function LearningChallengeCard({
               {isPurchasing ? <Loader2 size={14} className="animate-spin" /> : <Coins size={14} />}
               Spend {lifelineCoinCost} Coins
               {coinBalance != null && (
-                <span className="text-xs font-normal opacity-70 ml-1">({coinBalance} available)</span>
+                <span className="text-xs font-normal opacity-70 ml-1">({coinBalance.toLocaleString("en-IN")} available)</span>
               )}
             </button>
           </div>
@@ -3297,7 +3298,7 @@ export default function CourseDetailPage({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Your balance</span>
-                      <span className="font-bold">{coinBalance ?? "—"} coins</span>
+                      <span className="font-bold">{coinBalance != null ? coinBalance.toLocaleString("en-IN") : "—"} coins</span>
                     </div>
                   </>
                 ) : (
@@ -3308,7 +3309,7 @@ export default function CourseDetailPage({
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Your balance</span>
-                      <span className="font-bold">{coinBalance ?? "—"} coins</span>
+                      <span className="font-bold">{coinBalance != null ? coinBalance.toLocaleString("en-IN") : "—"} coins</span>
                     </div>
                   </>
                 )}
@@ -4122,7 +4123,7 @@ export default function CourseDetailPage({
                   title="Your TBT coin balance"
                 >
                   <Coins size={9} />
-                  {coinBalance}
+                  {coinBalance.toLocaleString("en-IN")}
                 </span>
               )}
               <button

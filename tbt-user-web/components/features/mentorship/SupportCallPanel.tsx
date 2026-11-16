@@ -595,7 +595,7 @@ function BookingConfirmation({
         <dt style={{ color: MUTED }}>Paid with</dt>
         <dd style={{ color: TEXT }}>
           {booking.paidWithCoins
-            ? `${booking.coinsSpent} TBT coins${booking.coinBalance != null ? ` · balance now ${booking.coinBalance}` : ""}`
+            ? `${booking.coinsSpent} TBT coins${booking.coinBalance != null ? ` · balance now ${booking.coinBalance.toLocaleString("en-IN")}` : ""}`
             : "1 included call"}
         </dd>
         <dt style={{ color: MUTED }}>Reference</dt>

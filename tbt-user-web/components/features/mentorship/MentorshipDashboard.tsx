@@ -363,37 +363,33 @@ function fmtK(v: number): string {
   return v.toLocaleString("en-IN");
 }
 
-function ordinalSuffix(n: number): string {
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return "th";
-  switch (n % 10) {
-    case 1: return "st";
-    case 2: return "nd";
-    case 3: return "rd";
-    default: return "th";
-  }
-}
-
 // ─── Part 2 — Revenue Summary KPI Cards ──────────────────────────────────────
 
 function RevenueSummarySection({ revenue }: { revenue: any }) {
   const n = (v: string | null | undefined): number | null =>
     v == null || v === "" ? null : Number(v);
 
-  const rev = revenue?.revenueGenerated ?? null;
-  const revPrev = revenue?.revenuePrev ?? null;
-  const orders = revenue?.numberOfOrders ?? null;
-  const ordersPrev = revenue?.ordersPrev ?? null;
-  const adSpend = revenue?.adBudgetSpent ?? null;
-  const roas = revenue?.roas ?? null;
-  const cac = revenue?.customerAcqCost ?? null;
-  const leads = revenue?.organicLeads ?? null;
-  const leadsPrev = revenue?.leadsPrev ?? null;
-  const aov = revenue?.avgOrderValue ?? null;
+  // Cards show OVERALL totals across every saved week (server-computed
+  // `overall`); week-over-week growth only applies to a single week, so it is
+  // shown only when falling back to this week's numbers (older API / demo).
+  const overall = revenue?.overall ?? null;
+  const src = overall ?? revenue;
+  const weekRev = revenue?.revenueGenerated ?? null;
+  const rev = src?.revenueGenerated ?? null;
+  const revPrev = overall ? null : revenue?.revenuePrev ?? null;
+  const orders = src?.numberOfOrders ?? null;
+  const ordersPrev = overall ? null : revenue?.ordersPrev ?? null;
+  const adSpend = src?.adBudgetSpent ?? null;
+  const roas = src?.roas ?? null;
+  const cac = src?.customerAcqCost ?? null;
+  const leads = src?.organicLeads ?? null;
+  const leadsPrev = overall ? null : revenue?.leadsPrev ?? null;
+  const aov = src?.avgOrderValue ?? null;
   const autoAov = rev != null && orders != null && orders > 0 ? Math.round(rev / orders) : null;
   const effectiveAov = aov ?? autoAov;
-  const rto = revenue?.rtoReturnsPercent ?? null;
-  const cr = revenue?.conversionRate ?? null;
+  const rto = src?.rtoReturnsPercent ?? null;
+  const cr = src?.conversionRate ?? null;
+  const weeksReported: number | null = overall?.weeksReported ?? null;
   const platform = revenue?.platformBadge ?? null;
 
   const revGrowth = growthPct(rev, revPrev);
@@ -458,7 +454,14 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   return (
     <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className="flex items-center justify-between mb-4 gap-3">
-        <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
+          {weeksReported != null && (
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--color-text-subtle)" }}>
+              Overall · {weeksReported} {weeksReported === 1 ? "week" : "weeks"} reported
+            </p>
+          )}
+        </div>
         {platform && (
           <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -466,9 +469,9 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
           </span>
         )}
       </div>
-      {!revenue ? (
+      {!revenue || (revenue.overall === null && rev == null) ? (
         <p className="text-[11px] py-6 text-center" style={{ color: "var(--color-text-subtle)" }}>
-          No revenue numbers saved for this week yet.
+          No revenue numbers saved yet.
         </p>
       ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -477,7 +480,9 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
           rev != null ? `₹${rev.toLocaleString("en-IN")}` : "—",
           "#eab308",
           effectiveAov != null ? `Avg Order Value: ₹${effectiveAov.toLocaleString("en-IN")}` : "No AOV data",
-          revPrev != null ? `₹${revPrev.toLocaleString("en-IN")} prev wk` : undefined,
+          overall
+            ? (weekRev != null ? `This week: ₹${weekRev.toLocaleString("en-IN")}` : undefined)
+            : revPrev != null ? `₹${revPrev.toLocaleString("en-IN")} prev wk` : undefined,
           revGrowth != null ? <GrowthBadge value={revGrowth} /> : undefined,
         )}
         {card(
@@ -1037,7 +1042,7 @@ function NowLearningSection() {
   const courseBase = item ? (item.type === "course" ? `/learning/${item.id}` : `/workshop/${item.id}`) : "#";
   const lessonHref = item ? (item.type === "course" ? `${courseBase}?lesson=${item.lessonId}` : courseBase) : "#";
   const nextLesson = item
-    ? ((item.episodeOrder as number) < (item.episodeCount as number) ? `Lesson ${(item.episodeOrder as number) + 1}` : null)
+    ? ((item.episodeOrder as number) + 1 < (item.episodeCount as number) ? `Lesson ${(item.episodeOrder as number) + 2}` : null)
     : null;
 
   return (
@@ -1100,7 +1105,7 @@ function NowLearningSection() {
               </div>
               {/* chapter */}
               <div style={{ position: "relative", zIndex: 1, width: 79, padding: 3, marginBottom: 14, background: "#321b1d", border: "1px solid #49292c", borderRadius: 5, color: "#ddd", fontSize: 6, textAlign: "center" }}>
-                Lesson {item.episodeOrder}
+                Lesson {(item.episodeOrder ?? 0) + 1}
               </div>
               {/* course title */}
               <div style={{ position: "relative", zIndex: 1, color: "white", fontSize: 20, fontWeight: 500, lineHeight: 1.12, letterSpacing: "-0.6px", padding: "0 8px" }}>
@@ -1115,7 +1120,7 @@ function NowLearningSection() {
             {/* ── Column 2: course details ─── */}
             <div className="min-w-0">
               <div style={{ marginBottom: 9, color: "#b3b3bb", fontSize: 11 }}>
-                {item.title} · Lesson {item.episodeOrder} of {item.episodeCount}
+                {item.title} · Lesson {(item.episodeOrder ?? 0) + 1} of {item.episodeCount}
               </div>
               <div style={{ marginBottom: 12, fontSize: 15, fontWeight: 500, lineHeight: 1.4, color: "#f5f5f7" }}>
                 {item.lastLessonTitle ?? item.title}
@@ -1215,8 +1220,11 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
   // When no courseId is provided (e.g. /batch-program/mentorship or /profile), fall back to
   // the most recently watched in-progress course so hearts still reflect a real lifeline balance.
   const { data: continueLearning } = useContinueLearning();
-  const resolvedCourseId = courseId ??
-    ((continueLearning as any[] | undefined)?.find((i: any) => i.type === "course" && !i.isCompleted)?.id ?? null);
+  const fallbackCourse = (continueLearning as any[] | undefined)?.find((i: any) => i.type === "course" && !i.isCompleted) ?? null;
+  const resolvedCourseId = courseId ?? (fallbackCourse?.id ?? null);
+  // Heading = the member's course title (same as the Mentorship page passes in
+  // as titleOverride); the program name is only the last fallback.
+  const fallbackCourseTitle: string | null = fallbackCourse?.title ?? null;
 
   const programName = stats?.programName ?? batchData?.batch?.program?.name ?? batchData?.batch?.name ?? null;
   const streakDays = stats?.streakDays ?? 0;
@@ -1294,7 +1302,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
       {/* Mounted only while open: no request until the member clicks the card. */}
       {timeHistoryOpen && <DailyTimeSpentModal open onClose={closeTimeHistory} />}
       <MentorshipHeader
-        programName={titleOverride ?? programName}
+        programName={titleOverride ?? fallbackCourseTitle ?? programName}
         weeklyReportSubmitted={weeklyReportSubmitted}
         streakDays={streakDays}
         lifelinesTotal={lifelinesTotal}
@@ -1316,7 +1324,7 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
         />
         <KpiCard
           label="Support Delivered"
-          value={`${allCallsUsedCount} Calls`}
+          value={`${allCallsUsedCount} ${Number(allCallsUsedCount) === 1 ? "Call" : "Calls"}`}
           metricColor="#bd82ff"
           note={allCallsAllocated > 0 ? `${allCallsUsed}/${allCallsAllocated} Total` : undefined}
         />
@@ -1425,11 +1433,12 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
             value={String(activeDays)}
             muted={totalDays > 0 ? `/${totalDays}d` : "d"}
             metricColor="#809ed5"
-            note={totalDays >= 300 ? "Annual" : undefined}
+            // Counts ACTIVE days (days with learning activity), not calendar days — say so (QA BUG-07).
+            note={totalDays >= 300 ? "Annual · active days" : "Active days"}
           />
           <JourneyTile
             label="Leaderboard"
-            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank}${ordinalSuffix(stats.leaderboardRank)} 🏆` : "Unranked"}
+            value={stats?.leaderboardRank != null ? `#${stats.leaderboardRank} 🏆` : "Unranked"}
             metricColor="#35cb76"
             leaderboard
             onClick={() => setWinsOpen(true)}

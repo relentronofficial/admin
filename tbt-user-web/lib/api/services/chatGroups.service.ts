@@ -236,3 +236,17 @@ export async function uploadChatMedia(
     return null;
   }
 }
+
+/**
+ * Display name for a group-chat message's sender. A message with no member
+ * record is either from an admin (senderAdminId) or from someone whose member
+ * row is gone — label those instead of a generic "Member" with a "?" avatar.
+ */
+export function chatSenderName(m: {
+  sender?: { firstName?: string | null; lastName?: string | null } | null;
+  senderAdminId?: string | null;
+}): string {
+  const name = [m.sender?.firstName, m.sender?.lastName].filter(Boolean).join(" ");
+  if (name) return name;
+  return m.senderAdminId ? "TBT Team" : "Former member";
+}

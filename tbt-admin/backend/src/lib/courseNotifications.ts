@@ -29,8 +29,29 @@ function emit(io: any, memberId: string, title: string, body: string, type: stri
   io.to(`user:${memberId}`).emit('notification', { title, body, type });
 }
 
-export async function notifyCourseAccessGranted(ctx: Ctx & { courseId: string; courseTitle: string }): Promise<void> {
+/**
+ * True when the member already holds usable access to the course (active and not
+ * expired). Read BEFORE a grant upsert so a re-grant — admin re-saving access, a
+ * second payment approval, the Razorpay webhook racing /verify — doesn't send
+ * another "Course Access Granted" notification for access the member already had.
+ */
+export async function hasLiveCourseAccess(prisma: any, memberId: string, courseId: string): Promise<boolean> {
+  const row = await prisma.courseAccess
+    .findUnique({ where: { memberId_courseId: { memberId, courseId } }, select: { isActive: true, expiresAt: true } })
+    .catch(() => null);
+  if (!row?.isActive) return false;
+  return !row.expiresAt || new Date(row.expiresAt).getTime() > Date.now();
+}
+
+export async function notifyCourseAccessGranted(
+  ctx: Ctx & { courseId: string; courseTitle: string; alreadyHadAccess?: boolean },
+): Promise<void> {
   const { prisma, io, memberId, courseId, courseTitle } = ctx;
+  if (ctx.alreadyHadAccess) {
+    // Nothing new for the member to hear about — just let open course pages refetch.
+    io?.to(`user:${memberId}`).emit('course:access_granted', { courseId });
+    return;
+  }
   const title = 'Course Access Granted';
   const body = `You now have access to "${courseTitle}". Start learning now!`;
   await createInApp(prisma, memberId, title, body, 'course_access', `/learning/${courseId}`);

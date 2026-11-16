@@ -69,7 +69,8 @@ describe("Navbar — admin-controlled order", () => {
     const { container } = renderNavbar(["section:community", "mentorship-id", "section:ebooks", "home-id", "section:podcasts"]);
     const drawer = Array.from(container.querySelectorAll("nav")).find((n) => !n.closest("header"))!;
     const labels = Array.from(drawer.querySelectorAll("a")).map((a) => a.textContent?.trim());
-    expect(labels).toEqual(["Community", "Mentorship", "Ebooks", "Home", "Podcasts", "Support"]);
+    // Admin-ordered items, then the fixed account links (Dashboard, Watch History, Profile), then Support.
+    expect(labels).toEqual(["Community", "Mentorship", "Ebooks", "Home", "Podcasts", "Dashboard", "Watch History", "Profile", "Support"]);
   });
 
   it("keeps today's order when the admin has not saved one", () => {

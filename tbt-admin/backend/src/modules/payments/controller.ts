@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import { getRazorpay } from '../../lib/razorpay.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { invalidateCache } from '../../lib/cache.js';
-import { notifyCourseAccessGranted } from '../../lib/courseNotifications.js';
+import { notifyCourseAccessGranted, hasLiveCourseAccess } from '../../lib/courseNotifications.js';
 
 // ── RZ-02-A: GET /api/payments/stats ──────────────────────────────────────────
 
@@ -265,6 +265,7 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
     effectiveMethod, adminId, paymentId,
   );
 
+  const alreadyHadAccess = await hasLiveCourseAccess(req.server.prisma, payment.memberId, payment.courseId);
   await req.server.prisma.courseAccess.upsert({
     where: { memberId_courseId: { memberId: payment.memberId, courseId: payment.courseId } },
     create: { memberId: payment.memberId, courseId: payment.courseId, accessType: 'lifetime', isActive: true, paymentId, grantedBy: adminId },
@@ -286,6 +287,7 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
     memberId: payment.memberId,
     courseId: payment.courseId,
     courseTitle,
+    alreadyHadAccess,
   }).catch(() => {});
 
   void createAdminNotification(req.server.prisma, {

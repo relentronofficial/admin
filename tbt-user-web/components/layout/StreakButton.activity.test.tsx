@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({ stats: {} as any, streak: {} as any }));
 vi.mock("@/lib/hooks/useMentorship", () => ({
   useMentorshipStats: () => state.stats,
   useMentorshipRevenue: () => ({ data: null }),
+  useMentorshipRevenueHistory: () => ({ data: null, isLoading: false, isError: false }),
   useUpsertMentorshipRevenue: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMentorshipSocial: () => ({ data: null }),
   useUpsertMentorshipSocial: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -58,7 +59,7 @@ const flat = (el: Element) => el.textContent!.replace(/\s+/g, "");
 const streakEl = () => screen.getByRole("button", { name: /^Learning Streak:/ });
 const tierEl = () => screen.getByRole("status", { name: /^Tier Access:/ });
 const tierTile = () =>
-  screen.getByText("Tier Access", { selector: "span.truncate" }).closest("div")!.parentElement!.textContent!.replace(/\s+/g, "").replace("TierAccess", "");
+  screen.getByText("Tier Access", { selector: "span.truncate" }).closest("div")!.parentElement!.textContent!.replace(/\s+/g, "").replace("TierAccess", "").replace(/Activedays$/, "");
 const navbar = () => <><StreakButton /><TierAccessIndicator /></>;
 
 beforeEach(() => {
@@ -79,7 +80,7 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
     expect(streakEl().textContent).not.toMatch(/streak|Tier|\d+d/i);
     expect(tierEl().textContent).not.toMatch(/streak|Tier/i);
     // Full context stays available to screen readers / tooltip.
-    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 12/90d");
+    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 12/90d active days");
     expect(streakEl().getAttribute("aria-label")).toBe("Learning Streak: 5 days");
   });
 
@@ -102,7 +103,7 @@ describe("Navbar: Streak and Tier Access are separate indicators", () => {
   it("Tier Access matches the dashboard tile", () => {
     state.stats = stats(15, 104);
     render(<>{navbar()}<MentorshipDashboard /></>);
-    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 15/104d");
+    expect(tierEl().getAttribute("aria-label")).toBe("Tier Access: 15/104d active days");
     expect(flat(tierEl())).toBe("15/104d");
     expect(tierTile()).toBe("15/104d");
   });

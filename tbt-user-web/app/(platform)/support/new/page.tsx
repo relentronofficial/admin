@@ -38,6 +38,10 @@ function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Backend caps subject at 255 (helpdesk/schema.ts); message is kept reasonable.
+const SUBJECT_MAX = 200;
+const MESSAGE_MAX = 5000;
+
 export default function RaiseTicketPage() {
   const router = useRouter();
   const { data: me } = useMe();
@@ -80,8 +84,16 @@ export default function RaiseTicketPage() {
     if (!name.trim()) next.name = "Required";
     if (!email.trim()) next.email = "Required";
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) next.email = "Invalid email";
+    // Optional phone, but if given it must look like a phone number: digits with
+    // optional +, spaces, dashes or brackets, 7–15 digits in total.
+    const ph = phone.trim();
+    if (ph && (!/^\+?[\d\s\-()]+$/.test(ph) || ph.replace(/\D/g, "").length < 7 || ph.replace(/\D/g, "").length > 15)) {
+      next.phone = "Enter a valid phone number";
+    }
     if (!subject.trim()) next.subject = "Required";
+    else if (subject.trim().length > SUBJECT_MAX) next.subject = `Keep it under ${SUBJECT_MAX} characters`;
     if (!message.trim()) next.message = "Required";
+    else if (message.trim().length > MESSAGE_MAX) next.message = `Keep it under ${MESSAGE_MAX} characters`;
     setErrors(next);
     return Object.keys(next).length === 0;
   }
@@ -270,7 +282,7 @@ export default function RaiseTicketPage() {
         />
 
         <FieldLabel>PHONE (OPTIONAL)</FieldLabel>
-        <TextInput value={phone} onChange={setPhone} placeholder="e.g. +91 90000 00000" type="tel" />
+        <TextInput value={phone} onChange={setPhone} placeholder="e.g. +91 90000 00000" type="tel" error={errors.phone} maxLength={20} />
 
         {categories.length > 0 && (
           <>
@@ -300,6 +312,7 @@ export default function RaiseTicketPage() {
           onChange={setSubject}
           placeholder="Short summary of the issue"
           error={errors.subject}
+          maxLength={SUBJECT_MAX}
         />
 
         <FieldLabel>DESCRIPTION</FieldLabel>
@@ -307,6 +320,7 @@ export default function RaiseTicketPage() {
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           rows={5}
+          maxLength={MESSAGE_MAX}
           placeholder="Describe the issue in detail"
           className="w-full px-4 py-3 rounded-xl text-sm text-foreground outline-none resize-y"
           style={{
@@ -398,17 +412,20 @@ function TextInput({
   placeholder,
   type = "text",
   error,
+  maxLength,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   type?: string;
   error?: string;
+  maxLength?: number;
 }) {
   return (
     <div>
       <input
         type={type}
+        maxLength={maxLength}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}

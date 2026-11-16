@@ -254,7 +254,9 @@ export default function MessagesPage() {
   // first DM — same as before — once the deep-link has been consumed or if
   // there wasn't one / it doesn't match a real conversation.
   useEffect(() => {
-    if (activeId || conversations.length === 0) return;
+    // A group chat is open: don't auto-select a DM too, or the first DM stays
+    // highlighted in the list while the group shows on the right (QA BUG-17).
+    if (activeId || activeGroupId || conversations.length === 0) return;
     if (deepLinkConvoId && !deepLinkConvoAppliedRef.current) {
       deepLinkConvoAppliedRef.current = true;
       const match = conversations.find((c: any) => c.id === deepLinkConvoId);
@@ -269,7 +271,7 @@ export default function MessagesPage() {
       // closest relevant parent page: the conversation list itself.
     }
     setActiveId(conversations[0].id);
-  }, [conversations, activeId, deepLinkConvoId]);
+  }, [conversations, activeId, activeGroupId, deepLinkConvoId]);
 
   // Scroll to bottom instantly on conversation switch, smoothly on new messages
   useEffect(() => {

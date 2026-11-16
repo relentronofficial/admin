@@ -437,7 +437,7 @@ function VerificationMeetingCard() {
           <p className="text-sm font-semibold text-foreground">{meeting.title}</p>
           <p className="text-xs flex items-center gap-1.5 mt-1" style={{ color: "var(--color-text-subtle)" }}>
             <Calendar size={11} />
-            {new Date(meeting.scheduledAt).toLocaleString()}
+            {new Date(meeting.scheduledAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
           </p>
           {meeting.status === "live" && (
             <span

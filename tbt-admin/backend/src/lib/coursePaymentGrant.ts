@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Server } from 'socket.io';
 import { createAdminNotification } from './adminNotifications.js';
 import { invalidateCache } from './cache.js';
+import { hasLiveCourseAccess } from './courseNotifications.js';
 
 interface GrantParams {
   prisma: PrismaClient;
@@ -35,6 +36,10 @@ export async function grantCourseAccessAfterPayment(params: GrantParams): Promis
   const expiresAt = hasDuration
     ? new Date(Date.now() + accessDurationDays! * 24 * 60 * 60 * 1000)
     : null;
+
+  // Read before the upsert: the webhook and /verify both land here for one payment,
+  // and the member must hear "access granted" once, not twice.
+  const alreadyHadAccess = await hasLiveCourseAccess(prisma, memberId, courseId);
 
   await (prisma as any).courseAccess.upsert({
     where: { memberId_courseId: { memberId, courseId } },
@@ -72,8 +77,8 @@ export async function grantCourseAccessAfterPayment(params: GrantParams): Promis
   const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } }).catch(() => null);
   const courseTitle = course?.title ?? courseId;
 
-  // 6. In-app notification to member (best-effort)
-  void prisma.appNotification.create({
+  // 6. In-app notification to member (best-effort; only when access is new)
+  if (!alreadyHadAccess) void prisma.appNotification.create({
     data: {
       title: 'Course Access Granted',
       message: `You now have access to "${courseTitle}". Start learning!`,

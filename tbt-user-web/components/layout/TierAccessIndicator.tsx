@@ -37,8 +37,8 @@ export function TierAccessIndicator() {
   return (
     <div
       role="status"
-      aria-label={`${label}: ${value}`}
-      title={`${label}: ${value}`}
+      aria-label={`${label}: ${value} active days`}
+      title={`${label}: ${value} active days`}
       className={NAV_COUNTER_CLASS}
       style={NAV_COUNTER_STYLE}
     >

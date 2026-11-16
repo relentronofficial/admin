@@ -62,8 +62,18 @@ function groupItems(items: WatchHistoryItem[]): ItemGroup[] {
     if (!item.isCompleted) g.allCompleted = false;
   }
   for (const g of map.values()) {
-    const sum = g.items.reduce((a, i) => a + i.progressPercent, 0);
-    g.progressPercent = Math.round(sum / g.items.length);
+    // Header = share of the whole course/workshop completed, not the average of
+    // the few episodes that happen to be in history (that read 78% / "Done" for
+    // a course with 3 of 43 lessons watched).
+    const total = Math.max(0, ...g.items.map((i) => i.episodeCount ?? 0));
+    const done = new Set(g.items.filter((i) => i.isCompleted).map((i) => i.episodeId)).size;
+    if (total > 0) {
+      g.progressPercent = Math.min(100, Math.round((done / total) * 100));
+      g.allCompleted = done >= total;
+    } else {
+      const sum = g.items.reduce((a, i) => a + i.progressPercent, 0);
+      g.progressPercent = Math.round(sum / g.items.length);
+    }
   }
   return Array.from(map.values());
 }
@@ -123,7 +133,8 @@ function EpisodeRow({
               {item.episodeTitle}
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Ep {item.episodeOrder} of {item.episodeCount}
+              {/* course episode order is 0-based */}
+              Ep {item.type === "course" ? (item.episodeOrder ?? 0) + 1 : item.episodeOrder} of {item.episodeCount}
               {item.durationSeconds > 0 && !isCompleted && (
                 <span className="ml-2 tabular-nums">
                   {fmtSecs(item.lastWatchedSecs)} / {fmtSecs(item.durationSeconds)}

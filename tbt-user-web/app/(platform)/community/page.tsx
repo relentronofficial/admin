@@ -190,8 +190,12 @@ export default function CommunityPage() {
                   ? "You haven't posted yet — share your first win."
                   : filter === "following"
                     ? "Follow other members to see their posts here."
-                    : "No posts yet — be the first to share."}
+                    : filter === "mentors"
+                      ? "No posts from mentors yet — check back soon."
+                      : "No posts yet — be the first to share."}
               </p>
+              {/* Members can't post into the Mentors feed, so no compose CTA there (QA BUG-38). */}
+              {filter !== "mentors" && (
               <button
                 onClick={() => setComposerOpen(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold tracking-wider text-white"
@@ -199,6 +203,7 @@ export default function CommunityPage() {
               >
                 <Pencil size={13} /> COMPOSE A POST
               </button>
+              )}
             </div>
           ) : (
             <>

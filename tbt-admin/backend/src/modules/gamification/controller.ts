@@ -29,6 +29,7 @@ import {
 } from './schema.js';
 import { computeMemberStats } from '../../lib/tbtStats.js';
 import { cacheGet, cacheSet, cacheNxSet, invalidateCache } from '../../lib/cache.js';
+import { LEADERBOARD_POINT_SOURCES } from '../../lib/activityDays.js';
 
 // Levels + tasks are static config data — rendered on every admin
 // dashboard load and referenced by the member gamification screen.
@@ -176,6 +177,8 @@ export async function adminLeaderboardHandler(req: FastifyRequest, reply: Fastif
   const grouped = await req.server.prisma.tbtActivityLog.groupBy({
     by: ['memberId'],
     _sum: { points: true },
+    // Earned points only — coin bookkeeping is not a score (lib/activityDays.ts).
+    where: { source: { in: [...LEADERBOARD_POINT_SOURCES] } },
     orderBy: { _sum: { points: 'desc' } },
     take: l,
   });
@@ -385,7 +388,7 @@ export async function leaderboardHandler(req: FastifyRequest, reply: FastifyRepl
   const { limit = '20', period = 'all' } = req.query as Record<string, string>;
   const l = Math.min(100, Math.max(1, Number(limit) || 20));
 
-  const cacheKey = `leaderboard:v1:${period}:${l}`;
+  const cacheKey = `leaderboard:v2:${period}:${l}`;
   const redis = (req.server as any).redis ?? null;
   const cached = await cacheGet<any[]>(redis, cacheKey);
   if (cached) {
@@ -407,7 +410,12 @@ export async function leaderboardHandler(req: FastifyRequest, reply: FastifyRepl
   const grouped = await req.server.prisma.tbtActivityLog.groupBy({
     by: ['memberId'],
     _sum: { points: true },
-    where: since ? { activityDate: { gte: since } } : undefined,
+    // Earned points only — coin purchases/spends and admin coin grants are not
+    // wins (lib/activityDays.ts), so no score equals a coin balance or goes negative.
+    where: {
+      source: { in: [...LEADERBOARD_POINT_SOURCES] },
+      ...(since ? { activityDate: { gte: since } } : {}),
+    },
     orderBy: { _sum: { points: 'desc' } },
     take: l,
   });

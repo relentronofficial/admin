@@ -533,7 +533,7 @@ export default function BatchDayPage() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Your balance</span>
-                <span className="font-bold">{coinBalance ?? "—"} coins</span>
+                <span className="font-bold">{coinBalance != null ? coinBalance.toLocaleString("en-IN") : "—"} coins</span>
               </div>
             </div>
             <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>

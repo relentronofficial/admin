@@ -22,7 +22,7 @@ import {
 import { createAdminNotification } from '../../lib/adminNotifications.js';
 import { computeMemberStats, syncLegacyPointsToLedger } from '../../lib/tbtStats.js';
 import { computeStreakSummary, type StreakActivityRow } from '../../lib/streakSummaryLogic.js';
-import { QUALIFYING_SOURCES_SQL, resolveProgramTimezone, programToday, localDayKey, computeTierActiveDays } from '../../lib/activityDays.js';
+import { QUALIFYING_SOURCES_SQL, LEADERBOARD_SOURCES_SQL, resolveProgramTimezone, programToday, localDayKey, computeTierActiveDays } from '../../lib/activityDays.js';
 import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/streakPointsLogic.js';
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment, grantPaymentAccess, loadPaymentForGrant } from '../../lib/coursePaymentGrant.js';
@@ -2280,6 +2280,15 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
   const passing = (course as any)?.passingScorePercent ?? 70;
   const passed = score >= passing;
 
+  // XP is awarded once per episode (awardEpisodeXp dedups), so the "Quiz Passed!
+  // +XP" notification must also go out only on the first pass — a retake that
+  // passes again used to produce a duplicate notification promising XP again.
+  const passedBefore = passed
+    ? await (request.server.prisma as any).courseQuizAttempt
+        .findFirst({ where: { memberId: request.memberId, episodeId: epId, passed: true }, select: { id: true } })
+        .catch(() => null)
+    : null;
+
   const attempt = await (request.server.prisma as any).courseQuizAttempt.create({
     data: { memberId: request.memberId, episodeId: epId, answers, score, passed },
   });
@@ -2287,8 +2296,9 @@ export async function submitCourseQuizHandler(request: FastifyRequest, reply: Fa
   const xp = (course as any)?.xpPerEpisode ?? 10;
   if (passed) {
     void awardEpisodeXp(request.server.prisma as any, request.memberId, courseId, epId, xp);
-
-    // 7.1 — quiz passed notification
+  }
+  if (passed && !passedBefore) {
+    // 7.1 — quiz passed notification (first pass only)
     void notifyQuizPassed({
       prisma: request.server.prisma as any,
       io: request.server.io,
@@ -2612,8 +2622,18 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
   // under concurrent load (150 VUs × 4 queries → 150 VUs × 3 queries).
   const [enrollmentCounts, member, unreadNotifications] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<{ total: string; completed: string }[]>(
-      `SELECT COUNT(*)::text AS total, COUNT(completed_at)::text AS completed
-       FROM course_enrollments WHERE member_id = $1::uuid`,
+      // Only courses the member can still open (published + live access), so the
+      // count matches what the Courses pages show — not stale enrollments for
+      // revoked/expired access or unpublished courses.
+      `SELECT COUNT(*)::text AS total, COUNT(e.completed_at)::text AS completed
+       FROM course_enrollments e
+       JOIN courses c ON c.id = e.course_id AND c.is_published = true
+       WHERE e.member_id = $1::uuid
+         AND EXISTS (
+           SELECT 1 FROM course_access a
+           WHERE a.member_id = e.member_id AND a.course_id = e.course_id
+             AND a.is_active = true AND (a.expires_at IS NULL OR a.expires_at > NOW())
+         )`,
       request.memberId
     ).catch(() => [{ total: '0', completed: '0' }] as { total: string; completed: string }[]),
     request.server.prisma.member.findUnique({
@@ -7298,7 +7318,7 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
 
   const plan = (member?.membershipPlan as string | null) ?? 'free';
 
-  const [entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows] = await Promise.all([
+  const [entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows, reservedRows] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<any[]>(
       `SELECT tech_support_days, ad_support_days, group_call_count, call_credit_count, one_to_one_enabled,
               COALESCE(sales_call_count, 0) AS sales_call_count, COALESCE(content_call_count, 0) AS content_call_count
@@ -7315,11 +7335,28 @@ export async function getSupportQuotaHandler(request: FastifyRequest, reply: Fas
     request.server.prisma.$queryRawUnsafe<any[]>(APPROVED_CREDIT_PURCHASES_SQL, memberId),
     request.server.prisma.$queryRawUnsafe<any[]>(COIN_UNLOCKED_BOOKINGS_SQL, memberId),
     request.server.prisma.$queryRawUnsafe<any[]>(COIN_PURCHASED_CALLS_SQL, memberId),
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT s.category, COUNT(*)::int AS n FROM support_call_bookings b
+       JOIN support_call_sessions s ON s.id = b.session_id
+       WHERE b.member_id = $1::uuid AND b.status = 'booked' AND s.status = 'scheduled'
+       GROUP BY s.category`,
+      memberId,
+    ).catch(() => [] as any[]),
   ]);
 
   // Same pure computation as the admin member-quota view (lib/supportQuota.ts),
   // so purchased credits and legacy rows are handled identically in both.
-  return ok(reply, computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows));
+  const quota: any = computeSupportQuota(plan, entRows, usageRows, lifelineRows, purchasedRows, coinRows, coinPurchasedRows);
+  // Booked-but-not-yet-held calls hold a slot too (pitfall #49), exactly as the
+  // booking cards count them — otherwise the profile shows more calls left than
+  // the member can actually book.
+  for (const r of reservedRows) {
+    if (!isSupportCallCategory(r.category)) continue;
+    const b = quotaBucketFor(quota, r.category);
+    const q = categoryQuota(b, Number(r.n) || 0);
+    Object.assign(b, { reserved: q.reserved, remaining: q.remaining });
+  }
+  return ok(reply, quota);
 }
 
 function coinPurchaseAvailable() {
@@ -8632,7 +8669,9 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
         prisma.$queryRawUnsafe<any[]>(
           `WITH ranked AS (
              SELECT member_id, RANK() OVER (ORDER BY SUM(points) DESC) AS rk
-             FROM tbt_activity_log GROUP BY member_id
+             FROM tbt_activity_log
+             WHERE source IN (${LEADERBOARD_SOURCES_SQL})
+             GROUP BY member_id
            ) SELECT rk::int AS rk FROM ranked WHERE member_id = $1::uuid LIMIT 1`,
           memberId,
         ).catch(() => []),
@@ -8759,18 +8798,48 @@ export async function getMentorshipRevenueHandler(request: FastifyRequest, reply
        WHERE member_id = $1::uuid AND week_number = $2 AND year = $3 LIMIT 1`,
       memberId, isoWeek, isoYear,
     ).catch(() => []),
-    request.server.prisma.$queryRawUnsafe<{ total: string | null }[]>(
-      `SELECT SUM(revenue_generated)::text AS total FROM member_revenue_reports WHERE member_id = $1::uuid`,
+    // Overall (all saved weeks) totals for the "Your Revenue Stats" cards.
+    // Percentages are weighted: RTO by orders, conversion rate by leads.
+    request.server.prisma.$queryRawUnsafe<any[]>(
+      `SELECT SUM(revenue_generated)::text AS total,
+              SUM(number_of_orders)::text AS orders,
+              SUM(ad_budget_spent)::text AS ad_spend,
+              SUM(organic_leads)::text AS leads,
+              (SUM(rto_returns_percent * number_of_orders) FILTER (WHERE rto_returns_percent IS NOT NULL AND number_of_orders > 0)
+                / NULLIF(SUM(number_of_orders) FILTER (WHERE rto_returns_percent IS NOT NULL AND number_of_orders > 0), 0))::text AS rto,
+              (SUM(conversion_rate * organic_leads) FILTER (WHERE conversion_rate IS NOT NULL AND organic_leads > 0)
+                / NULLIF(SUM(organic_leads) FILTER (WHERE conversion_rate IS NOT NULL AND organic_leads > 0), 0))::text AS cr,
+              COUNT(*)::int AS weeks
+       FROM member_revenue_reports WHERE member_id = $1::uuid`,
       memberId,
     ).catch(() => [{ total: null }]),
   ]);
 
-  const totalAllTime = totalRows[0]?.total != null ? Number(totalRows[0].total) : null;
+  const t = totalRows[0] ?? {};
+  const num = (v: unknown) => (v == null ? null : Number(v));
+  const totalAllTime = num(t.total);
+  const oRev = totalAllTime;
+  const oOrders = num(t.orders);
+  const oAd = num(t.ad_spend);
+  const round1 = (v: number) => Math.round(v * 10) / 10;
+  const overall = Number(t.weeks) > 0 ? {
+    weeksReported:     Number(t.weeks),
+    revenueGenerated:  oRev,
+    numberOfOrders:    oOrders,
+    adBudgetSpent:     oAd,
+    organicLeads:      num(t.leads),
+    avgOrderValue:     oRev != null && oOrders ? Math.round(oRev / oOrders) : null,
+    roas:              oRev != null && oAd ? round1(oRev / oAd) : null,
+    customerAcqCost:   oAd != null && oOrders ? Math.round(oAd / oOrders) : null,
+    rtoReturnsPercent: t.rto != null ? round1(Number(t.rto)) : null,
+    conversionRate:    t.cr != null ? round1(Number(t.cr)) : null,
+  } : null;
 
   if (!rows.length) return ok(reply, {
     weekNumber:        isoWeek,
     year:              isoYear,
     totalAllTime,
+    overall,
     revenueGenerated:  null,
     revenuePrev:       null,
     numberOfOrders:    null,
@@ -8794,6 +8863,7 @@ export async function getMentorshipRevenueHandler(request: FastifyRequest, reply
     weekNumber:          isoWeek,
     year:                isoYear,
     totalAllTime,
+    overall,
     revenueGenerated:    r.revenue_generated != null ? Number(r.revenue_generated) : null,
     revenuePrev:         r.revenue_prev != null ? Number(r.revenue_prev) : null,
     numberOfOrders:      r.number_of_orders != null ? Number(r.number_of_orders) : null,
