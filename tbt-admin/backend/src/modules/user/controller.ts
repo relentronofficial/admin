@@ -363,6 +363,9 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
 
   if (!member) return fail(reply, 404, 'Member not found');
 
+  // Profile shows the same streak as the navbar and Dashboard (loadStreakSummary).
+  const streak = await loadStreakSummary(request.server.prisma, redis, request.memberId!).catch(() => null);
+
   const activeSub = member.subscriptions[0] ?? null;
   const memberTier = member.currentTier ?? 1;
 
@@ -481,7 +484,7 @@ export async function getMeHandler(request: FastifyRequest, reply: FastifyReply)
       : null,
     onboardingReviewNote: (member as any).onboardingReviewNote ?? null,
     totalPoints: member.totalPoints,
-    currentStreak: member.currentStreak,
+    currentStreak: streak?.currentStreak ?? member.currentStreak,
     healthScore: member.healthScore,
     notificationPrefs: (member.notificationPrefs as any) ?? { email: true, push: true, sms: true },
     badges: member.displayBadges.map((db) => db.badge),
@@ -2401,10 +2404,8 @@ export async function getCourseXpHandler(request: FastifyRequest, reply: Fastify
     });
 
     const total = (rows as any[]).reduce((sum: number, r: any) => sum + r.amount, 0);
-    const streak = await (request.server.prisma as any).courseStreak.findUnique({
-      where: { memberId_courseId: { memberId: request.memberId, courseId } },
-      select: { currentStreak: true, longestStreak: true },
-    }).catch(() => null);
+    // Same streak as every other page (loadStreakSummary), not the per-course table.
+    const streak = await loadStreakSummary(request.server.prisma, request.server.redis ?? null, request.memberId!).catch(() => null);
 
     return ok(reply, { totalXp: total, currentStreak: streak?.currentStreak ?? 0, longestStreak: streak?.longestStreak ?? 0, history: rows });
   } catch {
@@ -2514,20 +2515,33 @@ export async function getMyStreakHandler(request: FastifyRequest, reply: Fastify
     markDemo(reply);
     return ok(reply, (await buildDemoOverlay(request)).streak);
   }
-  const summary = await cacheGetOrCompute(request.server.redis ?? null, `streak:${memberId}`, 60, async () => {
-    await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
-    // Only qualifying activity marks a day (lib/activityDays.ts) — coin spends,
-    // coin purchases, admin grants and bonuses are ledger bookkeeping, not activity.
-    const rows = await prisma.$queryRawUnsafe<StreakActivityRow[]>(
-      `SELECT activity_date, COALESCE(SUM(points), 0)::bigint AS points
-       FROM tbt_activity_log
-       WHERE member_id = $1::uuid AND source IN (${QUALIFYING_SOURCES_SQL})
-       GROUP BY activity_date`,
-      memberId,
-    ).catch(() => [] as StreakActivityRow[]);
-    return computeStreakSummary(rows, programToday(new Date(), PROGRAM_TZ));
-  });
+  const summary = await loadStreakSummary(prisma, request.server.redis ?? null, memberId);
   return ok(reply, summary);
+}
+
+/**
+ * The member's streak — the ONE definition every page shows (navbar flame,
+ * Dashboard, Profile, Mentorship, course "Your Stats"). Before, those read three
+ * different stores (this ledger, members.current_streak and the per-course
+ * course_streaks table) and disagreed (QA-06). Cached 60 s under `streak:<id>`.
+ */
+async function loadStreakSummary(prisma: any, redis: any, memberId: string) {
+  return cacheGetOrCompute(redis, `streak:${memberId}`, 60, () => computeMemberStreak(prisma, memberId));
+}
+
+/** Uncached loadStreakSummary, for callers that cache their own result (mentorship stats). */
+async function computeMemberStreak(prisma: any, memberId: string) {
+  await syncLegacyPointsToLedger(prisma, memberId).catch(() => {});
+  // Only qualifying activity marks a day (lib/activityDays.ts) — coin spends,
+  // coin purchases, admin grants and bonuses are ledger bookkeeping, not activity.
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT activity_date, COALESCE(SUM(points), 0)::bigint AS points
+     FROM tbt_activity_log
+     WHERE member_id = $1::uuid AND source IN (${QUALIFYING_SOURCES_SQL})
+     GROUP BY activity_date`,
+    memberId,
+  ).catch(() => [] as StreakActivityRow[]) as StreakActivityRow[];
+  return computeStreakSummary(rows, programToday(new Date(), PROGRAM_TZ));
 }
 
 // Daily Time Spent heartbeat — sent about once a minute by the web app while
@@ -2610,7 +2624,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
 
   // Merge the two enrollment counts into one raw query to halve the DB round-trips
   // under concurrent load (150 VUs × 4 queries → 150 VUs × 3 queries).
-  const [enrollmentCounts, member, unreadNotifications] = await Promise.all([
+  const [enrollmentCounts, member, unreadNotifications, streak] = await Promise.all([
     request.server.prisma.$queryRawUnsafe<{ total: string; completed: string }[]>(
       `SELECT COUNT(*)::text AS total, COUNT(completed_at)::text AS completed
        FROM course_enrollments WHERE member_id = $1::uuid`,
@@ -2623,6 +2637,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     request.server.prisma.notification.count({
       where: { memberId: request.memberId, isRead: false },
     }),
+    loadStreakSummary(request.server.prisma, redis, request.memberId!).catch(() => null),
   ]);
 
   const totalCourses = parseInt(enrollmentCounts[0]?.total ?? '0', 10);
@@ -2633,7 +2648,7 @@ export async function getDashboardStatsHandler(request: FastifyRequest, reply: F
     completedCourses,
     inProgressCourses: totalCourses - completedCourses,
     totalPoints: member?.totalPoints ?? 0,
-    currentStreak: member?.currentStreak ?? 0,
+    currentStreak: streak?.currentStreak ?? member?.currentStreak ?? 0,
     upcomingEvents,
     unreadNotifications,
   };
@@ -8637,11 +8652,9 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
           memberId,
         ).catch(() => []),
 
-        // Q6: course streak
-        (prisma as any).courseStreak.findUnique({
-          where: { memberId },
-          select: { currentStreak: true },
-        }).catch(() => null),
+        // Q6: the member's streak — same definition as the navbar (loadStreakSummary)
+        // (uncached: this whole result is already cached under mentorship:stats:)
+        computeMemberStreak(prisma, memberId).catch(() => null),
 
         // Q7: batch details (name, startedAt, totalDays)
         batchId

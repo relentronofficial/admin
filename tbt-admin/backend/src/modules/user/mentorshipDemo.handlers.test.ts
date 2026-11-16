@@ -230,7 +230,7 @@ describe('caching cannot leak demo responses', () => {
     // Stats: the real value is cached, the demo overlay is applied after.
     const demoStats = (await call(user.getMentorshipStatsHandler, TARGET_ID)).sent.body.data;
     const cachedStats = await cacheGet<any>(null, `mentorship:stats:${TARGET_ID}`);
-    expect(cachedStats.streakDays).toBe(3); // real courseStreak value
+    expect(cachedStats.streakDays).toBe(0); // real ledger streak — the same value GET /streak returns (QA-06)
     expect(demoStats.streakDays).toBe(demoStreak.currentStreak);
   });
 
@@ -249,7 +249,7 @@ describe('caching cannot leak demo responses', () => {
     expect(streak.sent.headers['x-tbt-demo']).toBeUndefined();
     expect(streak.sent.body.data.currentStreak).toBe(0);
     const stats = await call(user.getMentorshipStatsHandler, TARGET_ID);
-    expect(stats.sent.body.data.streakDays).toBe(3);
+    expect(stats.sent.body.data.streakDays).toBe(streak.sent.body.data.currentStreak); // one streak everywhere (QA-06)
   });
 });
 
@@ -315,7 +315,7 @@ describe('demo configuration removed', () => {
       expect(streak.sent.body.data.currentStreak).toBe(0);
 
       const stats = await call(user.getMentorshipStatsHandler, TARGET_ID);
-      expect(stats.sent.body.data.streakDays).toBe(3);
+      expect(stats.sent.body.data.streakDays).toBe(streak.sent.body.data.currentStreak); // one streak everywhere (QA-06)
 
       const graph = await call(userBatch.getMyWeeklyGraphHandler, TARGET_ID);
       expect(graph.sent.body.data.weeks.flatMap((w: any) => w.activities.map((a: any) => a.taskId))).toEqual(['real-task-1']);

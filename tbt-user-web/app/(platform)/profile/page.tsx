@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSocket } from "@/lib/socket/useSocket";
 import apiClient from "@/lib/api/client";
@@ -9,15 +10,15 @@ import {
   CheckCircle2, Lock, Pencil, X, Save, Monitor, Smartphone, Tablet, Wifi,
   Camera, Loader2, Trophy, Heart, LogOut, Bell, Mail, MessageSquare,
   Headphones, Megaphone, Phone, Users, Star, Zap, ShoppingCart, Clock,
-  Brain, Flame,
+  Brain, Flame, ArrowRight,
 } from "lucide-react";
 import { ProfileAssessmentCard } from "@/components/features/psychometric/ProfileAssessmentCard";
 import { AnswersReview } from "@/components/features/psychometric/AnswersReview";
 import { useMe, useUpdateProfile, useUploadAvatar, useNotificationPrefs, useUpdateNotificationPrefs, useUserSupportQuota, useCreditPricing, usePurchaseCredit, useMyCreditPurchases, type CreditPricingItem } from "@/lib/hooks/useUser";
 import { useMyDevices, useRevokeDevice } from "@/lib/hooks/useDashboard";
 import { useMyStreakPoints } from "@/lib/hooks/useCourses";
+import { useMentorshipStats } from "@/lib/hooks/useMentorship";
 import { cn } from "@/lib/utils/cn";
-import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import { ProfileOnboardingSection } from "@/components/features/profile/ProfileOnboardingSection";
 import toast from "react-hot-toast";
 import type { MemberProfile, ProfileSection, ProfileTier, ProfileBadge, DeviceSession } from "@/types";
@@ -110,6 +111,21 @@ function BadgeChip({ badge }: { badge: ProfileBadge }) {
     >
       {badge.label}
     </span>
+  );
+}
+
+// ─── Tier Access: active-days progress ──────────────────────────────────────
+// Tiers count active days in the program (the Mentorship "Tier Access" tile), not
+// calendar days since the batch started, so a member on Day 49 with 18 active days
+// is correctly still short of a 30-day tier. Show that number here (QA-09).
+function TierActiveDaysNote() {
+  const { data: stats } = useMentorshipStats();
+  const total = Number(stats?.totalDays ?? 0);
+  if (!stats || total <= 0) return null;
+  return (
+    <p className="text-xs text-muted-foreground">
+      Tiers unlock by active days in your program. You have <strong className="text-foreground">{stats.activeDays ?? 0}</strong> of {total} active days so far.
+    </p>
   );
 }
 
@@ -914,8 +930,18 @@ export default function ProfilePage() {
       {/* Streak Points — video + task points from points_ledger; hides itself until there's history */}
       <StreakPointsSection />
 
-      {/* Mentorship dashboard — same component as /batch-program/mentorship; all values from live APIs */}
-      <MentorshipDashboard />
+      {/* Mentorship dashboard lives on /mentorship only. Profile used to render the whole
+          dashboard again, which buried the member's own details (QA-11); link to it instead. */}
+      <Link
+        href="/mentorship"
+        className="flex items-center justify-between gap-3 p-5 rounded-2xl border border-border bg-card transition-opacity hover:opacity-90"
+      >
+        <div>
+          <h3 className="text-sm font-bold text-foreground">Your Mentorship Dashboard</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Support calls, revenue, weekly progress and learning</p>
+        </div>
+        <ArrowRight size={16} className="text-muted-foreground shrink-0" />
+      </Link>
 
       {/* Mentorship Benefits */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
@@ -943,6 +969,7 @@ export default function ProfilePage() {
           {section.id === "subscription" && <SubscriptionSection section={section} profile={profile} />}
           {section.id === "tiers" && (
             <div className="space-y-2">
+              <TierActiveDaysNote />
               {(profile.tiers ?? []).length > 0 ? (profile.tiers ?? []).map((tier) => <TierRow key={tier.tierNumber} tier={tier} />) : <p className="text-sm text-muted-foreground">—</p>}
             </div>
           )}

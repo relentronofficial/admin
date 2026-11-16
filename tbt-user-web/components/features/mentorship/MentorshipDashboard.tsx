@@ -395,6 +395,9 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   const rto = revenue?.rtoReturnsPercent ?? null;
   const cr = revenue?.conversionRate ?? null;
   const platform = revenue?.platformBadge ?? null;
+  // A saved row for this week can still be empty (only older weeks reported):
+  // show the empty message instead of four "—" cards next to a real total at the top.
+  const hasWeekNumbers = [rev, orders, adSpend, leads].some((v) => v != null);
 
   const revGrowth = growthPct(rev, revPrev);
   const ordersGrowth = growthPct(orders, ordersPrev);
@@ -458,7 +461,11 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
   return (
     <div className="rounded-2xl p-4" style={{ background: "var(--color-bg-surface, #141414)", border: "1px solid rgba(255,255,255,0.06)" }}>
       <div className="flex items-center justify-between mb-4 gap-3">
-        <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
+        <div>
+          <h2 className="text-sm font-bold" style={{ color: "var(--color-text-normal)" }}>Your Revenue Stats</h2>
+          {/* These cards are this week's numbers; the all-time total is the top "Revenue Generated" card (QA-08). */}
+          <p className="text-xs mt-0.5" style={{ color: "var(--color-text-subtle)" }}>This week</p>
+        </div>
         {platform && (
           <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }}>
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
@@ -466,10 +473,17 @@ function RevenueSummarySection({ revenue }: { revenue: any }) {
           </span>
         )}
       </div>
-      {!revenue ? (
-        <p className="text-[11px] py-6 text-center" style={{ color: "var(--color-text-subtle)" }}>
-          No revenue numbers saved for this week yet.
-        </p>
+      {!hasWeekNumbers ? (
+        <div className="py-6 text-center space-y-1">
+          <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>
+            No revenue numbers saved for this week yet.
+          </p>
+          {revenue?.totalAllTime != null && (
+            <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>
+              Your total so far is in the Revenue Generated card at the top.
+            </p>
+          )}
+        </div>
       ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {card(
@@ -584,6 +598,15 @@ function WeeklyLineChart({
   };
   const revSegs = segments(displayRev, yRev);
   const ordSegs = segments(displayOrd, yOrd);
+  // Faint dashed link across points with nothing saved, so the line reads as one
+  // trend and the gap is visibly "no data" rather than a loose dot (QA-08).
+  const revBridges = revSegs.slice(1).map((seg, i) => {
+    const prev = revSegs[i];
+    return {
+      x1: xOf(prev.last), y1: yRev(displayRev[prev.last] as number),
+      x2: xOf(seg.first), y2: yRev(displayRev[seg.first] as number),
+    };
+  });
 
   // Peak = the point with the best revenue. The callout sits on the displayed line.
   const dailyRevNums = nums(revData);
@@ -643,6 +666,11 @@ function WeeklyLineChart({
       {/* Order velocity line (dashed yellow) */}
       {ordSegs.map((seg, i) => (
         <polyline key={i} points={seg.pts} fill="none" stroke="#eab308" strokeWidth="1.5" strokeDasharray="5 3" strokeLinejoin="round" />
+      ))}
+
+      {/* Weeks with no saved revenue: dashed, faint (see revBridges) */}
+      {revBridges.map((b, i) => (
+        <line key={`gap-${i}`} data-testid="revenue-gap" x1={b.x1} y1={b.y1} x2={b.x2} y2={b.y2} stroke="var(--color-accent)" strokeOpacity="0.4" strokeWidth="1.5" strokeDasharray="4 4" />
       ))}
 
       {/* Revenue line (solid red) */}
@@ -1425,7 +1453,9 @@ export default function MentorshipDashboard({ showBackLink = false, titleOverrid
             value={String(activeDays)}
             muted={totalDays > 0 ? `/${totalDays}d` : "d"}
             metricColor="#809ed5"
-            note={totalDays >= 300 ? "Annual" : undefined}
+            // Tier Access counts active days, Support Days counts calendar days — say so,
+            // so "Day 49" next to "18/90d" doesn't read as a contradiction (QA-09).
+            note={totalDays >= 300 ? "Annual · active days" : "Active days"}
           />
           <JourneyTile
             label="Leaderboard"
