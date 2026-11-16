@@ -3196,3 +3196,40 @@ export const useEpisodeFormSubmissions = (episodeId: string, page = 1) =>
     },
     enabled: !!episodeId,
   });
+
+// ── MY WORKSPACE (data mapped to the logged-in admin) ──────────────────
+// /api/my-workspace/* — assigned members, their tickets, hosted calls, team.
+
+export const useMyWorkspaceSummary = () =>
+  useQuery({
+    queryKey: ['my-workspace', 'summary'],
+    queryFn: async () => { const res: any = await apiClient.get('/api/my-workspace/summary'); return res?.data ?? null; },
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+
+export const useMyWorkspaceMembers = (params: { filter?: string; search?: string; page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ['my-workspace', 'members', params],
+    queryFn: async () => (await apiClient.get('/api/my-workspace/members', { params })) as any,
+    placeholderData: keepPreviousData,
+  });
+
+export const useMyWorkspaceTickets = (params: { scope?: string; status?: string; page?: number; limit?: number } = {}) =>
+  useQuery({
+    queryKey: ['my-workspace', 'tickets', params],
+    queryFn: async () => (await apiClient.get('/api/my-workspace/tickets', { params })) as any,
+    placeholderData: keepPreviousData,
+  });
+
+export const useMyWorkspaceCalls = (params: { when?: string } = {}) =>
+  useQuery({
+    queryKey: ['my-workspace', 'calls', params],
+    queryFn: async () => (await apiClient.get('/api/my-workspace/calls', { params })) as any,
+  });
+
+export const useMyWorkspaceTeam = () =>
+  useQuery({
+    queryKey: ['my-workspace', 'team'],
+    queryFn: async () => (await apiClient.get('/api/my-workspace/team')) as any,
+  });

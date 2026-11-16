@@ -52,18 +52,43 @@ import {
   SlidersHorizontal,
   ChevronDown,
   X,
+  Briefcase,
+  LifeBuoy,
+  CalendarClock,
+  Network,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
+import { useMyWorkspaceSummary } from "@/lib/hooks/useTbt";
 
-type NavItem = { name: string; href: string; icon: any };
+// `exact` items are active only on their own path (an overview whose children
+// have their own items). `badge` names a My Workspace summary count shown
+// beside the item.
+type NavItem = { name: string; href: string; icon: any; exact?: boolean; badge?: WorkspaceBadge };
+type WorkspaceBadge = "pending" | "membersTotal" | "ticketsOpen" | "callsToday" | "team";
 // `collapsible` groups render as a dropdown: the label toggles the items open
 // and closed. Groups without it keep the plain label + always-visible items.
 // `basePath` marks pages that belong to the group without a menu item of their
 // own (e.g. the /psychometric index), so the group still opens and highlights there.
 type NavGroup = { label: string | null; collapsible?: boolean; basePath?: string; items: NavItem[] };
 
+// Personal section: only data mapped to the logged-in admin (their members,
+// tickets, calls and direct reports). The groups below stay the all-data view.
+const MY_WORKSPACE_LABEL = "My Workspace";
+const myWorkspaceGroup: NavGroup = {
+  label: MY_WORKSPACE_LABEL,
+  collapsible: true,
+  items: [
+    { name: "Overview", href: "/my-workspace", icon: Briefcase, exact: true, badge: "pending" },
+    { name: "My Members", href: "/my-workspace/members", icon: Users, badge: "membersTotal" },
+    { name: "My Tickets", href: "/my-workspace/tickets", icon: LifeBuoy, badge: "ticketsOpen" },
+    { name: "My Calls", href: "/my-workspace/calls", icon: CalendarClock, badge: "callsToday" },
+    { name: "My Team", href: "/my-workspace/team", icon: Network, badge: "team" },
+  ],
+};
+
 const navGroups: NavGroup[] = [
+  myWorkspaceGroup,
   {
     label: null,
     items: [
@@ -181,12 +206,25 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-const isItemActive = (pathname: string | null, href: string) =>
-  !!pathname && (pathname === href || pathname.startsWith(`${href}/`));
+const isItemActive = (pathname: string | null, href: string, exact = false) =>
+  !!pathname && (pathname === href || (!exact && pathname.startsWith(`${href}/`)));
 
 const isGroupActive = (pathname: string | null, group: NavGroup) =>
   (!!group.basePath && isItemActive(pathname, group.basePath)) ||
-  group.items.some((i) => isItemActive(pathname, i.href));
+  group.items.some((i) => isItemActive(pathname, i.href, i.exact));
+
+/** Count for an item's badge; null hides it. */
+function workspaceBadge(summary: any, badge: WorkspaceBadge | undefined): number | null {
+  if (!summary || !badge) return null;
+  const c = summary.counts ?? {};
+  const n =
+    badge === "pending" ? (summary.pending ?? []).reduce((sum: number, p: any) => sum + (p.count ?? 0), 0)
+      : badge === "membersTotal" ? c.membersTotal
+        : badge === "ticketsOpen" ? c.ticketsOpen
+          : badge === "callsToday" ? c.callsToday
+            : c.team;
+  return typeof n === "number" && n > 0 ? n : null;
+}
 
 // Open dropdowns are remembered per browser. Every page renders its own
 // DashboardLayout, so the sidebar remounts on navigation and would otherwise
@@ -199,6 +237,26 @@ function readSavedOpenGroups(): string[] {
     return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
   } catch {
     return [];
+  }
+}
+
+// Set once the admin opens or closes My Workspace themselves, so its
+// default-open state only applies until then.
+const WORKSPACE_CHOICE_KEY = "tbt_admin_sidebar_workspace_toggled";
+
+function hasSavedWorkspaceChoice(): boolean {
+  try {
+    return localStorage.getItem(WORKSPACE_CHOICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markWorkspaceChoiceSaved() {
+  try {
+    localStorage.setItem(WORKSPACE_CHOICE_KEY, "1");
+  } catch {
+    /* storage unavailable */
   }
 }
 
@@ -250,12 +308,22 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const activeGroup = navGroups.find((g) => g.collapsible && isGroupActive(pathname, g))?.label ?? null;
   // Server render and first client render use only the active group, so they
   // match; saved groups are merged in after mount.
-  const [openGroups, setOpenGroups] = useState<string[]>(activeGroup ? [activeGroup] : []);
+  // My Workspace starts open; afterwards the admin's own open/closed choice is remembered.
+  const [openGroups, setOpenGroups] = useState<string[]>(
+    Array.from(new Set([MY_WORKSPACE_LABEL, ...(activeGroup ? [activeGroup] : [])])),
+  );
   const [groupsRestored, setGroupsRestored] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   useIsomorphicLayoutEffect(() => {
-    setOpenGroups((prev) => Array.from(new Set([...prev, ...readSavedOpenGroups()])));
+    setOpenGroups((prev) => {
+      const saved = readSavedOpenGroups();
+      // Once the admin has toggled My Workspace, honour that saved choice.
+      const base = hasSavedWorkspaceChoice() && !saved.includes(MY_WORKSPACE_LABEL)
+        ? prev.filter((l) => l !== MY_WORKSPACE_LABEL || l === activeGroup)
+        : prev;
+      return Array.from(new Set([...base, ...saved]));
+    });
     setGroupsRestored(true);
   }, []);
 
@@ -283,6 +351,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   }, [activeGroup]);
 
   const toggleGroup = (label: string) => {
+    if (label === MY_WORKSPACE_LABEL) markWorkspaceChoiceSaved();
     setOpenGroups((prev) => {
       const next = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
       saveOpenGroups(next);
@@ -291,6 +360,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   };
 
   const { data: me } = useMe();
+  const { data: workspace } = useMyWorkspaceSummary();
   const displayName = me?.fullName || "Admin";
   const initial = displayName.charAt(0).toUpperCase();
   const roleLabel = me?.role
@@ -360,8 +430,11 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                 )}
                 <div id={panelId} hidden={!isOpen}>
                   {group.items.map((item) => {
+                    // My Team appears only for admins who have direct reports.
+                    if (item.badge === "team" && !workspaceBadge(workspace, "team") && !isItemActive(pathname, item.href)) return null;
                     const Icon = item.icon;
-                    const isActive = isItemActive(pathname, item.href);
+                    const isActive = isItemActive(pathname, item.href, item.exact);
+                    const count = item.badge === "team" ? null : workspaceBadge(workspace, item.badge);
                     return (
                       <Link
                         key={item.name}
@@ -381,6 +454,17 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                           strokeWidth={isActive ? 2.5 : 2}
                         />
                         <span className="tracking-wide">{item.name}</span>
+                        {count !== null && (
+                          <span
+                            className={cn(
+                              "ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold leading-[18px] text-center",
+                              item.badge === "pending" ? "bg-[#dc2626] text-white" : "bg-[#262626] text-[#c0c0c0]"
+                            )}
+                            aria-label={`${count}`}
+                          >
+                            {count > 99 ? "99+" : count}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
