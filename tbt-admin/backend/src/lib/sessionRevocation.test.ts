@@ -1,5 +1,43 @@
 import { describe, it, expect } from 'vitest';
-import { isLoginRevoked } from './sessionRevocation.js';
+import { isLoginRevoked, classifyLoginSessions } from './sessionRevocation.js';
+
+describe('classifyLoginSessions', () => {
+  const row = (id: string, tokenHash: string | null, deviceId: string | null) => ({ id, tokenHash, deviceId });
+  const ids = (rows: { id: string }[]) => rows.map((r) => r.id);
+
+  it('a device-tracking row with no token is never a conflict', () => {
+    const r = classifyLoginSessions([row('a', null, 'dev-1')], 'dev-2', new Map());
+    expect(ids(r.conflicts)).toEqual([]);
+    expect(ids(r.stale)).toEqual(['a']);
+  });
+
+  it("the device that is logging in is not 'another device'", () => {
+    const r = classifyLoginSessions([row('a', 'h1', 'dev-1')], 'dev-1', new Map([['h1', true]]));
+    expect(ids(r.conflicts)).toEqual([]);
+    expect(ids(r.stale)).toEqual(['a']);
+  });
+
+  it('a row whose refresh token is gone (logged out / expired) is not a conflict', () => {
+    const r = classifyLoginSessions([row('a', 'h1', 'dev-1')], 'dev-2', new Map([['h1', false]]));
+    expect(ids(r.conflicts)).toEqual([]);
+  });
+
+  it('a live session on another device is a conflict', () => {
+    const r = classifyLoginSessions([row('a', 'h1', 'dev-1')], 'dev-2', new Map([['h1', true]]));
+    expect(ids(r.conflicts)).toEqual(['a']);
+    expect(ids(r.stale)).toEqual([]);
+  });
+
+  it('unknown liveness (Redis down) keeps the row as a conflict', () => {
+    const r = classifyLoginSessions([row('a', 'h1', 'dev-1')], undefined, new Map());
+    expect(ids(r.conflicts)).toEqual(['a']);
+  });
+
+  it('no device id on the login request never matches a row with no device id', () => {
+    const r = classifyLoginSessions([row('a', 'h1', null)], undefined, new Map([['h1', true]]));
+    expect(ids(r.conflicts)).toEqual(['a']);
+  });
+});
 
 describe('isLoginRevoked', () => {
   it('returns skip when loginId is undefined (pre-migration token, no claim)', () => {

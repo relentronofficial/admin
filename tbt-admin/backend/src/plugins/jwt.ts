@@ -268,12 +268,62 @@ export function invalidateActiveLoginIdCache(memberId: string): void {
   _activeLoginCache.delete(memberId);
 }
 
+/// Single-session verdict for a token's loginId.
+///
+/// The 15 s cache is per Cloud Run instance and only the instance that handled
+/// a login clears it, so another instance can still hold the previous loginId
+/// (or the REVOKED sentinel) for a few seconds after a fresh login. A
+/// 'revoked' verdict from the cache is therefore re-checked against Redis
+/// before the request is rejected. Without this, a brand-new session was
+/// bounced back to /login whenever its request landed on such an instance.
+export async function getLoginVerdict(
+  redis: any,
+  memberId: string,
+  loginId: string | undefined,
+): Promise<'pass' | 'revoked' | 'skip'> {
+  const verdict = isLoginRevoked(loginId, await getCachedActiveLoginId(redis, memberId));
+  if (verdict !== 'revoked') return verdict;
+  _activeLoginCache.delete(memberId);
+  return isLoginRevoked(loginId, await getCachedActiveLoginId(redis, memberId));
+}
+
+/// Is this refresh-token hash still a live session in Redis?
+/// Returns null when Redis can't answer (caller keeps its safe default).
+export async function isRefreshHashLive(redis: any, hash: string): Promise<boolean | null> {
+  if (!redis) return null;
+  try {
+    const n = await redis.exists(`refresh:${hash}`, `refresh_grace:${hash}`);
+    return Number(n) > 0;
+  } catch {
+    return null;
+  }
+}
+
 /// Store the active loginId for a member. TTL mirrors the refresh token so the
 /// key stays alive as long as the session can possibly be refreshed.
+///
+/// A new login runs right after revokeAllForMember set the key to REVOKED, so
+/// a silently failed write here left the brand-new session rejected as
+/// SESSION_REVOKED for 15 minutes (login → app → /login loop). The write is
+/// retried; if it still fails the key is deleted, so the check fails open
+/// (as it does for any Redis outage) instead of rejecting the new session.
 export async function setActiveLoginId(redis: any, memberId: string, loginId: string): Promise<void> {
   if (!redis) return;
   _activeLoginCache.delete(memberId);
-  await redis.set(`active_login:${memberId}`, loginId, 'EX', REFRESH_TTL).catch(() => {});
+  const key = `active_login:${memberId}`;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await redis.set(key, loginId, 'EX', REFRESH_TTL);
+      return;
+    } catch (err) {
+      _log(`setActiveLoginId attempt ${attempt} failed:`, err);
+    }
+  }
+  try {
+    await redis.del(key);
+  } catch (err) {
+    _log('setActiveLoginId: could not clear active_login after failed write:', err);
+  }
 }
 
 // ── Member status in-process cache ──────────────────────────────────────────────
@@ -326,8 +376,7 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
     // the active session recorded in Redis. Skipped for pre-migration tokens
     // (no loginId claim) and when Redis is unavailable (fail open).
     const redis = (fastify as any).redis ?? null;
-    const activeLoginId = await getCachedActiveLoginId(redis, memberId);
-    const verdict = isLoginRevoked(loginId, activeLoginId);
+    const verdict = await getLoginVerdict(redis, memberId, loginId);
     if (verdict === 'revoked') {
       return reply.status(401).send({
         success: false,

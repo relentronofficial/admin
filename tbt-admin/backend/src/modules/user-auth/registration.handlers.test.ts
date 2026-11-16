@@ -22,7 +22,7 @@ vi.mock('../../plugins/jwt.js', () => ({
   setAuthCookies: vi.fn(), clearAuthCookies: vi.fn(), generateRefreshToken: () => 'refresh-token',
   storeRefreshToken: vi.fn(async () => {}), consumeRefreshToken: vi.fn(), revokeRefreshToken: vi.fn(),
   revokeRefreshTokenByHash: vi.fn(), revokeAllForMember: vi.fn(async () => 0), hashRefreshToken: () => 'hash',
-  setActiveLoginId: vi.fn(async () => {}),
+  setActiveLoginId: vi.fn(async () => {}), isRefreshHashLive: vi.fn(async () => null),
 }));
 
 const auth = await import('./controller.js');
@@ -75,6 +75,7 @@ function prisma() {
       count: vi.fn(async ({ where }: any) => sessions.filter((s) => s.memberId === where.memberId).length),
       findMany: vi.fn(async ({ where }: any) => sessions.filter((s) => s.memberId === where.memberId)),
       create: vi.fn(async ({ data }: any) => { sessions.push({ memberId: data.memberId }); return data; }),
+      deleteMany: vi.fn(async () => ({ count: 0 })),
     },
     $executeRawUnsafe: vi.fn(async (sql: string, ...a: any[]) => {
       const q = sql.replace(/\s+/g, ' ').trim();

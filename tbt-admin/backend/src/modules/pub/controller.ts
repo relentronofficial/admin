@@ -4,6 +4,7 @@ import { env } from '../../config/env.js';
 import { cacheGet, cacheSet, cacheGetOrCompute } from '../../lib/cache.js';
 import { sendWhatsappMessage } from '../../lib/whatsapp.js';
 import { publicFaqList, type FaqRow } from '../../lib/moduleFaqLogic.js';
+import { getLoginVerdict } from '../../plugins/jwt.js';
 
 export async function pubSiteConfigHandler(req: FastifyRequest, reply: FastifyReply) {
   reply.header('Cache-Control', 'public, max-age=300, stale-while-revalidate=60');
@@ -438,7 +439,15 @@ export async function pubSessionCheckHandler(req: FastifyRequest, reply: Fastify
   if (!token) return reply.send({ success: true, data: { loggedIn: false } });
 
   try {
-    await (req.server as any).jwt.verify(token);
+    const decoded = await (req.server as any).jwt.verify(token) as { memberId?: string; loginId?: string };
+    // Same single-session check as authenticateUser. Without it, a cookie from
+    // a session replaced by a newer login was reported as "logged in": /login
+    // sent the member into the app, the app got SESSION_REVOKED and sent them
+    // back to /login — a loop until the 15-min access cookie expired.
+    if (decoded?.memberId) {
+      const verdict = await getLoginVerdict(req.server.redis ?? null, decoded.memberId, decoded.loginId);
+      if (verdict === 'revoked') return reply.send({ success: true, data: { loggedIn: false } });
+    }
     return reply.send({ success: true, data: { loggedIn: true } });
   } catch {
     return reply.send({ success: true, data: { loggedIn: false } });

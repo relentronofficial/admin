@@ -30,3 +30,39 @@ export function isLoginRevoked(
   if (activeLoginId === loginId) return 'pass';
   return 'revoked';
 }
+
+export interface LoginSessionRow {
+  id: string;
+  tokenHash: string | null;
+  deviceId: string | null;
+}
+
+/**
+ * Split a member's `member_sessions` rows, at login time, into real sessions
+ * on OTHER devices (shown on the "Active Sessions" screen) and rows that are
+ * not a live session elsewhere (cleaned up silently).
+ *
+ * A row is NOT a conflict when:
+ *   - it has no token: device-tracking rows written by the profile endpoint
+ *     and the legacy /pub/auth/sync path are not sessions;
+ *   - it belongs to the device that is logging in now;
+ *   - its refresh token is gone from Redis (`live === false`): logged out,
+ *     revoked or expired.
+ *
+ * `live` maps tokenHash → true/false; a hash missing from the map (Redis
+ * unavailable) keeps the row as a conflict, the safe default.
+ */
+export function classifyLoginSessions<T extends LoginSessionRow>(
+  rows: T[],
+  currentDeviceId: string | null | undefined,
+  live: Map<string, boolean>,
+): { conflicts: T[]; stale: T[] } {
+  const conflicts: T[] = [];
+  const stale: T[] = [];
+  for (const row of rows) {
+    const sameDevice = !!currentDeviceId && row.deviceId === currentDeviceId;
+    if (!row.tokenHash || sameDevice || live.get(row.tokenHash) === false) stale.push(row);
+    else conflicts.push(row);
+  }
+  return { conflicts, stale };
+}

@@ -28,7 +28,9 @@ import {
   revokeAllForMember,
   hashRefreshToken,
   setActiveLoginId,
+  isRefreshHashLive,
 } from '../../plugins/jwt.js';
+import { classifyLoginSessions } from '../../lib/sessionRevocation.js';
 import crypto from 'crypto';
 
 // In-memory fallback for login_pending tokens — same resilience pattern as OTP store.
@@ -85,6 +87,35 @@ function parseCookies(header?: string): Record<string, string> {
 }
 
 interface SessionMeta { deviceId?: string; userAgent?: string; ip?: string; }
+
+/// The member's sessions that are live on another device. Every other
+/// member_sessions row is deleted (and, for this device's own old rows, its
+/// refresh token revoked). Best effort: a failure here never blocks login.
+async function findLoginConflicts(fastify: FastifyInstance, memberId: string, deviceId?: string): Promise<any[]> {
+  const rows: any[] = await (fastify.prisma.memberSession as any).findMany({
+    where: { memberId },
+    select: { id: true, tokenHash: true, deviceId: true, userAgent: true, ipAddress: true, startedAt: true, lastActiveAt: true },
+    orderBy: { lastActiveAt: 'desc' },
+  });
+  const redis = getRedis(fastify);
+  const hashes = [...new Set(rows.map((r) => r.tokenHash).filter(Boolean))] as string[];
+  const live = new Map<string, boolean>();
+  await Promise.all(hashes.map(async (h) => {
+    const v = await isRefreshHashLive(redis, h);
+    if (v !== null) live.set(h, v);
+  }));
+  const { conflicts, stale } = classifyLoginSessions(rows, deviceId, live);
+  if (stale.length) {
+    try {
+      await Promise.all(stale.filter((r) => r.tokenHash && live.get(r.tokenHash) !== false)
+        .map((r) => revokeRefreshTokenByHash(redis, r.tokenHash).catch(() => {})));
+      await (fastify.prisma.memberSession as any).deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+    } catch (err: any) {
+      fastify.log.warn({ err: err?.message }, 'login: stale member_sessions cleanup failed');
+    }
+  }
+  return conflicts;
+}
 
 // existingLoginId: pass on normal token refresh so concurrent in-flight requests
 // carrying the old access token aren't invalidated mid-flight. Leave undefined
@@ -375,12 +406,11 @@ export async function verifyOtp(fastify: FastifyInstance, request: any, reply: a
     ip: request.ip,
   };
 
-  // Check for existing active sessions — let the member choose which to revoke
-  const activeSessions = await fastify.prisma.memberSession.findMany({
-    where: { memberId: (member as any).id },
-    select: { id: true, deviceId: true, userAgent: true, ipAddress: true, startedAt: true, lastActiveAt: true },
-    orderBy: { lastActiveAt: 'desc' },
-  } as any);
+  // Check for live sessions on OTHER devices — let the member choose which to revoke.
+  // Rows that are not one (device-tracking rows with no token, this device's own
+  // old rows, rows whose refresh token is gone) used to trigger the "Active
+  // Sessions" screen on a member's first login; they are now cleaned up instead.
+  const activeSessions = await findLoginConflicts(fastify, (member as any).id, meta.deviceId);
 
   if (activeSessions.length > 0) {
     // Store a short-lived login-pending token so the client can complete the login

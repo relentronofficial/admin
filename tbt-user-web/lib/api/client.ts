@@ -78,11 +78,16 @@ apiClient.interceptors.response.use(
       const serverMs = new Date(dateHeader).getTime();
       if (!isNaN(serverMs)) _serverTimeOffset = serverMs - Date.now();
     }
-    // Stamp expected expiry after a successful login (verify-otp) or refresh so
-    // the request interceptor can detect stale tokens proactively next time.
+    // Stamp expected expiry after a successful login (verify-otp or, after the
+    // "Active Sessions" step, complete-login) or refresh so the request
+    // interceptor can detect stale tokens proactively next time.
     if (typeof window !== "undefined") {
       const url = response.config?.url ?? "";
-      if (url.includes("/api/user-auth/verify-otp") || url.includes("/api/user-auth/refresh")) {
+      if (
+        url.includes("/api/user-auth/verify-otp") ||
+        url.includes("/api/user-auth/complete-login") ||
+        url.includes("/api/user-auth/refresh")
+      ) {
         localStorage.setItem(ACCESS_EXP_KEY, String(Date.now() + ACCESS_LIFETIME_MS));
       }
     }
