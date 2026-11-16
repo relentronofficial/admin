@@ -3,18 +3,21 @@ name: Deploy to Staging
 # Manual staging deployment — independent of the production workflow.
 # Use this to deploy any verified commit to staging for testing.
 #
-# Usage: Actions → "Deploy to Staging" → Run workflow
-#   commit_sha  — the SHA to deploy (leave blank for latest main)
+# Usage: Actions → "Deploy to Staging" → Run workflow (pick the branch in
+# "Use workflow from"), or: gh workflow run deploy-staging.yml --ref <branch>
+#   commit_sha  — the SHA to deploy (leave blank for the tip of that branch)
 #   services    — backend, user-web, or both
 #
-# The commit must exist on the main branch. Build and typecheck run
-# against the selected commit before any deploy step.
+# The commit must be on the branch the workflow runs from, so a feature branch
+# can be tested on staging BEFORE it is merged to main (a push to main deploys
+# production). This workflow only ever deploys the *-staging services. Build and
+# typecheck run against the selected commit before any deploy step.
 
 on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: 'Commit SHA to deploy (blank = latest main)'
+        description: 'Commit SHA to deploy (blank = tip of the selected branch)'
         required: false
         default: ''
       services:
@@ -42,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.ref }}
 
       - name: Resolve target commit
         id: resolve
@@ -50,15 +53,15 @@ jobs:
           INPUT="${{ github.event.inputs.commit_sha }}"
           if [ -z "$INPUT" ]; then
             SHA=$(git rev-parse HEAD)
-            echo "No commit specified — using latest main: $SHA"
+            echo "No commit specified — using tip of ${{ github.ref_name }}: $SHA"
           else
-            # Verify the SHA exists and is reachable from main
+            # Verify the SHA exists and is reachable from the selected branch
             if ! git cat-file -e "${INPUT}^{commit}" 2>/dev/null; then
               echo "::error::Commit ${INPUT} does not exist in this repository."
               exit 1
             fi
             if ! git merge-base --is-ancestor "$INPUT" HEAD; then
-              echo "::error::Commit ${INPUT} is not on the main branch."
+              echo "::error::Commit ${INPUT} is not on branch ${{ github.ref_name }}."
               exit 1
             fi
             SHA=$(git rev-parse "$INPUT")
