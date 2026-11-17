@@ -295,6 +295,17 @@ suite('psychometric platform (real Postgres)', () => {
     expect(after.body.data).toMatchObject({ status: 'rejected', rejectionNote: 'Too soon', decidedBy: { _id: ADMIN.id, email: ADMIN.email } });
   });
 
+  it('grant retest: admin-given approved retest, shown on the candidates list, one at a time', async () => {
+    const a = await fixtureResult('Janani', 15);
+    const g = await call(results.grantRetest, { params: { id: a.candidateId }, body: { reason: 'Cut short' } });
+    expect(g.status).toBe(200);
+    const [rr] = await prisma.$queryRawUnsafe<any[]>(`SELECT status, requested_by_user, decided_by, reason, attempt_number FROM psy_retest_requests WHERE candidate_id = $1`, a.candidateId);
+    expect(rr).toMatchObject({ status: 'approved', requested_by_user: false, decided_by: ADMIN.id, reason: 'Cut short', attempt_number: 2 });
+    const list = await call(results.listCandidates, { query: {} });
+    expect(list.body.data.find((c: any) => c._id === a.candidateId).retestStatus).toBe('approved');
+    expect((await call(results.grantRetest, { params: { id: a.candidateId } })).status).toBe(409);
+  });
+
   it('notifications: list, unread count, mark one / all read, unique per event', async () => {
     const ins = (type: string, entity: string) => prisma.$executeRawUnsafe(
       `INSERT INTO psy_notifications (type, title, message, entity_type, entity_id) VALUES ($1, 't', 'm', 'RESULT', $2) ON CONFLICT DO NOTHING`, type, entity);

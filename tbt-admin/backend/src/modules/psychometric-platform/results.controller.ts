@@ -95,12 +95,15 @@ export async function listCandidates(req: Req, reply: FastifyReply) {
     rows(d, `SELECT COUNT(*)::int AS n FROM psy_candidates ${w}`, ...params),
     rows(d, `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_verified)::int AS verified,
                COUNT(*) FILTER (WHERE has_completed)::int AS completed FROM psy_candidates`),
-    rows(d, `SELECT * FROM psy_candidates ${w} ORDER BY created_at DESC LIMIT ${p(limit)} OFFSET ${p((page - 1) * limit)}`, ...params),
+    // active_retest: an open retest (pending request, or approved and not yet used) — shown on the Candidates page.
+    rows(d, `SELECT psy_candidates.*, (SELECT r.status FROM psy_retest_requests r WHERE r.candidate_id = psy_candidates.id
+               AND r.status IN ('pending', 'approved') ORDER BY r.created_at DESC LIMIT 1) AS active_retest
+             FROM psy_candidates ${w} ORDER BY created_at DESC LIMIT ${p(limit)} OFFSET ${p((page - 1) * limit)}`, ...params),
     rows(d, `SELECT DISTINCT batch FROM psy_candidates WHERE batch IS NOT NULL AND batch <> '' ORDER BY batch`),
   ]);
   return reply.send({
     success: true,
-    data: data.map(candidateOut),
+    data: data.map((c) => ({ ...candidateOut(c), retestStatus: (c.active_retest as 'pending' | 'approved' | null) ?? null })),
     total: total.n,
     page,
     pages: Math.ceil(total.n / limit),
@@ -310,6 +313,47 @@ async function decideRetest(req: Req, reply: FastifyReply, decision: 'approved' 
 
 export const approveRetest = (req: Req, reply: FastifyReply) => decideRetest(req, reply, 'approved');
 export const rejectRetest = (req: Req, reply: FastifyReply) => decideRetest(req, reply, 'rejected');
+
+/**
+ * POST /admin/users/:id/grant-retest — the admin gives a candidate one retest
+ * without them asking (e.g. their attempt was cut short). Writes an already
+ * approved retest request, which POST /start consumes exactly like one the
+ * member requested. A pending request from the member is approved instead of
+ * adding a second one; an approved, unused one is left as is (409).
+ */
+export async function grantRetest(req: Req, reply: FastifyReply) {
+  const admin = actingAdmin(req);
+  const reason = typeof req.body?.reason === 'string' && req.body.reason.trim() ? req.body.reason.trim().slice(0, 500) : 'Granted by admin';
+  const out = await (req.server.prisma as any).$transaction(async (t: Db) => {
+    const [cand] = await rows(t, `SELECT * FROM psy_candidates WHERE id = $1`, req.params.id);
+    if (!cand) return { status: 404, body: { success: false, message: 'Candidate not found.' } };
+    // Same lock key as the member's own retest request, so the two can't both insert.
+    await t.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `psy-retest:${cand.member_id ?? cand.id}`);
+    const name = cand.name || 'The candidate';
+    if (!cand.has_completed) return { status: 400, body: { success: false, message: `${name} has not completed the assessment yet, so they can take it without a retest.` } };
+    const [active] = await rows(t,
+      `SELECT id, status FROM psy_retest_requests WHERE candidate_id = $1 AND status IN ('pending', 'approved') ORDER BY created_at DESC LIMIT 1`, cand.id);
+    if (active?.status === 'approved') return { status: 409, body: { success: false, message: `${name} already has an approved retest they haven't used yet.` } };
+    if (active) {
+      await t.$executeRawUnsafe(
+        `UPDATE psy_retest_requests SET status = 'approved', decided_by = $1, decided_by_email = $2, decided_at = NOW(), updated_at = NOW()
+         WHERE id = $3 AND status = 'pending'`,
+        admin.id, admin.email, active.id);
+      return { status: 200, body: { success: true, retestId: active.id, message: `Approved ${name}'s pending retest request. They can now retake the assessment once.` } };
+    }
+    const [latest] = await rows(t, `SELECT id, percentage, level FROM psy_results WHERE candidate_id = $1 ORDER BY created_at DESC LIMIT 1`, cand.id);
+    const [{ n }] = await rows(t, `SELECT COUNT(*)::int AS n FROM psy_results WHERE candidate_id = $1`, cand.id);
+    const [code] = cand.access_code_id ? await rows(t, `SELECT question_set_id FROM psy_access_codes WHERE id = $1`, cand.access_code_id) : [];
+    const [rr] = await rows(t,
+      `INSERT INTO psy_retest_requests (candidate_id, user_name, user_email, shared_code, question_set_id, attempt_number, current_result_id,
+         current_percentage, current_level, reason, requested_by_user, status, decided_by, decided_by_email, decided_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, 'approved', $11, $12, NOW()) RETURNING id`,
+      cand.id, cand.name, cand.email, cand.access_code, code?.question_set_id ?? null, n + 1, latest?.id ?? null,
+      latest?.percentage ?? null, latest?.level ?? null, reason, admin.id, admin.email);
+    return { status: 200, body: { success: true, retestId: rr.id, message: `Retest granted. ${name} can now retake the assessment once.` } };
+  });
+  return reply.code(out.status).send(out.body);
+}
 
 // ── Notifications (shared admin feed) ──────────────────────────────────────
 

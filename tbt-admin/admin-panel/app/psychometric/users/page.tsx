@@ -21,6 +21,8 @@ type UserRow = {
   batch?: string | null;
   source: "tbt" | "standalone";
   hasCompletedAssessment: boolean;
+  /** An open retest: "pending" (member asked) or "approved" (not used yet); null when none. */
+  retestStatus?: "pending" | "approved" | null;
   createdAt: string;
 };
 
@@ -40,6 +42,8 @@ export default function UsersPage() {
   const [batch, setBatch] = useState("");
   const [batches, setBatches] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [grantFor, setGrantFor] = useState<UserRow | null>(null);
+  const [granting, setGranting] = useState(false);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams({ page: String(page), limit: "10" });
@@ -65,6 +69,29 @@ export default function UsersPage() {
     showToast("Candidate removed.", "success");
     load();
   }
+
+  // Gives a candidate who already completed the assessment one more attempt,
+  // without waiting for them to request it (approves their pending request if any).
+  async function confirmGrant() {
+    if (!grantFor || granting) return;
+    setGranting(true);
+    const { ok, data } = await api.post<ApiEnvelope>(`/admin/users/${grantFor._id}/grant-retest`, {}, token);
+    setGranting(false);
+    setGrantFor(null);
+    if (!ok) { showToast(data.message || "Couldn't grant the retest.", "error"); return; }
+    showToast(data.message || "Retest granted.", "success");
+    load();
+  }
+
+  const RetestAction = ({ u }: { u: UserRow }) => {
+    if (!u.hasCompletedAssessment) return null;
+    if (u.retestStatus === "approved") return <span className="badge badge-active" title="They can retake the assessment once">Retest granted</span>;
+    return (
+      <button onClick={() => setGrantFor(u)} className="btn btn-outline btn-sm" title={u.retestStatus === "pending" ? "Approve their pending retest request" : "Let them retake the assessment once"}>
+        {u.retestStatus === "pending" ? "Approve Retest" : "Grant Retest"}
+      </button>
+    );
+  };
 
   const SourceBadge = ({ u }: { u: UserRow }) => (
     <span className={`badge ${u.source === "tbt" ? "badge-active" : "badge-inactive"}`}>{u.source === "tbt" ? "TBT member" : "Imported"}</span>
@@ -129,7 +156,7 @@ export default function UsersPage() {
                   <td className="nowrap"><SourceBadge u={u} /></td>
                   <td className="nowrap"><span className={`badge ${u.hasCompletedAssessment ? "badge-good" : "badge-pending"}`}>{u.hasCompletedAssessment ? "Completed" : "Pending"}</span></td>
                   <td className="text-xs hidden min-[1400px]:table-cell nowrap">{new Date(u.createdAt).toLocaleDateString()}</td>
-                  <td className="nowrap"><button onClick={() => setDeleteId(u._id)} className="btn btn-danger btn-sm">Delete</button></td>
+                  <td className="nowrap"><div className="flex items-center gap-1.5"><RetestAction u={u} /><button onClick={() => setDeleteId(u._id)} className="btn btn-danger btn-sm">Delete</button></div></td>
                 </tr>
               ))}
               {rows.length === 0 && (
@@ -148,7 +175,7 @@ export default function UsersPage() {
                     <p className="font-semibold truncate" style={{ color: "var(--tbt-text)" }} title={u.name}>{u.name}</p>
                     <p className="text-xs truncate" style={{ color: "var(--tbt-muted)" }} title={contact(u)}>{contact(u)}</p>
                   </div>
-                  <button onClick={() => setDeleteId(u._id)} className="btn btn-danger btn-sm shrink-0">Delete</button>
+                  <div className="flex items-center gap-1.5 shrink-0"><RetestAction u={u} /><button onClick={() => setDeleteId(u._id)} className="btn btn-danger btn-sm">Delete</button></div>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   <SourceBadge u={u} />
@@ -173,6 +200,17 @@ export default function UsersPage() {
           </div>
         </div>
       </main>
+
+      {grantFor && (
+        <ConfirmModal
+          danger={false}
+          title={grantFor.retestStatus === "pending" ? "Approve Retest Request?" : "Grant a Retest?"}
+          message={`${grantFor.name} will be able to take the assessment once more. Their new attempt is scored separately; earlier results stay in their history.`}
+          confirmLabel={granting ? "Granting…" : grantFor.retestStatus === "pending" ? "Yes, Approve" : "Yes, Grant Retest"}
+          onConfirm={confirmGrant}
+          onCancel={() => setGrantFor(null)}
+        />
+      )}
 
       {deleteId && (
         <ConfirmModal

@@ -69,6 +69,7 @@ export async function psychometricPlatformAdminRoutes(fastify: FastifyInstance) 
   // record, so the old create-login / verify-email endpoints don't exist here.
   fastify.get('/admin/users', results.listCandidates);
   fastify.delete('/admin/users/:id', results.deleteCandidate);
+  fastify.post('/admin/users/:id/grant-retest', results.grantRetest);
 
   fastify.get('/admin/dashboard', results.getDashboard);
   fastify.get('/admin/results', results.listResults);
