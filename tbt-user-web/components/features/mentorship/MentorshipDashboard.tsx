@@ -1054,6 +1054,16 @@ function NowLearningSection() {
     return formatMinutes(taskMinutes);
   })();
 
+  // Cover image: the current lesson's own thumbnail, else the course/workshop
+  // thumbnail. The generated poster is only a fallback when neither exists or
+  // the image fails to load.
+  const lessonThumb: string | null =
+    ((courseDetail?.lessons as any[] | undefined)?.find((l: any) => l.id === item?.lessonId)?.thumbnailUrl as string | undefined) ?? null;
+  const coverUrl: string | null = lessonThumb || (item?.thumbnailUrl as string | undefined) || null;
+  const [coverFailed, setCoverFailed] = useState(false);
+  useEffect(() => { setCoverFailed(false); }, [coverUrl]);
+  const showCover = !!coverUrl && !coverFailed;
+
   const processes: any[]     = batchData?.processes ?? [];
   const programTasks: any[]  = batchData?.programTasks ?? [];
   const mySubmissions: any[] = batchData?.mySubmissions ?? [];
@@ -1112,6 +1122,17 @@ function NowLearningSection() {
             style={{ gridTemplateColumns: "240px 1fr 110px", alignItems: "center" }}
           >
             {/* ── Column 1: course cover thumbnail ─── */}
+            {showCover ? (
+              <div className="relative overflow-hidden" style={{ width: "100%", maxWidth: 480, aspectRatio: "16 / 9", borderRadius: 13, background: "#0b0b0d" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={coverUrl as string}
+                  alt={(item.lastLessonTitle as string | undefined) ?? (item.title as string)}
+                  onError={() => setCoverFailed(true)}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                />
+              </div>
+            ) : (
             <div
               className="relative flex flex-col items-center justify-center text-center overflow-hidden"
               style={{
@@ -1140,6 +1161,7 @@ function NowLearningSection() {
                 WWW.TAMILBUSINESSTRIBE.COM
               </div>
             </div>
+            )}
 
             {/* ── Column 2: course details ─── */}
             <div className="min-w-0">
