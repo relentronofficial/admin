@@ -108,7 +108,7 @@ export default function MemberDetailPage() {
     if (!amount || amount <= 0) { toast.error("Enter a valid amount"); return; }
     try {
       const res: any = await addCoins.mutateAsync({ amount, reason: coinReason.trim() || undefined });
-      toast.success(`Added ${amount} coins. New balance: ${res.data?.newBalance ?? "—"}`);
+      toast.success(`Added ${amount} coins. New balance: ${res?.newBalance ?? "—"}`);
       setCoinAmount("");
       setCoinReason("");
       refetchMember();
