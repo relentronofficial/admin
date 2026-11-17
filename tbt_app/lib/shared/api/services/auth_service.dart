@@ -139,6 +139,29 @@ class AuthService {
     }
   }
 
+  /// Uploads the sign-up profile photo (before the account exists) and
+  /// returns its public URL, which is then sent as `profilePhotoUrl` with
+  /// [signup].
+  Future<String> uploadSignupPhoto(Uint8List bytes, String contentType) async {
+    try {
+      final res = await _dio.post<Map<String, dynamic>>(
+        kAuthSignupPhoto,
+        data: Stream.fromIterable([bytes]),
+        options: Options(
+          contentType: contentType,
+          headers: {Headers.contentLengthHeader: bytes.length},
+        ),
+      );
+      final url = (res.data?['data'] as Map<String, dynamic>?)?['publicUrl'];
+      if (url is! String || url.isEmpty) {
+        throw const ServerException('Photo upload failed. Please try again.');
+      }
+      return url;
+    } on DioException catch (e) {
+      throw mapDioError(e);
+    }
+  }
+
   Future<Map<String, dynamic>> signup(Map<String, dynamic> data) async {
     try {
       final res =

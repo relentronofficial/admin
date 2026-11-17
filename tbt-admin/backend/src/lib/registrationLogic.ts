@@ -70,3 +70,44 @@ export function normalizeEmail(raw: unknown): string | null {
 
 /** How long a pending registration (and so its OTP flow) stays usable. */
 export const PENDING_REGISTRATION_TTL_MINUTES = 30;
+
+// ── Profile photo at sign-up ──────────────────────────────────────────────────
+// Uploaded before the account exists (POST /api/user-auth/signup/photo), into
+// this folder of our own storage. Sign-up only accepts a URL from there, so a
+// form can't point a new account at an arbitrary image on the internet.
+
+export const SIGNUP_PHOTO_FOLDER = 'signup-photos';
+export const SIGNUP_PHOTO_INVALID = 'Please upload your profile photo again.';
+
+/** Public URL prefixes a sign-up photo can have, from the storage settings. */
+export function signupPhotoBases(cfg: {
+  cdnHost?: string | null; r2AccountId?: string | null; r2Bucket?: string | null;
+}): string[] {
+  const bases: string[] = [];
+  if (cfg.cdnHost) bases.push(`https://${cfg.cdnHost.replace(/^https?:\/\//, '').replace(/\/$/, '')}/${SIGNUP_PHOTO_FOLDER}/`);
+  if (cfg.r2AccountId && cfg.r2Bucket) {
+    bases.push(`https://${cfg.r2AccountId}.r2.cloudflarestorage.com/${cfg.r2Bucket}/${SIGNUP_PHOTO_FOLDER}/`);
+  }
+  return bases;
+}
+
+/**
+ * The sign-up photo to save: null when none was sent (older app versions; the
+ * onboarding wizard still requires one before review), the trimmed URL when it
+ * points into our sign-up photo folder, or an error otherwise.
+ */
+export function checkSignupPhotoUrl(
+  raw: unknown,
+  bases: string[],
+): { ok: true; url: string | null } | { ok: false; error: string } {
+  if (raw == null || (typeof raw === 'string' && raw.trim() === '')) return { ok: true, url: null };
+  if (typeof raw !== 'string') return { ok: false, error: SIGNUP_PHOTO_INVALID };
+  const url = raw.trim();
+  const base = bases.find((b) => url.startsWith(b));
+  const rest = base ? url.slice(base.length) : null;
+  // One plain file name inside the folder: no sub-paths, queries or traversal.
+  if (rest == null || !/^[A-Za-z0-9._-]+$/.test(rest) || rest.includes('..') || url.length > 500) {
+    return { ok: false, error: SIGNUP_PHOTO_INVALID };
+  }
+  return { ok: true, url };
+}

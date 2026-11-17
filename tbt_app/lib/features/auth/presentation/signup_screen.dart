@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,9 +7,15 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/routes.dart';
 import '../../../core/exceptions/app_exception.dart';
 import '../../../shared/api/services/auth_service.dart';
+import '../../../shared/api/upload_service.dart';
 
 import '../../../shared/theme/design_tokens.dart';
 import '../../../shared/theme/theme_tokens.dart';
+
+/// Profile photo is mandatory at sign-up (same limits as the server).
+const _kPhotoRequired = 'Profile photo is required';
+const _kPhotoMaxBytes = 10 * 1024 * 1024;
+const _kPhotoTypes = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'};
 
 const _kBusinessTypes = [
   'Product-based',
@@ -38,6 +45,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
+  String? _photoUrl;
+  String? _photoError;
+  bool _uploadingPhoto = false;
 
   @override
   void dispose() {
@@ -53,8 +63,48 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     super.dispose();
   }
 
+  Future<void> _pickPhoto() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+      maxWidth: 1600,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    final contentType = UploadService.guessContentType(picked.name);
+    // An invalid file never replaces a good photo.
+    if (!_kPhotoTypes.contains(contentType)) {
+      setState(() => _photoError = 'Please choose a JPG, PNG, WebP or GIF photo.');
+      return;
+    }
+    if (bytes.isEmpty || bytes.length > _kPhotoMaxBytes) {
+      setState(() => _photoError = 'Photo must be 10 MB or smaller.');
+      return;
+    }
+    setState(() {
+      _uploadingPhoto = true;
+      _photoError = null;
+    });
+    try {
+      final url = await ref.read(authServiceProvider).uploadSignupPhoto(bytes, contentType);
+      if (mounted) setState(() => _photoUrl = url);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _photoError =
+            e is AppException ? e.message : 'Photo upload failed. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    final formOk = _formKey.currentState!.validate();
+    if (_photoUrl == null) {
+      setState(() => _photoError ??= _kPhotoRequired);
+      return;
+    }
+    if (!formOk || _uploadingPhoto) return;
     setState(() => _isLoading = true);
     try {
       final phone = _phoneController.text.trim();
@@ -73,6 +123,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         if (state.isNotEmpty) 'state': state,
         if (_businessType != null) 'productServiceType': _businessType,
         'password': _passwordController.text,
+        'profilePhotoUrl': _photoUrl,
       });
       if (!mounted) return;
       context.go(
@@ -135,7 +186,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     letterSpacing: 1,
                   ),
                 ),
-                const SizedBox(height: 36),
+                const SizedBox(height: 28),
+
+                // ── Profile photo (required) ──────────────────────────────────
+                _SignupPhotoPicker(
+                  photoUrl: _photoUrl,
+                  uploading: _uploadingPhoto,
+                  error: _photoError,
+                  onPick: _uploadingPhoto ? null : _pickPhoto,
+                ),
+                const SizedBox(height: 24),
 
                 // ── First name + Last name ────────────────────────────────────
                 Row(
@@ -334,7 +394,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 SizedBox(
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: _isLoading ? null : _submit,
+                    onPressed: _isLoading || _uploadingPhoto ? null : _submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Theme.of(context).colorScheme.primary,
                       disabledBackgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
@@ -472,4 +532,83 @@ class _FieldLabel extends StatelessWidget {
           letterSpacing: 1.5,
         ),
       );
+}
+
+class _SignupPhotoPicker extends StatelessWidget {
+  const _SignupPhotoPicker({
+    required this.photoUrl,
+    required this.uploading,
+    required this.error,
+    required this.onPick,
+  });
+
+  final String? photoUrl;
+  final bool uploading;
+  final String? error;
+  final VoidCallback? onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final hasError = error != null;
+    return Column(
+      children: [
+        Semantics(
+          button: true,
+          label: photoUrl == null ? 'Upload profile photo' : 'Change profile photo',
+          child: GestureDetector(
+            onTap: onPick,
+            child: Container(
+              width: 88,
+              height: 88,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: context.tokens.bgInput,
+                border: Border.all(
+                  color: photoUrl != null
+                      ? primary
+                      : hasError
+                          ? Theme.of(context).colorScheme.error
+                          : context.tokens.borderInput,
+                  width: 2,
+                ),
+                image: photoUrl != null
+                    ? DecorationImage(image: NetworkImage(photoUrl!), fit: BoxFit.cover)
+                    : null,
+              ),
+              child: uploading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : photoUrl == null
+                      ? Icon(Icons.camera_alt_outlined, color: context.tokens.textMuted, size: 28)
+                      : null,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextButton(
+          onPressed: onPick,
+          child: Text(
+            uploading
+                ? 'Uploading\u2026'
+                : photoUrl == null
+                    ? 'Upload profile photo *'
+                    : 'Change photo',
+            style: TextStyle(color: primary, fontSize: 13),
+          ),
+        ),
+        if (hasError)
+          Text(
+            error!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+          ),
+      ],
+    );
+  }
 }

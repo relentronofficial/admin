@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decideRegistration, EMAIL_TAKEN, isNeverVerified, NEEDS_SUPPORT, normalizeEmail, PHONE_TAKEN, type ExistingAccount } from './registrationLogic.js';
+import { checkSignupPhotoUrl, decideRegistration, EMAIL_TAKEN, isNeverVerified, NEEDS_SUPPORT, normalizeEmail, PHONE_TAKEN, SIGNUP_PHOTO_INVALID, signupPhotoBases, type ExistingAccount } from './registrationLogic.js';
 
 const acct = (id: string, extra: Partial<ExistingAccount> = {}): ExistingAccount => ({
   id, status: 'pending', verificationStatus: 'awaiting_kyc', onboardingSubmittedAt: null, sessionCount: 0, ...extra,
@@ -44,5 +44,45 @@ describe('normalizeEmail', () => {
     expect(normalizeEmail('no-at-sign')).toBeNull();
     expect(normalizeEmail('a@b')).toBeNull();
     expect(normalizeEmail(42)).toBeNull();
+  });
+});
+
+describe('sign-up profile photo URL', () => {
+  const bases = signupPhotoBases({ cdnHost: 'cdn.example.net', r2AccountId: 'acc', r2Bucket: 'bkt' });
+
+  it('builds the CDN and R2 prefixes (scheme or trailing slash in the host is tolerated)', () => {
+    expect(bases).toEqual([
+      'https://cdn.example.net/signup-photos/',
+      'https://acc.r2.cloudflarestorage.com/bkt/signup-photos/',
+    ]);
+    expect(signupPhotoBases({ cdnHost: 'https://cdn.example.net/' })).toEqual(['https://cdn.example.net/signup-photos/']);
+    expect(signupPhotoBases({})).toEqual([]);
+  });
+
+  it('accepts a photo uploaded into our sign-up folder', () => {
+    expect(checkSignupPhotoUrl(' https://cdn.example.net/signup-photos/abc-123.webp ', bases))
+      .toEqual({ ok: true, url: 'https://cdn.example.net/signup-photos/abc-123.webp' });
+    expect(checkSignupPhotoUrl('https://acc.r2.cloudflarestorage.com/bkt/signup-photos/x.png', bases).ok).toBe(true);
+  });
+
+  it('no photo sent is allowed (older app versions); onboarding still requires one', () => {
+    expect(checkSignupPhotoUrl(undefined, bases)).toEqual({ ok: true, url: null });
+    expect(checkSignupPhotoUrl('  ', bases)).toEqual({ ok: true, url: null });
+  });
+
+  it.each([
+    'https://evil.example.com/signup-photos/a.png',
+    'https://cdn.example.net/members/m1/a.png',
+    'https://cdn.example.net/signup-photos/../members/a.png',
+    'https://cdn.example.net/signup-photos/sub/a.png',
+    'https://cdn.example.net/signup-photos/a.png?x=1',
+    'https://cdn.example.net/signup-photos/',
+    'http://cdn.example.net/signup-photos/a.png',
+  ])('refuses %s', (url) => {
+    expect(checkSignupPhotoUrl(url, bases)).toEqual({ ok: false, error: SIGNUP_PHOTO_INVALID });
+  });
+
+  it('refuses a non-string value', () => {
+    expect(checkSignupPhotoUrl(42, bases).ok).toBe(false);
   });
 });

@@ -3,7 +3,12 @@ import * as controller from './controller.js';
 import { devPeekOtp } from '../../lib/otp.js';
 
 export async function userAuthRoutes(fastify: FastifyInstance) {
+  // Raw image bodies (sign-up profile photo). Scoped to these routes only.
+  const SIGNUP_PHOTO_BODY_LIMIT = 11 * 1024 * 1024;
+  fastify.addContentTypeParser(/^image\//, { parseAs: 'buffer', bodyLimit: SIGNUP_PHOTO_BODY_LIMIT }, (_req, body, done) => done(null, body));
   fastify.post('/signup', (req, reply) => controller.signup(fastify, req, reply));
+  // Profile photo for the sign-up form (raw image body, before the account exists).
+  fastify.post('/signup/photo', { bodyLimit: SIGNUP_PHOTO_BODY_LIMIT }, (req, reply) => controller.signupPhotoUpload(fastify, req, reply));
   fastify.post('/login', (req, reply) => controller.login(fastify, req, reply));
   fastify.post('/forgot-password', (req, reply) => controller.forgotPassword(fastify, req, reply));
   fastify.post('/verify-otp', (req, reply) => controller.verifyOtp(fastify, req, reply));

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, User, Mail, Building2, MapPin, MessageSquare } from "lucide-react";
+import { Eye, EyeOff, Lock, ArrowRight, Loader2, Phone, User, Mail, Building2, MapPin, MessageSquare, Camera } from "lucide-react";
 import Link from "next/link";
 import apiClient from "@/lib/api/client";
 import { DEFAULT_PHONE, PhoneInput, formatPhoneInternational, phoneStatus, phoneStatusMessage, phoneToE164, type PhoneValue } from "./PhoneInput";
@@ -12,6 +12,17 @@ type Step = "form" | "otp";
 type FocusedField = "firstName" | "lastName" | "phone" | "email" | "password" | "businessName" | "city" | "state" | "otp" | null;
 
 const BUSINESS_TYPES = ["Product-based", "Service-based", "Coaching"] as const;
+
+// Profile photo is mandatory at sign-up. Same limits as the server and the
+// onboarding wizard: JPG/PNG/WebP/GIF, up to 10 MB.
+const PHOTO_REQUIRED_MSG = "Profile photo is required";
+const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
+const photoFileError = (f: File): string | null =>
+  f.size === 0 ? "That file is empty. Please choose a photo."
+  : !PHOTO_TYPES.includes(f.type) ? "Please choose a JPG, PNG, WebP or GIF photo."
+  : f.size > PHOTO_MAX_BYTES ? "Photo must be 10 MB or smaller."
+  : null;
 
 export function SignupScreen() {
   const router = useRouter();
@@ -28,6 +39,9 @@ export function SignupScreen() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [productServiceType, setProductServiceType] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Location dropdowns
   const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
@@ -49,6 +63,8 @@ export function SignupScreen() {
     e.preventDefault();
     if (submitting) return;
 
+    if (photoUploading) { setError("Please wait for your photo to finish uploading"); return; }
+    if (!photoUrl) { setError(PHOTO_REQUIRED_MSG); return; }
     if (!firstName.trim()) { setError("First name is required"); return; }
     // Incomplete or invalid numbers never reach the OTP step.
     const e164 = phoneToE164(phone);
@@ -72,6 +88,7 @@ export function SignupScreen() {
         city: city.trim() || undefined,
         state: state.trim() || undefined,
         productServiceType: productServiceType || undefined,
+        profilePhotoUrl: photoUrl,
       });
       // In dev the OTP is returned directly
       if (res?.data?.otp) setDevOtp(res.data.otp);
@@ -82,7 +99,26 @@ export function SignupScreen() {
     } finally {
       setSubmitting(false);
     }
-  }, [firstName, lastName, phone, email, password, businessName, city, state, productServiceType, submitting]);
+  }, [firstName, lastName, phone, email, password, businessName, city, state, productServiceType, photoUrl, photoUploading, submitting]);
+
+  const handlePhotoSelected = useCallback(async (file: File) => {
+    // An invalid file never replaces a good photo.
+    const invalid = photoFileError(file);
+    if (invalid) { setError(invalid); return; }
+    setError("");
+    setPhotoUploading(true);
+    try {
+      const res: any = await apiClient.post("/api/user-auth/signup/photo", await file.arrayBuffer(), {
+        headers: { "Content-Type": file.type }, maxBodyLength: Infinity,
+      });
+      if (!res?.data?.publicUrl) throw new Error("Photo upload failed. Please try again.");
+      setPhotoUrl(res.data.publicUrl);
+    } catch (err: any) {
+      setError(err.message || "Photo upload failed. Please try again.");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }, []);
 
   const handleVerifyOtp = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,6 +222,45 @@ export function SignupScreen() {
             {/* ── Step: form ── */}
             {step === "form" && (
               <form onSubmit={handleSignup} className="space-y-3">
+                {/* Profile photo (required) */}
+                <div className="flex flex-col items-center gap-2 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={photoUploading}
+                    aria-label={photoUrl ? "Change profile photo" : "Upload profile photo"}
+                    className="relative w-20 h-20 rounded-full overflow-hidden flex items-center justify-center transition-all disabled:cursor-wait"
+                    style={{
+                      background: "rgba(255,255,255,0.04)",
+                      border: photoUrl ? "2px solid #dc2626" : "2px dashed rgba(255,255,255,0.18)",
+                    }}
+                  >
+                    {photoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={photoUrl} alt="Your profile photo" className="w-full h-full object-cover" />
+                    ) : (
+                      <Camera className="w-6 h-6" style={{ color: "rgba(255,255,255,0.35)" }} />
+                    )}
+                    {photoUploading && (
+                      <span className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.55)" }}>
+                        <Loader2 className="w-5 h-5 animate-spin text-white" />
+                      </span>
+                    )}
+                  </button>
+                  <button type="button" onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
+                    className="text-[12px] transition-colors hover:opacity-80 disabled:opacity-50" style={{ color: "#dc2626" }}>
+                    {photoUploading ? "Uploading…" : photoUrl ? "Change photo" : "Upload profile photo *"}
+                  </button>
+                  <input
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="hidden"
+                    data-testid="signup-photo-input"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handlePhotoSelected(f); e.target.value = ""; }}
+                  />
+                </div>
+
                 {/* Name row */}
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="First Name *" focused={focused === "firstName"}>
@@ -313,7 +388,7 @@ export function SignupScreen() {
 
                 {/* Submit */}
                 <div className="pt-1">
-                  <motion.button type="submit" disabled={submitting}
+                  <motion.button type="submit" disabled={submitting || photoUploading}
                     whileHover={!submitting ? { scale: 1.015, y: -1 } : undefined}
                     whileTap={!submitting ? { scale: 0.975 } : undefined}
                     transition={{ type: "spring", stiffness: 400, damping: 20 }}

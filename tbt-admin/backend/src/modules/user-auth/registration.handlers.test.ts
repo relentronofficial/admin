@@ -25,6 +25,16 @@ vi.mock('../../plugins/jwt.js', () => ({
   setActiveLoginId: vi.fn(async () => {}), isRefreshHashLive: vi.fn(async () => null), peekRefreshToken: vi.fn(async () => null),
 }));
 
+const stored = vi.hoisted(() => [] as Array<{ key: string; type: string }>);
+const storage = vi.hoisted(() => ({ ok: true }));
+vi.mock('../../lib/profilePhotoStorage.js', () => ({
+  storeProfilePhoto: vi.fn(async (_log: any, key: string, _body: Buffer, type: string) => {
+    if (!storage.ok) return undefined;
+    stored.push({ key, type });
+    return `https://cdn.example.net/${key}`;
+  }),
+}));
+
 const auth = await import('./controller.js');
 
 interface Member {
@@ -114,14 +124,14 @@ function fakeRedis() {
 }
 
 let server: any;
-async function call(handler: (f: any, req: any, reply: any) => any, body: any) {
+async function call(handler: (f: any, req: any, reply: any) => any, body: any, headers: Record<string, string> = {}) {
   const res: { status: number; body?: any } = { status: 200 };
   const reply: any = {
     status(c: number) { res.status = c; return reply; }, code(c: number) { res.status = c; return reply; },
     header() { return reply; }, setCookie() { return reply; }, clearCookie() { return reply; },
     send(b: any) { res.body = b; return reply; },
   };
-  await handler(server, { body, headers: {}, ip: '127.0.0.1' }, reply);
+  await handler(server, { body, headers, ip: '127.0.0.1' }, reply);
   return res;
 }
 const lastOtpFor = (e164: string) => [...sent].reverse().find((s) => s.phone === e164)?.otp;
@@ -132,6 +142,8 @@ beforeEach(() => {
   warnings.length = 0; emails.length = 0; logged.length = 0;
   Object.assign(channel, { whatsapp: true, sms: false, email: true });
   envMock.env.NODE_ENV = 'test';
+  envMock.env.BUNNY_CDN_URL = 'cdn.example.net';
+  stored.length = 0; storage.ok = true;
   const record = (obj: any, msg?: string) => { logged.push(JSON.stringify([obj, msg ?? null])); };
   server = { prisma: prisma(), redis: fakeRedis(), jwt: { sign: vi.fn(async () => 'access-token') },
     log: { info: record, warn: (obj: any, msg?: string) => { record(obj, msg); warnings.push({ obj, msg }); }, error: record } };
@@ -593,5 +605,61 @@ describe('login user enumeration prevention (DEF-003)', () => {
     expect(r.body.success).toBe(true);
     expect(r.body.data.step).toBe('reset_password');
     expect(sent).toHaveLength(0); // no OTP sent for non-existent phone
+  });
+});
+
+describe('profile photo at sign-up', () => {
+  const PHOTO = 'https://cdn.example.net/signup-photos/1-abc.webp';
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+  it('a photo uploaded at sign-up is saved on the new account', async () => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678', profilePhotoUrl: PHOTO });
+    expect(r.status).toBe(201);
+    await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(members).toHaveLength(1);
+    expect(members[0].profilePhotoUrl).toBe(PHOTO);
+  });
+
+  it('a photo URL from anywhere else is refused before any OTP is sent', async () => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678', profilePhotoUrl: 'https://evil.example.com/x.png' });
+    expect(r.status).toBe(400);
+    expect(r.body.field).toBe('profilePhotoUrl');
+    expect(sent).toHaveLength(0);
+    expect(pending.size).toBe(0);
+  });
+
+  it('older app versions without a photo can still sign up (onboarding requires it later)', async () => {
+    const r = await call(auth.signup, { ...SIGNUP, phone: '+919812345678' });
+    expect(r.status).toBe(201);
+    await call(auth.verifyOtp, { phone: '+919812345678', otp: lastOtpFor('+919812345678') });
+    expect(members[0].profilePhotoUrl).toBeNull();
+  });
+
+  it('upload: a real image is stored under a random name in the sign-up folder', async () => {
+    const r = await call(auth.signupPhotoUpload, PNG, { 'content-type': 'image/png' });
+    expect(r.status).toBe(201);
+    expect(stored).toHaveLength(1);
+    expect(stored[0].key).toMatch(/^signup-photos\/\d+-[0-9a-f-]{36}\.png$/);
+    expect(r.body.data.publicUrl).toBe(`https://cdn.example.net/${stored[0].key}`);
+    // ...and that URL is accepted by sign-up.
+    const s = await call(auth.signup, { ...SIGNUP, phone: '+919812345678', profilePhotoUrl: r.body.data.publicUrl });
+    expect(s.status).toBe(201);
+  });
+
+  it('upload: refuses non-images, fake images and empty bodies; nothing is stored', async () => {
+    expect((await call(auth.signupPhotoUpload, PNG, { 'content-type': 'application/pdf' })).status).toBe(400);
+    expect((await call(auth.signupPhotoUpload, Buffer.from('not an image'), { 'content-type': 'image/png' })).status).toBe(400);
+    expect((await call(auth.signupPhotoUpload, Buffer.alloc(0), { 'content-type': 'image/png' })).status).toBe(400);
+    expect(stored).toHaveLength(0);
+  });
+
+  it('upload: storage failure answers 502', async () => {
+    storage.ok = false;
+    expect((await call(auth.signupPhotoUpload, PNG, { 'content-type': 'image/png' })).status).toBe(502);
+  });
+
+  it('upload: at most 10 per IP per hour', async () => {
+    for (let i = 0; i < 10; i++) expect((await call(auth.signupPhotoUpload, PNG, { 'content-type': 'image/png' })).status).toBe(201);
+    expect((await call(auth.signupPhotoUpload, PNG, { 'content-type': 'image/png' })).status).toBe(429);
   });
 });

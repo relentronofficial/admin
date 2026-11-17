@@ -14,6 +14,8 @@ const String kAuthLogout = '/api/user-auth/logout';
 const String kAuthForgotPassword = '/api/user-auth/forgot-password';
 const String kAuthResetPassword = '/api/user-auth/set-password';
 const String kAuthSignup = '/api/user-auth/signup';
+/// Profile photo for the sign-up form (raw image body, before the account exists).
+const String kAuthSignupPhoto = '/api/user-auth/signup/photo';
 const String kAuthSessionRevoke = '/api/user-auth/session-revoke';
 const String kAuthCompleteLogin = '/api/user-auth/complete-login';
 

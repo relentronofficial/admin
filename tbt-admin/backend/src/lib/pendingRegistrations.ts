@@ -15,6 +15,8 @@ export interface PendingRegistrationPayload {
   city: string | null;
   state: string | null;
   productServiceType: string | null;
+  /** Uploaded at sign-up (optional for older app versions). */
+  profilePhotoUrl?: string | null;
 }
 
 export interface PendingRegistration {

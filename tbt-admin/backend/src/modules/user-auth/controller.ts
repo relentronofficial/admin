@@ -6,7 +6,9 @@ import { sendOtp as sendOtpSms } from '../../lib/msg91.js';
 import { sendOtpEmail } from '../../lib/otpEmail.js';
 import { normalizePhone, phoneLookupVariants, phoneKey } from '../../lib/phoneNumber.js';
 import { checkRateLimit } from '../../lib/rateLimit.js';
-import { decideRegistration, normalizeEmail, type ExistingAccount } from '../../lib/registrationLogic.js';
+import { checkSignupPhotoUrl, decideRegistration, normalizeEmail, SIGNUP_PHOTO_FOLDER, signupPhotoBases, type ExistingAccount } from '../../lib/registrationLogic.js';
+import { detectProfilePhotoType, validateProfilePhotoUpload } from '../../lib/onboardingLogic.js';
+import { storeProfilePhoto } from '../../lib/profilePhotoStorage.js';
 import { deletePendingRegistration, findPendingRegistration, savePendingRegistration } from '../../lib/pendingRegistrations.js';
 
 async function sendOtpWithFallback(phone: string, otp: string): Promise<boolean> {
@@ -1025,6 +1027,8 @@ async function completePendingRegistration(
     city: p.city,
     state: p.state,
     productServiceType: p.productServiceType,
+    // Only when one was uploaded at sign-up — never wipe a claimed account's photo.
+    ...(p.profilePhotoUrl ? { profilePhotoUrl: p.profilePhotoUrl } : {}),
   };
   try {
     let memberId: string;
@@ -1076,11 +1080,11 @@ async function completePendingRegistration(
 // when that OTP is verified (verifyOtp → completePendingRegistration), so an
 // unverified attempt can never block a retry with "email already exists".
 export async function signup(fastify: FastifyInstance, request: any, reply: any) {
-  const { firstName, lastName, phone, email, password, businessName, city, state, productServiceType } =
+  const { firstName, lastName, phone, email, password, businessName, city, state, productServiceType, profilePhotoUrl } =
     request.body as {
       firstName: string; lastName?: string; phone: string; email: string;
       password: string; businessName?: string; city?: string; state?: string;
-      productServiceType?: string;
+      productServiceType?: string; profilePhotoUrl?: string;
     };
 
   if (!firstName?.trim() || !phone || !email || !password) {
@@ -1096,6 +1100,15 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
   const cleanEmail = normalizeEmail(email);
   if (!cleanEmail) {
     return reply.status(400).send({ success: false, data: null, error: 'Please enter a valid email address.', field: 'email' });
+  }
+  // The sign-up forms require a photo; the server accepts only one uploaded to
+  // our sign-up folder. A missing photo is still let through for older app
+  // versions — the onboarding wizard refuses to submit for review without one.
+  const photo = checkSignupPhotoUrl(profilePhotoUrl, signupPhotoBases({
+    cdnHost: env.BUNNY_CDN_URL, r2AccountId: env.CLOUDFLARE_R2_ACCOUNT_ID, r2Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
+  }));
+  if (!photo.ok) {
+    return reply.status(400).send({ success: false, data: null, error: photo.error, field: 'profilePhotoUrl' });
   }
 
   const [phoneRow, emailRow] = await Promise.all([
@@ -1136,8 +1149,37 @@ export async function signup(fastify: FastifyInstance, request: any, reply: any)
       city: city || null,
       state: state || null,
       productServiceType: productServiceType || null,
+      profilePhotoUrl: photo.url,
     },
   });
 
   return sendPendingRegistrationOtp(fastify, reply, phoneCheck.e164, cleanEmail, 201);
+}
+
+// POST /api/user-auth/signup/photo  (public — before the account exists)
+//
+// Raw image body (same checks as the onboarding upload: ≤ 10 MB, real
+// JPEG/PNG/WebP/GIF by its bytes). Stored under a random name in the sign-up
+// folder; the returned URL is sent with POST /signup. Rate-limited per IP.
+export async function signupPhotoUpload(fastify: FastifyInstance, request: any, reply: any) {
+  const rl = await checkRateLimit(getRedis(fastify), `signup-photo:${request.ip}`, 10, 3600);
+  if (!rl.ok) {
+    return reply.status(429).header('Retry-After', String(rl.retryAfterSeconds))
+      .send({ success: false, data: null, error: 'Too many photo uploads. Please try again later.' });
+  }
+  const contentType = String(request.headers?.['content-type'] ?? '').split(';')[0].trim();
+  if (!contentType.startsWith('image/')) {
+    return reply.status(400).send({ success: false, data: null, error: 'Please choose an image file' });
+  }
+  const body = request.body as Buffer;
+  const invalid = validateProfilePhotoUpload(Buffer.isBuffer(body) ? body : null);
+  if (invalid) return reply.status(invalid.status).send({ success: false, data: null, error: invalid.error });
+  const photoType = detectProfilePhotoType(body)!;
+
+  const key = `${SIGNUP_PHOTO_FOLDER}/${Date.now()}-${crypto.randomUUID()}.${photoType === 'jpeg' ? 'jpg' : photoType}`;
+  const publicUrl = await storeProfilePhoto(fastify.log as any, key, body, photoType);
+  if (!publicUrl) {
+    return reply.status(502).send({ success: false, data: null, error: 'Photo upload failed. Please try again.' });
+  }
+  return reply.status(201).send({ success: true, data: { publicUrl }, error: null });
 }

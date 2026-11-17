@@ -7,6 +7,7 @@ import { invalidateMemberModuleAccess } from '../../lib/memberModuleAccess.js';
 import { onboardingButtonSchema, onboardingContentSchema, onboardingUpdateSchema, presignDocumentSchema, registerDocumentSchema } from './schema.js';
 import { env } from '../../config/env.js';
 import { readProfileExtras, writeProfileExtras } from '../../lib/memberProfileExtras.js';
+import { storeProfilePhoto } from '../../lib/profilePhotoStorage.js';
 
 const PROFILE_SELECT = {
   phone: true, email: true,
@@ -267,40 +268,7 @@ export async function uploadProfilePhotoHandler(req: FastifyRequest, reply: Fast
   const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '-');
   const key = `members/${memberId}/${Date.now()}-${safeFilename}`;
 
-  let publicUrl: string | undefined;
-
-  // Primary: Bunny Storage
-  if (env.BUNNY_STORAGE_HOSTNAME && env.BUNNY_STORAGE_ZONE && env.BUNNY_STORAGE_ACCESS_KEY && env.BUNNY_CDN_URL) {
-    try {
-      const res = await fetch(`https://${env.BUNNY_STORAGE_HOSTNAME}/${env.BUNNY_STORAGE_ZONE}/${key}`, {
-        method: 'PUT',
-        headers: { AccessKey: env.BUNNY_STORAGE_ACCESS_KEY, 'Content-Type': `image/${photoType}` },
-        body: new Uint8Array(body),
-      });
-      if (res.ok) {
-        publicUrl = `https://${env.BUNNY_CDN_URL}/${key}`;
-      } else {
-        req.log.warn(`Bunny profile photo upload [${res.status}] – trying R2`);
-      }
-    } catch (e: any) {
-      req.log.warn(`Bunny profile photo upload error – trying R2: ${e.message}`);
-    }
-  }
-
-  // Fallback: R2
-  if (!publicUrl && env.CLOUDFLARE_R2_ACCOUNT_ID && env.CLOUDFLARE_R2_ACCESS_KEY_ID && env.CLOUDFLARE_R2_SECRET_ACCESS_KEY && env.CLOUDFLARE_R2_BUCKET_NAME) {
-    try {
-      const s3 = new S3Client({
-        region: 'auto',
-        endpoint: `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId: env.CLOUDFLARE_R2_ACCESS_KEY_ID, secretAccessKey: env.CLOUDFLARE_R2_SECRET_ACCESS_KEY },
-      });
-      await s3.send(new PutObjectCommand({ Bucket: env.CLOUDFLARE_R2_BUCKET_NAME, Key: key, Body: body, ContentType: `image/${photoType}` }));
-      publicUrl = env.BUNNY_CDN_URL ? `https://${env.BUNNY_CDN_URL}/${key}` : `https://${env.CLOUDFLARE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${env.CLOUDFLARE_R2_BUCKET_NAME}/${key}`;
-    } catch (e: any) {
-      req.log.error(`R2 profile photo upload failed: ${e.message}`);
-    }
-  }
+  const publicUrl = await storeProfilePhoto(req.log, key, body, photoType);
 
   if (!publicUrl) {
     return reply.status(502).send({ success: false, data: null, error: 'Upload failed – no storage service available' });
