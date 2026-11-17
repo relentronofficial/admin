@@ -28,7 +28,7 @@ import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../
 import { grantCourseAccessAfterPayment, grantPaymentAccess, loadPaymentForGrant } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute, ACTIVITY_TIMEZONE, getActivityToday, getTrackingStartDate, getMemberDailyRows } from '../../lib/memberActivity.js';
 import { isActiveHeartbeat, buildUsageHistory } from '../../lib/memberActivityLogic.js';
-import { isCourseModuleAllowed, validateModuleSelection, type ModuleAccess } from '../../lib/mentorshipModules.js';
+import { isCourseModuleAllowed, validateModuleSelection, withGrantedCourseModules, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import {
   isInstagramConfigured,
   buildInstagramOAuthUrl,
@@ -956,11 +956,23 @@ export async function listUserCoursesHandler(request: FastifyRequest, reply: Fas
   if (moduleAccess.selection !== null || moduleAccess.businessTypeDerived) {
     // Filter catalog for both explicit selection and business_type-derived access —
     // members should only see courses in their module regardless of how access was set.
+    // A course an admin granted (active CourseAccess) always stays, as it does on
+    // the course detail and content endpoints.
     const beforeModuleFilter = data.length;
-    data = data.filter((c) => isCourseModuleAllowed(c.module, moduleAccess));
+    data = data.filter((c) => c.hasAccess || isCourseModuleAllowed(c.module, moduleAccess));
     total = Math.max(0, total - (beforeModuleFilter - data.length));
     personalizationState = 'program';
     allowedModules = moduleAccess.effective;
+  }
+  // The page shows only courses in allowedModules, so a granted course's module
+  // must be in it — otherwise an admin grant outside the member's earlier module
+  // choice (or the admin's own module limit) shows an empty mentorship page.
+  if (personalizationState === 'program') {
+    allowedModules = withGrantedCourseModules(
+      allowedModules,
+      data.filter((c) => c.hasAccess).map((c) => c.module),
+      moduleAccess.selectable,
+    );
   }
 
   // Filter out courses the member's tier cannot access yet (unless they have explicit access)

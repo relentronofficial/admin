@@ -4,6 +4,7 @@ import {
   parseModuleList,
   resolveModuleAccess,
   isCourseModuleAllowed,
+  withGrantedCourseModules,
   validateModuleSelection,
 } from './mentorshipModules.js';
 
@@ -201,5 +202,29 @@ describe('modulesForProductServiceType (onboarding "Business Type")', () => {
     const r = resolveModuleAccess({ ...base, businessTypeModules: ['Service', 'Coaching'] });
     expect(r.restricted).toBe(true);
     expect(r.businessTypeDerived).toBe(true);
+  });
+});
+
+describe('withGrantedCourseModules', () => {
+  const ORDER = ['Product', 'Service', 'Coaching'];
+
+  it('adds the module of an admin-granted course the member had not chosen', () => {
+    // Chose Product at onboarding; admin then allowed Coaching and granted the
+    // CoachX course — the effective list was empty, so the page showed nothing.
+    expect(withGrantedCourseModules([], ['Coaching'], ORDER)).toEqual(['Coaching']);
+    expect(withGrantedCourseModules(['Product'], ['Coaching'], ORDER)).toEqual(['Product', 'Coaching']);
+  });
+
+  it('keeps the active module order, de-duplicates and ignores courses with no module', () => {
+    expect(withGrantedCourseModules(['Coaching'], ['Product', null, undefined, 'Coaching', ''], ORDER)).toEqual(['Product', 'Coaching']);
+  });
+
+  it('modules outside the active order follow, in the order seen', () => {
+    expect(withGrantedCourseModules(['Service'], ['Legacy', 'Product'], ORDER)).toEqual(['Product', 'Service', 'Legacy']);
+  });
+
+  it('no grants leaves the list unchanged', () => {
+    expect(withGrantedCourseModules(['Service', 'Product'], [], ORDER)).toEqual(['Product', 'Service']);
+    expect(withGrantedCourseModules([], [], ORDER)).toEqual([]);
   });
 });

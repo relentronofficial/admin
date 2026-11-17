@@ -157,6 +157,26 @@ export function isCourseModuleAllowed(courseModule: string | null | undefined, a
   return access.effective.includes(courseModule);
 }
 
+/**
+ * The modules a member's course list shows: `modules` plus the module of every
+ * course an admin has granted them (active CourseAccess). An explicit grant is
+ * the admin's most specific decision, so it is never hidden by the module
+ * ceiling or by the member's own earlier module choice. Ordered by `order`
+ * (the active module order); modules not in it follow, in the order seen.
+ */
+export function withGrantedCourseModules(
+  modules: string[],
+  grantedCourseModules: Array<string | null | undefined>,
+  order: string[],
+): string[] {
+  const all: string[] = [];
+  for (const m of [...modules, ...grantedCourseModules]) {
+    if (m && !all.includes(m)) all.push(m);
+  }
+  const rank = (m: string) => (order.includes(m) ? order.indexOf(m) : order.length + all.indexOf(m));
+  return all.sort((a, b) => rank(a) - rank(b));
+}
+
 export type SelectionValidation =
   | { ok: true; modules: string[] }
   | { ok: false; error: string };
