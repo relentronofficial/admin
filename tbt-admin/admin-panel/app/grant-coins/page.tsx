@@ -23,6 +23,10 @@ export default function GrantCoinsPage() {
   const [batchId, setBatchId]         = useState("");
   const [skipExisting, setSkipExisting] = useState(true);
   const [result, setResult]           = useState<{ granted: number; skipped: number } | null>(null);
+  // Confirmation is shown in the page: native confirm() is blocked in some
+  // browsers (it returns false without showing anything), which made the
+  // Grant button look dead.
+  const [confirmMsg, setConfirmMsg]   = useState<string | null>(null);
 
   const grantCoins  = useGrantCoins();
   const { data: batchData } = useListBatches();
@@ -43,11 +47,12 @@ export default function GrantCoinsPage() {
     if (mode === "batch" && !batchId) { toast.error("Select a batch"); return; }
 
     const batchLabel = mode === "batch" ? batches.find(b => b.id === batchId)?.name ?? "selected batch" : "all active members";
-    const confirmed  = window.confirm(
-      `Grant ${amt.toLocaleString()} coins to ${batchLabel}${skipExisting ? " (skipping those who already have coins)" : ""}?\n\nThis cannot be undone.`,
-    );
-    if (!confirmed) return;
+    setConfirmMsg(`Grant ${amt.toLocaleString()} coins to ${batchLabel}${skipExisting ? " (skipping those who already have coins)" : ""}?`);
+  };
 
+  const doGrant = async () => {
+    const amt = parseInt(amount, 10);
+    setConfirmMsg(null);
     try {
       const res = await grantCoins.mutateAsync({
         amount: amt,
@@ -81,7 +86,7 @@ export default function GrantCoinsPage() {
           {MODE_CONFIG.map(({ mode: m, label, desc, icon: Icon }) => (
             <button
               key={m}
-              onClick={() => { setMode(m); setResult(null); }}
+              onClick={() => { setMode(m); setResult(null); setConfirmMsg(null); }}
               className={`flex flex-col items-start gap-2 p-4 rounded-xl border transition-all text-left ${
                 mode === m
                   ? "border-amber-500/60 bg-amber-500/10"
@@ -159,17 +164,21 @@ export default function GrantCoinsPage() {
               </span>
             </label>
 
-            {/* Grant button */}
-            <button
-              onClick={handleGrant}
-              disabled={!canSubmit || grantCoins.isPending}
-              className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40"
-            >
-              {grantCoins.isPending
-                ? <><Loader2 size={15} className="animate-spin" /> Granting…</>
-                : <><Coins size={15} /> Grant Coins</>
-              }
-            </button>
+            {/* Grant button → in-page confirmation */}
+            {confirmMsg ? (
+              <ConfirmGrant message={confirmMsg} onConfirm={doGrant} onCancel={() => setConfirmMsg(null)} />
+            ) : (
+              <button
+                onClick={handleGrant}
+                disabled={!canSubmit || grantCoins.isPending}
+                className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+              >
+                {grantCoins.isPending
+                  ? <><Loader2 size={15} className="animate-spin" /> Granting…</>
+                  : <><Coins size={15} /> Grant Coins</>
+                }
+              </button>
+            )}
 
             {/* Result banner */}
             {result && (
@@ -221,6 +230,7 @@ function IndividualGrant({ labelCls, inputCls }: { labelCls: string; inputCls: s
   const [amount, setAmount]         = useState("");
   const [reason, setReason]         = useState("");
   const [lastGrant, setLastGrant]   = useState<{ name: string; added: number; newBalance: number | null } | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 300);
@@ -239,14 +249,19 @@ function IndividualGrant({ labelCls, inputCls }: { labelCls: string; inputCls: s
   const amountValid = Number.isInteger(amt) && amt > 0 && amt <= 100_000;
   const balance = Number(member?.coinBalance ?? 0);
 
-  const pick = (id: string) => { setSelectedId(id); setLastGrant(null); };
-  const clear = () => { setSelectedId(null); setAmount(""); setReason(""); setLastGrant(null); };
+  const pick = (id: string) => { setSelectedId(id); setLastGrant(null); setConfirming(false); };
+  const clear = () => { setSelectedId(null); setAmount(""); setReason(""); setLastGrant(null); setConfirming(false); };
 
-  const handleGrant = async () => {
+  const handleGrant = () => {
     if (!selectedId || !member) return;
     if (!amountValid) { toast.error("Enter a valid amount (1–100,000)"); return; }
+    setConfirming(true);
+  };
+
+  const doGrant = async () => {
+    if (!selectedId || !member || !amountValid) { setConfirming(false); return; }
     const name = memberName(member);
-    if (!window.confirm(`Grant ${amt.toLocaleString()} coins to ${name}?\n\nThis cannot be undone.`)) return;
+    setConfirming(false);
     try {
       const res: any = await addCoins.mutateAsync({ amount: amt, reason: reason.trim() || undefined });
       const newBalance = typeof res?.newBalance === "number" ? res.newBalance : null;
@@ -349,7 +364,7 @@ function IndividualGrant({ labelCls, inputCls }: { labelCls: string; inputCls: s
           max={100000}
           placeholder="e.g. 500"
           value={amount}
-          onChange={e => setAmount(e.target.value)}
+          onChange={e => { setAmount(e.target.value); setConfirming(false); }}
           disabled={!selectedId}
           className={inputCls + " disabled:opacity-40"}
         />
@@ -373,17 +388,25 @@ function IndividualGrant({ labelCls, inputCls }: { labelCls: string; inputCls: s
         />
       </div>
 
-      {/* Grant button */}
-      <button
-        onClick={handleGrant}
-        disabled={!member || !amountValid || addCoins.isPending}
-        className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40"
-      >
-        {addCoins.isPending
-          ? <><Loader2 size={15} className="animate-spin" /> Granting…</>
-          : <><Coins size={15} /> {member ? `Grant Coins to ${memberName(member).split(" ")[0]}` : "Grant Coins"}</>
-        }
-      </button>
+      {/* Grant button → in-page confirmation */}
+      {confirming && member ? (
+        <ConfirmGrant
+          message={`Grant ${amt.toLocaleString()} coins to ${memberName(member)}? New balance: ${(balance + amt).toLocaleString()}.`}
+          onConfirm={doGrant}
+          onCancel={() => setConfirming(false)}
+        />
+      ) : (
+        <button
+          onClick={handleGrant}
+          disabled={!member || !amountValid || addCoins.isPending}
+          className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+        >
+          {addCoins.isPending
+            ? <><Loader2 size={15} className="animate-spin" /> Granting…</>
+            : <><Coins size={15} /> {member ? `Grant Coins to ${memberName(member).split(" ")[0]}` : "Grant Coins"}</>
+          }
+        </button>
+      )}
 
       {/* Result banner */}
       {lastGrant && (
@@ -404,6 +427,33 @@ function IndividualGrant({ labelCls, inputCls }: { labelCls: string; inputCls: s
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** In-page "are you sure" step for a grant (replaces window.confirm). */
+function ConfirmGrant({ message, onConfirm, onCancel }: { message: string; onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-3" role="alertdialog" aria-label="Confirm coin grant">
+      <div>
+        <p className="text-[13px] font-semibold text-[#f0f0f0]">{message}</p>
+        <p className="text-[11px] text-[#a0a0a0] mt-0.5">This cannot be undone.</p>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onCancel}
+          className="flex-1 h-11 rounded-xl border border-[#333] text-[#d0d0d0] hover:bg-[#222] font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onConfirm}
+          autoFocus
+          className="flex-1 h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-rajdhani font-bold text-[13px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+        >
+          <CheckCircle2 size={15} /> Yes, Grant
+        </button>
+      </div>
     </div>
   );
 }
