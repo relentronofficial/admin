@@ -1202,7 +1202,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   if (allRelatedIds.length > 0) {
     const related = await prisma.course.findMany({
       where: { id: { in: allRelatedIds }, isPublished: true },
-      select: { id: true, title: true, slug: true, thumbnailUrl: true, level: true, totalLessons: true, price: true },
+      select: { id: true, title: true, slug: true, description: true, thumbnailUrl: true, level: true, totalLessons: true, price: true },
     });
     const relatedMap = new Map(related.map((c) => [c.id, c]));
     upsellCourses = upsellIds.map((rid) => relatedMap.get(rid)).filter(Boolean) as any[];

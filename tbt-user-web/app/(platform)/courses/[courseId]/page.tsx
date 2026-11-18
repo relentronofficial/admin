@@ -58,10 +58,14 @@ const MC_CSS = `
 
 /* The sticky bar renders outside .mc-page, so it needs the same palette variables. */
 .mc-page,.mc-sticky-bar{--mc-red:var(--color-accent,#f21f2b);--mc-red-dark:#d91420;--mc-maroon:#4b080b}
+/* .mc-page breaks out with width:100vw, which includes the scrollbar — stop that causing a sideways scroll. */
+html:has(.mc-page),body:has(.mc-page){overflow-x:clip}
 .mc-page{overflow-x:hidden;background:#fff;color:#17151a;font-family:"DM Sans",sans-serif;line-height:1.55}
 .mc-page *,.mc-page *::before,.mc-page *::after{box-sizing:border-box}
-.mc-page a{color:inherit;text-decoration:none}
-.mc-page button{font:inherit}
+.mc-page a{text-decoration:none}
+/* Not on .mc-btn: these would override the button colour/size (e.g. black text on the black button). */
+.mc-page a:not(.mc-btn){color:inherit}
+.mc-page button:not(.mc-btn){font:inherit}
 
 .mc-hero{position:relative;overflow:hidden;background:radial-gradient(ellipse at 50% 10%,#fff 0,#fff8f8 45%,#ffe8e9 100%);padding:40px 20px 30px}
 .mc-hero-orb{position:absolute;width:32px;height:32px;border-radius:10px;filter:blur(2px);opacity:.5;transform:rotate(20deg)}
@@ -77,32 +81,32 @@ const MC_CSS = `
 .mc-video-preview{aspect-ratio:16/9;height:auto;border:0;padding:0;position:relative;overflow:hidden;border-radius:17px;background:#18151a;cursor:pointer;box-shadow:0 15px 35px #29101320;width:100%;display:block}
 .mc-video-preview img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;display:block}
 .mc-video-preview::after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,#0008,transparent 45%);pointer-events:none}
-.mc-play-button{position:absolute;z-index:2;left:50%;top:50%;transform:translate(-50%,-50%);width:58px;height:58px;border:2px solid white;border-radius:50%;display:grid;place-items:center;background:#ffffff20;backdrop-filter:blur(4px);transition:.25s}
+.mc-play-button{width:58px;height:58px;border:2px solid white;border-radius:50%;display:grid;place-items:center;background:#ffffff20;backdrop-filter:blur(4px)}
 .mc-play-button span{width:0;height:0;border-top:9px solid transparent;border-bottom:9px solid transparent;border-left:14px solid #fff;margin-left:4px;display:block}
-.mc-video-preview:hover .mc-play-button{background:var(--mc-red);scale:1.08}
 .mc-video-caption{position:absolute;z-index:2;bottom:15px;left:18px;color:#fff;font-size:9px;letter-spacing:1.6px;font-weight:800}
 .mc-hero-facts{display:grid;gap:19px;text-align:left}
 .mc-fact{display:flex;align-items:center;gap:12px}
 .mc-fact-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#ffe3e5;color:var(--mc-red);font-size:17px;flex-shrink:0}
-.mc-fact small{display:block;color:#777;font-size:10px}
+.mc-fact small{display:block;color:#777;font-size:11px}
 .mc-fact strong{display:block;color:var(--mc-red);font:700 15px Outfit,sans-serif}
 .mc-offer-strip{max-width:850px;margin:auto;padding:17px 20px;border:1px solid #f5dfe1;border-radius:14px;background:#fff;display:flex;justify-content:space-between;align-items:center;text-align:left;box-shadow:0 8px 25px #6e1b2010}
-.mc-offer-strip small{font-size:10px;color:#555}
+.mc-offer-strip small{font-size:11px;color:#555}
 .mc-discount{background:var(--mc-red);color:#fff;border-radius:20px;padding:3px 8px;margin-left:7px;font-size:8px}
 .mc-offer-price{font:800 25px Outfit;color:var(--mc-red);line-height:1.3}
 .mc-offer-price del{font:500 11px "DM Sans";color:#999}
 .mc-offer-note{color:#438b36!important}
 .mc-offer-actions{display:grid;gap:8px;width:220px}
-.mc-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:12px 19px;border-radius:30px;font-size:11px;font-weight:800;border:1px solid transparent;transition:transform .25s,background .25s,box-shadow .25s;cursor:pointer;font-family:"DM Sans",sans-serif;line-height:1}
+.mc-btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:12px 20px;border-radius:30px;font-size:13px;font-weight:800;border:1px solid transparent;transition:transform .25s,background .25s,color .25s,border-color .25s,box-shadow .25s;cursor:pointer;font-family:"DM Sans",sans-serif;line-height:1.2;text-align:center;-webkit-tap-highlight-color:transparent}
 .mc-btn:disabled{opacity:.6;cursor:not-allowed}
 .mc-btn-red{background:var(--mc-red);color:#fff;box-shadow:0 8px 20px rgba(242,31,43,.15)}
 .mc-btn-red:hover:not(:disabled){background:var(--mc-red-dark);transform:translateY(-2px)}
 .mc-btn-outline{border-color:#2b2528;background:#fff;color:#1c191b}
 .mc-btn-outline:hover{border-color:var(--mc-red);color:var(--mc-red);transform:translateY(-2px)}
+/* Black until used: turns red on hover (desktop) and when pressed/focused (touch). */
 .mc-btn-dark{background:#111;color:#fff}
-.mc-btn-dark:hover:not(:disabled){background:var(--mc-red);transform:translateY(-2px)}
+.mc-btn-dark:hover:not(:disabled),.mc-btn-dark:active:not(:disabled),.mc-btn-dark:focus:not(:disabled){background:var(--mc-red);color:#fff;transform:translateY(-2px)}
 .mc-btn-white{background:#fff;color:#111}
-.mc-btn-white:hover{transform:translateY(-2px);box-shadow:0 8px 20px #0003}
+.mc-btn-white:hover,.mc-btn-white:active,.mc-btn-white:focus{background:var(--mc-red);color:#fff;transform:translateY(-2px);box-shadow:0 8px 20px #0003}
 .mc-btn-green{background:#22c55e;color:#fff}
 .mc-btn-green:hover{background:#16a34a;transform:translateY(-2px)}
 
@@ -127,11 +131,11 @@ const MC_CSS = `
 .mc-module-trigger{width:100%;display:flex;align-items:center;gap:9px;text-align:left;padding:13px 12px;background:#fff;border:0;cursor:pointer}
 .mc-module-number{display:grid;place-items:center;flex:0 0 25px;height:25px;border-radius:7px;background:#17171a;color:#fff;font-size:10px;font-weight:800}
 .mc-featured .mc-module-number{background:var(--mc-red)}
-.mc-module-title{font-size:11px;font-weight:800;flex:1;line-height:1.35}
-.mc-module-tag{font-size:8px;color:#777;background:#f6f3f3;border-radius:20px;padding:4px 7px;white-space:nowrap}
+.mc-module-title{font-size:13px;font-weight:800;flex:1;line-height:1.35}
+.mc-module-tag{font-size:10px;color:#777;background:#f6f3f3;border-radius:20px;padding:4px 7px;white-space:nowrap}
 .mc-chevron{color:#777;transition:transform .25s;display:block;font-style:normal;line-height:1}
 .mc-module-trigger[aria-expanded="true"] .mc-chevron{transform:rotate(180deg)}
-.mc-module-details{display:none;padding:0 14px 12px 47px;font-size:10px;color:#686168}
+.mc-module-details{display:none;padding:0 14px 12px 47px;font-size:12px;color:#686168}
 .mc-module-trigger[aria-expanded="true"]+.mc-module-details{display:block;animation:mc-drop .25s ease}
 .mc-module-details>div{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #f1eeee}
 .mc-module-details small{white-space:nowrap;color:#999}
@@ -140,19 +144,29 @@ const MC_CSS = `
 
 .mc-related-section{background:linear-gradient(130deg,#430709,#570b0d 55%,#390608);padding:75px 5vw 65px;color:#fff}
 .mc-course-grid{max-width:1000px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-.mc-course-card{min-width:0;cursor:pointer}
-.mc-course-art{height:175px;border-radius:13px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 25px #16030570;isolation:isolate}
+.mc-course-card{min-width:0;cursor:pointer;outline:none}
+.mc-course-art{aspect-ratio:16/9;height:auto;border-radius:13px;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 12px 25px #16030570;isolation:isolate}
 .mc-course-art::before{content:"";position:absolute;inset:0;background:linear-gradient(130deg,#ffffff20,transparent 50%);z-index:0}
-.mc-course-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;background:#111;z-index:0}
+.mc-course-art.mc-has-img::before{display:none}
+.mc-course-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;background:#111;z-index:0;transition:transform .4s ease}
+.mc-course-card:hover .mc-course-art img,.mc-course-card:focus-visible .mc-course-art img{transform:scale(1.04)}
+/* Hover / keyboard focus reveals the course details over the thumbnail. */
+.mc-course-art-hover{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;justify-content:flex-end;gap:6px;padding:16px;text-align:left;background:linear-gradient(0deg,#000e 10%,#000a 60%,#0006);opacity:0;transition:opacity .25s ease}
+.mc-course-card:hover .mc-course-art-hover,.mc-course-card:focus-visible .mc-course-art-hover{opacity:1}
+.mc-course-art-hover strong{font:700 17px/1.2 Outfit,sans-serif}
+.mc-course-art-hover p{margin:0;font-size:12px;line-height:1.45;color:#f1e3e4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.mc-course-art-hover span{font-size:12px;font-weight:800;color:#ffe54c}
+.mc-course-card:focus-visible .mc-course-art{box-shadow:0 0 0 3px #ffe54c}
+@media(hover:none){.mc-course-art-hover{display:none}}
 .mc-course-art-overlay{position:absolute;inset:0;background:linear-gradient(0deg,#000a,transparent 50%);z-index:1}
 .mc-course-art-text{position:relative;z-index:2;text-align:center;padding:12px}
 .mc-course-art b{font:800 clamp(18px,2.5vw,28px)/.95 Outfit;text-align:center;letter-spacing:-1px;text-shadow:0 3px 12px #0007;color:#fff}
 .mc-course-art em{font-style:normal;font-size:.65em;display:block}
-.mc-art-label{position:absolute;top:12px;left:12px;background:#fff;color:#111;padding:5px 8px;border-radius:5px;font-weight:900;font-size:11px;z-index:3}
+.mc-art-label{position:absolute;top:12px;right:12px;background:#fff;color:#111;padding:5px 8px;border-radius:5px;font-weight:900;font-size:11px;z-index:3}
 .mc-art-shape{position:absolute;bottom:-50px;right:-15px;width:150px;height:100px;border:2px solid #ffffff55;border-radius:50%;transform:rotate(-25deg);z-index:1}
 .mc-course-card h3{font:700 15px Outfit;margin:13px 0 3px;color:#fff}
-.mc-course-card>p{font-size:11px;color:#e8cfd0;margin:0 0 7px;max-width:300px}
-.mc-course-card>span{font-size:10px;color:#ffe54c;font-weight:700;text-decoration:underline}
+.mc-course-card>p{font-size:12px;color:#e8cfd0;margin:0 0 7px;max-width:300px}
+.mc-course-card>span{font-size:12px;color:#ffe54c;font-weight:700;text-decoration:underline}
 
 .mc-plans-section{background:#fff}
 .mc-plans-grid{max-width:1080px;margin:auto;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
@@ -161,18 +175,18 @@ const MC_CSS = `
 .mc-plan-card{position:relative;border:1px solid #e8e4e5;border-radius:17px;padding:24px 22px 20px;display:flex;flex-direction:column;box-shadow:0 9px 28px #16060908;transition:transform .3s,box-shadow .3s}
 .mc-plan-card:hover{transform:translateY(-7px);box-shadow:0 12px 35px rgba(36,10,14,.08)}
 .mc-plan-card.mc-popular{border:1.5px solid var(--mc-red);box-shadow:0 12px 30px rgba(242,31,43,.1)}
-.mc-popular-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);white-space:nowrap;border-radius:20px;background:var(--mc-red);color:#fff;padding:5px 15px;font-size:8px;font-weight:800;letter-spacing:.5px}
-.mc-plan-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9px;font-weight:800;color:#555}
-.mc-pill{background:#f5f2f2;border-radius:20px;padding:4px 8px;font-size:8px;white-space:nowrap}
+.mc-popular-label{position:absolute;top:-12px;left:50%;transform:translateX(-50%);white-space:nowrap;border-radius:20px;background:var(--mc-red);color:#fff;padding:5px 15px;font-size:10px;font-weight:800;letter-spacing:.5px}
+.mc-plan-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;font-weight:800;color:#555}
+.mc-pill{background:#f5f2f2;border-radius:20px;padding:4px 8px;font-size:10px;white-space:nowrap}
 .mc-plan-card h3{font:700 21px Outfit;margin:18px 0 7px}
-.mc-plan-card>p{font-size:11px;color:#777;min-height:52px;margin:0}
-.mc-plan-price{font:800 29px Outfit;margin:15px 0 20px;white-space:nowrap}
+.mc-plan-card>p{font-size:13px;color:#777;min-height:52px;margin:0}
+.mc-plan-price{font:800 29px Outfit;margin:15px 0 20px;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px}
 .mc-plan-price del{font:500 11px "DM Sans";color:#aaa}
 .mc-plan-price small{font:700 9px "DM Sans";background:#e6faed;color:#248849;padding:4px 7px;border-radius:5px;margin-left:4px}
-.mc-plan-subtitle{font-size:9px;font-weight:800;color:#777;margin-bottom:7px}
-.mc-plan-feature-title{font-size:11px;color:#292329;display:block;margin-bottom:4px}
+.mc-plan-subtitle{font-size:10px;font-weight:800;color:#777;margin-bottom:7px}
+.mc-plan-feature-title{font-size:13px;color:#292329;display:block;margin-bottom:4px}
 .mc-plan-card ul{list-style:none;padding:0;margin:13px 0 22px;flex:1}
-.mc-plan-card li{font-size:10px;color:#5e575e;padding:7px 0 7px 18px;position:relative;border-bottom:1px solid #f6f1f1}
+.mc-plan-card li{font-size:12px;color:#5e575e;padding:7px 0 7px 18px;position:relative;border-bottom:1px solid #f6f1f1}
 .mc-plan-card li::before{content:"✓";position:absolute;left:0;color:var(--mc-red);font-weight:900}
 .mc-plan-btn{width:100%;margin-top:auto;border-radius:8px!important}
 .mc-plan-card.mc-soon{background:#faf8f8;border-style:dashed;box-shadow:none}
@@ -189,11 +203,11 @@ const MC_CSS = `
 .mc-steps-grid article:hover{transform:translateY(-4px);background:#ffe5e7}
 .mc-step-icon{display:block;color:var(--mc-red);font-size:23px;margin-bottom:4px}
 .mc-steps-grid h3{font:700 15px Outfit;margin:4px 0}
-.mc-steps-grid p{font-size:10px;color:#6d6269;margin:0}
+.mc-steps-grid p{font-size:12px;color:#6d6269;margin:0}
 .mc-testimonial{grid-column:1/-1;display:flex;align-items:flex-start;gap:15px;background:#fff3f3;border-radius:13px;padding:17px 20px;margin:0}
 .mc-avatar{flex:0 0 42px;height:42px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(135deg,#f6c6a3,#5a2725);color:#fff;font-weight:800;font-size:14px}
-.mc-testimonial p{font-size:11px;color:#63575e;margin:0}
-.mc-testimonial small{display:block;margin-top:7px;color:#9a4248;font-size:9px}
+.mc-testimonial p{font-size:12px;color:#63575e;margin:0}
+.mc-testimonial small{display:block;margin-top:7px;color:#9a4248;font-size:11px}
 
 .mc-quote-section{background:#fff1f2;text-align:center;padding:48px 20px}
 .mc-quote-section p{max-width:850px;margin:0 auto 13px;font:700 clamp(22px,3vw,32px)/1.3 Outfit;letter-spacing:-.5px}
@@ -204,10 +218,10 @@ const MC_CSS = `
 .mc-faq-section{padding:75px 5vw 85px}
 .mc-faq-list{max-width:760px;margin:auto;display:grid;gap:8px}
 .mc-faq-item{border-radius:9px;background:#fff3f3;overflow:hidden}
-.mc-faq-item button{width:100%;border:0;background:transparent;display:flex;justify-content:space-between;align-items:center;padding:14px 17px;text-align:left;font-size:12px;font-weight:700;cursor:pointer;color:#17151a}
+.mc-faq-item button{width:100%;border:0;background:transparent;display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:48px;padding:14px 17px;text-align:left;font-size:14px;font-weight:700;cursor:pointer;color:#17151a}
 .mc-faq-item button span{transition:transform .25s;display:block;font-style:normal;font-size:16px;line-height:1}
 .mc-faq-item button[aria-expanded="true"] span{transform:rotate(180deg)}
-.mc-faq-answer{display:none;padding:0 17px 15px;font-size:11px;color:#6d6269;max-width:680px}
+.mc-faq-answer{display:none;padding:0 17px 15px;font-size:13px;color:#6d6269;max-width:680px}
 .mc-faq-item button[aria-expanded="true"]+.mc-faq-answer{display:block;animation:mc-drop .25s ease}
 
 .mc-modal-overlay{position:fixed;inset:0;background:#100508d9;z-index:1000;display:grid;place-items:center;padding:20px}
@@ -221,7 +235,7 @@ const MC_CSS = `
 
 .mc-sticky-bar{position:fixed;bottom:0;inset-inline:0;z-index:50;background:#fff;border-top:1px solid #f5dfe1;box-shadow:0 -4px 20px #0001;padding-bottom:env(safe-area-inset-bottom,0px)}
 .mc-sticky-bar-inner{display:flex;align-items:center;gap:12px;padding:10px 20px}
-.mc-sticky-title{flex:1;min-width:0;font-size:12px;font-weight:700;color:#17151a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mc-sticky-title{flex:1;min-width:0;font-size:13px;font-weight:700;color:#17151a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mc-sticky-price{font:800 14px Outfit;color:var(--mc-red);white-space:nowrap}
 .mc-sticky-orig{font-size:11px;color:#aaa;text-decoration:line-through;margin-left:4px}
 
@@ -229,8 +243,9 @@ const MC_CSS = `
 
 @media(max-width:900px){
   .mc-hero-showcase{max-width:740px}
-  .mc-plan-card{padding:20px 15px}
-  .mc-plan-price{font-size:25px}
+  .mc-plan-card{padding:22px 18px}
+  .mc-plans-grid,.mc-plans-grid.mc-g2{grid-template-columns:1fr;max-width:460px;gap:25px;margin:auto}
+  .mc-plan-card>p{min-height:0}
   .mc-module-trigger{gap:6px}
   .mc-module-tag{display:none}
 }
@@ -242,26 +257,30 @@ const MC_CSS = `
   .mc-hero-facts{grid-template-columns:1fr 1fr;gap:13px}
   .mc-offer-strip{padding:14px;gap:12px;align-items:flex-start;flex-wrap:wrap}
   .mc-offer-actions{width:100%;grid-template-columns:1fr 1fr}
+  .mc-center-btn{width:100%;max-width:420px}
   .mc-offer-price{font-size:22px}
   .mc-section{padding:60px 18px}
   .mc-section-heading{margin-bottom:25px}
   .mc-section-heading h2,.mc-earning-copy h2{font-size:29px}
   .mc-module-grid{grid-template-columns:1fr;gap:10px}
-  .mc-module-title{font-size:10px}
+  .mc-module-title{font-size:12px}
   .mc-module-details{padding-left:43px}
   .mc-related-section{padding:58px 18px}
   .mc-course-grid{grid-template-columns:1fr;gap:24px;max-width:420px;margin:auto}
-  .mc-course-art{height:190px}
   .mc-plans-grid,.mc-plans-grid.mc-g2,.mc-plans-grid.mc-g3{grid-template-columns:1fr;max-width:440px;gap:25px;margin:auto}
   .mc-plan-card>p{min-height:0}
   .mc-plan-price{font-size:29px}
-  .mc-plan-card li{font-size:11px}
+  .mc-plan-card li{font-size:12px}
   .mc-earning-section{grid-template-columns:1fr;gap:25px;padding:60px 18px}
   .mc-steps-grid article{min-height:115px;padding:15px}
   .mc-quote-section{padding:40px 20px}
   .mc-quote-section p{font-size:23px}
   .mc-faq-section{padding:58px 18px 65px}
-  .mc-faq-item button{font-size:11px;padding:13px}
+  .mc-faq-item button{font-size:13px;padding:13px}
+}
+@media(max-width:480px){
+  .mc-offer-actions{grid-template-columns:1fr}
+  .mc-button-row .mc-btn{flex:1 1 100%}
 }
 @media(max-width:380px){
   .mc-hero h1{font-size:30px}
@@ -399,7 +418,6 @@ function MCHeroSection({
                 <BookOpen size={48} color="#ffffff44" />
               </div>
             )}
-            <div className="mc-play-button"><span /></div>
             {course.videoPreviewUrl && (
               <span className="mc-video-caption">WATCH COURSE PREVIEW</span>
             )}
@@ -601,10 +619,17 @@ function MCRelatedSection({ courses }: { courses: any[] }) {
           <article
             key={c.id}
             className="mc-course-card"
+            role="link"
+            tabIndex={0}
+            aria-label={c.title}
             onClick={() => router.push(`/courses/${c.id}`)}
+            onKeyDown={(e) => { if (e.key === "Enter") router.push(`/courses/${c.id}`); }}
           >
-            <div className="mc-course-art" style={{ background: c.thumbnailUrl ? "#000" : ART_BG[i % ART_BG.length] }}>
-              {c.thumbnailUrl && <img src={c.thumbnailUrl} alt={c.title} />}
+            <div
+              className={`mc-course-art${c.thumbnailUrl ? " mc-has-img" : ""}`}
+              style={{ background: c.thumbnailUrl ? "#000" : ART_BG[i % ART_BG.length] }}
+            >
+              {c.thumbnailUrl && <img src={c.thumbnailUrl} alt={c.title} loading="lazy" decoding="async" />}
               <div className="mc-course-art-overlay" />
               {!c.thumbnailUrl && (
                 <div className="mc-course-art-text">
@@ -612,7 +637,12 @@ function MCRelatedSection({ courses }: { courses: any[] }) {
                 </div>
               )}
               <span className="mc-art-label">{c.price > 0 ? `₹${Number(c.price).toLocaleString("en-IN")}` : "Free"}</span>
-              <span className="mc-art-shape" />
+              {!c.thumbnailUrl && <span className="mc-art-shape" />}
+              <div className="mc-course-art-hover overlay-text" aria-hidden="true">
+                <strong>{c.title}</strong>
+                {c.description && <p>{c.description}</p>}
+                <span>View Course →</span>
+              </div>
             </div>
             <h3>{c.title}</h3>
             {c.description && <p>{c.description.slice(0, 90)}{c.description.length > 90 ? "…" : ""}</p>}
