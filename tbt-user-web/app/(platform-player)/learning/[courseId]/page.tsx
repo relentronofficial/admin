@@ -54,6 +54,9 @@ import { FeedbackModal } from "@/components/features/video/FeedbackModal";
 import { useVideoFeedbackQuestions } from "@/lib/hooks/useVideoFeedback";
 import type { Lesson } from "@/types";
 
+/** The end-of-lesson quiz opens only after this fraction of the video has played. */
+const END_QUIZ_FRACTION = 0.99;
+
 type WatchState = "not_started" | "watching" | "paused" | "completed";
 
 function isBunnyEmbed(url: string) {
@@ -1867,10 +1870,24 @@ export default function CourseDetailPage({
     }
   }, [course, targetLessonId, selectedLesson]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Show quiz modal on first episode completion
+  // Lesson id whose video has been played to END_QUIZ_FRACTION (or ended) in this session.
+  const [endReachedFor, setEndReachedFor] = useState<string | null>(null);
+  const endReachedRef = useRef<string | null>(null);
+  const markEndReached = (id: string) => {
+    if (endReachedRef.current === id) return;
+    endReachedRef.current = id;
+    setEndReachedFor(id);
+  };
+
+  // Show the end-of-lesson quiz once the lesson is complete AND, for a video lesson,
+  // playback has reached END_QUIZ_FRACTION of the video (or the video ended). Being
+  // complete alone isn't enough: auto-complete fires at 90%, and a lesson completed
+  // earlier is "completed" the moment it opens — both opened the quiz far too early.
+  // Mid-video cue quizzes are separate (handleVideoProgress) and unaffected.
   const quizTriggeredForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!selectedLesson || watchState !== "completed") return;
+    if (selectedLesson.videoUrl && endReachedFor !== selectedLesson.id) return;
     // Wait for any open cue quiz to be dismissed before stacking the end-of-lesson quiz.
     // Without this guard, the iframe `ended` event (which arrives before the pause postMessage
     // is processed) can fire doMarkComplete() while the cue quiz is still showing, causing
@@ -1887,11 +1904,13 @@ export default function CourseDetailPage({
     setQuizModal({ episodeId: selectedLesson.id, questions: (lesson as any).quizData?.questions ?? [] });
     setQuizAnswers({});
     setQuizResult(null);
-  }, [watchState, selectedLesson?.id, cueQuizModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [watchState, selectedLesson?.id, cueQuizModal, endReachedFor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset quiz trigger guard only when the lesson changes, not on every watchState transition.
   useEffect(() => {
     quizTriggeredForRef.current = null;
+    endReachedRef.current = null;
+    setEndReachedFor(null);
   }, [selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load completion timestamps from localStorage on mount
@@ -2279,6 +2298,12 @@ export default function CourseDetailPage({
   const handleVideoProgress = (s: number) => {
     lastPlayheadRef.current = s;
     setWatchedSeconds(s);
+    // Mark the lesson's video as played to the end (gates the end-of-lesson quiz).
+    {
+      const id = selectedLessonRef.current?.id;
+      const dur = realDurationRef.current > 0 ? realDurationRef.current : (selectedLessonRef.current?.durationSeconds ?? 0);
+      if (id && dur > 0 && s >= dur * END_QUIZ_FRACTION) markEndReached(id);
+    }
     // Mid-video cue quiz check — fire earliest untriggered cue when playhead passes its timestamp
     if (!cueQuizActiveRef.current) {
       const lesson = courseRef.current?.lessons?.find((l: any) => l.id === selectedLessonRef.current?.id);
@@ -2316,6 +2341,7 @@ export default function CourseDetailPage({
   const completeFromVideoEndRef = useRef<() => void>(() => {});
   completeFromVideoEndRef.current = () => {
     videoEndedRef.current = true;
+    if (selectedLessonRef.current) markEndReached(selectedLessonRef.current.id);
     isPlayingRef.current = false;
     doMarkCompleteRef.current = false;
     const lesson = selectedLessonRef.current;
