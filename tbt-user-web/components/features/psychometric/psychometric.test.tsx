@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import type { ResultResponse } from "@/lib/api/services/psychometric.service";
 
 // The real AssessmentRunner / ResultView against a mocked psychometric
 // service (same response shapes as the backend's member routes).
@@ -183,7 +184,36 @@ describe("ResultView", () => {
     expect(screen.getByText(/rejected: Too soon/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Request Again" })).toBeTruthy();
     rerender(<QueryClientProvider client={qc}><ResultView data={withRetest({ status: "approved", canRequest: false })} /></QueryClientProvider>);
-    expect(screen.getByRole("link", { name: "Start Retest" }).getAttribute("href")).toBe("/psychometric/assessment");
+    // Approved: a banner at the top AND the card at the bottom both start it.
+    const starts = screen.getAllByRole("link", { name: "Start Retest" });
+    expect(starts).toHaveLength(2);
+    starts.forEach((l) => expect(l.getAttribute("href")).toBe("/psychometric/assessment"));
+  });
+
+  it("approved retest: banner at the top says the score is the previous attempt", () => {
+    wrap(<ResultView data={{ ...data, attemptNumber: 2, retest: { status: "approved", canRequest: false } } as unknown as ResultResponse} />);
+    const banner = screen.getByRole("status");
+    expect(banner.textContent).toMatch(/Your retest is approved/);
+    expect(banner.textContent).toMatch(/from attempt 2/);
+    // The banner comes before the score card.
+    expect(banner.compareDocumentPosition(screen.getByText(/Assessment Completed Successfully/)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("started, unsubmitted retest: Continue Retest keeps the saved answers", () => {
+    window.localStorage.setItem("tbt_psy_answers_s1", "{}");
+    wrap(<ResultView data={{ ...data, retest: { status: "approved", canRequest: false }, inProgress: { attemptNumber: 2, expiresAt: new Date().toISOString() } } as unknown as ResultResponse} />);
+    expect(screen.getByRole("status").textContent).toMatch(/not submitted yet/);
+    const links = screen.getAllByRole("link", { name: "Continue Retest" });
+    expect(links).toHaveLength(2);
+    expect(screen.queryByRole("link", { name: "Start Retest" })).toBeNull();
+    links.forEach((l) => fireEvent.click(l));
+    expect(window.localStorage.getItem("tbt_psy_answers_s1")).toBe("{}");
+    window.localStorage.removeItem("tbt_psy_answers_s1");
+  });
+
+  it("no banner without an approved retest", () => {
+    wrap(<ResultView data={data} />);
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 

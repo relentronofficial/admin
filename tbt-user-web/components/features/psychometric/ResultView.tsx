@@ -123,6 +123,33 @@ function Retest({ retest, inProgress }: { retest: RetestState; inProgress: boole
   );
 }
 
+/**
+ * Top-of-page call to action while a retest is approved: the page otherwise
+ * opens on the previous score, so members thought their retest result was
+ * missing (the Start Retest button sat at the very bottom).
+ */
+function RetestBanner({ attemptNumber, inProgress }: { attemptNumber: number; inProgress: boolean }) {
+  return (
+    <div role="status" className="rounded-2xl border p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+      style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)", borderColor: "color-mix(in srgb, var(--color-accent) 40%, transparent)" }}>
+      <div className="flex-1 text-sm">
+        <p className="font-bold" style={{ color: "var(--color-text-primary)" }}>
+          {inProgress ? "⏳ Your retest is not submitted yet" : "✅ Your retest is approved"}
+        </p>
+        <p style={muted}>
+          {inProgress
+            ? "Continue and submit it to get your new result."
+            : `The result below is from attempt ${attemptNumber}. Take the retest to get your new result.`}
+        </p>
+      </div>
+      <Link href="/psychometric/assessment" onClick={inProgress ? undefined : () => clearAutosaves(window.localStorage)}
+        className="shrink-0 text-center px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: "var(--color-accent)" }}>
+        {inProgress ? "Continue Retest" : "Start Retest"}
+      </Link>
+    </div>
+  );
+}
+
 export function ResultView({ data }: { data: ResultResponse }) {
   const r = data.data;
   const label = (r.userId && typeof r.userId.sharedUserID === "object" && r.userId.sharedUserID?.label) || "Your Assessment";
@@ -138,6 +165,7 @@ export function ResultView({ data }: { data: ResultResponse }) {
 
   return (
     <div className="space-y-6">
+      {data.retest?.status === "approved" && <RetestBanner attemptNumber={data.attemptNumber || 1} inProgress={!!data.inProgress} />}
       <div className={`${card} text-center`} style={cardStyle}>
         <p className="text-sm font-semibold mb-2" style={{ color: "var(--color-success, #10B981)" }}>✅ Assessment Completed Successfully</p>
         <h2 className="text-2xl font-extrabold mb-1" style={accent}>{label} Results</h2>
