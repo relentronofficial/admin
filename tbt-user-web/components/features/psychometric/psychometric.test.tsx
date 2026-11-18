@@ -20,6 +20,8 @@ import toast from "react-hot-toast";
 import { AssessmentRunner } from "./AssessmentRunner";
 import { ResultView } from "./ResultView";
 import { ProfileAssessmentCard } from "./ProfileAssessmentCard";
+import PsychometricResultPage from "@/app/(platform)/psychometric/result/page";
+import { psychometricKeys, usePsychometricResult } from "@/lib/hooks/usePsychometric";
 
 const opts = (id: string, n: number) => Array.from({ length: n }, (_, i) => ({ _id: `${id}o${i}`, optionText: `${id} option ${i + 1}`, order: i + 1 }));
 const Q = (id: string, questionType: string, n = 3, extra: object = {}) => ({
@@ -140,7 +142,42 @@ describe("AssessmentRunner", () => {
     const statuses = svc.submit.mock.calls[0][1].map((p: any) => [p.questionId, p.status]);
     expect(statuses).toEqual([["a", "skipped"], ["b", "skipped"], ["c", "answered"]]);
   });
+
+  it("after a submit the result page shows the NEW result, not the cached previous one", async () => {
+    // Production 2026-11-18: Nandhini's retest was saved as 150/234 but her result
+    // page kept showing attempt 1 (0/234) from the cache. The app's real defaults:
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: false, refetchOnWindowFocus: false, refetchOnMount: false } } });
+    const result = (attemptNumber: number, totalMarks: number) => ({
+      success: true, attemptNumber, history: [], retest: { status: "none", canRequest: false }, inProgress: null,
+      data: { _id: `r${attemptNumber}`, userId: null, attemptNumber, totalMarks, maxScore: 234, percentage: 0, level: "Average", categoryPercentages: {}, explanation: "", improvementAreas: [], recommendedBusiness: [], recommendations: [], strongDimensions: [], weakDimensions: [], createdAt: "2026-11-18T06:37:16Z" },
+    });
+    qc.setQueryData(psychometricKeys.result, result(1, 0)); // seen before the retest
+
+    svc.questions.mockResolvedValue(questionsResponse({ sessionId: "s1", expiresAt: "x" }, 1));
+    svc.submit.mockResolvedValue({ success: true, resultId: "r2" });
+    const runner = render(<QueryClientProvider client={qc}><AssessmentRunner /></QueryClientProvider>);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/psychometric/result"), { timeout: 4000 });
+    runner.unmount();
+
+    svc.result.mockResolvedValue(result(2, 150));
+    render(<QueryClientProvider client={qc}><PsychometricResultPage /></QueryClientProvider>);
+    expect(await screen.findByText("Total: 150 / 234")).toBeTruthy();
+    expect(screen.queryByText("Total: 0 / 234")).toBeNull();
+  });
+
+  it("the result page refetches on open even with the app's never-refetch default", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, retry: false, refetchOnMount: false } } });
+    qc.setQueryData(psychometricKeys.result, { stale: true });
+    svc.result.mockResolvedValue({ success: true });
+    render(<QueryClientProvider client={qc}><ProbeResult /></QueryClientProvider>);
+    await waitFor(() => expect(svc.result).toHaveBeenCalledTimes(1));
+  });
 });
+
+function ProbeResult() {
+  usePsychometricResult();
+  return null;
+}
 
 describe("ResultView", () => {
   const data = {

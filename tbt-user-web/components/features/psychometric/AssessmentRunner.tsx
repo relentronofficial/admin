@@ -124,8 +124,11 @@ export function AssessmentRunner() {
     try {
       await psychometricService.submit(loaded.sessionId, buildAnswerPayload(all, answers, timedOut, timeSpent));
       try { storage()?.removeItem(`tbt_psy_answers_${loaded.sessionId}`); } catch { /* ignore */ }
-      await qc.invalidateQueries({ queryKey: psychometricKeys.result });
-      void qc.invalidateQueries({ queryKey: psychometricKeys.answers });
+      // Drop (not just invalidate) the cached result/answers/retest: nothing on this
+      // page observes them, and the app never refetches on mount, so an invalidated
+      // entry kept showing the PREVIOUS attempt on the result page (Nandhini: new
+      // 150/234 saved, page showed the old 0/234).
+      for (const queryKey of [psychometricKeys.result, psychometricKeys.answers, psychometricKeys.retest]) qc.removeQueries({ queryKey });
       router.replace("/psychometric/result");
     } catch (e) {
       submittedRef.current = false;

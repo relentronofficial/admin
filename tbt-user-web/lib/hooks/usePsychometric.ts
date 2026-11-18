@@ -3,6 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { psychometricService } from "@/lib/api/services/psychometric.service";
 
+// The app-wide default is "never refetch on mount" (components/Providers.tsx).
+// Psychometric results change when the member submits or an admin grants a
+// retest, so these always fetch fresh when a page opens (cached data shows
+// meanwhile).
+const fresh = { staleTime: 0, refetchOnMount: "always" as const };
+
 export const psychometricKeys = {
   settings: ["psychometric", "settings"] as const,
   result: ["psychometric", "result"] as const,
@@ -21,6 +27,7 @@ export const usePsychometricSettings = () =>
 export const usePsychometricResult = () =>
   useQuery({
     queryKey: psychometricKeys.result,
+    ...fresh,
     queryFn: async () => {
       try {
         return await psychometricService.result();
@@ -35,6 +42,7 @@ export const usePsychometricResult = () =>
 export const usePsychometricAnswers = () =>
   useQuery({
     queryKey: psychometricKeys.answers,
+    ...fresh,
     queryFn: async () => {
       try {
         return (await psychometricService.answers()).data;
@@ -48,6 +56,7 @@ export const usePsychometricAnswers = () =>
 export const usePsychometricRetest = () =>
   useQuery({
     queryKey: psychometricKeys.retest,
+    ...fresh,
     queryFn: async () => (await psychometricService.myRetest()).retest,
   });
 
