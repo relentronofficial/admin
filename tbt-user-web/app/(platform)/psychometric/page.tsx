@@ -14,6 +14,7 @@ export default function PsychometricStartPage() {
   const { data: result, isLoading } = usePsychometricResult();
   const minutes = settings?.assessment_duration_minutes ?? 30;
   const retestApproved = result?.retest?.status === "approved";
+  const resuming = !!result?.inProgress;
 
   const card = { background: "var(--color-surface-raised)", borderColor: "var(--color-border-subtle)" } as const;
   const button = "inline-flex justify-center px-6 py-3 rounded-xl text-sm font-bold text-white";
@@ -44,7 +45,7 @@ export default function PsychometricStartPage() {
               <p>💡 Answer honestly — there are no right or wrong answers</p>
             </div>
             <Link href="/psychometric/assessment" className={`${button} w-full`} style={{ background: "var(--color-accent)" }}>
-              {retestApproved ? "Start Retest" : "Start Assessment"}
+              {retestApproved ? (resuming ? "Continue Retest" : "Start Retest") : "Start Assessment"}
             </Link>
           </>
         )}

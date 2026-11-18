@@ -33,7 +33,7 @@ export function ProfileAssessmentCard() {
           </div>
           <div className="flex gap-2">
             {retestApproved && (
-              <Link href="/psychometric" className={link} style={{ background: "var(--color-accent)" }}>Start retest</Link>
+              <Link href="/psychometric" className={link} style={{ background: "var(--color-accent)" }}>{result?.inProgress ? "Continue retest" : "Start retest"}</Link>
             )}
             <Link
               href="/psychometric/result"

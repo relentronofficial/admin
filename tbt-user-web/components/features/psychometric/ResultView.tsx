@@ -76,11 +76,12 @@ function Bars({ entries }: { entries: [string, number][] }) {
   );
 }
 
-function Retest({ retest }: { retest: RetestState }) {
+function Retest({ retest, inProgress }: { retest: RetestState; inProgress: boolean }) {
   const request = useRequestPsychometricRetest();
   const status = retest.status || "none";
   let message: { text: string; color: string } | null = null;
   if (status === "pending") message = { text: "⏳ Waiting for admin approval.", color: "var(--color-text-subtle)" };
+  else if (status === "approved" && inProgress) message = { text: "⏳ Your retest is not submitted yet. Continue it and submit to get your new result.", color: "var(--color-alert, #F59E0B)" };
   else if (status === "approved") message = { text: "✅ Retest approved. You can start now.", color: "var(--color-success, #10B981)" };
   else if (retest.canRequest && status === "rejected") message = { text: `❌ Your previous retest request was rejected${retest.rejectionNote ? `: ${retest.rejectionNote}` : "."}`, color: "var(--color-accent)" };
   const show = status === "pending" || status === "approved" || retest.canRequest;
@@ -100,7 +101,13 @@ function Retest({ retest }: { retest: RetestState }) {
       <p className="text-sm mb-4" style={muted}>If you wish to retake this assessment, you can request approval from the administrator.</p>
       {message && <p className="text-sm font-semibold mb-3" style={{ color: message.color }}>{message.text}</p>}
       <div className="flex justify-center gap-3 flex-wrap">
-        {status === "approved" ? (
+        {status === "approved" && inProgress ? (
+          // Resume the started attempt: keep its autosaved answers.
+          <Link href="/psychometric/assessment"
+            className="px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: "var(--color-accent)" }}>
+            Continue Retest
+          </Link>
+        ) : status === "approved" ? (
           // Start fresh at question 1: drop any autosaved answers from earlier attempts.
           <Link href="/psychometric/assessment" onClick={() => clearAutosaves(window.localStorage)}
             className="px-5 py-2.5 rounded-xl text-sm font-bold text-white" style={{ background: "var(--color-accent)" }}>
@@ -233,7 +240,7 @@ export function ResultView({ data }: { data: ResultResponse }) {
         </div>
       )}
 
-      <Retest retest={data.retest} />
+      <Retest retest={data.retest} inProgress={!!data.inProgress} />
     </div>
   );
 }

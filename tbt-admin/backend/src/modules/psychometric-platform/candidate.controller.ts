@@ -78,6 +78,17 @@ async function inProgressSession(d: Db, candidateId: string) {
   return s ?? null;
 }
 
+/** Past its end plus the submit grace: it can no longer be submitted. */
+function isDeadSession(s: Record<string, any>, now = Date.now()) {
+  return now > new Date(s.expires_at).getTime() + SUBMIT_GRACE_MS;
+}
+
+/** The member's attempt that can still be continued and submitted, if any. */
+async function liveSession(d: Db, candidateId: string) {
+  const s = await inProgressSession(d, candidateId);
+  return s && !isDeadSession(s) ? s : null;
+}
+
 async function ttsEnabled(d: Db) {
   const [r] = await rows(d, `SELECT value FROM psy_settings WHERE key = 'tts_config'`);
   return !(r && r.value && r.value.enabled === false);
@@ -88,7 +99,7 @@ async function ttsEnabled(d: Db) {
 export async function getQuestions(req: Req, reply: FastifyReply) {
   const d = db(req);
   const cand = await findCandidate(d, req.memberId!);
-  const session = cand ? await inProgressSession(d, cand.id) : null;
+  const session = cand ? await liveSession(d, cand.id) : null;
   let orderedIds: string[];
   let remainingSeconds: number;
   if (session) {
@@ -155,7 +166,10 @@ export async function startSession(req: Req, reply: FastifyReply) {
     const cand = await ensureCandidate(t, memberId);
     if (!cand) return { status: 404, body: { success: false, message: 'Member not found.' } };
 
-    // A completed candidate starts again only with an admin-approved retest (consumed below).
+    // A completed candidate starts again only with an admin-approved retest. It is
+    // consumed when the retest is SUBMITTED, not here: an attempt the member leaves
+    // (back button, closed app, lost connection) used to burn the retest, so the
+    // old result stayed with no way to retake (Riswana, 2026-11-18).
     let approvedRetest: any = null;
     if (cand.has_completed) {
       [approvedRetest] = await rows(t, `SELECT id FROM psy_retest_requests WHERE candidate_id = $1 AND status = 'approved' ORDER BY created_at DESC LIMIT 1`, cand.id);
@@ -165,8 +179,7 @@ export async function startSession(req: Req, reply: FastifyReply) {
     // Resume a live attempt (unless starting an approved retest); retire dead ones.
     const live = await inProgressSession(t, cand.id);
     if (live) {
-      const dead = Date.now() > new Date(live.expires_at).getTime() + SUBMIT_GRACE_MS;
-      if (!dead && !approvedRetest) {
+      if (!isDeadSession(live) && !approvedRetest) {
         // The old API answered 409 here; the user app's API client drops error bodies, so resuming is a success.
         return { status: 200, body: { success: true, resumed: true, sessionId: live.id, startedAt: live.started_at, expiresAt: live.expires_at, attemptNumber: live.attempt_number, message: 'Assessment already in progress.' } };
       }
@@ -186,9 +199,6 @@ export async function startSession(req: Req, reply: FastifyReply) {
       `INSERT INTO psy_sessions (candidate_id, started_at, expires_at, ip_address, question_set_id, question_ids, duration_minutes, attempt_number)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING id`,
       cand.id, startedAt, expiresAt, req.ip ?? null, set.id, JSON.stringify(orderedIds), set.duration_minutes, attemptNumber);
-    if (approvedRetest) {
-      await t.$executeRawUnsafe(`UPDATE psy_retest_requests SET status = 'used', used_at = NOW(), updated_at = NOW() WHERE id = $1`, approvedRetest.id);
-    }
     // Record which cohort the member took (shown on the admin candidate list / results).
     await t.$executeRawUnsafe(
       `UPDATE psy_candidates SET access_code_id = $1, access_code = $2, updated_at = NOW() WHERE id = $3`, code.id, code.code, cand.id);
@@ -275,6 +285,9 @@ export async function submitAssessment(req: Req, reply: FastifyReply) {
       JSON.stringify(scored.recommendations), JSON.stringify(scored.strongDimensions), JSON.stringify(scored.weakDimensions),
       scored.aptitudeScore, scored.personalityScore, scored.businessMindsetScore, scored.financialAwarenessScore);
     await t.$executeRawUnsafe(`UPDATE psy_candidates SET has_completed = TRUE, updated_at = NOW() WHERE id = $1`, cand.id);
+    // A submitted retest uses up the approval it was started with.
+    await t.$executeRawUnsafe(
+      `UPDATE psy_retest_requests SET status = 'used', used_at = NOW(), updated_at = NOW() WHERE candidate_id = $1 AND status = 'approved'`, cand.id);
     return res.id as string;
   });
   if (!out) return fail(reply, 409, 'Submission already in progress or completed.');
@@ -311,12 +324,15 @@ export async function getResult(req: Req, reply: FastifyReply) {
   const [code] = cand.access_code_id ? await rows(d, `SELECT id, label FROM psy_access_codes WHERE id = $1`, cand.access_code_id) : [];
   const history = await rows(d,
     `SELECT id, attempt_number, percentage, level, total_marks, max_score, created_at FROM psy_results WHERE candidate_id = $1 ORDER BY created_at DESC`, cand.id);
+  const live = await liveSession(d, cand.id);
   return reply.send({
     success: true,
     data: { ...resultOut(r), userId: candidateRef(cand, code) },
     attemptNumber: r.attempt_number || 1,
     history: history.map((h) => ({ _id: h.id, attemptNumber: h.attempt_number, percentage: h.percentage, level: h.level, totalMarks: h.total_marks, maxScore: h.max_score, createdAt: h.created_at })),
     retest: await retestState(d, cand),
+    // A started, unsubmitted attempt the member can go back to (null when none).
+    inProgress: live ? { attemptNumber: live.attempt_number, expiresAt: live.expires_at } : null,
   });
 }
 

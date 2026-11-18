@@ -516,14 +516,44 @@ suite('psychometric platform (real Postgres)', () => {
     const s2 = await callMember(member.startSession, M1);
     expect(s2.status).toBe(201);
     expect(s2.body.attemptNumber).toBe(2);
-    expect((await callMember(member.getMyRetest, M1)).body.data.status).toBe('used');
+    // Starting does not consume the retest; submitting does.
+    expect((await callMember(member.getMyRetest, M1)).body.data.status).toBe('approved');
+    expect((await callMember(member.getResult, M1)).body.inProgress).toMatchObject({ attemptNumber: 2 });
     await callMember(member.submitAssessment, M1, { body: { sessionId: s2.body.sessionId, answers: fullAnswers(q1, q2, q3) } });
+    expect((await callMember(member.getMyRetest, M1)).body.data.status).toBe('used');
     const res = await callMember(member.getResult, M1);
+    expect(res.body.inProgress).toBeNull();
     expect(res.body.attemptNumber).toBe(2);
     expect(res.body.history.map((h: any) => h.attemptNumber)).toEqual([2, 1]);
     expect(res.body.retest.canRequest).toBe(true);
     const notes = await prisma.$queryRawUnsafe<any[]>(`SELECT type FROM psy_notifications ORDER BY created_at`);
     expect(notes.map((n) => n.type)).toEqual(['ASSESSMENT_SUBMITTED', 'RETEST_REQUEST_CREATED', 'ASSESSMENT_SUBMITTED']);
+  });
+
+  it('member flow: a retest the member leaves unsubmitted is not lost', async () => {
+    // Production 2026-11-18: Riswana started her retest, left the page, the attempt
+    // expired unsubmitted — and the retest had already been marked used at start.
+    const { q1, q2, q3 } = await setUpMembersAssessment();
+    const sid = (await callMember(member.startSession, M1)).body.sessionId;
+    await callMember(member.submitAssessment, M1, { body: { sessionId: sid, answers: fullAnswers(q1, q2, q3, false) } });
+    await prisma.$executeRawUnsafe(`INSERT INTO psy_retest_requests (candidate_id, status) SELECT id, 'approved' FROM psy_candidates`);
+    const s2 = await callMember(member.startSession, M1);
+    expect(s2.status).toBe(201);
+
+    // Leaves and comes back while it's live: the same attempt resumes.
+    expect((await callMember(member.getQuestions, M1)).body.session.sessionId).toBe(s2.body.sessionId);
+
+    // The attempt runs out unsubmitted: it is not offered again, and the retest still works.
+    await prisma.$executeRawUnsafe(`UPDATE psy_sessions SET expires_at = NOW() - INTERVAL '2 minutes' WHERE id = $1`, s2.body.sessionId);
+    expect((await callMember(member.getQuestions, M1)).body.session).toBeNull();
+    expect((await callMember(member.getResult, M1)).body).toMatchObject({ inProgress: null, retest: { status: 'approved' } });
+    const s3 = await callMember(member.startSession, M1);
+    expect(s3.status).toBe(201);
+    expect(s3.body.attemptNumber).toBe(2);
+    expect((await callMember(member.submitAssessment, M1, { body: { sessionId: s3.body.sessionId, answers: fullAnswers(q1, q2, q3) } })).body.success).toBe(true);
+    const res = await callMember(member.getResult, M1);
+    expect(res.body.attemptNumber).toBe(2);
+    expect(res.body.retest).toMatchObject({ status: 'used', canRequest: true });
   });
 
   it('member flow: cached audio with the old cache headers', async () => {

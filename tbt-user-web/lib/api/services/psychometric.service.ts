@@ -43,6 +43,8 @@ export interface ResultResponse {
   attemptNumber: number;
   history: { _id: string; attemptNumber: number; percentage: number; level: string; createdAt: string }[];
   retest: RetestState;
+  /** A started attempt not yet submitted that can still be continued (null when none). */
+  inProgress?: { attemptNumber: number; expiresAt: string } | null;
 }
 
 export interface QuestionsResponse {
