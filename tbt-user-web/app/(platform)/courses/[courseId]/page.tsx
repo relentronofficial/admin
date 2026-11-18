@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, BookOpen, Play, ArrowRight, ShoppingCart, ChevronDown, ChevronUp, CheckCircle2 } from "lucide-react";
 import {
@@ -206,9 +206,18 @@ html:has(.mc-page),body:has(.mc-page){overflow-x:clip}
 .mc-steps-grid h3{font:700 15px Outfit;margin:4px 0}
 .mc-steps-grid p{font-size:12px;color:#6d6269;margin:0}
 .mc-testimonial{grid-column:1/-1;display:flex;align-items:flex-start;gap:15px;background:#fff3f3;border-radius:13px;padding:17px 20px;margin:0}
-.mc-avatar{flex:0 0 42px;height:42px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(135deg,#f6c6a3,#5a2725);color:#fff;font-weight:800;font-size:14px}
+.mc-avatar{flex:0 0 42px;height:42px;display:grid;place-items:center;border-radius:50%;background:linear-gradient(135deg,#f6c6a3,#5a2725);color:#fff;font-weight:800;font-size:14px;overflow:hidden}
+.mc-avatar img{width:100%;height:100%;object-fit:cover}
 .mc-testimonial p{font-size:12px;color:#63575e;margin:0}
 .mc-testimonial small{display:block;margin-top:7px;color:#9a4248;font-size:11px}
+/* Testimonial carousel: slides move by translateX; one slide visible at a time. */
+.mc-carousel{margin-top:13px;border-radius:13px;background:#fff3f3;overflow:hidden;position:relative;touch-action:pan-y}
+.mc-carousel-track{display:flex;transition:transform .5s ease}
+.mc-carousel-track>.mc-testimonial{flex:0 0 100%;min-width:0;background:transparent;border-radius:0;padding:17px 20px 8px}
+.mc-carousel-dots{display:flex;justify-content:center;gap:6px;padding:4px 0 12px}
+.mc-carousel-dots button{width:8px;height:8px;padding:0;border:0;border-radius:8px;background:#e7c9cc;cursor:pointer;transition:width .3s,background .3s}
+.mc-carousel-dots button[aria-current="true"]{width:22px;background:var(--mc-red)}
+@media(prefers-reduced-motion:reduce){.mc-carousel-track{transition:none}}
 
 .mc-quote-section{background:#fff1f2;text-align:center;padding:48px 20px}
 .mc-quote-section p{max-width:850px;margin:0 auto 13px;font:700 clamp(22px,3vw,32px)/1.3 Outfit;letter-spacing:-.5px}
@@ -884,15 +893,108 @@ function MCEarningSection({ course, onBuy }: { course: any; onBuy: () => void })
           ))}
         </div>
 
-        <div className="mc-testimonial" style={{ marginTop: "13px" }}>
-          <div className="mc-avatar">SK</div>
-          <p>
-            &ldquo;Most courses stop at showing how the buttons work. TBT taught me how to package my skills into a monthly social media retainer. I closed my first local client within 3 weeks of finishing.&rdquo;
-            <small><b>Santhosh Kumar</b> · Freelance Creator · TBT Member</small>
-          </p>
-        </div>
+        {/* Server-provided testimonials when the course has them; sample ones until then. */}
+        <MCTestimonialCarousel
+          items={Array.isArray(course.testimonials) && course.testimonials.length > 0 ? course.testimonials : SAMPLE_TESTIMONIALS}
+        />
       </div>
     </section>
+  );
+}
+
+// ── Testimonials carousel ─────────────────────────────────────────────────────
+
+/** One testimonial. The backend can send `course.testimonials` in this shape to replace the samples. */
+export type MCTestimonial = { id: string; quote: string; name: string; role?: string; avatarUrl?: string | null };
+
+// Sample content until testimonials come from the backend.
+const SAMPLE_TESTIMONIALS: MCTestimonial[] = [
+  { id: "s1", name: "Santhosh Kumar", role: "Freelance Creator · TBT Member", quote: "Most courses stop at showing how the buttons work. TBT taught me how to package my skills into a monthly social media retainer. I closed my first local client within 3 weeks of finishing." },
+  { id: "s2", name: "Priya Ramesh", role: "Boutique Owner · TBT Member", quote: "I used to pay an agency for every poster. Now I design my own festival offers in an evening, and my Instagram orders have doubled since Deepavali." },
+  { id: "s3", name: "Arun Prakash", role: "Video Editor · TBT Member", quote: "The pricing lessons were worth the course on their own. I went from charging ₹500 a reel to a ₹15,000 monthly package for two local brands." },
+  { id: "s4", name: "Divya Sundar", role: "Home Baker · TBT Member", quote: "I started with zero design skills. Within a month my bakery had a proper logo, menu cards and a WhatsApp catalogue that customers actually reply to." },
+];
+
+const AUTO_SLIDE_MS = 5000;
+
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
+}
+
+function MCTestimonialCarousel({ items }: { items: MCTestimonial[] }) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const touchX = useRef<number | null>(null);
+  const count = items.length;
+  const go = (i: number) => setIndex(((i % count) + count) % count);
+
+  // Auto-slide; pauses on hover/focus, in a background tab, and for reduced-motion users.
+  useEffect(() => {
+    if (count < 2 || paused) return;
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") setIndex((i) => (i + 1) % count);
+    }, AUTO_SLIDE_MS);
+    return () => clearInterval(id);
+  }, [count, paused]);
+
+  useEffect(() => { if (index >= count) setIndex(0); }, [count, index]);
+
+  if (count === 0) return null;
+  return (
+    <div
+      className="mc-carousel"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label="Member testimonials"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+      onTouchStart={(e) => { touchX.current = e.touches[0]?.clientX ?? null; setPaused(true); }}
+      onTouchEnd={(e) => {
+        const start = touchX.current;
+        touchX.current = null;
+        setPaused(false);
+        const end = e.changedTouches[0]?.clientX;
+        if (start == null || end == null || Math.abs(end - start) < 40) return;
+        go(end < start ? index + 1 : index - 1);
+      }}
+    >
+      <div className="mc-carousel-track" style={{ transform: `translateX(-${index * 100}%)` }}>
+        {items.map((t, i) => (
+          <div
+            key={t.id}
+            className="mc-testimonial"
+            role="group"
+            aria-roledescription="slide"
+            aria-label={`${i + 1} of ${count}`}
+            aria-hidden={i !== index}
+          >
+            <div className="mc-avatar">
+              {t.avatarUrl ? <img src={t.avatarUrl} alt="" /> : initials(t.name)}
+            </div>
+            <p>
+              &ldquo;{t.quote}&rdquo;
+              <small><b>{t.name}</b>{t.role ? ` · ${t.role}` : ""}</small>
+            </p>
+          </div>
+        ))}
+      </div>
+      {count > 1 && (
+        <div className="mc-carousel-dots">
+          {items.map((t, i) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-label={`Show testimonial ${i + 1}`}
+              aria-current={i === index}
+              onClick={() => go(i)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
