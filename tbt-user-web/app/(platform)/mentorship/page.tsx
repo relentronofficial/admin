@@ -10,6 +10,7 @@ import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import MentorshipDashboard from "@/components/features/mentorship/MentorshipDashboard";
 import CoursesPageRoadmap from "@/components/features/courses/CoursesPageRoadmap";
 import ModulesFaqButton from "@/components/features/courses/ModulesFaq";
+import { BrandFooter } from "@/components/layout/BrandFooter";
 import { formatMinutes, formatSeconds, sumLessonDurations } from "@/lib/utils/courseDurations";
 
 // ── Scroll-reveal + stagger hook (items 2 + 6) ───────────────────────────────
@@ -1842,20 +1843,7 @@ export default function MentorshipPage() {
       )}
 
       {/* ── Footer ────────────────────────────────────────────────────── */}
-      <div style={{ paddingTop: 32, paddingBottom: 32, borderTop: "1px solid #2a2a2e" }}>
-        {/* Logo with the tagline below it, centred; one tagline sentence per line. */}
-        <div className="flex flex-col items-center text-center px-4">
-          <div className="flex items-center justify-center gap-2" style={{ fontSize: 18, fontWeight: 700, color: "#f5f5f7", marginBottom: 8 }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/tbt_logo.webp" alt="" width={120} height={28} className="h-6 sm:h-7 w-auto shrink-0 object-contain" />
-          </div>
-          <div style={{ fontSize: 12, color: "#92929b", lineHeight: 1.6 }}>
-            {(uiStrings?.footerTagline ?? "India's premier business mentorship community. Grow your business with expert guidance.")
-              .split(/(?<=\.)\s+/)
-              .map((sentence, i) => <div key={i}>{sentence}</div>)}
-          </div>
-        </div>
-      </div>
+      <BrandFooter />
     </div>
   );
 }

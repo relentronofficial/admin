@@ -3,14 +3,14 @@
 import { usePathname } from "next/navigation";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 
-// /mentorship renders its own footer, with the copyright in its main row.
-const PAGES_WITH_OWN_FOOTER = ["/mentorship"];
+// /mentorship and /courses (catalog + course pages) render their own BrandFooter.
+const PAGES_WITH_OWN_FOOTER = ["/mentorship", "/courses"];
 
 export function Footer() {
   const { config } = useSiteConfig();
   const pathname = usePathname();
 
-  if (!config?.footerText || PAGES_WITH_OWN_FOOTER.includes(pathname)) return null;
+  if (!config?.footerText || PAGES_WITH_OWN_FOOTER.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return null;
 
   return (
     <footer className="border-t border-border px-4 md:px-6 py-4 text-center">

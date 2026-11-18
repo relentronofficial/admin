@@ -10,6 +10,7 @@ import {
 } from "@/lib/hooks/useCourses";
 import { useMe } from "@/lib/hooks/useUser";
 import { toast } from "react-hot-toast";
+import { BrandFooter } from "@/components/layout/BrandFooter";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1291,7 +1292,11 @@ export default function CoursePurchasePage({ params }: { params: Promise<{ cours
         <MCEarningSection course={c} onBuy={handleBuy} />
         <MCQuoteSection course={c} onBuy={handleBuy} />
         <MCFAQSection course={c} />
-        <div style={{ height: "5rem" }} className="lg:hidden" />
+      </div>
+
+      {/* Sits below the white landing page, on the dark platform background, like /mentorship. */}
+      <div style={{ marginTop: "1.5rem" }}>
+        <BrandFooter />
       </div>
 
       {videoModalOpen && (

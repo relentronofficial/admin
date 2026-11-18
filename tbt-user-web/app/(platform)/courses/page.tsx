@@ -10,6 +10,7 @@ import {
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useMe } from "@/lib/hooks/useUser";
 import { formatMinutes } from "@/lib/utils/courseDurations";
+import { BrandFooter } from "@/components/layout/BrandFooter";
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -454,6 +455,8 @@ export default function CoursesPage() {
           </>
         )}
       </div>
+
+      <BrandFooter />
     </div>
   );
 }
