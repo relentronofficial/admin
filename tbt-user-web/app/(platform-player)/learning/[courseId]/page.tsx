@@ -1940,6 +1940,39 @@ export default function CourseDetailPage({
     }
   }, [watchState, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Popups pause the video ────────────────────────────────────────────────
+  // True while any popup is on screen over the player. While it is: a playing video
+  // is paused (and resumed when the last popup closes), a video may not start, the
+  // text-lesson countdown holds, and the move to the next lesson waits.
+  const popupOpen =
+    !!quizModal || !!cueQuizModal || !!pendingReflection || (reflectionsOpen && reflectionCount > 0)
+    || practiceOpen || (!!feedbackEpisodeId && feedbackQuestions.length > 0)
+    || !!focusDialog || !!coinDialog || !!lifelineDialog || !!exitWarning || coinPurchaseOpen;
+  const popupOpenRef = useRef(false);
+  popupOpenRef.current = popupOpen;
+  // The lesson whose video a popup paused (or held back), so closing it resumes that video.
+  const resumeAfterPopupRef = useRef<string | null>(null);
+  // True once the current lesson's video has played to its end (resuming would replay it).
+  const videoEndedRef = useRef(false);
+  useSuppressAds("course-player-popup", popupOpen);
+  useEffect(() => {
+    if (popupOpen) {
+      if (isPlayingRef.current) {
+        resumeAfterPopupRef.current = selectedLessonRef.current?.id ?? null;
+        pausePlayerRef.current();
+      }
+      return;
+    }
+    const pausedLessonId = resumeAfterPopupRef.current;
+    resumeAfterPopupRef.current = null;
+    // Resume only the lesson that was paused — not after a switch to another lesson, a video
+    // that already ended (would replay it), or one the focus timer has locked.
+    if (!pausedLessonId || pausedLessonId !== selectedLessonRef.current?.id) return;
+    if (videoEndedRef.current || timerLockedRef.current || videoBlockedRef.current) return;
+    resumePlayerRef.current();
+  }, [popupOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { videoEndedRef.current = false; }, [selectedLesson?.id]);
+
   // After a video-ended completion is saved, move to the next lesson with a video in
   // course order — but only once this lesson's quiz / reflection / feedback prompts
   // (scheduled within ~1.2 s of completion) and the completion celebration are done. Uses the normal
@@ -1947,8 +1980,9 @@ export default function CourseDetailPage({
   useEffect(() => {
     if (!pendingAdvance) return;
     if (selectedLesson?.id !== pendingAdvance.from) { setPendingAdvance(null); return; } // member moved on
-    const promptOpen = !!quizModal || !!cueQuizModal || !!pendingReflection || !!focusDialog || !!missionComplete
-      || (!!feedbackEpisodeId && (feedbackFetching || feedbackQuestions.length > 0));
+    // Any popup (or a feedback modal whose questions are still loading) holds the next
+    // lesson — its video and focus timer start only once every popup is closed.
+    const promptOpen = popupOpen || !!missionComplete || (!!feedbackEpisodeId && feedbackFetching);
     if (promptOpen) return;
     // Wait for the post-completion course refetch: the cached lesson list still marks the
     // next lesson locked (and strips its video URL) until the server's fresh lock states land.
@@ -1966,7 +2000,7 @@ export default function CourseDetailPage({
     clearInterval(upNextTimerRef.current);
     setUpNextVisible(false);
     advanceToLessonRef.current(next);
-  }, [pendingAdvance, advanceTick, selectedLesson?.id, quizModal, cueQuizModal, pendingReflection, focusDialog, missionComplete, feedbackEpisodeId, feedbackFetching, feedbackQuestions.length, courseFetching]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingAdvance, advanceTick, selectedLesson?.id, popupOpen, missionComplete, feedbackEpisodeId, feedbackFetching, courseFetching]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Tracking refs ────────────────────────────────────────────────────────────
   const markCalledRef = useRef(false);
@@ -2220,6 +2254,13 @@ export default function CourseDetailPage({
       }
       return;
     }
+    if (popupOpenRef.current) {
+      // A popup is open: hold playback (autoplay included) until it is closed.
+      resumeAfterPopupRef.current = selectedLessonRef.current?.id ?? null;
+      pausePlayerRef.current();
+      return;
+    }
+    videoEndedRef.current = false;
     isPlayingRef.current = true;
     setWatchState((prev) => (prev === "completed" ? "completed" : "watching"));
   };
@@ -2274,6 +2315,7 @@ export default function CourseDetailPage({
   // toast, no completion, no navigation (automatic completion retries after a back-off).
   const completeFromVideoEndRef = useRef<() => void>(() => {});
   completeFromVideoEndRef.current = () => {
+    videoEndedRef.current = true;
     isPlayingRef.current = false;
     doMarkCompleteRef.current = false;
     const lesson = selectedLessonRef.current;
@@ -2462,7 +2504,12 @@ export default function CourseDetailPage({
               setCoinDialog({ lesson, duration });
             }
           }
+        } else if (popupOpenRef.current) {
+          // A popup is open: hold playback (autoplay included) until it is closed.
+          resumeAfterPopupRef.current = selectedLessonRef.current?.id ?? null;
+          pausePlayerRef.current();
         } else {
+          videoEndedRef.current = false;
           isPlayingRef.current = true;
           setWatchState((s) => (s === "completed" ? "completed" : "watching"));
         }
@@ -2745,6 +2792,7 @@ export default function CourseDetailPage({
     setTextLessonCountdown(DELAY);
     let remaining = DELAY;
     textAutoTimerRef.current = setInterval(() => {
+      if (popupOpenRef.current) return; // countdown holds while a popup is open
       remaining -= 1;
       if (remaining > 0) {
         setTextLessonCountdown(remaining);
