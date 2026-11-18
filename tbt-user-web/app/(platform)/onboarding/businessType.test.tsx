@@ -51,6 +51,12 @@ const COMPLETE_PROFILE = {
   businessStartedFrom: "2020", teamSize: "1-5", instagramStats: "1k", facebookStats: "500", gstNumber: "33ABCDE1234F1Z5",
   preferredSessionMode: "online", hasMarketingTeam: false, hasVideoEditing: false,
   profilePhotoUrl: "https://cdn.example.com/asha.webp",
+  // Every field is required (lib/onboarding/profileValidation.ts).
+  lastName: "Kumar", dob: "1990-01-01", gender: "female", pincode: "600001",
+  websiteUrl: "https://ashafoods.in", domainHostingDetails: "GoDaddy, renews 2027", businessAddress: "1 Main Road, Chennai",
+  marketingChannels: ["Social Media"], marketingChannelName: "Asha Foods Instagram",
+  currentChallenges: ["Getting leads", "Pricing", "Hiring"],
+  hasWebsite: true, weeklyWebsiteOrders: 5,
 };
 
 const continueBtn = () => screen.getByRole("button", { name: /^Continue$/ });
@@ -148,5 +154,90 @@ describe("onboarding profile photo (mandatory)", () => {
     pick(jpeg());
     expect(await screen.findByText("Upload failed – no storage service available")).toBeTruthy();
     expect(screen.queryByAltText("Profile")).toBeNull();
+  });
+});
+
+describe("onboarding profile: every field required, with No GST / No website exemptions", () => {
+  const gstInput = () => screen.getByPlaceholderText("22AAAAA0000A1Z5") as HTMLInputElement;
+  const noGstBox = () => screen.getByRole("checkbox", { name: "No GST" }) as HTMLInputElement;
+  const noWebsiteBox = () => screen.getByRole("checkbox", { name: "No website" }) as HTMLInputElement;
+  // A member who never saved the profile step (no brand name yet) starts with No GST unticked.
+  const NEW_MEMBER = { ...COMPLETE_PROFILE, businessName: "", gstNumber: "" };
+  const brandInput = () => screen.getByText("Brand Name *").parentElement!.querySelector("input")!;
+  beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); });
+
+  it("a blank form shows an error on every field and saves nothing", async () => {
+    openProfileStep({ profilePhotoUrl: "https://cdn.example.com/asha.webp" });
+    fireEvent.click(continueBtn());
+    for (const msg of [
+      "First name is required", "Last name is required", "Date of birth is required", "Please select your gender",
+      "Pincode is required", "Brand name is required", "Business address is required", "Team size is required",
+      "Website URL is required (or tick “No website”)", "Select at least one channel (or “None”)",
+      "GST number is required (or tick “No GST”)", "Please enter your primary business obstacle",
+    ]) expect(await screen.findByText(msg)).toBeTruthy();
+    expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("GST is required by default; an invalid number is refused", async () => {
+    openProfileStep(NEW_MEMBER);
+    fireEvent.change(brandInput(), { target: { value: "Asha Foods" } });
+    expect(noGstBox().checked).toBe(false);
+    expect(screen.getByText("GST Number *")).toBeTruthy();
+    fireEvent.click(continueBtn());
+    expect(await screen.findByText("GST number is required (or tick “No GST”)")).toBeTruthy();
+    fireEvent.change(gstInput(), { target: { value: "12345" } });
+    fireEvent.click(continueBtn());
+    expect(await screen.findByText(/valid 15-character GST number/)).toBeTruthy();
+    expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("ticking No GST makes GST optional: field disabled and cleared, Continue saves an empty GST", async () => {
+    openProfileStep(COMPLETE_PROFILE);
+    fireEvent.click(noGstBox());
+    expect(gstInput().disabled).toBe(true);
+    expect(gstInput().value).toBe("");
+    expect(screen.getByText("GST Number")).toBeTruthy(); // no asterisk
+    fireEvent.click(continueBtn());
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    expect(state.save.mock.calls[0][0].gstNumber).toBe(""); // clears a previously saved GST
+  });
+
+  it("unticking No GST makes it required again", async () => {
+    openProfileStep(NEW_MEMBER);
+    fireEvent.change(brandInput(), { target: { value: "Asha Foods" } });
+    fireEvent.click(noGstBox());
+    fireEvent.click(noGstBox());
+    expect(gstInput().disabled).toBe(false);
+    fireEvent.click(continueBtn());
+    expect(await screen.findByText("GST number is required (or tick “No GST”)")).toBeTruthy();
+    expect(state.save).not.toHaveBeenCalled();
+  });
+
+  it("a valid GST is saved upper-cased", async () => {
+    openProfileStep(NEW_MEMBER);
+    fireEvent.change(brandInput(), { target: { value: "Asha Foods" } });
+    fireEvent.change(gstInput(), { target: { value: "33abcde1234f1z5" } });
+    fireEvent.click(continueBtn());
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    expect(state.save.mock.calls[0][0].gstNumber).toBe("33ABCDE1234F1Z5");
+  });
+
+  it("No website: website URL and domain & hosting become optional and are saved empty", async () => {
+    openProfileStep({ ...COMPLETE_PROFILE, websiteUrl: "", domainHostingDetails: "", hasWebsite: undefined });
+    fireEvent.click(continueBtn());
+    expect(await screen.findByText("Website URL is required (or tick “No website”)")).toBeTruthy();
+    fireEvent.click(noWebsiteBox());
+    expect(screen.queryByText("Domain & Hosting Details *")).toBeNull();
+    fireEvent.click(continueBtn());
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
+    expect(state.save.mock.calls[0][0]).toMatchObject({ websiteUrl: "", domainHostingDetails: "", hasWebsite: false });
+  });
+
+  it("a member saved earlier without GST, or with hasWebsite=false, keeps those exemptions", async () => {
+    openProfileStep({ ...COMPLETE_PROFILE, gstNumber: null, hasWebsite: false, websiteUrl: null, domainHostingDetails: null });
+    expect(noGstBox().checked).toBe(true);
+    expect(noWebsiteBox().checked).toBe(true);
+    fireEvent.click(continueBtn());
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1));
   });
 });

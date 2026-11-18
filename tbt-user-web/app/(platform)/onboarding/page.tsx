@@ -1,5 +1,7 @@
 "use client";
 
+import { fieldLabel, normalizeGst, profileStepErrors, skillsStepErrors } from "@/lib/onboarding/profileValidation";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -44,7 +46,6 @@ const learningHoursPerDay = (v: unknown): number =>
     ? Math.min(LEARNING_HOURS_MAX, Math.max(LEARNING_HOURS_MIN, Math.round(v)))
     : LEARNING_HOURS_MIN;
 
-const REQUIRED_FIELDS = ["profilePhotoUrl", "firstName", "businessName", "productServiceType", "city", "state"] as const;
 
 /** Profile photo is mandatory. Same limits as the backend (onboardingLogic.ts). */
 const PHOTO_REQUIRED_MSG = "Profile photo is required.";
@@ -55,7 +56,6 @@ const photoFileError = (f: File): string | null =>
   : !PHOTO_TYPES.includes(f.type) ? "Please choose a JPG, PNG, WebP or GIF photo."
   : f.size > PHOTO_MAX_BYTES ? "Photo must be 10 MB or smaller."
   : null;
-const missingFieldLabel = (f: string) => (f === "profilePhotoUrl" ? "Profile photo" : f);
 
 const DOCUMENT_TYPES = [
   { value: "business_proof", label: "Business Proof" },
@@ -602,7 +602,11 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   const [states, setStates] = useState<{ name: string; isoCode: string }[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [selectedStateCode, setSelectedStateCode] = useState<string>("");
-  const [noGst, setNoGst] = useState(false);
+  // Exemptions (see lib/onboarding/profileValidation.ts). "No website" is stored as
+  // hasWebsite=false. "No GST" has no column: a saved profile (brand name filled)
+  // with no GST number means the member chose it before.
+  const [noGst, setNoGst] = useState(() => !!(initialProfile.businessName && !initialProfile.gstNumber));
+  const [noWebsite, setNoWebsite] = useState(() => initialProfile.hasWebsite === false);
 
   useEffect(() => {
     apiClient.get("/api/location/states?countryCode=IN").then((res) => {
@@ -636,30 +640,18 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   });
 
   const validateProfileStep = (): boolean => {
-    const errs: Record<string, string> = {};
-    const str = (k: string) => (profile[k] ?? "").toString().trim();
-    if (!str("profilePhotoUrl")) errs.profilePhotoUrl = PHOTO_REQUIRED_MSG;
-    if (!str("firstName")) errs.firstName = "First name is required";
-    if (!str("city")) errs.city = "City is required";
-    if (!str("state")) errs.state = "State is required";
-    if (!str("businessName")) errs.businessName = "Brand name is required";
-    if (!str("productServiceType")) errs.productServiceType = "Please select a business type";
-    if (!str("instagramLink")) errs.instagramLink = "Instagram link is required";
-    if (!str("annualTurnover")) errs.annualTurnover = "Please select your revenue range";
-    if (!str("revenueGoalAfterTbt")) errs.revenueGoalAfterTbt = "Revenue goal is required";
-    if (!str("goalAfter90Days")) errs.goalAfter90Days = "Learning goal is required";
-    if (!str("businessStartedFrom")) errs.businessStartedFrom = "This field is required";
-    if (!str("teamSize")) errs.teamSize = "Team size is required";
-    if (!str("instagramStats")) errs.instagramStats = "Instagram stats are required";
-    if (!str("facebookStats")) errs.facebookStats = "Facebook stats are required";
-    if (profile.preferredSessionMode == null) errs.preferredSessionMode = "Please select a session mode";
-    if (profile.hasMarketingTeam == null) errs.hasMarketingTeam = "Please select an option";
-    if (profile.hasVideoEditing == null) errs.hasVideoEditing = "Please select an option";
+    const errs = profileStepErrors(profile, { noGst, noWebsite });
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+  const validateSkillsStep = (): boolean => {
+    const errs = skillsStepErrors(profile);
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const missingFields = REQUIRED_FIELDS.filter((f) => !profile[f]);
+  // Submit is blocked until every required field (both steps) is filled.
+  const missingFields = Object.keys({ ...profileStepErrors(profile, { noGst, noWebsite }), ...skillsStepErrors(profile) });
   const unwatchedVideoSteps = (contentSteps ?? []).filter((c) => c.videoUrl && !watchedSteps.has(c.stepKey));
   const readyToSubmit = missingFields.length === 0 && initialDocuments.length > 0 && unwatchedVideoSteps.length === 0 && !mentorshipMissing;
   const currentIndex = stepOrder.indexOf(step);
@@ -679,7 +671,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
   };
 
   const saveAndAdvance = async (next: Step) => {
-    if (step === "profile" && !validateProfileStep()) {
+    if ((step === "profile" && !validateProfileStep()) || (step === "skills" && !validateSkillsStep())) {
       setTimeout(() => {
         const el = document.querySelector("[data-field-error]");
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -696,10 +688,15 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
         // Same for the learning-hours slider: store the hours per day it shows.
         editable.weeklyLearningHours = learningHoursPerDay(editable.weeklyLearningHours);
       }
-      const body = Object.fromEntries(
+      const body: Record<string, any> = Object.fromEntries(
         Object.entries({ ...editable, currentChallenges })
           .filter(([, v]) => v !== null && v !== undefined && v !== "")
       );
+      if (step === "profile") {
+        if (noGst) body.gstNumber = "";
+        else if (body.gstNumber) body.gstNumber = normalizeGst(body.gstNumber);
+        if (noWebsite) Object.assign(body, { websiteUrl: "", domainHostingDetails: "", hasWebsite: false });
+      }
       await saveProgress.mutateAsync(body);
       // Keep the shown/saved per-day hours in state so the review step matches what was stored.
       if (step === "skills") setProfileState((p) => ({ ...p, weeklyLearningHours: editable.weeklyLearningHours }));
@@ -1023,25 +1020,28 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <input value={profile.firstName ?? ""} onChange={(e) => setField("firstName", e.target.value)} className={INPUT_CLS} style={inputStyle("firstName")} />
                   <FieldError error={errors.firstName} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Last Name</label>
+                <div data-field-error={errors.lastName ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Last Name *</label>
                   <input value={profile.lastName ?? ""} onChange={(e) => setField("lastName", e.target.value)} className={INPUT_CLS} style={inputStyle("lastName")} />
+                  <FieldError error={errors.lastName} />
                 </div>
               </div>
 
               {/* DOB + Gender */}
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Date of Birth</label>
+                <div data-field-error={errors.dob ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Date of Birth *</label>
                   <input
                     type="date"
+                    max={new Date().toISOString().slice(0, 10)}
                     value={profile.dob ? (typeof profile.dob === "string" ? profile.dob.slice(0, 10) : new Date(profile.dob).toISOString().slice(0, 10)) : ""}
                     onChange={(e) => setField("dob", e.target.value)}
                     className={INPUT_CLS} style={inputStyle("dob")}
                   />
+                  <FieldError error={errors.dob} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Gender</label>
+                <div data-field-error={errors.gender ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Gender *</label>
                   <select value={profile.gender ?? ""} onChange={(e) => setField("gender", e.target.value || null)} className={INPUT_CLS} style={inputStyle("gender")}>
                     <option value="" disabled>Select…</option>
                     <option value="male">Male</option>
@@ -1049,6 +1049,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     <option value="other">Other</option>
                     <option value="prefer_not_to_say">Prefer not to say</option>
                   </select>
+                  <FieldError error={errors.gender} />
                 </div>
               </div>
 
@@ -1087,9 +1088,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   </select>
                   <FieldError error={errors.city} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Pincode</label>
-                  <input value={profile.pincode ?? ""} onChange={(e) => setField("pincode", e.target.value)} placeholder="600001" className={INPUT_CLS} style={inputStyle("pincode")} />
+                <div data-field-error={errors.pincode ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Pincode *</label>
+                  <input value={profile.pincode ?? ""} onChange={(e) => setField("pincode", e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" placeholder="600001" className={INPUT_CLS} style={inputStyle("pincode")} />
+                  <FieldError error={errors.pincode} />
                 </div>
               </div>
 
@@ -1139,14 +1141,28 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   <input value={profile.teamSize ?? ""} onChange={(e) => setField("teamSize", e.target.value)} placeholder="e.g. 5" className={INPUT_CLS} style={inputStyle("teamSize")} />
                   <FieldError error={errors.teamSize} />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Website URL</label>
-                  <input value={profile.websiteUrl ?? ""} onChange={(e) => setField("websiteUrl", e.target.value)} placeholder="https://yourbrand.com" className={INPUT_CLS} style={inputStyle("websiteUrl")} />
+                <div data-field-error={errors.websiteUrl ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Website URL{noWebsite ? "" : " *"}</label>
+                  <input value={profile.websiteUrl ?? ""} onChange={(e) => setField("websiteUrl", e.target.value)} placeholder="https://yourbrand.com" disabled={noWebsite} className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`} style={inputStyle("websiteUrl")} />
+                  <label className="mt-2 inline-flex items-center gap-2 text-xs font-medium cursor-pointer" style={{ color: "var(--color-text-subtle)" }}>
+                    <input
+                      type="checkbox"
+                      checked={noWebsite}
+                      onChange={(e) => {
+                        setNoWebsite(e.target.checked);
+                        setErrors((prev) => { const n = { ...prev }; delete n.websiteUrl; delete n.domainHostingDetails; return n; });
+                        if (e.target.checked) { setField("websiteUrl", ""); setField("domainHostingDetails", ""); setField("hasWebsite", false); }
+                      }}
+                      style={{ accentColor: "var(--color-accent)" }}
+                    />
+                    No website
+                  </label>
+                  <FieldError error={errors.websiteUrl} />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Business Address</label>
+              <div data-field-error={errors.businessAddress ? true : undefined}>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Business Address *</label>
                 <textarea
                   value={profile.businessAddress ?? ""}
                   onChange={(e) => setField("businessAddress", e.target.value)}
@@ -1154,6 +1170,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                   className="w-full px-4 py-3 rounded-xl text-sm text-foreground outline-none resize-none transition-colors"
                   style={inputStyle("businessAddress")}
                 />
+                <FieldError error={errors.businessAddress} />
               </div>
 
               {/* ── Revenue & Goals ── */}
@@ -1225,8 +1242,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               {/* ── Marketing & Operations ── */}
               <SectionHeader icon={Megaphone} title="Marketing & Operations" />
 
-              <div>
-                <label className="block text-xs font-medium mb-2" style={{ color: "var(--color-text-subtle)" }}>Existing Marketing Channels</label>
+              <div data-field-error={errors.marketingChannels ? true : undefined}>
+                <label className="block text-xs font-medium mb-2" style={{ color: "var(--color-text-subtle)" }}>Existing Marketing Channels *</label>
                 <div className="flex flex-wrap gap-2">
                   {MARKETING_CHANNELS.map((channel) => {
                     const active = ((profile.marketingChannels as string[]) || []).includes(channel);
@@ -1236,24 +1253,29 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                         type="button"
                         onClick={() => toggleMarketingChannel(channel)}
                         className="px-4 py-2 rounded-full text-sm font-medium border-2 transition-all"
-                        style={toggleStyle(active)}
+                        style={toggleStyle(active, !!errors.marketingChannels)}
                       >
                         {channel}
                       </button>
                     );
                   })}
                 </div>
+                <FieldError error={errors.marketingChannels} />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Marketing Channel Name</label>
+              <div data-field-error={errors.marketingChannelName ? true : undefined}>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Marketing Channel Name{(((profile.marketingChannels as string[]) || []).length > 0 && ((profile.marketingChannels as string[]) || []).every((c) => c === "None")) ? "" : " *"}</label>
                 <input value={profile.marketingChannelName ?? ""} onChange={(e) => setField("marketingChannelName", e.target.value)} placeholder="e.g. Facebook Ads account name" className={INPUT_CLS} style={inputStyle("marketingChannelName")} />
+                <FieldError error={errors.marketingChannelName} />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Domain & Hosting Details</label>
-                <input value={profile.domainHostingDetails ?? ""} onChange={(e) => setField("domainHostingDetails", e.target.value)} placeholder="Provider, expiry dates, etc." className={INPUT_CLS} style={inputStyle("domainHostingDetails")} />
-              </div>
+              {!noWebsite && (
+                <div data-field-error={errors.domainHostingDetails ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Domain & Hosting Details *</label>
+                  <input value={profile.domainHostingDetails ?? ""} onChange={(e) => setField("domainHostingDetails", e.target.value)} placeholder="Provider, expiry dates, etc." className={INPUT_CLS} style={inputStyle("domainHostingDetails")} />
+                  <FieldError error={errors.domainHostingDetails} />
+                </div>
+              )}
 
               {/* Social media handling */}
               <div data-field-error={errors.hasMarketingTeam ? true : undefined}>
@@ -1270,7 +1292,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 </div>
                 <FieldError error={errors.hasMarketingTeam} />
                 {profile.hasMarketingTeam && (
-                  <input value={profile.marketingTeamDetails ?? ""} onChange={(e) => setField("marketingTeamDetails", e.target.value)} placeholder="Describe your social media team or agency" className={INPUT_CLS} style={inputStyle("marketingTeamDetails")} />
+                  <div data-field-error={errors.marketingTeamDetails ? true : undefined}>
+                    <input value={profile.marketingTeamDetails ?? ""} onChange={(e) => setField("marketingTeamDetails", e.target.value)} placeholder="Describe your social media team or agency *" className={INPUT_CLS} style={inputStyle("marketingTeamDetails")} />
+                    <FieldError error={errors.marketingTeamDetails} />
+                  </div>
                 )}
               </div>
 
@@ -1289,7 +1314,10 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 </div>
                 <FieldError error={errors.hasVideoEditing} />
                 {profile.hasVideoEditing && (
-                  <input value={profile.videoEditingDetails ?? ""} onChange={(e) => setField("videoEditingDetails", e.target.value)} placeholder="In-house, outsourced, or tools used" className={INPUT_CLS} style={inputStyle("videoEditingDetails")} />
+                  <div data-field-error={errors.videoEditingDetails ? true : undefined}>
+                    <input value={profile.videoEditingDetails ?? ""} onChange={(e) => setField("videoEditingDetails", e.target.value)} placeholder="In-house, outsourced, or tools used *" className={INPUT_CLS} style={inputStyle("videoEditingDetails")} />
+                    <FieldError error={errors.videoEditingDetails} />
+                  </div>
                 )}
               </div>
 
@@ -1297,14 +1325,15 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
               <SectionHeader icon={Shield} title="Compliance & Challenges" />
 
               <div data-field-error={errors.gstNumber ? true : undefined}>
-                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number</label>
-                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value)} placeholder="22AAAAA0000A1Z5" disabled={noGst} className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`} style={inputStyle("gstNumber")} />
+                <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>GST Number{noGst ? "" : " *"}</label>
+                <input value={profile.gstNumber ?? ""} onChange={(e) => setField("gstNumber", e.target.value.toUpperCase())} maxLength={15} placeholder="22AAAAA0000A1Z5" disabled={noGst} className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`} style={inputStyle("gstNumber")} />
                 <label className="mt-2 inline-flex items-center gap-2 text-xs font-medium cursor-pointer" style={{ color: "var(--color-text-subtle)" }}>
                   <input
                     type="checkbox"
                     checked={noGst}
                     onChange={(e) => {
                       setNoGst(e.target.checked);
+                      setErrors((prev) => { const n = { ...prev }; delete n.gstNumber; return n; });
                       if (e.target.checked) setField("gstNumber", "");
                     }}
                     style={{ accentColor: "var(--color-accent)" }}
@@ -1314,8 +1343,8 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                 <FieldError error={errors.gstNumber} />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium mb-2" style={{ color: "var(--color-text-subtle)" }}>Key Challenges</label>
+              <div data-field-error={errors.challenge1 || errors.challenge2 || errors.challenge3 ? true : undefined}>
+                <label className="block text-xs font-medium mb-2" style={{ color: "var(--color-text-subtle)" }}>Key Challenges *</label>
                 <div className="space-y-2.5">
                   {[
                     { key: "challenge1", placeholder: "Primary business obstacle" },
@@ -1333,6 +1362,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
                     </div>
                   ))}
                 </div>
+                <FieldError error={errors.challenge1 || errors.challenge2 || errors.challenge3} />
               </div>
             </div>
           </StepShell>
@@ -1349,31 +1379,33 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
           >
             <div className="space-y-8">
               {/* Website */}
-              <div>
-                <p className="text-sm font-semibold text-foreground mb-3">Do you have a website?</p>
+              <div data-field-error={errors.hasWebsite ? true : undefined}>
+                <p className="text-sm font-semibold text-foreground mb-3">Do you have a website? *</p>
                 <div className="flex gap-3">
                   {([{ label: "Yes", val: true }, { label: "No", val: false }] as const).map(({ label, val }) => (
                     <button key={label} type="button" onClick={() => setField("hasWebsite", val)}
                       className="px-8 py-2.5 rounded-xl text-sm font-semibold border-2 transition-all"
-                      style={toggleStyle(profile.hasWebsite === val)}
+                      style={toggleStyle(profile.hasWebsite === val, !!errors.hasWebsite)}
                     >
                       {label}
                     </button>
                   ))}
                 </div>
+                <FieldError error={errors.hasWebsite} />
               </div>
 
               {profile.hasWebsite === true && (
-                <div>
-                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Weekly orders from your website</label>
+                <div data-field-error={errors.weeklyWebsiteOrders ? true : undefined}>
+                  <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--color-text-subtle)" }}>Weekly orders from your website *</label>
                   <input
                     type="number" min={0}
                     value={profile.weeklyWebsiteOrders ?? ""}
                     onChange={(e) => setField("weeklyWebsiteOrders", e.target.value === "" ? undefined : Number(e.target.value))}
                     placeholder="e.g. 50"
                     className={INPUT_CLS}
-                    style={{ background: OVERLAY, border: `1.5px solid ${BORDER}` }}
+                    style={inputStyle("weeklyWebsiteOrders")}
                   />
+                  <FieldError error={errors.weeklyWebsiteOrders} />
                 </div>
               )}
 
@@ -1729,7 +1761,7 @@ function OnboardingWizard({ initialProfile, initialDocuments, changesNote }: {
 
               {!readyToSubmit && missingFields.length > 0 && (
                 <p className="text-sm mb-5 px-4 py-3 rounded-xl" style={{ background: "color-mix(in srgb, var(--color-alert, #ef4444) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--color-alert, #ef4444) 20%, transparent)", color: "var(--color-alert, #ef4444)" }}>
-                  Please fill in: {missingFields.map(missingFieldLabel).join(", ")}
+                  Please fill in: {missingFields.map(fieldLabel).join(", ")}
                 </p>
               )}
               {mentorshipMissing && (

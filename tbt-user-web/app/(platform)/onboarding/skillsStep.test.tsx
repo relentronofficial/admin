@@ -51,6 +51,12 @@ const COMPLETE_PROFILE = {
   businessStartedFrom: "2020", teamSize: "1-5", instagramStats: "1k", facebookStats: "500", gstNumber: "33ABCDE1234F1Z5",
   preferredSessionMode: "online", hasMarketingTeam: false, hasVideoEditing: false,
   profilePhotoUrl: "https://cdn.example.com/asha.webp",
+  // Every field is required (lib/onboarding/profileValidation.ts).
+  lastName: "Kumar", dob: "1990-01-01", gender: "female", pincode: "600001",
+  websiteUrl: "https://ashafoods.in", domainHostingDetails: "GoDaddy, renews 2027", businessAddress: "1 Main Road, Chennai",
+  marketingChannels: ["Social Media"], marketingChannelName: "Asha Foods Instagram",
+  currentChallenges: ["Getting leads", "Pricing", "Hiring"],
+  hasWebsite: true, weeklyWebsiteOrders: 5,
 };
 const SKILLS = ["Business Foundation", "Content Creation", "Sales Funnels", "Paid Ads", "Sales & Closing", "Overall Marketing"];
 const KEYS = ["skillBusinessFoundation", "skillContent", "skillFunnels", "skillAds", "skillSales", "skillOverallMarketing"];
