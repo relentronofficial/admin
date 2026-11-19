@@ -1,5 +1,6 @@
 "use client";
 
+import { START_TOUR_EVENT } from "@/components/features/onboarding-tour/OnboardingTour";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -190,7 +191,7 @@ function ProfileButton() {
   const { data: me } = useMe();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { hiddenMenuKeys } = useSiteConfig();
+  const { hiddenMenuKeys, uiStrings } = useSiteConfig();
   const [open, setOpen] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const avatarUrl = (me as any)?.avatarUrl ?? null;
@@ -290,6 +291,13 @@ function ProfileButton() {
                 Support
               </Link>
             )}
+            <button
+              type="button"
+              onClick={() => { setOpen(false); window.dispatchEvent(new Event(START_TOUR_EVENT)); }}
+              className="w-full text-left px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] transition-colors"
+            >
+              {(uiStrings as any)?.tourReplayLabel || "Take the tour"}
+            </button>
             <button
               onClick={handleLogout}
               className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)] transition-colors"
@@ -612,6 +620,7 @@ export function Navbar() {
           onClick={toggleSidebar}
           className="lg:hidden relative p-1.5 sm:p-2 rounded-xl text-muted-foreground hover:text-foreground transition-colors duration-200 flex-shrink-0 group overflow-hidden"
           aria-label="Toggle menu"
+          data-tour="menu"
         >
           <GlowBg active={false} />
           <Menu size={18} className="relative z-10" />
@@ -629,7 +638,7 @@ export function Navbar() {
         <div className="hidden lg:block w-px h-5 flex-shrink-0" style={{ background: "var(--color-border-medium)" }} />
 
         {/* Desktop: inline nav */}
-        <nav className="hidden lg:flex items-center gap-0.5 flex-1">
+        <nav className="hidden lg:flex items-center gap-0.5 flex-1" data-tour="nav">
           {menuItems(navMenu).map(({ id, href, label }) => {
             const active =
               pathname === href ||
@@ -655,7 +664,7 @@ export function Navbar() {
         <div className="flex items-center gap-0.5 sm:gap-1 ml-auto lg:ml-0">
 
           {/* Streak, Coins, Tier — hidden on mobile to prevent navbar overflow */}
-          <div className="hidden lg:flex items-center gap-1 sm:gap-2 sm:mr-1">
+          <div className="hidden lg:flex items-center gap-1 sm:gap-2 sm:mr-1" data-tour="progress">
             {!hiddenMenuKeys.includes("streak") && <StreakButton />}
             <CoinBalanceIndicator />
             <TierAccessIndicator />
@@ -663,7 +672,7 @@ export function Navbar() {
 
           {/* ── Notifications (dropdown) ────────────────────────────── */}
           {rightIcons.notifications && (
-            <div className="relative">
+            <div className="relative" data-tour="notifications">
               <button
                 onClick={() => setNotifOpen((v) => !v)}
                 className={cn(
@@ -696,6 +705,7 @@ export function Navbar() {
                 pathname === "/messages" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
               )}
               aria-label="Messages"
+              data-tour="messages"
             >
               <GlowBg active={pathname === "/messages"} />
               <MessageSquare size={17} className="relative z-10" />
@@ -722,6 +732,7 @@ export function Navbar() {
               )}
               aria-label="Support"
               title="Support"
+              data-tour="support"
             >
               <GlowBg active={pathname === "/support" || pathname.startsWith("/support/")} />
               <LifeBuoy size={17} className="relative z-10" />
@@ -730,7 +741,7 @@ export function Navbar() {
 
           {/* Profile avatar */}
           {rightIcons.profile && (
-            <div className="pl-0.5">
+            <div className="pl-0.5" data-tour="profile">
               <ProfileButton />
             </div>
           )}

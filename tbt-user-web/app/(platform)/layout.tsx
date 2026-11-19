@@ -7,6 +7,8 @@ import { AdHost } from "@/components/features/ads/AdHost";
 import { SessionRevocationGuard } from "@/components/guards/SessionRevocationGuard";
 import { NavAccessGuard } from "@/components/guards/NavAccessGuard";
 import { ActivityHeartbeat } from "@/components/guards/ActivityHeartbeat";
+import { OnboardingTour } from "@/components/features/onboarding-tour/OnboardingTour";
+import { Suspense } from "react";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,6 +31,10 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       {/* Portals to document.body, so it sits above Navbar and MiniPlayer
           regardless of this container's stacking context. */}
       <AdHost />
+      {/* First-login guided tour (reads ?tour=1, so it needs a Suspense boundary). */}
+      <Suspense fallback={null}>
+        <OnboardingTour />
+      </Suspense>
     </div>
   );
 }
