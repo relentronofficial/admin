@@ -4,6 +4,23 @@ import type { ReactNode } from "react";
 const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 const MENTION_RE = /(@[A-Za-z0-9_]+)/g;
 const TRAILING_PUNCT = /[.,!?;:'")\]}>]+$/;
+// Markdown bold: **text** (as pasted from ChatGPT/Claude). The inner text must not start
+// or end with a space, so a lone "**" or "2 ** 3" stays as typed.
+const BOLD_RE = /\*\*(?=\S)([\s\S]*?\S)\*\*/g;
+
+/** Splits text into plain and bold chunks; the ** markers are removed from bold chunks. */
+export function splitBold(text: string): Array<{ text: string; bold?: boolean }> {
+  const out: Array<{ text: string; bold?: boolean }> = [];
+  let last = 0;
+  for (const m of text.matchAll(BOLD_RE)) {
+    const start = m.index ?? 0;
+    if (start > last) out.push({ text: text.slice(last, start) });
+    out.push({ text: m[1]!, bold: true });
+    last = start + m[0].length;
+  }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
 
 /** Splits text into plain chunks and links. Only http/https hrefs are ever produced. */
 export function splitLinks(text: string): Array<{ text: string; href?: string }> {
@@ -40,10 +57,26 @@ function renderMentions(text: string, keyPrefix: string): ReactNode[] {
 }
 
 /**
- * Chat message text with clickable links (opened in a new tab). With `mentions`,
- * @-mention tokens are highlighted too (group chat).
+ * Chat message text: **bold** markdown is rendered bold, links are clickable (opened in
+ * a new tab), and with `mentions` @-mention tokens are highlighted too (group chat).
  */
 export function LinkifiedText({ text, mentions = false }: { text: string; mentions?: boolean }) {
+  return (
+    <>
+      {splitBold(text).map((chunk, b) =>
+        chunk.bold ? (
+          <strong key={b} className="font-semibold">
+            <LinksAndMentions text={chunk.text} mentions={mentions} />
+          </strong>
+        ) : (
+          <LinksAndMentions key={b} text={chunk.text} mentions={mentions} />
+        ),
+      )}
+    </>
+  );
+}
+
+function LinksAndMentions({ text, mentions }: { text: string; mentions: boolean }) {
   return (
     <>
       {splitLinks(text).map((part, i) =>
