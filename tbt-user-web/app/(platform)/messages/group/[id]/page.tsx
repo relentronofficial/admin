@@ -1,5 +1,6 @@
 "use client";
 
+import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -71,27 +72,6 @@ const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 // visually collapsed into a single cluster (hide the name + timestamp
 // on the newer one).
 const CLUSTER_WINDOW_MS = 60_000;
-
-// Split a message body on @-mention tokens and highlight each. Purely
-// visual — tokens don't need to correspond to any stored member; the
-// server-side mentionedMemberIds list is what drives the actual ping.
-function renderMentionText(text: string): React.ReactNode {
-  const parts = text.split(/(@[A-Za-z0-9_]+)/g);
-  return parts.map((chunk, i) => {
-    if (chunk.startsWith("@") && chunk.length > 1) {
-      return (
-        <span
-          key={i}
-          className="font-semibold"
-          style={{ color: "var(--color-accent)" }}
-        >
-          {chunk}
-        </span>
-      );
-    }
-    return <span key={i}>{chunk}</span>;
-  });
-}
 
 export default function GroupChatPage() {
   const params = useParams<{ id: string }>();
@@ -1484,7 +1464,7 @@ function MessageBubble({
                 </p>
               ) : message.body ? (
                 <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                  {renderMentionText(message.body)}
+                  <LinkifiedText text={message.body} mentions />
                 </p>
               ) : null}
               {showMeta && (

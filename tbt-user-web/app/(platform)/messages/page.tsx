@@ -1,5 +1,6 @@
 'use client';
 
+import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -1526,7 +1527,7 @@ function DmBubble({
           ) : (
             message.body && (
               <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
-                {message.body}
+                <LinkifiedText text={message.body} />
               </p>
             )
           )}
@@ -2206,7 +2207,7 @@ function InlineGroupBubble({
             ) : (
               message.body && (
                 <p className="text-sm text-foreground leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
-                  {message.body}
+                  <LinkifiedText text={message.body} />
                 </p>
               )
             )}
