@@ -1299,6 +1299,35 @@ class _EpisodeTaskItemState extends ConsumerState<_EpisodeTaskItem> {
                       const SizedBox(height: 4),
                       Text('Deliverable: ${task.deliverables}', style: TextStyle(color: tokens.textSubtle, fontSize: 11, height: 1.4)),
                     ],
+                    // Admin-set reference link (Content URL)
+                    if (_taskLink(task.contentUrl) != null) ...[
+                      const SizedBox(height: 6),
+                      GestureDetector(
+                        onTap: () => launchUrl(_taskLink(task.contentUrl)!, mode: LaunchMode.externalApplication)
+                            .catchError((_) => false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.open_in_new_rounded, size: 12, color: Theme.of(context).colorScheme.primary),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Learning Resource',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
                     // Feedback on rejection
                     if ((_status == 'rejected' || _status == 'resubmission_required') &&
                         task.submission?.feedback != null) ...[
@@ -1574,4 +1603,15 @@ class _SpeedSelector extends StatelessWidget {
           .toList(),
     );
   }
+}
+
+/// Admin-entered task link → an absolute http(s) Uri, or null. Adds https://
+/// for a bare domain; any other scheme is ignored.
+Uri? _taskLink(String? raw) {
+  final v = (raw ?? '').trim();
+  if (v.isEmpty) return null;
+  final hasScheme = RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]*:').hasMatch(v);
+  final uri = Uri.tryParse(hasScheme ? v : 'https://$v');
+  if (uri == null || uri.host.isEmpty) return null;
+  return (uri.scheme == 'http' || uri.scheme == 'https') ? uri : null;
 }

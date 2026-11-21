@@ -1096,6 +1096,19 @@ function PaywallView({ course: courseRaw, courseId }: { course: any; courseId: s
   );
 }
 
+// Admin-entered task link → a safe absolute http(s) URL, or null. Adds https://
+// when the admin typed a bare domain; anything else (javascript:, mailto:…) is dropped.
+function safeTaskLink(raw?: string | null): string | null {
+  const v = (raw ?? "").trim();
+  if (!v) return null;
+  try {
+    const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(v) ? v : `https://${v}`);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Episode Task Item (submit + review-status) ──────────────────────────────
 function EpisodeTaskItem({
   episodeId, task, index, onPauseVideo, onResumeVideo,
@@ -1116,6 +1129,8 @@ function EpisodeTaskItem({
   // if we were the one to pause, and avoids calling pause more than once.
   const didPauseRef = useRef(false);
 
+  const { uiStrings } = useSiteConfig();
+  const resourceHref = safeTaskLink(task.contentUrl);
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
   const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
@@ -1211,6 +1226,18 @@ function EpisodeTaskItem({
             <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--color-text-subtle)" }}>
               Deliverable: {task.deliverables}
             </p>
+          )}
+          {resourceHref && (
+            <a
+              href={resourceHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs mt-1.5 px-2.5 py-1 rounded-lg max-w-full transition-opacity hover:opacity-80"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 10%, transparent)", color: "var(--color-accent)" }}
+            >
+              <ExternalLink size={12} className="shrink-0" />
+              <span className="truncate">{uiStrings?.batchLearningResourceLabel ?? "Learning Resource"}</span>
+            </a>
           )}
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
             {task.estimatedMinutes && (

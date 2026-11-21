@@ -5115,6 +5115,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
   if (!(await isCourseInMemberModules(request, ep.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
   const tasks = await request.server.prisma.$queryRawUnsafe<any[]>(
     `SELECT t.id, t.title, t.description, t.deliverables,
+            t.content_url AS "contentUrl",
             t.estimated_minutes AS "estimatedMinutes",
             t.base_points AS "basePoints",
             t.proof_type AS "proofType",
@@ -5138,6 +5139,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
     title: t.title,
     description: t.description,
     deliverables: t.deliverables,
+    contentUrl: t.contentUrl ?? null,
     estimatedMinutes: t.estimatedMinutes,
     basePoints: t.basePoints,
     proofType: t.proofType,

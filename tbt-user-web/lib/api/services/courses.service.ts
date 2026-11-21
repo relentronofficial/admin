@@ -289,6 +289,8 @@ export interface EpisodeTask {
   title: string;
   description?: string | null;
   deliverables?: string | null;
+  /** Admin-set reference link (template, example, doc) shown under the task. */
+  contentUrl?: string | null;
   estimatedMinutes?: number | null;
   basePoints?: number | null;
   proofType?: string | null;

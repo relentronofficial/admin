@@ -66,6 +66,7 @@ class EpisodeTask {
     required this.title,
     this.description,
     this.deliverables,
+    this.contentUrl,
     this.estimatedMinutes,
     this.basePoints,
     this.proofType,
@@ -76,6 +77,7 @@ class EpisodeTask {
   final String title;
   final String? description;
   final String? deliverables;
+  final String? contentUrl; // admin-set reference link shown under the task
   final int? estimatedMinutes;
   final int? basePoints;
   final String? proofType; // watch | text | link | video | image | file
@@ -87,6 +89,7 @@ class EpisodeTask {
         title: j['title'] as String? ?? '',
         description: j['description'] as String?,
         deliverables: j['deliverables'] as String?,
+        contentUrl: j['contentUrl'] as String?,
         estimatedMinutes: (j['estimatedMinutes'] as num?)?.toInt(),
         basePoints: (j['basePoints'] as num?)?.toInt(),
         proofType: j['proofType'] as String?,
