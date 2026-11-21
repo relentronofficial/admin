@@ -2,8 +2,8 @@
  * Admin-scheduled group-chat messages — `/api/chat-groups/admin/:id/scheduled-messages`.
  *
  * An admin schedules a text message for a group, either once (a date + time)
- * or daily (a time every day from a start date, optionally until an end
- * date). Times are IST. jobs/chatScheduledMessages.ts posts them when due;
+ * or repeating daily / weekly / monthly (at a time, from a start date,
+ * optionally until an end date). Times are IST. jobs/chatScheduledMessages.ts posts them when due;
  * the rules live in lib/chatScheduleLogic.ts.
  *
  * Table `chat_group_scheduled_messages` (raw SQL, created in plugins/prisma.ts).
@@ -15,6 +15,7 @@ import {
   istDateOf,
   istTimeOf,
   resumeNextRun,
+  ruleFromRow,
   validateScheduleInput,
   type ScheduleInput,
   type ScheduleType,
@@ -63,7 +64,7 @@ function toJson(r: ScheduledRow) {
     groupId: r.group_id,
     body: r.body,
     scheduleType: r.schedule_type,
-    /** IST date: the send date (once) or the start date (daily). */
+    /** IST date: the send date (once) or the start date (repeating). */
     date: once ? (r.send_at ? istDateOf(new Date(r.send_at)) : null) : r.start_date,
     /** IST time HH:MM. */
     time: once ? (r.send_at ? istTimeOf(new Date(r.send_at)) : null) : r.time_of_day,
@@ -139,9 +140,9 @@ export async function adminCreateScheduledHandler(
     s.body,
     s.scheduleType,
     s.sendAt,
-    s.daily?.startDate ?? null,
-    s.daily?.timeOfDay ?? null,
-    s.daily?.endDate ?? null,
+    s.recurring?.startDate ?? null,
+    s.recurring?.timeOfDay ?? null,
+    s.recurring?.endDate ?? null,
     s.nextRunAt,
     admin?.id ?? null,
   );
@@ -175,9 +176,9 @@ export async function adminUpdateScheduledHandler(
     s.body,
     s.scheduleType,
     s.sendAt,
-    s.daily?.startDate ?? null,
-    s.daily?.timeOfDay ?? null,
-    s.daily?.endDate ?? null,
+    s.recurring?.startDate ?? null,
+    s.recurring?.timeOfDay ?? null,
+    s.recurring?.endDate ?? null,
     s.nextRunAt,
     status,
   );
@@ -207,9 +208,7 @@ export async function adminSetScheduledStatusHandler(
       {
         scheduleType: existing.schedule_type,
         sendAt: existing.send_at ? new Date(existing.send_at) : null,
-        daily: existing.schedule_type === 'daily' && existing.start_date && existing.time_of_day
-          ? { startDate: existing.start_date, timeOfDay: existing.time_of_day, endDate: existing.end_date }
-          : null,
+        recurring: ruleFromRow(existing.schedule_type, existing.start_date, existing.time_of_day, existing.end_date),
       },
       new Date(),
     );

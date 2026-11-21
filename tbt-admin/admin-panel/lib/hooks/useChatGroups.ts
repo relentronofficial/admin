@@ -247,7 +247,9 @@ export function useAdminRaiseTicketFromMessage() {
   });
 }
 
-// ── Scheduled messages (one-time or daily, IST) ─────────────────────────────
+// ── Scheduled messages (one-time, daily, weekly or monthly; IST) ─────────────────────────────
+
+export type ScheduleFrequency = "once" | "daily" | "weekly" | "monthly";
 
 export type ScheduledMessageStatus = "active" | "paused" | "completed" | "missed" | "cancelled";
 
@@ -255,8 +257,8 @@ export interface ScheduledGroupMessage {
   id: string;
   groupId: string;
   body: string;
-  scheduleType: "once" | "daily";
-  /** IST date — the send date (once) or the start date (daily). */
+  scheduleType: ScheduleFrequency;
+  /** IST date — the send date (once) or the start date (repeating). */
   date: string | null;
   /** IST time, HH:MM. */
   time: string | null;
@@ -272,7 +274,7 @@ export interface ScheduledGroupMessage {
 }
 
 export interface ScheduledMessageInput {
-  scheduleType: "once" | "daily";
+  scheduleType: ScheduleFrequency;
   body: string;
   date: string;
   time: string;

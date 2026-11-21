@@ -3,15 +3,25 @@
  * `now` is always passed in so the rules are unit-testable).
  *
  * An admin schedules a message for a group either:
- *   - once  — on a specific date + time, or
- *   - daily — every day at a time, starting on a date, optionally until an
- *             end date (inclusive).
+ *   - once    — on a specific date + time, or
+ *   - daily   — every day at a time,
+ *   - weekly  — every week on the start date's weekday,
+ *   - monthly — every month on the start date's day of the month (the last
+ *               day of the month in months too short for it, e.g. the 31st),
+ * each starting on a date and optionally until an end date (inclusive).
  *
  * Every date and time an admin types is IST (Asia/Kolkata, fixed +05:30, no
  * DST), the same convention as support-call slots.
  */
 
-export type ScheduleType = 'once' | 'daily';
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+export type ScheduleType = 'once' | RecurringFrequency;
+
+export const SCHEDULE_TYPES: readonly ScheduleType[] = ['once', 'daily', 'weekly', 'monthly'];
+
+export function isRecurring(t: ScheduleType): t is RecurringFrequency {
+  return t !== 'once';
+}
 
 export const SCHEDULE_BODY_MAX = 5000;
 
@@ -71,23 +81,46 @@ export function istTimeOf(at: Date): string {
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
 
-export interface DailyRule {
+export interface RecurringRule {
+  frequency: RecurringFrequency;
   startDate: string; // YYYY-MM-DD, IST
   timeOfDay: string; // HH:MM, IST
   endDate: string | null; // YYYY-MM-DD, IST, inclusive
 }
 
+function daysInMonth(year: number, month0: number): number {
+  return new Date(Date.UTC(year, month0 + 1, 0)).getUTCDate();
+}
+
+/** The monthly run `k` months after the start (day clamped to the month's length). */
+function monthlyRunMs(startDate: string, timeOfDay: string, k: number): number {
+  const [y, m, d] = startDate.split('-').map(Number);
+  const total = (m - 1) + k;
+  const year = y + Math.floor(total / 12);
+  const month0 = ((total % 12) + 12) % 12;
+  const day = Math.min(d, daysInMonth(year, month0));
+  const date = `${year}-${String(month0 + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  return istDateTime(date, timeOfDay)!.getTime();
+}
+
 /**
- * The first daily run at or after `from`, never before the start date and
- * never after the end date. Null when the schedule has no runs left.
+ * The first run at or after `from`, never before the start date and never
+ * after the end date. Null when the schedule has no runs left.
  */
-export function nextDailyRun(rule: DailyRule, from: Date): Date | null {
+export function nextRecurringRun(rule: RecurringRule, from: Date): Date | null {
   const first = istDateTime(rule.startDate, rule.timeOfDay);
   if (!first) return null;
   let candidate = first.getTime();
   if (candidate < from.getTime()) {
-    const days = Math.ceil((from.getTime() - candidate) / DAY_MS);
-    candidate += days * DAY_MS;
+    if (rule.frequency === 'monthly') {
+      // Rough month count, then step forward to the first run >= from.
+      let k = Math.max(0, Math.floor((from.getTime() - candidate) / (31 * DAY_MS)));
+      candidate = monthlyRunMs(rule.startDate, rule.timeOfDay, k);
+      while (candidate < from.getTime()) candidate = monthlyRunMs(rule.startDate, rule.timeOfDay, ++k);
+    } else {
+      const step = rule.frequency === 'weekly' ? 7 * DAY_MS : DAY_MS;
+      candidate += Math.ceil((from.getTime() - candidate) / step) * step;
+    }
   }
   if (rule.endDate) {
     const lastRun = istDateTime(rule.endDate, rule.timeOfDay);
@@ -109,8 +142,8 @@ export interface ValidSchedule {
   body: string;
   /** once: the instant to send. daily: null. */
   sendAt: Date | null;
-  /** daily: the rule. once: null. */
-  daily: DailyRule | null;
+  /** daily/weekly/monthly: the rule. once: null. */
+  recurring: RecurringRule | null;
   /** The first time this schedule will send. */
   nextRunAt: Date;
 }
@@ -120,7 +153,9 @@ export type ValidationResult = { ok: true; value: ValidSchedule } | { ok: false;
 /** Validate an admin's create/edit request. */
 export function validateScheduleInput(input: ScheduleInput, now: Date): ValidationResult {
   const type = input.scheduleType;
-  if (type !== 'once' && type !== 'daily') return { ok: false, error: 'Choose "once" or "daily".' };
+  if (!SCHEDULE_TYPES.includes(type as ScheduleType)) {
+    return { ok: false, error: 'Choose one time, daily, weekly or monthly.' };
+  }
 
   const body = typeof input.body === 'string' ? input.body.trim() : '';
   if (!body) return { ok: false, error: 'Message text is required.' };
@@ -134,7 +169,7 @@ export function validateScheduleInput(input: ScheduleInput, now: Date): Validati
   if (type === 'once') {
     const sendAt = istDateTime(date, time)!;
     if (sendAt.getTime() <= now.getTime()) return { ok: false, error: 'Pick a date and time in the future.' };
-    return { ok: true, value: { scheduleType: 'once', body, sendAt, daily: null, nextRunAt: sendAt } };
+    return { ok: true, value: { scheduleType: 'once', body, sendAt, recurring: null, nextRunAt: sendAt } };
   }
 
   let endDate: string | null = null;
@@ -145,16 +180,17 @@ export function validateScheduleInput(input: ScheduleInput, now: Date): Validati
     if (input.endDate < date) return { ok: false, error: 'The end date must be on or after the start date.' };
     endDate = input.endDate;
   }
-  const daily: DailyRule = { startDate: date, timeOfDay: time, endDate };
-  const nextRunAt = nextDailyRun(daily, now);
-  if (!nextRunAt) return { ok: false, error: 'The end date has already passed — no messages would be sent.' };
-  return { ok: true, value: { scheduleType: 'daily', body, sendAt: null, daily, nextRunAt } };
+  const frequency = type as RecurringFrequency;
+  const recurring: RecurringRule = { frequency, startDate: date, timeOfDay: time, endDate };
+  const nextRunAt = nextRecurringRun(recurring, now);
+  if (!nextRunAt) return { ok: false, error: 'No send time is left before the end date — pick a later end date.' };
+  return { ok: true, value: { scheduleType: frequency, body, sendAt: null, recurring, nextRunAt } };
 }
 
 export interface DueSchedule {
   scheduleType: ScheduleType;
   nextRunAt: Date;
-  daily: DailyRule | null;
+  recurring: RecurringRule | null;
 }
 
 export interface RunDecision {
@@ -165,21 +201,33 @@ export interface RunDecision {
 }
 
 /**
- * What to do with a schedule whose `nextRunAt` has come. A daily schedule
- * always moves to its next day after `now` (never back-fills missed days).
+ * What to do with a schedule whose `nextRunAt` has come. A repeating
+ * schedule always moves to its next run after `now` (never back-fills).
  */
 export function decideDueRun(s: DueSchedule, now: Date, graceMs = SEND_GRACE_MS): RunDecision {
   const late = now.getTime() - s.nextRunAt.getTime();
   const send = late <= graceMs;
-  if (s.scheduleType === 'once' || !s.daily) return { send, nextRunAt: null };
-  return { send, nextRunAt: nextDailyRun(s.daily, new Date(Math.max(now.getTime(), s.nextRunAt.getTime()) + 1)) };
+  if (s.scheduleType === 'once' || !s.recurring) return { send, nextRunAt: null };
+  return { send, nextRunAt: nextRecurringRun(s.recurring, new Date(Math.max(now.getTime(), s.nextRunAt.getTime()) + 1)) };
 }
 
 /**
  * When a paused schedule is resumed (or an edit keeps it active): the next
  * run at or after `now`. A one-time message whose moment has passed has none.
  */
-export function resumeNextRun(s: { scheduleType: ScheduleType; sendAt: Date | null; daily: DailyRule | null }, now: Date): Date | null {
+export function resumeNextRun(s: { scheduleType: ScheduleType; sendAt: Date | null; recurring: RecurringRule | null }, now: Date): Date | null {
   if (s.scheduleType === 'once') return s.sendAt && s.sendAt.getTime() > now.getTime() ? s.sendAt : null;
-  return s.daily ? nextDailyRun(s.daily, now) : null;
+  return s.recurring ? nextRecurringRun(s.recurring, now) : null;
+}
+
+/** Rebuild the rule from a stored row (start_date, time_of_day, end_date). */
+export function ruleFromRow(
+  scheduleType: string,
+  startDate: string | null,
+  timeOfDay: string | null,
+  endDate: string | null,
+): RecurringRule | null {
+  if (!SCHEDULE_TYPES.includes(scheduleType as ScheduleType) || scheduleType === 'once') return null;
+  if (!startDate || !timeOfDay) return null;
+  return { frequency: scheduleType as RecurringFrequency, startDate, timeOfDay, endDate };
 }

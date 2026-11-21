@@ -1,8 +1,9 @@
 "use client";
 
-// Admin — schedule messages for a group chat: once (a date + time) or daily
-// (a time every day from a start date, optionally until an end date). All
-// dates and times are IST. The backend posts them as the admin who created
+// Admin — schedule messages for a group chat: once (a date + time), or
+// repeating daily / weekly (start date's weekday) / monthly (start date's day
+// of the month; last day in shorter months), from a start date and
+// optionally until an end date. All dates and times are IST. The backend posts them as the admin who created
 // them (jobs/chatScheduledMessages.ts).
 
 import { useMemo, useState } from "react";
@@ -27,6 +28,7 @@ import {
   useAdminScheduledMessages,
   useAdminSetScheduledStatus,
   type AdminChatGroup,
+  type ScheduleFrequency,
   type ScheduledGroupMessage,
 } from "@/lib/hooks/useChatGroups";
 
@@ -76,10 +78,41 @@ function fmtInstant(iso: string | null): string {
   });
 }
 
+const FREQUENCIES: { value: ScheduleFrequency; label: string }[] = [
+  { value: "once", label: "One time" },
+  { value: "daily", label: "Every day" },
+  { value: "weekly", label: "Every week" },
+  { value: "monthly", label: "Every month" },
+];
+
+function weekdayOf(d: string | null): string {
+  if (!d) return "—";
+  const [y, m, day] = d.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString("en-IN", { weekday: "long", timeZone: "UTC" });
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function dayOfMonth(d: string | null): number {
+  return d ? Number(d.split("-")[2]) : 0;
+}
+
+/** "Every Monday", "Every month on the 15th", … for a repeating schedule. */
+function cadence(type: ScheduleFrequency, date: string | null): string {
+  if (type === "daily") return "Every day";
+  if (type === "weekly") return `Every ${weekdayOf(date)}`;
+  const d = dayOfMonth(date);
+  return `Every month on the ${ordinal(d)}${d > 28 ? " (last day in shorter months)" : ""}`;
+}
+
 function describe(s: ScheduledGroupMessage): string {
   if (s.scheduleType === "once") return `Once · ${fmtDate(s.date)} at ${fmtTime(s.time)} IST`;
   const until = s.endDate ? ` until ${fmtDate(s.endDate)}` : "";
-  return `Daily at ${fmtTime(s.time)} IST · from ${fmtDate(s.date)}${until}`;
+  return `${cadence(s.scheduleType, s.date)} at ${fmtTime(s.time)} IST · from ${fmtDate(s.date)}${until}`;
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -177,7 +210,7 @@ export function ScheduledMessagesModal({ group, onClose }: Props) {
               <CalendarClock size={26} className="mx-auto text-[#606060] mb-3" />
               <p className="text-sm text-[#a0a0a0]">No scheduled messages for this group yet.</p>
               <p className="text-xs text-[#606060] mt-1">
-                Schedule a one-time message or one that repeats every day.
+                Schedule a one-time message, or one that repeats daily, weekly or monthly.
               </p>
             </div>
           ) : (
@@ -185,7 +218,7 @@ export function ScheduledMessagesModal({ group, onClose }: Props) {
               <div key={s.id} className="rounded-lg border border-[#2a2a2a] bg-[#181818] p-3">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 text-[#a0a0a0]">
-                    {s.scheduleType === "daily" ? <Repeat size={16} /> : <CalendarClock size={16} />}
+                    {s.scheduleType === "once" ? <CalendarClock size={16} /> : <Repeat size={16} />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -264,7 +297,8 @@ function ScheduleForm({
   onDone: () => void;
 }) {
   const save = useAdminSaveScheduledMessage(groupId);
-  const [scheduleType, setScheduleType] = useState<"once" | "daily">(initial?.scheduleType ?? "once");
+  const [scheduleType, setScheduleType] = useState<ScheduleFrequency>(initial?.scheduleType ?? "once");
+  const repeating = scheduleType !== "once";
   const [body, setBody] = useState(initial?.body ?? "");
   const [date, setDate] = useState(initial?.date ?? istToday());
   const [time, setTime] = useState(initial?.time ?? istNextHour());
@@ -280,7 +314,7 @@ function ScheduleForm({
         body: body.trim(),
         date,
         time,
-        endDate: scheduleType === "daily" && endDate ? endDate : null,
+        endDate: repeating && endDate ? endDate : null,
       });
       toast.success(initial ? "Schedule updated" : "Message scheduled");
       onDone();
@@ -298,23 +332,21 @@ function ScheduleForm({
       </div>
 
       <div>
-        <span className={LABEL}>Repeat</span>
-        <div className="mt-1.5 grid grid-cols-2 gap-2">
-          {(["once", "daily"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setScheduleType(t)}
-              className={`h-10 rounded-lg border text-sm font-semibold transition-colors ${
-                scheduleType === t
-                  ? "border-[#dc2626] bg-[#dc2626]/15 text-[#f0f0f0]"
-                  : "border-[#2a2a2a] bg-[#1a1a1a] text-[#a0a0a0] hover:text-[#f0f0f0]"
-              }`}
-            >
-              {t === "once" ? "One time" : "Every day"}
-            </button>
+        <label className={LABEL} htmlFor="sched-frequency">
+          Frequency
+        </label>
+        <select
+          id="sched-frequency"
+          value={scheduleType}
+          onChange={(e) => setScheduleType(e.target.value as ScheduleFrequency)}
+          className={INPUT}
+        >
+          {FREQUENCIES.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.label}
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
       <div>
@@ -346,7 +378,7 @@ function ScheduleForm({
           </label>
           <input id="sched-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} className={INPUT} />
         </div>
-        {scheduleType === "daily" && (
+        {repeating && (
           <div>
             <label className={LABEL} htmlFor="sched-end">
               End date (optional)
@@ -366,7 +398,7 @@ function ScheduleForm({
       <p className="text-xs text-[#a0a0a0]">
         {scheduleType === "once"
           ? `Sends once on ${fmtDate(date)} at ${fmtTime(time)} IST.`
-          : `Sends every day at ${fmtTime(time)} IST from ${fmtDate(date)}${
+          : `Sends ${cadence(scheduleType, date).replace(/^Every/, "every")} at ${fmtTime(time)} IST, starting ${fmtDate(date)}${
               endDate ? ` until ${fmtDate(endDate)}` : " until you pause or delete it"
             }.`}{" "}
         It is posted under your name and members get a notification.

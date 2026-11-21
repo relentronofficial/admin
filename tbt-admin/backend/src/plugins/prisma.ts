@@ -1601,7 +1601,7 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
         body TEXT NOT NULL,
-        schedule_type VARCHAR(10) NOT NULL CHECK (schedule_type IN ('once', 'daily')),
+        schedule_type VARCHAR(10) NOT NULL,
         send_at TIMESTAMPTZ,
         start_date DATE,
         time_of_day VARCHAR(5),
@@ -1617,6 +1617,11 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
     `).catch((err) => fastify.log.warn({ err }, 'chat_group_scheduled_messages DDL failed'));
+    // weekly/monthly added 2026-11-21 — the first version had a CHECK allowing
+    // only once/daily. Valid values are enforced in lib/chatScheduleLogic.ts.
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE chat_group_scheduled_messages DROP CONSTRAINT IF EXISTS chat_group_scheduled_messages_schedule_type_check`
+    ).catch(() => {});
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_chat_sched_due ON chat_group_scheduled_messages(next_run_at) WHERE status = 'active'`
     ).catch(() => {});

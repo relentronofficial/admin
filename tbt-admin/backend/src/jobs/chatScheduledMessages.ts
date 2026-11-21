@@ -13,7 +13,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { decideDueRun, type ScheduleType } from '../lib/chatScheduleLogic.js';
+import { decideDueRun, ruleFromRow, type ScheduleType } from '../lib/chatScheduleLogic.js';
 import { postAdminGroupMessage } from '../modules/chat-groups/controller.js';
 import { SCHEDULED_COLUMNS, type ScheduledRow } from '../modules/chat-groups/scheduled.controller.js';
 
@@ -52,9 +52,7 @@ export async function runDueChatScheduledMessages(fastify: FastifyInstance, now 
       {
         scheduleType: row.schedule_type as ScheduleType,
         nextRunAt: runAt,
-        daily: row.schedule_type === 'daily' && row.start_date && row.time_of_day
-          ? { startDate: row.start_date, timeOfDay: row.time_of_day, endDate: row.end_date }
-          : null,
+        recurring: ruleFromRow(row.schedule_type, row.start_date, row.time_of_day, row.end_date),
       },
       now,
     );
