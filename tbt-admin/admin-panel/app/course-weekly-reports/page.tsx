@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   ClipboardList,
   ChevronLeft,
@@ -269,9 +270,11 @@ function DetailModal({
   const completed = titleList(row?.completedTitles);
   const pending = titleList(row?.pendingTitles);
 
-  return (
+  if (typeof document === "undefined") return null;
+  // Portal to <body> above the fixed sidebar (z-[100]) so nothing covers the view.
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -393,7 +396,8 @@ function DetailModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
