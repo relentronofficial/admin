@@ -866,7 +866,9 @@ function MCPlansSection({
               <ul>
                 {allCourses.slice(0, SHOW).map((c) => <li key={c.id}>{c.title}</li>)}
                 {allCourses.length > SHOW && <li>{`+ ${allCourses.length - SHOW} more`}</li>}
-                {basePerks.slice(2, 4).map((p, i) => <li key={`perk-${i}`}>{p}</li>)}
+                {/* An All Packages purchase always grants lifetime access (lib/coursePaymentGrant.ts). */}
+                <li>Lifetime access</li>
+                <li>{basePerks[3]}</li>
               </ul>
               <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buyingAllAccess} onClick={onBuyAllAccess}>
                 {buyingAllAccess ? "Processing…" : `Get All Packages →`}
