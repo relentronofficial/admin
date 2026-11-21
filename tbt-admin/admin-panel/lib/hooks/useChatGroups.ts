@@ -246,3 +246,86 @@ export function useAdminRaiseTicketFromMessage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
   });
 }
+
+// ── Scheduled messages (one-time or daily, IST) ─────────────────────────────
+
+export type ScheduledMessageStatus = "active" | "paused" | "completed" | "missed" | "cancelled";
+
+export interface ScheduledGroupMessage {
+  id: string;
+  groupId: string;
+  body: string;
+  scheduleType: "once" | "daily";
+  /** IST date — the send date (once) or the start date (daily). */
+  date: string | null;
+  /** IST time, HH:MM. */
+  time: string | null;
+  endDate: string | null;
+  sendAt: string | null;
+  nextRunAt: string | null;
+  status: ScheduledMessageStatus;
+  sentCount: number;
+  lastSentAt: string | null;
+  lastError: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface ScheduledMessageInput {
+  scheduleType: "once" | "daily";
+  body: string;
+  date: string;
+  time: string;
+  endDate?: string | null;
+}
+
+const scheduledKey = (groupId: string) => ["admin", "chat-groups", groupId, "scheduled"];
+
+export function useAdminScheduledMessages(groupId: string | null) {
+  return useQuery({
+    queryKey: scheduledKey(groupId ?? ""),
+    enabled: !!groupId,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/chat-groups/admin/${groupId}/scheduled-messages`);
+      return (res as unknown as { data: ScheduledGroupMessage[] }).data ?? [];
+    },
+  });
+}
+
+export function useAdminSaveScheduledMessage(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...body }: ScheduledMessageInput & { id?: string }) => {
+      const res = id
+        ? await apiClient.put(`/api/chat-groups/admin/${groupId}/scheduled-messages/${id}`, body)
+        : await apiClient.post(`/api/chat-groups/admin/${groupId}/scheduled-messages`, body);
+      return (res as unknown as { data: ScheduledGroupMessage }).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
+  });
+}
+
+export function useAdminSetScheduledStatus(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "active" | "paused" }) => {
+      const res = await apiClient.patch(
+        `/api/chat-groups/admin/${groupId}/scheduled-messages/${id}/status`,
+        { status },
+      );
+      return (res as unknown as { data: ScheduledGroupMessage }).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
+  });
+}
+
+export function useAdminDeleteScheduledMessage(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await apiClient.delete(`/api/chat-groups/admin/${groupId}/scheduled-messages/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
+  });
+}

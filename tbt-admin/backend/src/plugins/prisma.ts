@@ -1593,6 +1593,37 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC)`
     ).catch(() => {});
 
+    // ── Admin-scheduled group-chat messages (one-time or daily). Sent by the
+    // sweep in jobs/chatScheduledMessages.ts; rules in lib/chatScheduleLogic.ts.
+    // Runs after the parallel block so chat_groups exists for the FK.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS chat_group_scheduled_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        group_id UUID NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+        body TEXT NOT NULL,
+        schedule_type VARCHAR(10) NOT NULL CHECK (schedule_type IN ('once', 'daily')),
+        send_at TIMESTAMPTZ,
+        start_date DATE,
+        time_of_day VARCHAR(5),
+        end_date DATE,
+        next_run_at TIMESTAMPTZ,
+        status VARCHAR(12) NOT NULL DEFAULT 'active',
+        created_by_admin_id UUID,
+        sent_count INT NOT NULL DEFAULT 0,
+        last_sent_at TIMESTAMPTZ,
+        last_message_id UUID,
+        last_error TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((err) => fastify.log.warn({ err }, 'chat_group_scheduled_messages DDL failed'));
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_chat_sched_due ON chat_group_scheduled_messages(next_run_at) WHERE status = 'active'`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_chat_sched_group ON chat_group_scheduled_messages(group_id, created_at DESC)`
+    ).catch(() => {});
+
     // lesson_feedback.liked — must run after the parallel block because the
     // CREATE TABLE and ALTER TABLE ran in parallel, creating a race condition
     // where the ALTER could fire before the table existed (silently failing via

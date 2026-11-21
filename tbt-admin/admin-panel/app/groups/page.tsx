@@ -4,7 +4,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { Loader2, Megaphone, MessageSquare, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { CalendarClock, Loader2, Megaphone, MessageSquare, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { useListMembers } from "@/lib/hooks/useMembers";
@@ -17,6 +17,7 @@ import {
 } from "@/lib/hooks/useChatGroups";
 import { EditGroupModal } from "@/components/groups/EditGroupModal";
 import { GroupMessagesModal } from "@/components/groups/GroupMessagesModal";
+import { ScheduledMessagesModal } from "@/components/groups/ScheduledMessagesModal";
 import toast from "react-hot-toast";
 import { formatDistanceToNow } from "date-fns";
 
@@ -34,6 +35,7 @@ export default function AdminGroupsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editGroup, setEditGroup] = useState<AdminChatGroup | null>(null);
   const [messagesGroup, setMessagesGroup] = useState<AdminChatGroup | null>(null);
+  const [scheduleGroup, setScheduleGroup] = useState<AdminChatGroup | null>(null);
   const deleteGroup = useAdminDeleteGroup();
 
   return (
@@ -74,6 +76,7 @@ export default function AdminGroupsPage() {
                 group={g}
                 onEdit={() => setEditGroup(g)}
                 onViewMessages={() => setMessagesGroup(g)}
+                onSchedule={() => setScheduleGroup(g)}
                 onDelete={() => {
                   if (confirm(`Delete "${g.name}"? This removes the group and every message.`)) {
                     deleteGroup.mutate(g.id, {
@@ -95,6 +98,9 @@ export default function AdminGroupsPage() {
       {messagesGroup && (
         <GroupMessagesModal group={messagesGroup} onClose={() => setMessagesGroup(null)} />
       )}
+      {scheduleGroup && (
+        <ScheduledMessagesModal group={scheduleGroup} onClose={() => setScheduleGroup(null)} />
+      )}
     </DashboardLayout>
   );
 }
@@ -103,11 +109,13 @@ function GroupRow({
   group,
   onEdit,
   onViewMessages,
+  onSchedule,
   onDelete,
 }: {
   group: AdminChatGroup;
   onEdit: () => void;
   onViewMessages: () => void;
+  onSchedule: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -149,6 +157,14 @@ function GroupRow({
         className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
       >
         <MessageSquare size={14} />
+      </button>
+      <button
+        onClick={onSchedule}
+        aria-label="Scheduled messages"
+        title="Schedule messages (one-time or daily)"
+        className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
+      >
+        <CalendarClock size={14} />
       </button>
       <button
         onClick={onEdit}

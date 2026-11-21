@@ -71,6 +71,7 @@ import { runCourseExpiryReminder, startCourseExpiryReminderJob } from './jobs/co
 import { startBatchReportJobs } from './jobs/batchReports.js';
 import { startCourseReportJobs } from './jobs/courseReports.js';
 import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
+import { startChatScheduledMessagesJob } from './jobs/chatScheduledMessages.js';
 import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
 import { startLifelineReconcileJob } from './jobs/lifelineReconcile.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
@@ -460,6 +461,10 @@ async function bootstrap() {
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),
       }).catch(() => { /* logged internally */ });
+
+      // Admin-scheduled group-chat messages (one-time / daily) — 30 s sweep,
+      // no Redis needed; rows are claimed atomically so instances never double-post.
+      startChatScheduledMessagesJob(fastify);
 
       // Support-ticket escalation sweep (every 2 minutes — see
       // helpdeskEscalation.ts for why this deviates from the hourly norm).

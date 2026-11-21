@@ -20,7 +20,7 @@
  *   group:member_added · group:member_removed · group:updated
  */
 
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getPresenceBulk, getPresenceBulkWithDb } from '../../plugins/socket.js';
 import { notifyMembers, filterUnmutedMembers } from '../../lib/notifications.js';
 import { createAdminNotification } from '../../lib/adminNotifications.js';
@@ -154,7 +154,8 @@ interface ReactionEntry {
 }
 
 type HydratedMessage = RawMessageRow & {
-  sender: RawMemberRow | null;
+  /** Member sender, or — for an admin's post — the admin as a member-shaped row. */
+  sender: (RawMemberRow & { is_admin?: boolean }) | null;
   reactions: ReactionEntry[];
   readByCount: number;
   readByMemberIds: string[];
@@ -171,21 +172,28 @@ async function hydrateSenders(
     new Set(rows.map((r) => r.reply_to_id).filter((v): v is string => !!v)),
   );
   const senderIds = new Set<string>();
-  for (const r of rows) if (r.sender_member_id) senderIds.add(r.sender_member_id);
+  const adminIds = new Set<string>();
+  for (const r of rows) {
+    if (r.sender_member_id) senderIds.add(r.sender_member_id);
+    else if (r.sender_admin_id) adminIds.add(r.sender_admin_id);
+  }
 
   // Fetch reply parents in one round trip and add their sender ids to the
   // member fetch so we can attach senderName to every quote in one pass.
   const parentRows = replyParentIds.length > 0
     ? await req.server.prisma.$queryRawUnsafe<
-        Array<Pick<RawMessageRow, 'id' | 'sender_member_id' | 'body' | 'media_type' | 'deleted_for_everyone'>>
+        Array<Pick<RawMessageRow, 'id' | 'sender_member_id' | 'sender_admin_id' | 'body' | 'media_type' | 'deleted_for_everyone'>>
       >(
-        `SELECT id, sender_member_id, body, media_type, deleted_for_everyone
+        `SELECT id, sender_member_id, sender_admin_id, body, media_type, deleted_for_everyone
          FROM chat_group_messages
          WHERE id = ANY($1::uuid[])`,
         replyParentIds,
       )
     : [];
-  for (const p of parentRows) if (p.sender_member_id) senderIds.add(p.sender_member_id);
+  for (const p of parentRows) {
+    if (p.sender_member_id) senderIds.add(p.sender_member_id);
+    else if (p.sender_admin_id) adminIds.add(p.sender_admin_id);
+  }
 
   // Fetch reactions early so reactor memberIds join the same member query
   // — avoids a second round trip just to enrich the "who reacted" sheet.
@@ -210,9 +218,31 @@ async function hydrateSenders(
     : [];
   const senderMap = new Map(senders.map((s) => [s.id, s]));
 
+  // Admin posts (e.g. scheduled messages) carry sender_admin_id instead of a
+  // member — show them under the admin's name rather than "Member".
+  const adminIdArr = Array.from(adminIds);
+  const adminRows = adminIdArr.length > 0
+    ? await req.server.prisma.$queryRawUnsafe<Array<{ id: string; full_name: string | null; profile_photo_url: string | null }>>(
+        `SELECT id, full_name, profile_photo_url FROM admins WHERE id = ANY($1::uuid[])`,
+        adminIdArr,
+      ).catch(() => [])
+    : [];
+  const adminMap = new Map<string, RawMemberRow & { is_admin: boolean }>(
+    adminRows.map((a) => [a.id, {
+      id: a.id,
+      first_name: a.full_name?.trim() || 'TBT Admin',
+      last_name: null,
+      profile_photo_url: a.profile_photo_url,
+      business_name: null,
+      is_admin: true,
+    }]),
+  );
+
   const parentMap = new Map<string, ReplyPreview>();
   for (const p of parentRows) {
-    const sender = p.sender_member_id ? senderMap.get(p.sender_member_id) : undefined;
+    const sender = p.sender_member_id
+      ? senderMap.get(p.sender_member_id)
+      : p.sender_admin_id ? adminMap.get(p.sender_admin_id) : undefined;
     const senderName = sender
       ? [sender.first_name, sender.last_name].filter(Boolean).join(' ') || null
       : null;
@@ -271,7 +301,9 @@ async function hydrateSenders(
     const readByMemberIds = readMap.get(row.id) ?? [];
     return {
       ...row,
-      sender: row.sender_member_id ? senderMap.get(row.sender_member_id) ?? null : null,
+      sender: row.sender_member_id
+        ? senderMap.get(row.sender_member_id) ?? null
+        : row.sender_admin_id ? adminMap.get(row.sender_admin_id) ?? null : null,
       reactions: reactionMap.get(row.id) ?? [],
       readByCount: readByMemberIds.length,
       readByMemberIds,
@@ -303,6 +335,7 @@ function messageJson(m: HydratedMessage) {
           firstName: m.sender.first_name,
           lastName: m.sender.last_name,
           profilePhotoUrl: m.sender.profile_photo_url,
+          isAdmin: !!m.sender.is_admin,
         }
       : null,
     reactions: m.reactions,
@@ -1757,6 +1790,74 @@ export async function memberListGroupMediaHandler(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+// ── Admin post (used by scheduled messages) ────────────────────────────────
+
+/**
+ * Post a text message into a group as an admin, with the same side effects
+ * as a member's send: unread counts, `group:message:new` / `group:bumped`
+ * socket events and push + in-app notifications (muted members skipped).
+ * Admins may post even in announcement-only groups. Returns the message id.
+ */
+export async function postAdminGroupMessage(
+  server: FastifyInstance,
+  args: { groupId: string; adminId: string | null; body: string },
+): Promise<string> {
+  const { groupId, adminId } = args;
+  const body = args.body.trim();
+  const prisma = server.prisma;
+  const req = { server } as unknown as FastifyRequest;
+
+  const inserted = await prisma.$queryRawUnsafe<RawMessageRow[]>(
+    `INSERT INTO chat_group_messages (group_id, sender_admin_id, body)
+     VALUES ($1::uuid, $2::uuid, $3)
+     RETURNING *`,
+    groupId,
+    adminId,
+    body,
+  );
+  await prisma.$executeRawUnsafe(`UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`, groupId);
+  await prisma.$executeRawUnsafe(
+    `UPDATE chat_group_members SET unread_count = unread_count + 1
+     WHERE group_id = $1::uuid AND left_at IS NULL`,
+    groupId,
+  );
+
+  const hydrated = await hydrateSenders(req, inserted);
+  const payload = messageJson(hydrated[0]);
+
+  const memberRows = await prisma.$queryRawUnsafe<Array<{ member_id: string }>>(
+    `SELECT member_id FROM chat_group_members WHERE group_id = $1::uuid AND left_at IS NULL`,
+    groupId,
+  );
+  const memberIds = memberRows.map((r) => r.member_id);
+
+  const io = (server as any).io;
+  if (io) {
+    io.to(`group:${groupId}`).emit('group:message:new', payload);
+    for (const mid of memberIds) io.to(`user:${mid}`).emit('group:bumped', { groupId });
+  }
+
+  const groupNameRow = await prisma.$queryRawUnsafe<Array<{ name: string }>>(
+    `SELECT name FROM chat_groups WHERE id = $1::uuid`,
+    groupId,
+  );
+  const groupName = groupNameRow[0]?.name ?? 'Group';
+  const senderName = hydrated[0].sender?.first_name || 'TBT Admin';
+  const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
+  const unmuted = await filterUnmutedMembers(server, groupId, memberIds);
+  if (unmuted.length > 0) {
+    void notifyMembers(server, {
+      memberIds: unmuted,
+      title: `${senderName} in ${groupName}`,
+      body: preview,
+      type: 'group_message',
+      actionUrl: `/messages/group/${groupId}?message=${payload.id}`,
+      data: { groupId, messageId: payload.id },
+    });
+  }
+  return payload.id;
+}
 
 function groupToJson(g: RawGroupRow) {
   return {
