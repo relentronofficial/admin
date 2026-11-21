@@ -1218,11 +1218,15 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
   const allAccessPrice = (visRows[0] as any)?.course_type === 'mini_course'
     ? await resolveAllPackagesPrice(prisma, (visRows[0] as any)?.all_access_price)
     : ((visRows[0] as any)?.all_access_price != null ? Number((visRows[0] as any).all_access_price) : null);
-  let allAccessCourses: { id: string; title: string }[] = [];
+  let allAccessCourses: { id: string; title: string; accessDurationDays: number | null }[] = [];
   if (allAccessPrice != null) {
-    allAccessCourses = await prisma.$queryRawUnsafe<{ id: string; title: string }[]>(
-      `SELECT id, title FROM courses WHERE course_type = 'mini_course' AND is_published = true ORDER BY sort_order, title`,
-    ).catch(() => []);
+    allAccessCourses = (await prisma.$queryRawUnsafe<{ id: string; title: string; access_duration_days: number | null }[]>(
+      `SELECT id, title, access_duration_days FROM courses WHERE course_type = 'mini_course' AND is_published = true ORDER BY sort_order, title`,
+    ).catch(() => [])).map((r) => ({
+      id: r.id,
+      title: r.title,
+      accessDurationDays: r.access_duration_days != null ? Number(r.access_duration_days) : null,
+    }));
   }
 
   const LESSON_BUNNY_URL_RE = /(?:iframe\.mediadelivery\.net\/embed|player\.mediadelivery\.net\/play)\/\d+\/([\w-]+)/;

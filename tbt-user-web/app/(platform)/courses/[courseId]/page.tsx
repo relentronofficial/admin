@@ -685,6 +685,19 @@ function accessOfferLabel(days: unknown) {
   return d > 0 ? `${d}-day access from purchase` : "Lifetime access";
 }
 
+/** All Packages: every course keeps its own access period. */
+function allPackagesAccessLabel(courses: { accessDurationDays?: number | null }[]) {
+  const days = courses.map((c) => (Number(c.accessDurationDays) > 0 ? Number(c.accessDurationDays) : null));
+  if (days.length === 0) return "Access period per course";
+  const unique = [...new Set(days)];
+  if (unique.length === 1) return accessOfferLabel(unique[0]);
+  const limited = days.filter((d): d is number => d != null);
+  const hasLifetime = days.some((d) => d == null);
+  const min = Math.min(...limited), max = Math.max(...limited);
+  const range = min === max ? `${min} days` : `${min}–${max} days`;
+  return `Each course's own access period (${range}${hasLifetime ? " or lifetime" : ""})`;
+}
+
 /** The member's own access (purchase time, duration, expiry), or null when they have none. */
 function accessStatusLines(course: any): string[] | null {
   const paidAt: string | null = course.accessPurchase?.paidAt ?? null;
@@ -845,7 +858,7 @@ function MCPlansSection({
 
         {/* All Packages card — every published mini course (what the purchase grants) */}
         {hasAllAccessPrice && (() => {
-          const allCourses: { id: string; title: string }[] = course.allAccessCourses ?? [];
+          const allCourses: { id: string; title: string; accessDurationDays?: number | null }[] = course.allAccessCourses ?? [];
           const SHOW = 6;
           return (
             <article className="mc-plan-card">
@@ -866,8 +879,8 @@ function MCPlansSection({
               <ul>
                 {allCourses.slice(0, SHOW).map((c) => <li key={c.id}>{c.title}</li>)}
                 {allCourses.length > SHOW && <li>{`+ ${allCourses.length - SHOW} more`}</li>}
-                {/* An All Packages purchase always grants lifetime access (lib/coursePaymentGrant.ts). */}
-                <li>Lifetime access</li>
+                {/* Each course keeps its own access period (lib/coursePaymentGrant.ts). */}
+                <li>{allPackagesAccessLabel(allCourses)}</li>
                 <li>{basePerks[3]}</li>
               </ul>
               <button className="mc-btn mc-btn-dark mc-plan-btn" disabled={buyingAllAccess} onClick={onBuyAllAccess}>

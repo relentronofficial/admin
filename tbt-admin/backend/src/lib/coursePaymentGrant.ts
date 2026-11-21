@@ -31,10 +31,24 @@ export async function grantCourseAccessAfterPayment(params: GrantParams): Promis
   );
 
   // 2. Upsert CourseAccess
-  const hasDuration = accessDurationDays != null && accessDurationDays > 0;
-  const expiresAt = hasDuration
+  let hasDuration = accessDurationDays != null && accessDurationDays > 0;
+  let expiresAt = hasDuration
     ? new Date(Date.now() + accessDurationDays! * 24 * 60 * 60 * 1000)
     : null;
+  // A purchase never shortens access the member already holds: active lifetime access
+  // stays lifetime, and a later existing expiry is kept.
+  const existing = await (prisma as any).courseAccess.findUnique({
+    where: { memberId_courseId: { memberId, courseId } },
+    select: { isActive: true, accessType: true, expiresAt: true },
+  }).catch(() => null);
+  if (existing?.isActive && hasDuration) {
+    if (existing.accessType === 'lifetime') {
+      hasDuration = false;
+      expiresAt = null;
+    } else if (existing.expiresAt && expiresAt && existing.expiresAt > expiresAt) {
+      expiresAt = existing.expiresAt;
+    }
+  }
 
   await (prisma as any).courseAccess.upsert({
     where: { memberId_courseId: { memberId, courseId } },
@@ -141,7 +155,7 @@ export async function loadPaymentForGrant(prisma: PrismaClient, paymentRecordId:
 /**
  * Grants every course a payment covers.
  *  mode 'complete' — first completion: grant all (access duration from the anchor
- *                    course for single/bundle; lifetime for All Packages).
+ *                    course for single/bundle; each course's own for All Packages).
  *  mode 'repair'   — payment already completed: grant only courses the member has
  *                    no active access to (no duplicate notifications), so a late
  *                    /verify or an admin repair fills in what an earlier path missed.
@@ -175,13 +189,17 @@ export async function grantPaymentAccess(params: {
     targets = courseIds.filter((id) => !have.has(id));
   }
 
-  let accessDurationDays: number | null = null;
-  if (payment.payment_type !== 'all_access') {
-    const [c] = await prisma.$queryRawUnsafe<{ access_duration_days: number | null }[]>(
-      `SELECT access_duration_days FROM courses WHERE id = $1::uuid`, payment.course_id,
-    ).catch(() => []);
-    accessDurationDays = c?.access_duration_days != null ? Number(c.access_duration_days) : null;
-  }
+  // Access period: single/bundle purchases use the anchor course's setting for every
+  // course they cover; All Packages gives each course its own setting, exactly as if
+  // that course were bought alone (null = lifetime).
+  const durationRows = await prisma.$queryRawUnsafe<{ id: string; access_duration_days: number | null }[]>(
+    `SELECT id::text AS id, access_duration_days FROM courses WHERE id = ANY($1::uuid[])`,
+    [...new Set([payment.course_id, ...targets])],
+  ).catch(() => []);
+  const durationOf = new Map(durationRows.map((r) => [r.id, r.access_duration_days != null ? Number(r.access_duration_days) : null]));
+  const anchorDuration = durationOf.get(payment.course_id) ?? null;
+  const durationFor = (courseId: string) =>
+    payment.payment_type === 'all_access' ? (durationOf.get(courseId) ?? null) : anchorDuration;
 
   const granted: string[] = [];
   const failed: string[] = [];
@@ -195,7 +213,7 @@ export async function grantPaymentAccess(params: {
         razorpaySignature: params.razorpaySignature ?? payment.razorpay_signature ?? undefined,
         memberId: payment.member_id,
         courseId,
-        accessDurationDays,
+        accessDurationDays: durationFor(courseId),
       });
       granted.push(courseId);
     } catch (err) {
