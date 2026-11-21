@@ -1,29 +1,65 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FileText, Loader2, Send, X } from "lucide-react";
+import { usePathname } from "next/navigation";
 import toast from "react-hot-toast";
-import { useMyEnrollments } from "@/lib/hooks/useCourses";
+import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
 import { useSubmitWeeklyReport } from "@/lib/hooks/useCourseReports";
 
 /** The member's Weekly Report form (one report a week covers every course). Used from
  *  Messages, the Friday/Saturday reminder popup and the locked-video screen. */
-export function WeeklyReportModal({ onClose, intro }: { onClose: () => void; intro?: ReactNode }) {
-  const { data: enrollments } = useMyEnrollments();
-  const submit = useSubmitWeeklyReport();
+export function WeeklyReportModal({
+  onClose,
+  intro,
+  defaultCourseId,
+}: {
+  onClose: () => void;
+  intro?: ReactNode;
+  /** Pre-selects this course (e.g. the course being watched). */
+  defaultCourseId?: string;
+}) {
+  // On a course or lesson page, pre-select that course.
+  const pathname = usePathname();
+  const pageCourseId = pathname?.match(/^\/(?:learning|courses)\/([0-9a-f-]{36})/i)?.[1];
+  const preselectId = defaultCourseId ?? pageCourseId;
 
-  const courses: { id: string; title: string }[] = (
-    ((enrollments as any)?.data ?? (Array.isArray(enrollments) ? enrollments : [])) as any[]
-  ).map((c) => ({ id: c.id ?? c.courseId, title: c.title ?? c.course?.title ?? "Untitled" }));
+  // Every course in the catalog, plus any enrolled course the catalog no longer lists.
+  const { data: catalog, isLoading: catalogLoading, isError: catalogError, refetch } = useCourses({ limit: 200 });
+  const { data: enrollments, isLoading: enrollmentsLoading } = useMyEnrollments();
+  const submit = useSubmitWeeklyReport();
+  const loadingCourses = catalogLoading || enrollmentsLoading;
+
+  const courses = useMemo(() => {
+    const toList = (v: any): any[] => (Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : []);
+    const enrolled = toList(enrollments).map((c) => ({
+      id: String(c.id ?? c.courseId ?? c.course?.id ?? ""),
+      title: String(c.title ?? c.course?.title ?? "Untitled"),
+    }));
+    const all = toList(catalog).map((c) => ({ id: String(c.id ?? ""), title: String(c.title ?? "Untitled").replace(/\s+/g, " ").trim() }));
+    const enrolledIds = new Set(enrolled.map((c) => c.id));
+    const seen = new Set<string>();
+    const out: { id: string; title: string; enrolled: boolean }[] = [];
+    for (const c of [...enrolled, ...all]) {
+      if (!c.id || seen.has(c.id)) continue;
+      seen.add(c.id);
+      out.push({ ...c, enrolled: enrolledIds.has(c.id) });
+    }
+    return out;
+  }, [catalog, enrollments]);
+  const enrolledCourses = courses.filter((c) => c.enrolled);
+  const otherCourses = courses.filter((c) => !c.enrolled);
 
   const [courseId, setCourseId] = useState("");
   const [feedback, setFeedback] = useState("");
   const [remarks, setRemarks] = useState("");
 
-  // One course → nothing to choose.
+  // Pre-select the course being watched, or the only course there is.
   useEffect(() => {
-    if (!courseId && courses.length === 1) setCourseId(courses[0].id);
-  }, [courses, courseId]);
+    if (courseId) return;
+    if (preselectId && courses.some((c) => c.id === preselectId)) setCourseId(preselectId);
+    else if (courses.length === 1) setCourseId(courses[0].id);
+  }, [courses, courseId, preselectId]);
 
   const canSubmit = !!courseId && feedback.trim().length >= 1;
 
@@ -78,16 +114,31 @@ export function WeeklyReportModal({ onClose, intro }: { onClose: () => void; int
             <select
               value={courseId}
               onChange={(e) => setCourseId(e.target.value)}
-              disabled={submit.isPending}
+              disabled={submit.isPending || (loadingCourses && courses.length === 0)}
               className="w-full h-10 px-3 text-sm rounded-lg outline-none border text-foreground bg-transparent disabled:opacity-50"
               style={fieldStyle}
             >
-              <option value="">Select a course…</option>
-              {courses.map((c) => (
-                <option key={c.id} value={c.id}>{c.title}</option>
-              ))}
+              <option value="">{loadingCourses && courses.length === 0 ? "Loading courses…" : "Select a course…"}</option>
+              {enrolledCourses.length > 0 && otherCourses.length > 0 ? (
+                <>
+                  <optgroup label="My courses">
+                    {enrolledCourses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </optgroup>
+                  <optgroup label="All courses">
+                    {otherCourses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+                  </optgroup>
+                </>
+              ) : (
+                courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)
+              )}
             </select>
-            {courses.length === 0 && <p className="text-xs text-muted-foreground mt-1">No enrolled courses found.</p>}
+            {!loadingCourses && courses.length === 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {catalogError ? (
+                  <>Couldn&apos;t load courses. <button type="button" onClick={() => refetch()} className="underline">Try again</button></>
+                ) : "No courses available."}
+              </p>
+            )}
           </div>
 
           <div>

@@ -260,18 +260,20 @@ export async function deliverMemberFeedbackToAdmin(
 ): Promise<DeliverFeedbackResult> {
   const member = await prisma.member.findUnique({
     where: { id: memberId },
-    select: { firstName: true },
+    select: { firstName: true, createdAt: true },
   });
   const enrollment = await prisma.courseEnrollment.findUnique({
     where: { memberId_courseId: { memberId, courseId } },
     select: { enrolledAt: true },
   });
   const course = await prisma.course.findUnique({ where: { id: courseId }, select: { title: true } });
-  if (!member || !enrollment || !course) {
-    throw new Error('Member, enrollment, or course not found');
+  if (!member || !course) {
+    throw new Error('Member or course not found');
   }
 
-  const weekNumber = computeWeekNumberForDate(now, enrollment.enrolledAt);
+  // Weeks count from enrollment; a report about a course the member isn't enrolled
+  // in (any published catalog course) counts from the day they joined.
+  const weekNumber = computeWeekNumberForDate(now, enrollment?.enrolledAt ?? member.createdAt);
 
   const row = await prisma.courseWeeklyFeedback.upsert({
     where: { memberId_courseId_weekNumber: { memberId, courseId, weekNumber } },

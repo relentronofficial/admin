@@ -268,11 +268,16 @@ export async function submitFeedbackHandler(req: FastifyRequest, reply: FastifyR
   const parsed = submitFeedbackSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
 
-  const enrollment = await req.server.prisma.courseEnrollment.findUnique({
-    where: { memberId_courseId: { memberId: req.memberId!, courseId: parsed.data.courseId } },
-    select: { id: true },
-  });
-  if (!enrollment) return fail(reply, 404, 'not_found', 'You are not enrolled in this course.');
+  // The weekly report can be about any published course the member sees in the
+  // catalog, or any course they are enrolled in (even one later unpublished).
+  const [course, enrollment] = await Promise.all([
+    req.server.prisma.course.findUnique({ where: { id: parsed.data.courseId }, select: { isPublished: true } }),
+    req.server.prisma.courseEnrollment.findUnique({
+      where: { memberId_courseId: { memberId: req.memberId!, courseId: parsed.data.courseId } },
+      select: { id: true },
+    }),
+  ]);
+  if (!course || (!course.isPublished && !enrollment)) return fail(reply, 404, 'not_found', 'Course not found.');
 
   const result = await deliverMemberFeedbackToAdmin(req.server.prisma, req.memberId!, parsed.data.courseId, {
     feedback: parsed.data.feedback,
