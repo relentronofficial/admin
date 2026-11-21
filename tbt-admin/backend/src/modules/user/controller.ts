@@ -1399,6 +1399,18 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     razorpayEnabled: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
     accessType: accessRecord?.accessType ?? null,
     accessExpiresAt: accessRecord?.expiresAt ?? null,
+    // Course setting: days of access a purchase gives (null = lifetime).
+    accessDurationDays: (course as any).accessDurationDays ?? null,
+    // This member's own access: when it started and the purchase behind it, if any.
+    accessGrantedAt: accessRecord?.grantedAt ?? null,
+    accessPurchase: accessRecord?.payment
+      ? {
+          paidAt: accessRecord.payment.paidAt ?? accessRecord.payment.createdAt ?? null,
+          amount: accessRecord.payment.amount != null ? Number(accessRecord.payment.amount) : null,
+          method: accessRecord.payment.method ?? null,
+          status: accessRecord.payment.status ?? null,
+        }
+      : null,
     paymentLinkUrl: course.paymentLinkUrl ?? null,
     pendingPayment: pendingPaymentRow ? {
       id: pendingPaymentRow.id,
@@ -2156,7 +2168,10 @@ async function recalculateCourseProgress(request: FastifyRequest, courseId: stri
 async function getCourseAccessRecord(prisma: any, memberId: string, courseId: string) {
   return prisma.courseAccess.findUnique({
     where: { memberId_courseId: { memberId, courseId } },
-    select: { id: true, isActive: true, accessType: true, expiresAt: true },
+    select: {
+      id: true, isActive: true, accessType: true, expiresAt: true, grantedAt: true,
+      payment: { select: { paidAt: true, createdAt: true, amount: true, method: true, status: true } },
+    },
   }).catch(() => null);
 }
 

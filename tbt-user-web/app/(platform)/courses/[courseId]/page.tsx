@@ -670,6 +670,50 @@ function MCRelatedSection({ courses }: { courses: any[] }) {
 
 // ── Plans ─────────────────────────────────────────────────────────────────────
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "21 Nov 2026, 2:04 pm" in IST (all TBT times are IST). */
+function fmtAccessDate(v: string | Date) {
+  return new Date(v).toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata",
+  });
+}
+
+/** What a purchase gives, from the course's access-duration setting. */
+function accessOfferLabel(days: unknown) {
+  const d = Number(days);
+  return d > 0 ? `${d}-day access from purchase` : "Lifetime access";
+}
+
+/** The member's own access (purchase time, duration, expiry), or null when they have none. */
+function accessStatusLines(course: any): string[] | null {
+  const paidAt: string | null = course.accessPurchase?.paidAt ?? null;
+  const startedAt: string | null = paidAt ?? course.accessGrantedAt ?? null;
+  const expiresAt: string | null = course.accessExpiresAt ?? null;
+  const hasRecord = !!course.accessType;
+  if (!hasRecord) return course.hasAccess ? ["Included in your plan"] : null;
+
+  const lines: string[] = [];
+  if (startedAt) lines.push(`${paidAt ? "Purchased on" : "Access granted on"} ${fmtAccessDate(startedAt)}`);
+  if (course.accessType === "lifetime") {
+    lines.push("Lifetime access");
+  } else if (expiresAt) {
+    const exp = new Date(expiresAt).getTime();
+    const now = Date.now();
+    const total = startedAt ? Math.round((exp - new Date(startedAt).getTime()) / DAY_MS) : null;
+    if (exp <= now) {
+      lines.push(`Access expired on ${fmtAccessDate(expiresAt)}`);
+    } else {
+      const left = Math.ceil((exp - now) / DAY_MS);
+      lines.push(`${total && total > 0 ? `${total}-day access · ` : ""}valid until ${fmtAccessDate(expiresAt)}`);
+      lines.push(`${left} day${left !== 1 ? "s" : ""} left`);
+    }
+  } else {
+    lines.push("Access period not set");
+  }
+  return lines;
+}
+
 function MCPlansSection({
   course, courseId, buying, onBuy,
   buyingBundle, onBuyBundle,
@@ -694,10 +738,15 @@ function MCPlansSection({
   const basePerks = [
     lessons.length > 0 && `${lessons.length} lesson${lessons.length !== 1 ? "s" : ""}`,
     totalSecs > 0 && `${fmtDurationSecs(totalSecs)} of content`,
-    course.accessDurationDays ? `${course.accessDurationDays}-day access` : "Lifetime access",
+    accessOfferLabel(course.accessDurationDays),
     "Learn at your own pace",
     "Start immediately",
   ].filter(Boolean) as string[];
+  // Once the member has access, the standalone card shows their own purchase and expiry.
+  const ownedAccess = accessStatusLines(course);
+  const standalonePerks = ownedAccess
+    ? [...basePerks.slice(0, 2), ...ownedAccess, ...basePerks.slice(3)]
+    : basePerks;
 
   const headline = course.purchaseHeadline || "Choose Your Learning Plan";
   // Mini courses always show the same three plan slots (Standalone / Bundle /
@@ -735,7 +784,7 @@ function MCPlansSection({
           <div className="mc-plan-subtitle">CURRICULUM SCOPE:</div>
           <b className="mc-plan-feature-title">Complete {lessons.length}-Lesson Course</b>
           <ul>
-            {basePerks.map((p, i) => <li key={i}>{p}</li>)}
+            {standalonePerks.map((p, i) => <li key={i}>{p}</li>)}
           </ul>
           {course.hasAccess ? (
             <button className="mc-btn mc-btn-green mc-plan-btn" onClick={() => router.push(`/learning/${courseId}`)}>
