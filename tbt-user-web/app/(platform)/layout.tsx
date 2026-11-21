@@ -8,6 +8,7 @@ import { SessionRevocationGuard } from "@/components/guards/SessionRevocationGua
 import { NavAccessGuard } from "@/components/guards/NavAccessGuard";
 import { ActivityHeartbeat } from "@/components/guards/ActivityHeartbeat";
 import { OnboardingTour } from "@/components/features/onboarding-tour/OnboardingTour";
+import { WeeklyReportReminder } from "@/components/features/reports/WeeklyReportReminder";
 import { Suspense } from "react";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,10 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       {/* First-login guided tour (reads ?tour=1, so it needs a Suspense boundary). */}
       <Suspense fallback={null}>
         <OnboardingTour />
+      </Suspense>
+      {/* Mandatory weekly report: Fri/Sat popup + Saturday 6 PM video lock nudge. */}
+      <Suspense fallback={null}>
+        <WeeklyReportReminder />
       </Suspense>
     </div>
   );

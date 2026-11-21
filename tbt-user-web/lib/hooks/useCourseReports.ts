@@ -86,6 +86,25 @@ export function useSubmitWeeklyReport() {
     mutationFn: (body: SubmitFeedbackBody) => courseReportsService.submitFeedback(body),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["course-reports", "feedback", vars.courseId] });
+      // Unlocks course videos (the course detail carries the playable URLs) and the
+      // dashboard's "Weekly Report Submitted" tick.
+      qc.invalidateQueries({ queryKey: ["course-reports", "weekly-status"] });
+      qc.invalidateQueries({ queryKey: ["courses"] });
+      qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] });
     },
+  });
+}
+
+/** Mandatory weekly report status: Fri/Sat reminder + Saturday 18:00 video lock. Always
+ *  refetched on mount/focus — the global QueryClient defaults to refetchOnMount: false. */
+export function useWeeklyReportStatus(enabled = true) {
+  return useQuery({
+    queryKey: ["course-reports", "weekly-status"],
+    queryFn: async () => (await courseReportsService.getWeeklyStatus()).data ?? null,
+    enabled,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60_000,
   });
 }

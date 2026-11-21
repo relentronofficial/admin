@@ -15,6 +15,10 @@ const WEEKLY_JOB_ID = 'weekly-course-report';
 // job (16:00 UTC) to avoid both crons hitting Upstash/WhatsApp at once.
 const WEEKLY_CRON_PATTERN = '0 15 * * 0';
 
+// Mandatory weekly report reminder: Saturday 18:00 IST = 12:30 UTC (lib/weeklyReportReminders.ts).
+const REMINDER_JOB_ID = 'weekly-report-reminder';
+const REMINDER_CRON_PATTERN = '30 12 * * 6';
+
 // Same shape as jobs/batchReports.ts / jobs/courseExpiryReminder.ts — see
 // those files for the reasoning behind the retry/probe limits.
 const MAX_RETRIES = 5;
@@ -70,6 +74,8 @@ async function probeRedis(redisUrl: string): Promise<boolean> {
 export async function startCourseReportJobs(
   prisma: PrismaClient,
   log: { info: (msg: string) => void; warn: (msg: string) => void; error: (obj: unknown, msg: string) => void },
+  /** Sends the Saturday weekly-report reminder; returns a one-line summary for the log. */
+  runWeeklyReminder?: () => Promise<string>,
 ): Promise<void> {
   const redisUrl = env.UPSTASH_REDIS_URL;
   if (!redisUrl) {
@@ -104,6 +110,8 @@ export async function startCourseReportJobs(
       if (job.name === WEEKLY_JOB_ID) {
         const result = await runWeeklyCourseReports(prisma);
         log.info(`[course-reports-job] weekly-course-report — sent=${result.sent} failed=${result.failed} skipped=${result.skipped} total=${result.total}`);
+      } else if (job.name === REMINDER_JOB_ID && runWeeklyReminder) {
+        log.info(`[course-reports-job] weekly-report-reminder — ${await runWeeklyReminder()}`);
       }
     },
     { connection },
@@ -122,6 +130,10 @@ export async function startCourseReportJobs(
   try {
     await queue.upsertJobScheduler(WEEKLY_JOB_ID, { pattern: WEEKLY_CRON_PATTERN });
     log.info(`[course-reports-job] Scheduled — weekly Sun 20:30 IST (${WEEKLY_CRON_PATTERN} UTC)`);
+    if (runWeeklyReminder) {
+      await queue.upsertJobScheduler(REMINDER_JOB_ID, { pattern: REMINDER_CRON_PATTERN });
+      log.info(`[course-reports-job] Scheduled — weekly report reminder Sat 18:00 IST (${REMINDER_CRON_PATTERN} UTC)`);
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log.warn(`[course-reports-job] Could not schedule BullMQ cron — ${msg}. Use POST /api/cron/weekly-course-report instead.`);

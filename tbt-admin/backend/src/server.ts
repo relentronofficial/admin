@@ -75,6 +75,7 @@ import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
 import { startLifelineReconcileJob } from './jobs/lifelineReconcile.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
 import { runWeeklyCourseReports } from './lib/courseReports.js';
+import { runWeeklyReportReminders } from './lib/weeklyReportReminders.js';
 import { registerLowBalanceHandler } from './lib/whatsapp.js';
 import { createAdminNotification } from './lib/adminNotifications.js';
 
@@ -285,6 +286,19 @@ async function bootstrap() {
         return reply.status(500).send({ error: err.message });
       }
     });
+    // HTTP fallback for the Saturday 18:00 IST weekly-report reminder (normally run by BullMQ).
+    fastify.post('/api/cron/weekly-report-reminder', async (req, reply) => {
+      const secret = req.headers['x-cron-secret'];
+      if (!env.CRON_SECRET || secret !== env.CRON_SECRET) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+      try {
+        return reply.send({ success: true, data: await runWeeklyReportReminders(fastify) });
+      } catch (err: any) {
+        fastify.log.error({ err }, '[cron] weekly-report-reminder failed');
+        return reply.status(500).send({ error: err.message });
+      }
+    });
 
     // Root + Health Check
     fastify.get('/', async () => ({ name: 'TBT Admin API', status: 'ok' }));
@@ -439,7 +453,7 @@ async function bootstrap() {
         info: (msg) => fastify.log.info(msg),
         warn: (msg) => fastify.log.warn(msg),
         error: (obj, msg) => fastify.log.error(obj, msg),
-      }).catch(() => { /* logged internally */ });
+      }, async () => JSON.stringify(await runWeeklyReportReminders(fastify))).catch(() => { /* logged internally */ });
 
       startDisappearingMessagesJob(fastify.prisma, (fastify as any).io ?? null, {
         info: (msg) => fastify.log.info(msg),

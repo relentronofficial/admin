@@ -59,7 +59,20 @@ export interface SubmitEpisodeFeedbackBody {
   liked?: boolean;
 }
 
+/** Mandatory weekly report state — see backend lib/weeklyReportGate.ts. */
+export interface WeeklyReportStatus {
+  required: boolean;
+  submittedThisWeek: boolean;
+  showReminder: boolean;
+  locked: boolean;
+  weekStart: string;
+  deadline: string;
+}
+
 export const courseReportsService = {
+  getWeeklyStatus: () =>
+    apiClient.get<never, ApiResponse<WeeklyReportStatus>>("/api/course-reports/weekly-status"),
+
   getCurrentReport: (courseId: string) =>
     apiClient.get<never, ApiResponse<CourseWeeklyReport>>("/api/course-reports/current", {
       params: { courseId },

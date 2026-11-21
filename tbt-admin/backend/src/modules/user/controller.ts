@@ -38,6 +38,8 @@ import {
   refreshLongLivedToken,
 } from '../../lib/instagram.js';
 import { loadMemberModuleAccess, loadActiveModuleOptions, invalidateMemberModuleAccess, saveMemberModuleSelection } from '../../lib/memberModuleAccess.js';
+import { istWeekStart } from '../../lib/weeklyReportGate.js';
+import { isWeeklyReportLocked, WEEKLY_REPORT_REQUIRED } from '../../lib/weeklyReportAccess.js';
 import { isCourseVisible } from '../../lib/courseVisibility.js';
 import { summarizeDmReactions, type DmReactionSummary } from '../../lib/dmMessageActionRules.js';
 import {
@@ -1285,6 +1287,10 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     episodeModuleMap.get(r.episode_id)!.push(r.module_id);
   }
 
+  // Mandatory weekly report: from Saturday 18:00 IST until the member submits, no lesson
+  // carries a playable URL (see lib/weeklyReportGate.ts). The client shows the report form.
+  const weeklyReportLocked = hasAccess ? await isWeeklyReportLocked(prisma as any, memberId) : false;
+
   const lessons = course.courseEpisodes.map((ep) => {
     const prog = ep.progress?.[0];
     const lockState = lockStatesByEpisode.get(ep.id);
@@ -1294,7 +1300,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     // simply not there to intercept. Combined with the POST-progress
     // guard, this makes it impossible for a client to play a locked
     // video by API tampering.
-    let videoUrl = hasAccess && !isLocked ? ep.videoUrl : null;
+    let videoUrl = hasAccess && !isLocked && !weeklyReportLocked ? ep.videoUrl : null;
     const isDrmEnabled = !!(ep as any).drmEnabled;
 
     // Derive bunnyId from explicit field or embedded URL
@@ -1323,7 +1329,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     const cdn = env.BUNNY_CDN_URL
       ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
       : null;
-    const hlsUrl = hasAccess && !isLocked && !isDrmEnabled && bunnyId && cdn
+    const hlsUrl = hasAccess && !isLocked && !weeklyReportLocked && !isDrmEnabled && bunnyId && cdn
       ? `${cdn}/${bunnyId}/playlist.m3u8`
       : null;
     return {
@@ -1385,6 +1391,7 @@ export async function getUserCourseHandler(request: FastifyRequest, reply: Fasti
     createdAt: course.createdAt,
     instructor: course.creator ?? null,
     hasAccess,
+    weeklyReportLocked,
     // Whether this server can take Razorpay payments (same check as create-order).
     // The web paywall decides on this instead of a build-time NEXT_PUBLIC key —
     // the Cloud Run --source build never received that key, so the Pay button was
@@ -4656,6 +4663,7 @@ export async function getEpisodePlaybackHandler(request: FastifyRequest, reply: 
     const courseAccessRecord = await getCourseAccessRecord(request.server.prisma as any, request.memberId, courseEp.courseId);
     if (!isAccessValid(courseAccessRecord)) return fail(reply, 403, 'Access required for this course');
     if (!(await isCourseInMemberModules(request, courseEp.courseId))) return fail(reply, 403, MODULE_NOT_SELECTED);
+    if (await isWeeklyReportLocked(request.server.prisma as any, request.memberId)) return fail(reply, 403, WEEKLY_REPORT_REQUIRED);
 
     const cdn = env.BUNNY_CDN_URL
       ? (env.BUNNY_CDN_URL.startsWith('http') ? env.BUNNY_CDN_URL : `https://${env.BUNNY_CDN_URL}`).replace(/\/$/, '')
@@ -8690,13 +8698,12 @@ export async function getMentorshipStatsHandler(request: FastifyRequest, reply: 
           : Promise.resolve([]),
 
         // Q9: weekly report submitted for current ISO week
-        (async () => {
-          const { isoWeek, isoYear } = isoWeekPartsForDate(new Date());
-          return prisma.$queryRawUnsafe<any[]>(
-            `SELECT id FROM course_weekly_feedback WHERE member_id = $1::uuid AND week_number = $2 LIMIT 1`,
-            memberId, isoWeek,
-          ).catch(() => []);
-        })(),
+        // (week_number is weeks-since-enrollment, not the ISO week, so match on submit time
+        // in the current IST week — the same rule as the mandatory-report gate.)
+        prisma.$queryRawUnsafe<any[]>(
+          `SELECT id FROM course_weekly_feedback WHERE member_id = $1::uuid AND submitted_at >= $2 LIMIT 1`,
+          memberId, istWeekStart(new Date()),
+        ).catch(() => []),
       ]);
 
       const dailyTimeSpentHrs = Number(timeRows[0]?.active_minutes ?? 0) / 60;

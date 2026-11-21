@@ -16,6 +16,7 @@ import {
   getMyReportHistoryHandler,
   submitFeedbackHandler,
   getMyFeedbackHistoryHandler,
+  getWeeklyReportStatusHandler,
   submitEpisodeFeedbackHandler,
   getMyEpisodeFeedbackHandler,
 } from './controller.js';
@@ -57,6 +58,7 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
     userScope.get('/mine', getMyReportHistoryHandler);
     userScope.post('/feedback', submitFeedbackHandler);
     userScope.get('/feedback/mine', getMyFeedbackHistoryHandler);
+    userScope.get('/weekly-status', getWeeklyReportStatusHandler);
 
     userScope.post('/episode-feedback', submitEpisodeFeedbackHandler);
     userScope.get('/episode-feedback/mine', getMyEpisodeFeedbackHandler);

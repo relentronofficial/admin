@@ -276,7 +276,8 @@ export async function deliverMemberFeedbackToAdmin(
   const row = await prisma.courseWeeklyFeedback.upsert({
     where: { memberId_courseId_weekNumber: { memberId, courseId, weekNumber } },
     create: { memberId, courseId, weekNumber, feedback: input.feedback, remarks: input.remarks ?? null },
-    update: { feedback: input.feedback, remarks: input.remarks ?? null },
+    // submittedAt moves on resubmit: the mandatory weekly-report gate counts the latest submit time.
+    update: { feedback: input.feedback, remarks: input.remarks ?? null, submittedAt: now },
   });
 
   if (!env.ADMIN_WHATSAPP_NUMBER) {

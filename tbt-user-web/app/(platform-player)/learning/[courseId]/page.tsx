@@ -43,6 +43,7 @@ import { useSavedVideos, useSaveVideo, useUnsaveVideo } from "@/lib/hooks/useDas
 import { useMe } from "@/lib/hooks/useUser";
 import { getSocket } from "@/lib/socket/client";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
+import { WeeklyReportModal } from "@/components/features/reports/WeeklyReportModal";
 import { normalizeBunnyUrl, withResumeTime } from "@/lib/utils/format";
 import { toast } from "react-hot-toast";
 import { cn } from "@/lib/utils/cn";
@@ -1107,6 +1108,37 @@ function safeTaskLink(raw?: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+// ── Weekly report lock ───────────────────────────────────────────────────────
+// From Saturday 6:00 PM IST until the member submits this week's report, the server sends
+// no playable URL (course.weeklyReportLocked) and this card replaces the player.
+function WeeklyReportLockedCard() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="w-full aspect-video rounded-xl flex items-center justify-center p-6 text-center"
+      style={{ background: "var(--color-bg-surface)", border: "1px solid color-mix(in srgb, var(--color-alert) 30%, transparent)" }}
+    >
+      <div className="max-w-sm space-y-3">
+        <div className="mx-auto w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "color-mix(in srgb, var(--color-alert) 15%, transparent)" }}>
+          <Lock size={20} style={{ color: "var(--color-alert)" }} />
+        </div>
+        <p className="text-base font-bold" style={{ color: "var(--color-text-normal)" }}>Submit your weekly report to continue</p>
+        <p className="text-xs leading-relaxed" style={{ color: "var(--color-text-secondary)" }}>
+          Weekly reports are due every Saturday by 6:00 PM. Course videos stay locked until this week&apos;s report is submitted.
+        </p>
+        <button
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg text-white transition-opacity hover:opacity-90"
+          style={{ background: "var(--color-accent)" }}
+        >
+          <FileText size={14} /> Submit weekly report
+        </button>
+      </div>
+      {open && <WeeklyReportModal onClose={() => setOpen(false)} />}
+    </div>
+  );
 }
 
 // ── Episode Task Item (submit + review-status) ──────────────────────────────
@@ -3664,7 +3696,9 @@ export default function CourseDetailPage({
       <div ref={topRef}>
         {selectedLesson ? (
           <div className="space-y-4">
-            {!selectedLesson.videoUrl ? (
+            {(course as any).weeklyReportLocked ? (
+              <WeeklyReportLockedCard />
+            ) : !selectedLesson.videoUrl ? (
               /* ── Text lesson: full-width content block, no aspect-ratio constraint ── */
               (() => {
                 const sc = (selectedLesson as any).sideContent;

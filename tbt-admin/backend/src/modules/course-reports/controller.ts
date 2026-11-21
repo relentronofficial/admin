@@ -13,6 +13,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { deliverMemberCourseReport, deliverMemberEpisodeFeedbackToAdmin, deliverMemberFeedbackToAdmin } from '../../lib/courseReports.js';
 import { computeWeekNumberForDate } from '../../lib/courseReportLogic.js';
+import { loadWeeklyReportStatus } from '../../lib/weeklyReportAccess.js';
 import {
   createOrSendReportSchema,
   submitEpisodeFeedbackSchema,
@@ -286,6 +287,12 @@ export async function submitFeedbackHandler(req: FastifyRequest, reply: FastifyR
   });
 
   return ok(reply, result);
+}
+
+// GET /api/course-reports/weekly-status — drives the Friday/Saturday reminder popup and the
+// Saturday-18:00 video lock (rules in lib/weeklyReportGate.ts).
+export async function getWeeklyReportStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  return ok(reply, await loadWeeklyReportStatus(req.server.prisma as any, req.memberId!));
 }
 
 export async function getMyFeedbackHistoryHandler(req: FastifyRequest, reply: FastifyReply) {
