@@ -33,7 +33,8 @@ export function WeeklyReportModal({
   const courses = useMemo(() => {
     const toList = (v: any): any[] => (Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : []);
     const enrolled = toList(enrollments).map((c) => ({
-      id: String(c.id ?? c.courseId ?? c.course?.id ?? ""),
+      // enrollment rows: `id` is the enrollment id, the course id is `courseId`
+      id: String(c.courseId ?? c.course?.id ?? c.id ?? ""),
       title: String(c.title ?? c.course?.title ?? "Untitled"),
     }));
     const all = toList(catalog).map((c) => ({ id: String(c.id ?? ""), title: String(c.title ?? "Untitled").replace(/\s+/g, " ").trim() }));
