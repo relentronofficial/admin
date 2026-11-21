@@ -2873,6 +2873,21 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_member_daily_activity_date ON member_daily_activity (activity_date)`
     ).catch(() => {});
+    // members.last_active_at was never written before 2026-11-21 (only member_daily_activity
+    // was). Backfill it from the newest real activity so analytics, At-Risk and My Workspace
+    // see true "last active" dates. Idempotent (only moves dates forward); not awaited so it
+    // never slows startup.
+    void prisma.$executeRawUnsafe(`
+      UPDATE members m SET last_active_at = a.t
+        FROM (
+          SELECT member_id, MAX(t) AS t FROM (
+            SELECT member_id, MAX(last_active_at) AS t FROM member_daily_activity GROUP BY member_id
+            UNION ALL SELECT member_id, MAX(updated_at) FROM course_episode_progress GROUP BY member_id
+            UNION ALL SELECT member_id, MAX(updated_at) FROM member_episode_progress GROUP BY member_id
+          ) x GROUP BY member_id
+        ) a
+       WHERE m.id = a.member_id AND a.t <= now() AND (m.last_active_at IS NULL OR m.last_active_at < a.t)
+    `).catch(() => {});
 
     // ── Course visibility: business category gates (CV-01/CV-02 2026-10-21) ───
     // CV-01: business_categories stored in a separate table (members hit the 1600-column limit).

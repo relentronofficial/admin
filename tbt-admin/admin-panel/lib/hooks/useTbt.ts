@@ -3233,3 +3233,20 @@ export const useMyWorkspaceTeam = () =>
     queryKey: ['my-workspace', 'team'],
     queryFn: async () => (await apiClient.get('/api/my-workspace/team')) as any,
   });
+
+// Admin analytics — searchable member activity table (GET /api/members/analytics/members).
+export type MemberActivityAnalyticsParams = {
+  search?: string; status?: string; plan?: string; batchId?: string; courseId?: string;
+  activity?: string; weeklyReport?: string; rangeDays?: number;
+  sort?: string; order?: 'asc' | 'desc'; page?: number; limit?: number;
+};
+export const useMemberActivityAnalytics = (params: MemberActivityAnalyticsParams) =>
+  useQuery({
+    queryKey: ['analytics-members', params],
+    queryFn: async () => (await apiClient.get('/api/members/analytics/members', { params })) as any,
+    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+  });
+
+export const fetchMemberActivityAnalytics = async (params: MemberActivityAnalyticsParams) =>
+  (await apiClient.get('/api/members/analytics/members', { params })) as any;

@@ -44,7 +44,7 @@ export default function DashboardPage() {
   const stats = overview ? [
     { label: "Total Members", value: overview.totalMembers?.toLocaleString() ?? "—", sub: `+${overview.newMembersLast7d ?? 0} this week`, icon: Users, color: "text-[#e02020]" },
     { label: "Active (30d)", value: overview.activeMembers30d?.toLocaleString() ?? "—", sub: "Last 30 days", icon: Activity, color: "text-blue-500" },
-    { label: "Avg Health Score", value: overview.avgHealthScore != null ? `${overview.avgHealthScore}%` : "—", sub: "Engagement score", icon: TrendingUp, color: "text-purple-500" },
+    { label: "Avg Engagement", value: overview.avgHealthScore != null ? `${overview.avgHealthScore}%` : "—", sub: "Active days, last 14", icon: TrendingUp, color: "text-purple-500" },
     { label: "Completed Episodes", value: overview.completedEpisodes?.toLocaleString() ?? "—", sub: `${overview.completedChallenges ?? 0} challenges`, icon: CheckCircle2, color: "text-green-500" },
   ] : [];
 
@@ -113,7 +113,7 @@ export default function DashboardPage() {
                     <div className="text-right shrink-0 space-y-0.5">
                       <div className="flex items-center gap-1.5 justify-end">
                         <AlertTriangle size={10} className="text-orange-400" />
-                        <span className="text-[11px] text-orange-400 font-bold font-rajdhani">{m.healthScore ?? 0}% health</span>
+                        <span className="text-[11px] text-orange-400 font-bold font-rajdhani">{m.healthScore ?? 0}% engaged</span>
                       </div>
                       <p className="text-[10px] text-[#777]">
                         {m.lastActiveAt ? `Active ${formatDistanceToNow(new Date(m.lastActiveAt), { addSuffix: true })}` : "Never active"}

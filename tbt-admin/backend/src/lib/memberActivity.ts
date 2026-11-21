@@ -49,6 +49,13 @@ export async function recordActiveMinute(prisma: PrismaLike, memberId: string, m
     memberId,
     media,
   );
+  // members.last_active_at is what the admin lists, analytics and My Workspace read.
+  // Written at most once a minute per member (the heartbeat rate).
+  await prisma.$executeRawUnsafe(
+    `UPDATE members SET last_active_at = now()
+      WHERE id = $1::uuid AND (last_active_at IS NULL OR last_active_at < now() - interval '50 seconds')`,
+    memberId,
+  );
 }
 
 /** Fire-and-forget variant for request handlers: never throws, never blocks the response. */

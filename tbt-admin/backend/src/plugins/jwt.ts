@@ -3,6 +3,7 @@ import fp from 'fastify-plugin';
 import fastifyJwt from '@fastify/jwt';
 import crypto from 'crypto';
 import { env } from '../config/env.js';
+import { trackActivity } from '../lib/memberActivity.js';
 import { isLoginRevoked } from '../lib/sessionRevocation.js';
 
 // ── Cookie helpers ──────────────────────────────────────────────────────────────
@@ -343,6 +344,19 @@ function setCachedMemberStatus(memberId: string, status: string) {
 
 // ── Plugin ──────────────────────────────────────────────────────────────────────
 
+// Mobile app activity. The web app sends a once-a-minute heartbeat; the Flutter app
+// doesn't, so any authenticated app request counts as an active minute for Daily Time
+// Spent / last active. One write per member per minute per instance at most (the DB
+// also de-duplicates the minute).
+const _appActivityMinute = new Map<string, number>();
+function noteAppActivity(prisma: Parameters<typeof trackActivity>[0], memberId: string): void {
+  const minute = Math.floor(Date.now() / 60_000);
+  if (_appActivityMinute.get(memberId) === minute) return;
+  _appActivityMinute.set(memberId, minute);
+  if (_appActivityMinute.size > 50_000) _appActivityMinute.clear();
+  trackActivity(prisma, memberId, false);
+}
+
 async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) {
   await fastify.register(fastifyJwt, { secret: env.JWT_ACCESS_SECRET });
 
@@ -350,6 +364,8 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
     // Extract token: Authorization header first, then tbt_access cookie
     let token: string | null = null;
     const authHeader = request.headers.authorization;
+    // The mobile app sends a Bearer token; the web app uses the cookie and its own heartbeat.
+    const fromApp = !!authHeader?.match(/^Bearer\s+/i);
     if (authHeader?.match(/^Bearer\s+/i)) {
       token = authHeader.slice(authHeader.indexOf(' ') + 1).trim();
     } else {
@@ -394,6 +410,7 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
         return reply.status(403).send({ success: false, data: null, error: `Forbidden: Account is ${cached}` });
       }
       request.memberId = memberId;
+      if (fromApp) noteAppActivity(fastify.prisma as any, memberId);
       return;
     }
 
@@ -420,6 +437,7 @@ async function jwtPlugin(fastify: FastifyInstance, _opts: FastifyPluginOptions) 
       }
 
       request.memberId = memberId;
+      if (fromApp) noteAppActivity(fastify.prisma as any, memberId);
     } catch (err: any) {
       request.server.log.error({ err: err.message }, 'Member status lookup failed');
       return reply.status(500).send({ success: false, data: null, error: 'Internal error' });

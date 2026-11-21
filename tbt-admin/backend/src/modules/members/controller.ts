@@ -25,6 +25,9 @@ import { buildSkillRatingsQuery, mergeSkillRatings, profileExtrasSelect, writePr
 import { memberJoinedRange } from '../../lib/memberJoinedRange.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
 
+import { istWeekStart } from '../../lib/weeklyReportGate.js';
+import { buildMemberAnalyticsCountQuery, buildMemberAnalyticsQuery, parseMemberAnalyticsFilters } from '../../lib/memberAnalyticsQuery.js';
+
 // ── Daily Time Spent (admin view) ─────────────────────────────────────────────
 // GET /api/members/:id/daily-activity?days=30  (Clerk admin auth via route hook)
 // Days before tracking went live are returned with tracked=false — they are
@@ -1150,6 +1153,9 @@ function parseUASimple(ua: string | null | undefined): { browser: string; os: st
 export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as { id: string };
   const { page = 1, limit = 25 } = req.query as { page?: number; limit?: number };
+  // Workshop and course history are merged by date, so each source must supply every row up to
+  // the end of the requested page; the merged list is then sliced to that page.
+  const historyEnd = Math.min(5000, Math.max(1, Number(page)) * Number(limit));
 
   const member = await req.server.prisma.member.findUnique({ where: { id }, select: { id: true } });
   if (!member) {
@@ -1161,8 +1167,7 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
     req.server.prisma.memberEpisodeProgress.findMany({
       where: { memberId: id },
       orderBy: { updatedAt: 'desc' },
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
+      take: historyEnd,
       select: {
         episodeId: true,
         lastWatchedSecs: true,
@@ -1197,8 +1202,7 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
     (req.server.prisma as any).courseEpisodeProgress.findMany({
       where: { memberId: id },
       orderBy: { updatedAt: 'desc' },
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
+      take: historyEnd,
       select: {
         episodeId: true,
         lastWatchedSecs: true,
@@ -1297,7 +1301,7 @@ export async function getMemberWatchAnalyticsHandler(req: FastifyRequest, reply:
   });
   const historyItems = [...workshopHistoryItems, ...courseHistoryItems]
     .sort((a, b) => (b.lastWatchedAt > a.lastWatchedAt ? 1 : -1))
-    .slice(0, Number(limit));
+    .slice(historyEnd - Number(limit), historyEnd);
 
   const deviceItems = devices.map(d => {
     const { browser, os } = parseUASimple(d.userAgent);
@@ -1357,86 +1361,184 @@ export async function getMemberActivityTimelineHandler(req: FastifyRequest, repl
   return reply.send({ success: true, data: activities, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
 }
 
-export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: FastifyReply) {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const sevenDaysAgo  = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
-  const activeFilter  = { deletedAt: null } as any;
+// ── Admin analytics ──────────────────────────────────────────────────────────
+// Sources (2026-11-21 audit): members.last_active_at is written on every recorded
+// activity minute (web heartbeat, app API calls, video progress — lib/memberActivity.ts);
+// member_daily_activity holds the per-minute maps; lessons/watch time come from both
+// course_episode_progress and member_episode_progress (workshops). The old
+// health_score / total_points / current_streak columns are never written, so the
+// health score here is computed: active days in the last 14 days, as a percentage.
 
-  const [
-    totalMembers,
-    activeMembers30d,
-    totalEnrollments,
-    completedEpisodes,
-    completedChallenges,
-    submittedAssignments,
-    avgHealthScore,
-    newMembersLast7d,
-  ] = await Promise.all([
-    req.server.prisma.member.count({ where: activeFilter }),
-    req.server.prisma.member.count({ where: { ...activeFilter, lastActiveAt: { gte: thirtyDaysAgo } } }),
-    req.server.prisma.workshopEnrollment.count(),
-    req.server.prisma.memberEpisodeProgress.count({ where: { isCompleted: true } }),
-    req.server.prisma.memberChallengeProgress.count({ where: { status: 'completed' } }),
-    req.server.prisma.assignmentSubmission.count(),
-    req.server.prisma.member.aggregate({ where: activeFilter, _avg: { healthScore: true } }),
-    req.server.prisma.member.count({ where: { ...activeFilter, createdAt: { gte: sevenDaysAgo } } }),
+const HEALTH_SQL = `(SELECT COUNT(*) FROM member_daily_activity d
+                      WHERE d.member_id = m.id
+                        AND d.activity_date > (now() AT TIME ZONE '${ACTIVITY_TIMEZONE}')::date - 14)`;
+const BITS = (col: string) => `length(replace(${col}::text, '0', ''))`;
+
+export async function getAnalyticsOverviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const db = req.server.prisma;
+  const tz = ACTIVITY_TIMEZONE;
+  const today = `(now() AT TIME ZONE '${tz}')::date`;
+  const weekStart = istWeekStart(new Date());
+
+  const [members, learning, activity, tasks, reports, health, daily, legacy, trackingSince] = await Promise.all([
+    db.$queryRawUnsafe<any[]>(`
+      SELECT COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS new7d,
+             COUNT(*) FILTER (WHERE (last_active_at AT TIME ZONE '${tz}')::date = ${today})::int AS active_today,
+             COUNT(*) FILTER (WHERE last_active_at >= now() - interval '7 days')::int AS active7d,
+             COUNT(*) FILTER (WHERE last_active_at >= now() - interval '30 days')::int AS active30d,
+             COUNT(*) FILTER (WHERE last_active_at IS NULL)::int AS never_active
+        FROM members WHERE deleted_at IS NULL`),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT (SELECT COUNT(*) FROM course_enrollments)::int   AS course_enrollments,
+             (SELECT COUNT(*) FROM workshop_enrollments)::int AS workshop_enrollments,
+             (SELECT COUNT(*) FROM course_episode_progress WHERE completed)::int    AS course_lessons,
+             (SELECT COUNT(*) FROM member_episode_progress WHERE is_completed)::int AS workshop_episodes,
+             ((SELECT COUNT(*) FROM course_episode_progress WHERE completed AND completed_at >= now() - interval '30 days')
+            + (SELECT COUNT(*) FROM member_episode_progress WHERE is_completed AND completed_at >= now() - interval '30 days'))::int AS lessons30d,
+             (COALESCE((SELECT SUM(actual_watched_secs) FROM course_episode_progress), 0)
+            + COALESCE((SELECT SUM(actual_watched_secs) FROM member_episode_progress), 0))::bigint AS watch_secs,
+             (SELECT COUNT(*) FROM course_enrollments WHERE completed_at IS NOT NULL)::int AS courses_completed`),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT COALESCE(SUM(${BITS('active_bits')}), 0)::int AS active_minutes,
+             COALESCE(SUM(${BITS('media_bits')}), 0)::int  AS video_minutes,
+             COUNT(DISTINCT member_id)::int AS members
+        FROM member_daily_activity WHERE activity_date > ${today} - 30`),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS submitted30d,
+             COUNT(*) FILTER (WHERE status = 'pending')::int AS pending
+        FROM task_submissions`),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT (SELECT COUNT(DISTINCT member_id) FROM course_weekly_feedback WHERE submitted_at >= $1)::int AS submitted,
+             (SELECT COUNT(DISTINCT ce.member_id) FROM course_enrollments ce
+                JOIN members m ON m.id = ce.member_id
+               WHERE m.deleted_at IS NULL AND m.status = 'active')::int AS required`, weekStart),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT COALESCE(ROUND(AVG(${HEALTH_SQL}) * 100.0 / 14, 1), 0)::float AS avg
+        FROM members m WHERE m.deleted_at IS NULL AND m.status = 'active'`),
+    db.$queryRawUnsafe<any[]>(`
+      SELECT to_char(g.day, 'YYYY-MM-DD') AS date,
+             COUNT(d.member_id)::int AS members,
+             COALESCE(SUM(${BITS('d.active_bits')}), 0)::int AS minutes,
+             COALESCE(SUM(${BITS('d.media_bits')}), 0)::int  AS "videoMinutes"
+        FROM generate_series(${today} - 29, ${today}, interval '1 day') AS g(day)
+        LEFT JOIN member_daily_activity d ON d.activity_date = g.day::date
+       GROUP BY g.day ORDER BY g.day`),
+    Promise.all([
+      db.memberChallengeProgress.count({ where: { status: 'completed' } }),
+      db.assignmentSubmission.count(),
+    ]),
+    getTrackingStartDate(db as any),
   ]);
 
+  const m = members[0], l = learning[0], a = activity[0], t = tasks[0], r = reports[0];
   return reply.send({
     success: true,
     data: {
-      totalMembers,
-      activeMembers30d,
-      totalEnrollments,
-      completedEpisodes,
-      completedChallenges,
-      submittedAssignments,
-      avgHealthScore: Math.round((avgHealthScore._avg.healthScore ?? 0) * 10) / 10,
-      newMembersLast7d,
+      // keys the dashboard already reads
+      totalMembers: m.total,
+      newMembersLast7d: m.new7d,
+      activeMembers30d: m.active30d,
+      totalEnrollments: l.course_enrollments + l.workshop_enrollments,
+      completedEpisodes: l.course_lessons + l.workshop_episodes,
+      completedChallenges: legacy[0],
+      submittedAssignments: legacy[1],
+      avgHealthScore: Number(health[0]?.avg ?? 0),
+      // accurate activity
+      activeToday: m.active_today,
+      activeMembers7d: m.active7d,
+      neverActive: m.never_active,
+      courseEnrollments: l.course_enrollments,
+      workshopEnrollments: l.workshop_enrollments,
+      coursesCompleted: l.courses_completed,
+      courseLessonsCompleted: l.course_lessons,
+      workshopEpisodesCompleted: l.workshop_episodes,
+      lessonsCompleted30d: l.lessons30d,
+      totalWatchHours: Math.round(Number(l.watch_secs) / 360) / 10,
+      activeMinutes30d: a.active_minutes,
+      videoMinutes30d: a.video_minutes,
+      avgActiveMinutesPerMember30d: a.members ? Math.round(a.active_minutes / a.members) : 0,
+      tasksSubmitted30d: t.submitted30d,
+      tasksPendingReview: t.pending,
+      weeklyReports: { submitted: r.submitted, required: r.required, weekStart: weekStart.toISOString() },
+      dailyActive: daily,
+      trackingSince,
+      timeZone: tz,
     },
     error: null,
   });
 }
 
 export async function getAtRiskMembersHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { inactiveDays = 7, completionThreshold = 50, page = 1, limit = 20 } = req.query as {
-    inactiveDays?: number; completionThreshold?: number; page?: number; limit?: number;
-  };
+  const q = req.query as { inactiveDays?: string; completionThreshold?: string; page?: string; limit?: string };
+  const inactiveDays = Math.max(1, Math.min(365, Math.floor(Number(q.inactiveDays) || 7)));
+  const threshold = Math.max(0, Math.min(100, Number(q.completionThreshold) || 50));
+  const limit = Math.max(1, Math.min(500, Math.floor(Number(q.limit) || 20)));
+  const page = Math.max(1, Math.floor(Number(q.page) || 1));
 
-  const safeThreshold = Math.max(0, Math.min(100, Number(completionThreshold) || 50));
-  const cutoff = new Date(Date.now() - Number(inactiveDays) * 24 * 60 * 60 * 1000);
+  // Active members who are enrolled in something but have gone quiet.
+  const where = `
+    FROM members m
+   WHERE m.deleted_at IS NULL AND m.status = 'active'
+     AND (m.last_active_at IS NULL OR m.last_active_at < now() - make_interval(days => $1::int))
+     AND (EXISTS (SELECT 1 FROM course_enrollments ce WHERE ce.member_id = m.id)
+       OR EXISTS (SELECT 1 FROM workshop_enrollments we WHERE we.member_id = m.id))
+     AND ${HEALTH_SQL} * 100.0 / 14 < $2::numeric`;
 
-  const where = {
-    deletedAt: null,
-    OR: [
-      { lastActiveAt: { lt: cutoff } },
-      { lastActiveAt: null },
-    ],
-    healthScore: { lt: safeThreshold },
-  } as any;
-
-  const [members, total] = await Promise.all([
-    req.server.prisma.member.findMany({
-      where,
-      select: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        healthScore: true,
-        totalPoints: true,
-        currentStreak: true,
-        lastActiveAt: true,
-        _count: { select: { workshopEnrollments: true } },
-      },
-      orderBy: [{ healthScore: 'asc' }, { createdAt: 'asc' }],
-      take: Number(limit),
-      skip: (Number(page) - 1) * Number(limit),
-    }),
-    req.server.prisma.member.count({ where }),
+  const [rows, count] = await Promise.all([
+    req.server.prisma.$queryRawUnsafe<any[]>(`
+      SELECT m.id, m.first_name AS "firstName", m.last_name AS "lastName", m.email, m.phone,
+             m.last_active_at AS "lastActiveAt",
+             ROUND(${HEALTH_SQL} * 100.0 / 14)::int AS "healthScore",
+             (SELECT COUNT(*) FROM course_enrollments ce WHERE ce.member_id = m.id)::int AS "courseEnrollments",
+             (SELECT COUNT(*) FROM workshop_enrollments we WHERE we.member_id = m.id)::int AS "workshopEnrollments"
+      ${where}
+      ORDER BY m.last_active_at DESC NULLS LAST, m.created_at ASC
+      LIMIT $3 OFFSET $4`, inactiveDays, threshold, limit, (page - 1) * limit),
+    req.server.prisma.$queryRawUnsafe<{ total: number }[]>(`SELECT COUNT(*)::int AS total ${where}`, inactiveDays, threshold),
   ]);
 
-  return reply.send({ success: true, data: members, meta: { total, page: Number(page), limit: Number(limit) }, error: null });
+  const data = rows.map((r) => ({ ...r, _count: { workshopEnrollments: r.workshopEnrollments, courseEnrollments: r.courseEnrollments } }));
+  return reply.send({ success: true, data, meta: { total: count[0]?.total ?? 0, page, limit, inactiveDays }, error: null });
+}
+
+/** GET /api/members/analytics/members — searchable, filterable member activity table. */
+export async function getMemberActivityAnalyticsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const f = parseMemberAnalyticsFilters(req.query as Record<string, unknown>);
+  const weekStart = istWeekStart(new Date());
+  const list = buildMemberAnalyticsQuery(f, ACTIVITY_TIMEZONE, weekStart);
+  const count = buildMemberAnalyticsCountQuery(f, ACTIVITY_TIMEZONE, weekStart);
+  const [rows, totalRows] = await Promise.all([
+    req.server.prisma.$queryRawUnsafe<any[]>(list.sql, ...list.params),
+    req.server.prisma.$queryRawUnsafe<{ total: number }[]>(count.sql, ...count.params),
+  ]);
+  const data = rows.map((r) => ({
+    id: r.id,
+    memberId: r.member_id,
+    name: [r.first_name, r.last_name].filter(Boolean).join(' '),
+    email: r.email,
+    phone: r.phone,
+    status: r.status,
+    plan: r.plan,
+    batchName: r.batch_name,
+    joinedAt: r.created_at,
+    lastActiveAt: r.last_active_at,
+    activeDays: r.active_days,
+    activeMinutes: r.active_minutes,
+    videoMinutes: r.video_minutes,
+    lessonsCompleted: r.lessons_range,
+    lessonsCompletedTotal: r.lessons_total,
+    watchMinutesTotal: Math.round(Number(r.watch_secs) / 60),
+    coursesEnrolled: r.courses,
+    tasksSubmitted: r.tasks_range,
+    weeklyReportSubmitted: r.weekly_report,
+  }));
+  return reply.send({
+    success: true,
+    data,
+    meta: { total: totalRows[0]?.total ?? 0, page: f.page, limit: f.limit, rangeDays: f.rangeDays },
+    error: null,
+  });
 }
 
 export async function getCompletionMatrixHandler(req: FastifyRequest, reply: FastifyReply) {

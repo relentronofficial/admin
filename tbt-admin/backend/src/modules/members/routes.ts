@@ -20,6 +20,7 @@ import {
   getMemberDailyActivityHandler,
   getAnalyticsOverviewHandler,
   getAtRiskMembersHandler,
+  getMemberActivityAnalyticsHandler,
   getCompletionMatrixHandler,
   reviewAssignmentHandler,
   listAllAssignmentSubmissionsHandler,
@@ -42,6 +43,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
   // Analytics (overview routes first to avoid :id capture)
   fastify.get('/analytics/overview', getAnalyticsOverviewHandler);
   fastify.get('/analytics/at-risk', getAtRiskMembersHandler);
+  fastify.get('/analytics/members', getMemberActivityAnalyticsHandler);
   fastify.get('/analytics/workshop/:workshopId/matrix', getCompletionMatrixHandler);
   fastify.get('/assignments', listAllAssignmentSubmissionsHandler);
   fastify.patch('/assignments/:submissionId/review', reviewAssignmentHandler);
