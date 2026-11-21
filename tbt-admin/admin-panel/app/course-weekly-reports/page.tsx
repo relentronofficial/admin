@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ClipboardList,
   ChevronLeft,
@@ -18,6 +18,7 @@ import {
   Star,
   ThumbsUp,
   ThumbsDown,
+  X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
@@ -28,6 +29,8 @@ import {
   useListCourseEpisodeFeedback,
   useUpdateCourseEpisodeFeedbackStatus,
   useListVodCourses,
+  useGetCourseWeeklyReport,
+  useGetCourseWeeklyFeedback,
 } from "@/lib/hooks/useTbt";
 import { useListMembers } from "@/lib/hooks/useMembers";
 import { cn } from "@/lib/utils";
@@ -208,6 +211,192 @@ function CreateSendPanel() {
   );
 }
 
+function ViewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-[#a0a0a0] hover:text-[#f0f0f0] transition-colors whitespace-nowrap"
+      title="View full report"
+    >
+      <Eye size={13} /> View
+    </button>
+  );
+}
+
+// ─── Full-detail modal (Reports + Weekly Feedback rows) ──────────────────────
+
+function titleList(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((t: any) => (typeof t === "string" ? t : t?.title ?? t?.name ?? ""))
+    .filter((t: string) => !!t);
+}
+
+function DetailField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani mb-1">{label}</p>
+      <div className="text-xs text-[#e0e0e0]">{children}</div>
+    </div>
+  );
+}
+
+function fmtDateTime(v: string | null | undefined) {
+  return v ? format(new Date(v), "dd MMM yyyy, HH:mm") : "—";
+}
+
+function DetailModal({
+  kind,
+  id,
+  onClose,
+}: {
+  kind: "report" | "feedback";
+  id: string;
+  onClose: () => void;
+}) {
+  const reportQ = useGetCourseWeeklyReport(kind === "report" ? id : null);
+  const feedbackQ = useGetCourseWeeklyFeedback(kind === "feedback" ? id : null);
+  const q = kind === "report" ? reportQ : feedbackQ;
+  const row: any = q.data;
+  const updateStatus = useUpdateCourseFeedbackStatus();
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const completed = titleList(row?.completedTitles);
+  const pending = titleList(row?.pendingTitles);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-[#141414] border border-[#2a2a2a] rounded-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 flex items-start justify-between gap-4 px-5 py-4 bg-[#141414] border-b border-[#2a2a2a]">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-widest">
+              {kind === "report" ? "Weekly Progress Report" : "Member Weekly Report"}
+            </h2>
+            {row && (
+              <p className="text-xs text-[#888] mt-0.5 truncate">
+                {row.member?.firstName} {row.member?.lastName ?? ""} · {row.course?.title} · Week {row.weekNumber}
+              </p>
+            )}
+          </div>
+          <button onClick={onClose} className="text-[#888] hover:text-[#f0f0f0] transition-colors" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-5 py-5 space-y-5">
+          {q.isLoading ? (
+            <p className="text-sm text-[#888] py-8 text-center">Loading…</p>
+          ) : q.isError || !row ? (
+            <p className="text-sm text-[#dc2626] py-8 text-center">Could not load this report.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <DetailField label="Member">
+                  <p>{row.member?.firstName} {row.member?.lastName ?? ""}</p>
+                  {row.member?.phone && <p className="text-[#888]">{row.member.phone}</p>}
+                  {row.member?.email && <p className="text-[#888] break-all">{row.member.email}</p>}
+                </DetailField>
+                <DetailField label="Course">{row.course?.title ?? "—"}</DetailField>
+                <DetailField label="Week">{row.weekNumber}</DetailField>
+                {kind === "report" ? (
+                  <>
+                    <DetailField label="Status"><StatusBadge status={row.whatsappStatus ?? row.status} /></DetailField>
+                    <DetailField label="Created">{fmtDateTime(row.createdAt)}</DetailField>
+                    <DetailField label="Sent at">{fmtDateTime(row.whatsappSentAt)}</DetailField>
+                  </>
+                ) : (
+                  <>
+                    <DetailField label="Review status"><StatusBadge status={row.status} /></DetailField>
+                    <DetailField label="Submitted">{fmtDateTime(row.submittedAt)}</DetailField>
+                    <DetailField label="Last updated">{fmtDateTime(row.updatedAt)}</DetailField>
+                    <DetailField label="WhatsApp to admin"><StatusBadge status={row.whatsappStatus} /></DetailField>
+                  </>
+                )}
+              </div>
+
+              {kind === "report" && (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">Progress</p>
+                      <p className="text-xs text-[#e0e0e0]">
+                        {row.completedLessons}/{row.totalLessons} lessons · {row.progressPercentage}%
+                      </p>
+                    </div>
+                    <div className="h-2 rounded-full bg-[#2a2a2a] overflow-hidden">
+                      <div
+                        className="h-full bg-[#dc2626]"
+                        style={{ width: `${Math.max(0, Math.min(100, Number(row.progressPercentage) || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <DetailField label={`Completed lessons (${completed.length})`}>
+                      {completed.length ? (
+                        <ul className="space-y-1 list-disc pl-4">
+                          {completed.map((t, i) => <li key={i}>{t}</li>)}
+                        </ul>
+                      ) : <span className="text-[#606060]">None this week</span>}
+                    </DetailField>
+                    <DetailField label={`Pending lessons (${pending.length})`}>
+                      {pending.length ? (
+                        <ul className="space-y-1 list-disc pl-4 text-[#a0a0a0]">
+                          {pending.map((t, i) => <li key={i}>{t}</li>)}
+                        </ul>
+                      ) : <span className="text-[#606060]">None</span>}
+                    </DetailField>
+                  </div>
+                </>
+              )}
+
+              {kind === "feedback" && (
+                <DetailField label="Report">
+                  <p className="whitespace-pre-wrap leading-relaxed bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg p-3 break-words">
+                    {row.feedback || <span className="text-[#606060] italic">Empty</span>}
+                  </p>
+                </DetailField>
+              )}
+
+              <DetailField label="Admin remarks">
+                <p className="whitespace-pre-wrap break-words">{row.remarks || <span className="text-[#606060]">—</span>}</p>
+              </DetailField>
+
+              {row.whatsappFailureReason && (
+                <DetailField label="WhatsApp failure reason">
+                  <p className="text-[#dc2626] break-words">{row.whatsappFailureReason}</p>
+                </DetailField>
+              )}
+
+              {kind === "feedback" && row.status === "new" && (
+                <button
+                  onClick={() => updateStatus.mutate({ id: row.id, status: "reviewed" })}
+                  disabled={updateStatus.isPending}
+                  className="inline-flex items-center gap-2 px-4 h-9 text-xs font-bold uppercase tracking-widest rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40 transition-colors"
+                >
+                  <CheckCircle2 size={13} /> Mark Reviewed
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Pagination footer ──────────────────────────────────────────────────────
 
 function Pagination({ page, setPage, total, limit }: { page: number; setPage: (fn: (p: number) => number) => void; total: number; limit: number }) {
@@ -243,6 +432,7 @@ function ReportsTab({ courses }: { courses: any[] }) {
   const [page, setPage] = useState(1);
   const [courseFilter, setCourseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
   const LIMIT = 25;
 
   const { data, isLoading } = useListCourseWeeklyReports({
@@ -296,7 +486,7 @@ function ReportsTab({ courses }: { courses: any[] }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#2a2a2a]">
-                  {["Member", "Course", "Week", "Progress", "Status", "Remarks", "Sent At"].map((h) => (
+                  {["Member", "Course", "Week", "Progress", "Status", "Remarks", "Sent At", ""].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-[#888] font-rajdhani whitespace-nowrap">
                       {h}
                     </th>
@@ -305,7 +495,7 @@ function ReportsTab({ courses }: { courses: any[] }) {
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={row.id} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors", i === rows.length - 1 && "border-b-0")}>
+                  <tr key={row.id} onClick={() => setOpenId(row.id)} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors cursor-pointer", i === rows.length - 1 && "border-b-0")}>
                     <td className="px-4 py-3">
                       <p className="text-[#f0f0f0] font-medium text-xs">{row.member?.firstName} {row.member?.lastName ?? ""}</p>
                       <p className="text-[#888] text-[11px]">{row.member?.phone}</p>
@@ -321,6 +511,9 @@ function ReportsTab({ courses }: { courses: any[] }) {
                       <p className="text-[#a0a0a0] text-xs">{row.whatsappSentAt ? format(new Date(row.whatsappSentAt), "dd MMM yyyy") : "—"}</p>
                       {row.whatsappSentAt && <p className="text-[#888] text-[11px]">{format(new Date(row.whatsappSentAt), "HH:mm:ss")}</p>}
                     </td>
+                    <td className="px-4 py-3">
+                      <ViewButton onClick={() => setOpenId(row.id)} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -330,16 +523,19 @@ function ReportsTab({ courses }: { courses: any[] }) {
       </div>
 
       <Pagination page={page} setPage={setPage} total={total} limit={LIMIT} />
+      {openId && <DetailModal kind="report" id={openId} onClose={() => setOpenId(null)} />}
     </div>
   );
 }
 
 // ─── Feedback tab ────────────────────────────────────────────────────────────
 
-function FeedbackTab({ courses }: { courses: any[] }) {
+function FeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId: string | null }) {
   const [page, setPage] = useState(1);
   const [courseFilter, setCourseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
+  useEffect(() => { if (initialOpenId) setOpenId(initialOpenId); }, [initialOpenId]);
   const LIMIT = 25;
 
   const { data, isLoading } = useListCourseWeeklyFeedback({
@@ -402,7 +598,7 @@ function FeedbackTab({ courses }: { courses: any[] }) {
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={row.id} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors", i === rows.length - 1 && "border-b-0")}>
+                  <tr key={row.id} onClick={() => setOpenId(row.id)} className={cn("border-b border-[#1f1f1f] hover:bg-[#181818] transition-colors cursor-pointer", i === rows.length - 1 && "border-b-0")}>
                     <td className="px-4 py-3">
                       <p className="text-[#f0f0f0] font-medium text-xs">{row.member?.firstName} {row.member?.lastName ?? ""}</p>
                       <p className="text-[#888] text-[11px]">{row.member?.phone}</p>
@@ -416,15 +612,18 @@ function FeedbackTab({ courses }: { courses: any[] }) {
                       <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p>
                     </td>
                     <td className="px-4 py-3">
-                      {row.status === "new" && (
-                        <button
-                          onClick={() => updateStatus.mutate({ id: row.id, status: "reviewed" })}
-                          disabled={updateStatus.isPending}
-                          className="text-[11px] font-bold uppercase tracking-wider text-[#dc2626] hover:text-red-400 disabled:opacity-40 transition-colors"
-                        >
-                          Mark Reviewed
-                        </button>
-                      )}
+                      <div className="flex items-center gap-3">
+                        <ViewButton onClick={() => setOpenId(row.id)} />
+                        {row.status === "new" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); updateStatus.mutate({ id: row.id, status: "reviewed" }); }}
+                            disabled={updateStatus.isPending}
+                            className="text-[11px] font-bold uppercase tracking-wider text-[#dc2626] hover:text-red-400 disabled:opacity-40 transition-colors whitespace-nowrap"
+                          >
+                            Mark Reviewed
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -435,6 +634,7 @@ function FeedbackTab({ courses }: { courses: any[] }) {
       </div>
 
       <Pagination page={page} setPage={setPage} total={total} limit={LIMIT} />
+      {openId && <DetailModal kind="feedback" id={openId} onClose={() => setOpenId(null)} />}
     </div>
   );
 }
@@ -607,6 +807,7 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
 export default function CourseWeeklyReportsPage() {
   const [tab, setTab] = useState<"reports" | "feedback" | "video-feedback">("reports");
   const [initialOpenFeedbackId, setInitialOpenFeedbackId] = useState<string | null>(null);
+  const [initialOpenWeeklyId, setInitialOpenWeeklyId] = useState<string | null>(null);
 
   // Deep-link from notification: ?tab=video-feedback&open=<feedbackId>
   useEffect(() => {
@@ -614,7 +815,10 @@ export default function CourseWeeklyReportsPage() {
     const t = params.get("tab");
     const openId = params.get("open");
     if (t === "video-feedback" || t === "feedback" || t === "reports") setTab(t);
-    if (openId) setInitialOpenFeedbackId(openId);
+    if (openId) {
+      if (t === "feedback") setInitialOpenWeeklyId(openId);
+      else setInitialOpenFeedbackId(openId);
+    }
     if (t || openId) window.history.replaceState({}, "", "/course-weekly-reports");
   }, []);
   const { data: coursesRes } = useListVodCourses({ limit: 200 });
@@ -653,7 +857,7 @@ export default function CourseWeeklyReportsPage() {
         {tab === "reports" ? (
           <ReportsTab courses={courses} />
         ) : tab === "feedback" ? (
-          <FeedbackTab courses={courses} />
+          <FeedbackTab courses={courses} initialOpenId={initialOpenWeeklyId} />
         ) : (
           <EpisodeFeedbackTab courses={courses} initialOpenId={initialOpenFeedbackId} />
         )}

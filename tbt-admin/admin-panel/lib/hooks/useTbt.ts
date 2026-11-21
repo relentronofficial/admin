@@ -1885,6 +1885,30 @@ export const useUpdateCourseFeedbackStatus = () => {
   });
 };
 
+/** One weekly report, full detail (lesson titles, remarks, delivery). */
+export const useGetCourseWeeklyReport = (id: string | null) =>
+  useQuery({
+    queryKey: ['course-weekly-reports', 'detail', id],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/course-reports/admin/reports/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
+/** One member weekly report (feedback) submission, full text. */
+export const useGetCourseWeeklyFeedback = (id: string | null) =>
+  useQuery({
+    queryKey: ['course-weekly-feedback', 'detail', id],
+    queryFn: async () => {
+      const res: any = await apiClient.get(`/api/course-reports/admin/feedback/${id}`);
+      return res.data;
+    },
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+
 // ── Course video (episode) feedback — member → admin per-video feedback ──
 
 export const useListCourseEpisodeFeedback = (params: { page?: number; limit?: number; memberId?: string; courseId?: string; episodeId?: string; status?: string } = {}) =>
