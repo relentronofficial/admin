@@ -1133,7 +1133,28 @@ function EpisodeTaskItem({
   const resourceHref = safeTaskLink(task.contentUrl);
   const proofType = task.proofType || "watch";
   const status = task.submission?.status ?? null;
-  const isEditable = status === null || status === "pending" || status === "rejected" || status === "resubmission_required";
+  const needsChanges = status === "rejected" || status === "resubmission_required";
+  // The form is open when nothing is submitted yet or the admin asked for changes.
+  // Otherwise the member sees their submission and opens the form with "Edit submission".
+  const [editing, setEditing] = useState(status === null || needsChanges);
+  useEffect(() => { if (needsChanges) setEditing(true); }, [needsChanges]);
+  const isEditable = editing;
+  const hasSubmission = !!task.submission;
+  const submittedHref = safeTaskLink(task.submission?.proofUrl);
+
+  const finishSubmit = () => {
+    setEditing(false);
+    if (didPauseRef.current) {
+      didPauseRef.current = false;
+      onResumeVideo?.();
+    }
+  };
+
+  const cancelEdit = () => {
+    setTextValue(task.submission?.responseValue ?? "");
+    setUrlValue(task.submission?.proofUrl ?? "");
+    finishSubmit();
+  };
 
   const pauseOnce = () => {
     if (!didPauseRef.current) {
@@ -1147,11 +1168,8 @@ function EpisodeTaskItem({
     try {
       const publicUrl = await uploadProof(file, task.id);
       await submitTask.mutateAsync({ taskId: task.id, proofUrl: publicUrl, proofType });
-      toast.success("Task submitted");
-      if (didPauseRef.current) {
-        didPauseRef.current = false;
-        onResumeVideo?.();
-      }
+      toast.success(hasSubmission ? "File replaced and resubmitted" : "Task submitted");
+      finishSubmit();
     } catch {
       toast.error("Upload failed — please try again");
     } finally {
@@ -1169,11 +1187,10 @@ function EpisodeTaskItem({
         proofUrl: (proofType === "link" || proofType === "video") ? urlValue.trim() : undefined,
         proofType,
       });
-      toast.success(task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review");
-      if (didPauseRef.current) {
-        didPauseRef.current = false;
-        onResumeVideo?.();
-      }
+      toast.success(hasSubmission
+        ? (task.completionMode === "SELF_ASSESSMENT" ? "Submission updated" : "Resubmitted for review")
+        : (task.completionMode === "SELF_ASSESSMENT" ? "Task completed" : "Submitted for review"));
+      finishSubmit();
     } catch {
       toast.error("Couldn't submit — please try again");
     }
@@ -1265,8 +1282,48 @@ function EpisodeTaskItem({
             <p className="text-xs mt-2 italic" style={{ color: "var(--color-alert)" }}>"{task.submission.feedback}"</p>
           )}
 
+          {hasSubmission && !editing && proofType !== "watch" && (
+            <div className="mt-2.5 rounded-lg px-3 py-2 space-y-1.5" style={{ background: "var(--color-surface-xs)", border: "1px solid var(--color-border-card)" }}>
+              <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)" }}>Your submission</p>
+              {task.submission?.responseValue && (
+                <p className="text-xs whitespace-pre-wrap break-words line-clamp-4" style={{ color: "var(--color-text-normal)" }}>{task.submission.responseValue}</p>
+              )}
+              {submittedHref && (
+                proofType === "image" ? (
+                  <a href={submittedHref} target="_blank" rel="noopener noreferrer" className="block w-fit">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={submittedHref} alt="Your uploaded image" className="max-h-28 max-w-full rounded-md object-contain" />
+                  </a>
+                ) : (
+                  <a href={submittedHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs max-w-full" style={{ color: "var(--color-accent)" }}>
+                    <ExternalLink size={12} className="shrink-0" />
+                    <span className="truncate">{proofType === "file" ? "View uploaded file" : submittedHref}</span>
+                  </a>
+                )
+              )}
+              <button
+                onClick={() => { pauseOnce(); setEditing(true); }}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80"
+                style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
+              >
+                <PenLine size={12} /> Edit submission
+              </button>
+            </div>
+          )}
+
           {isEditable && (
             <div className="mt-2.5 space-y-2">
+              {hasSubmission && status === "approved" && task.completionMode !== "SELF_ASSESSMENT" && (
+                <p className="text-[11px]" style={{ color: "var(--color-text-subtle)" }}>
+                  Resubmitting sends this task back for review. Points you already earned are kept.
+                </p>
+              )}
+              {hasSubmission && submittedHref && (proofType === "image" || proofType === "file") && (
+                <a href={submittedHref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs max-w-full" style={{ color: "var(--color-accent)" }}>
+                  <ExternalLink size={12} className="shrink-0" />
+                  <span className="truncate">Current file</span>
+                </a>
+              )}
               {proofType === "text" && (
                 <textarea
                   value={textValue}
@@ -1299,7 +1356,7 @@ function EpisodeTaskItem({
                   >
                     {uploading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} className="rotate-180" />}
                     {uploading ? "Uploading…" : status
-                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Re-upload" : "Re-upload & Resubmit")
+                      ? (task.completionMode === "SELF_ASSESSMENT" ? "Replace file" : "Replace file & Resubmit")
                       : (task.completionMode === "SELF_ASSESSMENT" ? "Upload & Complete" : "Upload & Submit")}
                   </button>
                 ) : (
@@ -1313,6 +1370,16 @@ function EpisodeTaskItem({
                     {status
                       ? (task.completionMode === "SELF_ASSESSMENT" ? "Update" : "Resubmit")
                       : (task.completionMode === "SELF_ASSESSMENT" ? "Mark Complete" : "Submit for Review")}
+                  </button>
+                )}
+                {hasSubmission && (
+                  <button
+                    onClick={cancelEdit}
+                    disabled={uploading || submitTask.isPending}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-opacity hover:opacity-80 disabled:opacity-60"
+                    style={{ background: "var(--color-surface-xs)", color: "var(--color-text-secondary)" }}
+                  >
+                    Cancel
                   </button>
                 )}
               </div>

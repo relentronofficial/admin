@@ -245,6 +245,7 @@ export interface EpisodeTaskSubmission {
   proofUrl?: string | null;
   proofType?: string | null;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface EpisodeTaskSubmissionResult {

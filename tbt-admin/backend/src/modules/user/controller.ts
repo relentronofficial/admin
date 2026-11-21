@@ -5126,7 +5126,8 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
             ts.response_value AS "submissionResponseValue",
             ts.proof_url AS "submissionProofUrl",
             ts.proof_type AS "submissionProofType",
-            ts.created_at AS "submissionCreatedAt"
+            ts.created_at AS "submissionCreatedAt",
+            ts.updated_at AS "submissionUpdatedAt"
      FROM tasks t
      LEFT JOIN task_submissions ts
        ON ts.task_id = t.id AND ts.member_id = $2::uuid AND ts.batch_id IS NULL AND ts.day_number IS NULL
@@ -5152,6 +5153,7 @@ export async function getUserEpisodeTasksHandler(request: FastifyRequest, reply:
       proofUrl: t.submissionProofUrl,
       proofType: t.submissionProofType,
       createdAt: t.submissionCreatedAt,
+      updatedAt: t.submissionUpdatedAt,
     } : null,
   }));
   return reply.send({ success: true, data, error: null });
@@ -5194,12 +5196,13 @@ export async function submitUserEpisodeTaskHandler(request: FastifyRequest, repl
     where: { memberId, taskId, batchId: null, dayNumber: null },
   });
 
-  // Already approved — idempotent no-op so a resubmit can never re-award points
-  // or flip a completed task back to pending.
-  if (existing && existing.status === 'approved') {
-    return reply.send({ success: true, data: { id: existing.id, status: existing.status, feedback: existing.feedback }, error: null });
-  }
+  const hasContent = !!(responseValue && responseValue.trim()) || !!(proofUrl && proofUrl.trim());
+  if (resolvedProofType !== 'watch' && !hasContent) return fail(reply, 400, 'Submission is empty');
 
+  // Members may edit and resubmit at any time, approved tasks included. Points can't be
+  // paid twice: the ledger is keyed on this same submission row (here and in the admin
+  // review handler). An edited ADMIN_CHECK submission goes back to 'pending' so the
+  // admin reviews the new content; SELF_ASSESSMENT stays approved.
   const nextStatus = completionMode === 'SELF_ASSESSMENT' ? 'approved' : 'pending';
   const now = new Date();
   const submission = existing
