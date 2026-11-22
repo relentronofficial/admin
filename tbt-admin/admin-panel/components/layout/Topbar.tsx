@@ -61,7 +61,7 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute right-0 top-full mt-2 w-[360px] rounded-xl overflow-hidden z-[200] flex flex-col"
+      className="fixed left-3 right-3 top-[60px] sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[360px] rounded-xl overflow-hidden z-[200] flex flex-col"
       style={{
         background: "#141414",
         border: "1px solid #2a2a2a",
@@ -236,19 +236,21 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
         </button>
       )}
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-1.5">
-        <span className="font-rajdhani font-bold text-[17px] text-[#e02020] tracking-tight">TBT</span>
-        <span className="text-[#666] mx-1">|</span>
-        <nav className="flex items-center gap-1.5">
-          <span className="text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium">Dashboard</span>
+      {/* On phones only the current page shows (truncated), so the right-hand
+          actions never get pushed off screen. */}
+      <div className="flex items-center gap-1.5 min-w-0 flex-1 mr-2">
+        <span className="font-rajdhani font-bold text-[17px] text-[#e02020] tracking-tight shrink-0">TBT</span>
+        <span className="text-[#666] mx-1 shrink-0">|</span>
+        <nav className="flex items-center gap-1.5 min-w-0">
+          <span className="hidden sm:inline text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium shrink-0">Dashboard</span>
           {formatted.length > 1 && (
             <>
-              <span className="text-[#666] mx-0.5 text-xs">›</span>
-              <span className="text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium">
+              <span className="hidden sm:inline text-[#666] mx-0.5 text-xs">›</span>
+              <span className="hidden sm:inline text-[13px] text-[#a0a0a0] hover:text-[#f0f0f0] cursor-pointer transition-colors font-medium truncate">
                 {formatted[0]}
               </span>
-              <span className="text-[#666] mx-0.5 text-xs">›</span>
-              <span className="text-[13px] text-[#f0f0f0] font-semibold tracking-tight">
+              <span className="hidden sm:inline text-[#666] mx-0.5 text-xs">›</span>
+              <span className="text-[13px] text-[#f0f0f0] font-semibold tracking-tight truncate">
                 {formatted[formatted.length - 1]}
               </span>
             </>
@@ -257,7 +259,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
       </div>
 
       {/* Right actions */}
-      <div className="ml-auto flex items-center gap-3.5">
+      <div className="ml-auto flex items-center gap-2 sm:gap-3.5 shrink-0">
 
         {/* Unacknowledged support tickets — pulsing, distinct from the
             regular (non-pulsing) admin-notifications bell below */}
@@ -319,11 +321,11 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
           {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} />}
         </div>
 
-        <button className="w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md flex items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm">
+        <button className="hidden sm:flex w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm">
           <Settings size={15} strokeWidth={2} />
         </button>
 
-        <div className="flex items-center border-l border-[#2a2a2a] pl-4 ml-1">
+        <div className="flex items-center border-l border-[#2a2a2a] pl-2.5 sm:pl-4 ml-0.5 sm:ml-1">
           <UserButton
             appearance={{
               elements: { userButtonAvatarBox: "w-8 h-8 border border-[#333]" },

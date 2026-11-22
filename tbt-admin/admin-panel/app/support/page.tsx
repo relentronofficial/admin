@@ -234,7 +234,7 @@ export default function SupportPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="sm:p-6 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-white font-rajdhani uppercase tracking-wider flex items-center gap-3">
@@ -1183,7 +1183,7 @@ function FaqForm({
       <div className="h-3" />
       <label className={labelCls}>Answer</label>
       <textarea className={textareaCls} value={answer} onChange={(e) => setAnswer(e.target.value)} />
-      <div className="grid grid-cols-3 gap-3 mt-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
         <div>
           <label className={labelCls}>Category</label>
           <select

@@ -83,7 +83,7 @@ export default function PodcastsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="sm:p-6 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-white font-rajdhani uppercase tracking-wider flex items-center gap-3">
@@ -104,7 +104,7 @@ export default function PodcastsPage() {
           <StatChip label="Total Listens" value={stats?.totalListens ?? "—"} />
         </div>
 
-        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5">
+        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5 overflow-x-auto [&>*]:shrink-0">
           {(
             [
               { id: "episodes", label: "Episodes", icon: Radio },
@@ -865,7 +865,7 @@ function EpisodeForm({
         <label className={labelCls}>Tags (comma-separated)</label>
         <input className={inputCls} value={tags} onChange={(e) => setTags(e.target.value)} />
       </div>
-      <div className="grid grid-cols-3 gap-3 mt-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 items-end">
         <div>
           <label className={labelCls}>Status</label>
           <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value)}>

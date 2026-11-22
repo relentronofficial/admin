@@ -96,7 +96,7 @@ export default function SharedIdsPage() {
     <>
       <PageHeader title="Shared User IDs" breadcrumb="Manage access codes for user registration and assessment access" />
       <main className="p-6 space-y-4 max-w-6xl mx-auto">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard icon={Hash} value={rows.length} label="Total Codes" />
           <StatCard icon={CheckCircle2} value={active} label="Active Codes" tone="success" />
           <StatCard icon={XCircle} value={rows.length - active} label="Inactive Codes" tone="danger" />

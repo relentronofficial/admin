@@ -1051,7 +1051,7 @@ export default function MembersListPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-2 font-rajdhani">State</label>
                         <Controller

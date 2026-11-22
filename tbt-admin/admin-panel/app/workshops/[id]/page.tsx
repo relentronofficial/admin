@@ -1450,7 +1450,7 @@ export default function WorkshopDetailPage() {
                 <div><label className={labelCls}>Title</label><p className="text-[#f0f0f0] text-sm bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.title}</p></div>
                 <div><label className={labelCls}>Slug</label><p className="text-[#f0f0f0] text-sm font-mono bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">/{workshop.slug}</p></div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div><label className={labelCls}>Delivery Mode</label><p className="text-[#a0a0a0] text-sm uppercase font-rajdhani font-bold bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.deliveryMode}</p></div>
                 <div><label className={labelCls}>Required Tier</label><p className="text-[#a0a0a0] text-sm font-rajdhani font-bold bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center">{workshop.requiredTier}</p></div>
                 <div><label className={labelCls}>Status</label><p className={`text-sm font-bold uppercase font-rajdhani bg-[#141414] border border-[#333] rounded-lg h-11 px-4 flex items-center ${workshop.isActive ? "text-green-400" : "text-[#888]"}`}>{workshop.isActive ? "Active" : "Inactive"}</p></div>
@@ -2796,7 +2796,7 @@ export default function WorkshopDetailPage() {
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div><label className={labelCls}>Type Label</label><input value={assignmentForm.typeLabel} onChange={e => setAssignmentForm(f => ({ ...f, typeLabel: e.target.value }))} placeholder="e.g. QUESTION" className={inputCls} /></div>
                 <div>
                   <label className={labelCls}>Icon Type</label>

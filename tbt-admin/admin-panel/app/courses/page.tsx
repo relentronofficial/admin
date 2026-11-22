@@ -337,7 +337,7 @@ export default function CoursesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-3 items-start">
             <div className="w-1 bg-[#dc2626] rounded-full min-h-[44px]" />
             <div>
@@ -345,7 +345,7 @@ export default function CoursesPage() {
               <p className="text-[12px] text-[#888] font-medium uppercase tracking-[1px] font-rajdhani">VOD course library with episodes.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <div className="flex bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-0.5">
               <button onClick={() => setViewMode("courses")}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-widest font-rajdhani transition-all ${viewMode === "courses" ? "bg-[#dc2626] text-white" : "text-[#888] hover:text-[#f0f0f0]"}`}>
@@ -759,7 +759,7 @@ export default function CoursesPage() {
                         rows={4} placeholder={"30 lessons\nLifetime access\nCertificate included"}
                         className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-white outline-none focus:border-purple-500 text-sm resize-none font-mono" />
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="block text-[11px] font-bold text-[#888] uppercase tracking-widest mb-1.5 font-rajdhani">Original Price (₹) <span className="text-[#555] normal-case">strikethrough</span></label>
                         <input type="number" min="0" value={(courseForm as any).originalPrice} onChange={e => setCourseField("originalPrice", e.target.value)} placeholder="—"
@@ -1984,7 +1984,7 @@ function EpisodesTab({ course }: { course: any }) {
               <span className="text-[11px] text-[#a0a0a0] font-rajdhani flex items-center gap-1">⚡ Lifelines Enabled</span>
             </div>
             {epForm.lifelineEnabled && (
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div>
                   <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Free Lifelines</label>
                   <input type="number" min={0} max={5} value={epForm.lifelineCount} onChange={e => setEpField("lifelineCount", Math.min(5, Math.max(0, parseInt(e.target.value) || 0)))}

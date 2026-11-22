@@ -53,7 +53,7 @@ export default function ChallengesAnalyticsPage() {
         ) : (
           <>
             {/* Summary */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 { label: "Enrolled Members", value: matrix.rows?.length ?? 0 },
                 { label: "Challenges", value: matrix.challenges?.length ?? 0 },

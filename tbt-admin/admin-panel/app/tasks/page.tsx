@@ -455,7 +455,7 @@ export default function TasksPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 border-b border-[#2a2a2a]">
+        <div className="flex gap-1 border-b border-[#2a2a2a] overflow-x-auto [&>*]:shrink-0">
           {(["overview", "submissions", "tasks", "programs", "batch-checklist"] as Tab[]).map((tab) => (
             <button
               key={tab}

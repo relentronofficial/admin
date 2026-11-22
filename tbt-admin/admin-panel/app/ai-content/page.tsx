@@ -102,7 +102,7 @@ export default function AIContentPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="sm:p-6 max-w-[1600px] mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>

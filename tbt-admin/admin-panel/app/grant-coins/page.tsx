@@ -82,7 +82,7 @@ export default function GrantCoinsPage() {
         </div>
 
         {/* Mode selector */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {MODE_CONFIG.map(({ mode: m, label, desc, icon: Icon }) => (
             <button
               key={m}

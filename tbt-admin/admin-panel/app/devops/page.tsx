@@ -236,7 +236,7 @@ export default async function DevOpsPage() {
         </div>
 
         {/* Queue summary */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Pending", count: pendingTasks.length, color: "text-yellow-400" },
             { label: "Active", count: activeTasks.length, color: "text-blue-400" },

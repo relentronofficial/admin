@@ -71,7 +71,7 @@ export default function GamificationPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="sm:p-6 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-white font-rajdhani uppercase tracking-wider flex items-center gap-3">
@@ -94,7 +94,7 @@ export default function GamificationPage() {
           <StatChip label="Active Members" value={stats?.activeMembers ?? "—"} />
         </div>
 
-        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5">
+        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5 overflow-x-auto [&>*]:shrink-0">
           {(
             [
               { id: "tasks", label: "Task Path", icon: ListChecks },
@@ -300,7 +300,7 @@ function TaskForm({ initial, onClose }: { initial?: TbtTask; onClose: () => void
 
   return (
     <Modal onClose={onClose} title={isEdit ? "Edit Task" : "New Task"} wide>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Task Order (#)</label>
           <input
@@ -515,7 +515,7 @@ function LevelForm({ initial, onClose }: { initial?: TbtLevel; onClose: () => vo
 
   return (
     <Modal onClose={onClose} title={isEdit ? "Edit Level" : "New Level"} wide>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className={labelCls}>Level #</label>
           <input

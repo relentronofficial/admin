@@ -405,7 +405,7 @@ export default function BatchesPage() {
         </div>
 
         {/* ── Status Filter Tabs ── */}
-        <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
+        <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit max-w-full overflow-x-auto [&>*]:shrink-0">
           {BATCH_STATUS_TABS.map(tab => (
             <button
               key={tab.key}

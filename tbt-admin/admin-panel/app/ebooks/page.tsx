@@ -107,7 +107,7 @@ export default function EbooksPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1600px] mx-auto">
+      <div className="sm:p-6 max-w-[1600px] mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-white font-rajdhani uppercase tracking-wider flex items-center gap-3">
@@ -128,7 +128,7 @@ export default function EbooksPage() {
           <StatChip label="Readers" value={stats?.activeReaders ?? "—"} />
         </div>
 
-        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5">
+        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5 overflow-x-auto [&>*]:shrink-0">
           {(
             [
               { id: "books", label: "Books", icon: BookOpen },
@@ -1001,7 +1001,7 @@ function BookForm({
         <label className={labelCls}>Or Content URL (external link, e.g. Google Docs)</label>
         <input className={inputCls} value={contentUrl ?? ""} onChange={(e) => setContentUrl(e.target.value)} />
       </div>
-      <div className="grid grid-cols-3 gap-3 mt-3 items-end">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3 items-end">
         <div>
           <label className={labelCls}>Total Pages</label>
           <input

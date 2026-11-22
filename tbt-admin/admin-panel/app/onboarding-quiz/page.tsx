@@ -268,9 +268,9 @@ export default function PsychometricPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-8">
+      <div className="sm:p-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#dc2626]/15 flex items-center justify-center">
               <Brain size={20} className="text-[#dc2626]" />

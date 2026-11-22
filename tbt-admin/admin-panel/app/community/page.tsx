@@ -60,7 +60,7 @@ export default function CommunityPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 max-w-[1400px] mx-auto">
+      <div className="sm:p-6 max-w-[1400px] mx-auto">
         <div className="flex items-center justify-between mb-5">
           <div>
             <h1 className="text-2xl font-bold text-white font-rajdhani uppercase tracking-wider flex items-center gap-3">
@@ -78,7 +78,7 @@ export default function CommunityPage() {
           <StatChip label="Approved" value={approvedCount} />
         </div>
 
-        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5">
+        <div className="flex items-center gap-1 border-b border-[#2a2a2a] mb-5 overflow-x-auto [&>*]:shrink-0">
           {(
             [
               { id: "pending", label: "Pending Review" },

@@ -87,7 +87,7 @@ export default function ModuleConfigPage() {
                     {moduleName}
                   </h2>
 
-                  <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                     <div>
                       <label className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani block mb-1">
                         Display Name

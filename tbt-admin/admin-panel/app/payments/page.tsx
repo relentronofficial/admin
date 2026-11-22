@@ -109,7 +109,7 @@ function RefundModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 w-[440px] max-w-full mx-4">
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 w-[440px] max-w-[calc(100%-2rem)] mx-4">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-[14px] font-bold uppercase tracking-widest text-[#f0f0f0] font-rajdhani">
             Issue Refund
@@ -211,7 +211,7 @@ function SyncModal({ payment, onClose }: { payment: any; onClose: () => void }) 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 w-[480px] max-w-full mx-4">
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 w-[480px] max-w-[calc(100%-2rem)] mx-4">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-[14px] font-bold uppercase tracking-widest text-[#f0f0f0] font-rajdhani">
             Razorpay Sync
