@@ -577,6 +577,9 @@ Admin-managed ad campaigns served to members and guests. Admin page: `admin-pane
 
 **Eligibility engine** (`backend/src/modules/ads/eligibility.ts`) is pure (no Prisma, no `new Date()`, no I/O — `now` is passed in). Unit-tested via Vitest. Do not add I/O to this file; widen the input types in the controller instead.
 
+### TBT Assistant — in-app help bot (`/api/help-bot`)
+Floating avatar chat on every `(platform)` page (`tbt-user-web/components/features/help-bot/HelpBotWidget.tsx`, service `lib/api/services/helpBot.service.ts`). `GET /api/help-bot/status` → `{ enabled }` (false when `ANTHROPIC_API_KEY` is unset — the widget then renders nothing). `POST /api/help-bot/chat` (JWT cookie) streams SSE events `delta`/`reset`/`done`/`error`; model `claude-opus-5-5`, effort `low`, server-side fallback to `claude-opus-5` (a `reset` event clears the partial answer). System prompt = rules + app guide (`backend/src/lib/helpBot/knowledge.ts` — **update it when a member-facing flow changes**) + live reference (menu, hidden pages, published courses, helpdesk/course-page/module FAQs; prompt-cached, memoised 5 min) + the asking member's own plan/status/courses. Pure helpers + tests in `lib/helpBot/helpBotLogic.ts`. Limits: 20 questions / 10 min and 100 / IST day per member (Redis, in-memory fallback). History lives only in the browser's sessionStorage; nothing is stored server-side. Widget strings are optional `uiStrings` keys `helpBot*` with English defaults.
+
 ### AI Content (`/api/ai`)
 Admin-only AI content generation. Admin page: `admin-panel/app/ai-content/`. Backend uses `claudeService.ts` + `usageGuard.ts` (per-admin usage rate limiting). Uses `claude-haiku-4-5` via Anthropic API (requires `ANTHROPIC_API_KEY`).
 

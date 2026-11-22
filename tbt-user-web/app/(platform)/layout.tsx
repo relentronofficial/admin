@@ -9,6 +9,7 @@ import { NavAccessGuard } from "@/components/guards/NavAccessGuard";
 import { ActivityHeartbeat } from "@/components/guards/ActivityHeartbeat";
 import { OnboardingTour } from "@/components/features/onboarding-tour/OnboardingTour";
 import { WeeklyReportReminder } from "@/components/features/reports/WeeklyReportReminder";
+import { HelpBotWidget } from "@/components/features/help-bot/HelpBotWidget";
 import { Suspense } from "react";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <Suspense fallback={null}>
         <WeeklyReportReminder />
       </Suspense>
+      {/* TBT Assistant — floating AI help chat (hidden when the backend has no AI key). */}
+      <HelpBotWidget />
     </div>
   );
 }
