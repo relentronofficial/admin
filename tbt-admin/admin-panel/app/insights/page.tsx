@@ -396,7 +396,8 @@ function MentorshipTab({ range }: { range: InsightsRange }) {
 // ── Support ──────────────────────────────────────────────────────────────────
 
 const CATEGORY_LABELS: Record<string, string> = {
-  sales: "Sales", tech: "Tech", content: "Content", marketing: "Marketing", one_to_one: "Mentor 1-on-1", group_qa: "Group Q&A",
+  sales_support: "Sales", tech_support: "Tech", content_support: "Content", ad_support: "Marketing / Ads",
+  one_to_one: "Mentor 1-on-1", group_call: "Group Q&A",
 };
 const categoryColumns: Column<any>[] = [
   { key: "category", label: "Category", render: (r) => CATEGORY_LABELS[r.category] ?? r.category, csv: (r) => CATEGORY_LABELS[r.category] ?? r.category },

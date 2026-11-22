@@ -148,7 +148,8 @@ export async function loadOverview(db: Db, range: DateRange, now: Date) {
       FROM member_daily_activity WHERE activity_date BETWEEN $1::date AND $2::date`, mau30From, range.to);
 
   const thisWeek = istWeekStart(now);
-  const weeks = Array.from({ length: 8 }, (_, i) => new Date(thisWeek.getTime() - (7 - i) * 7 * 86_400_000));
+  // 8 finished weeks, oldest first, then the current week
+  const weeks = Array.from({ length: 8 }, (_, i) => new Date(thisWeek.getTime() - (8 - i) * 7 * 86_400_000));
   weeks.push(thisWeek);
 
   const series = Promise.all([
