@@ -109,9 +109,15 @@ export async function pubUiStringsHandler(req: FastifyRequest, reply: FastifyRep
 }
 
 // ── POST /api/pub/auth/sync ───────────────────────────────────────────────────
-// Called by the user web on first sign-in. Verifies the Clerk token and
-// upserts a Member record so subsequent authenticateUser calls succeed.
-export async function pubMemberSyncHandler(req: FastifyRequest, reply: FastifyReply) {
+// RETIRED: members sign in with phone + OTP (commit 0288655a); no client calls
+// this any more. Left open it let anyone with a Clerk account (Clerk sign-up is
+// public) create a member with a free 1-year premium subscription.
+export async function pubMemberSyncHandler(_req: FastifyRequest, reply: FastifyReply) {
+  return reply.status(410).send({ success: false, data: null, error: 'Gone: members sign in with phone and OTP' });
+}
+
+/** The retired Clerk member sync, kept for reference only — not routed. */
+export async function legacyPubMemberSyncHandler(req: FastifyRequest, reply: FastifyReply) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return reply.status(401).send({ success: false, data: null, error: 'No token' });

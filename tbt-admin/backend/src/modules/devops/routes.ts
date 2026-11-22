@@ -6,7 +6,9 @@ import { whatsappIntakeHandler, whatsappIntakeVerifyHandler } from './controller
 // The webhook URL is registered at the BSP with the secret embedded,
 // so this acts as a shared URL secret without requiring a new env var.
 function checkSecret(req: any): boolean {
-  if (!env.CRON_SECRET) return true; // no secret configured — allow (dev/test)
+  // No secret configured: allow only outside production (dev/test). In
+  // production a missing secret must not open the webhook to everyone.
+  if (!env.CRON_SECRET) return process.env.NODE_ENV !== 'production';
   return (req.query as any)?.secret === env.CRON_SECRET;
 }
 

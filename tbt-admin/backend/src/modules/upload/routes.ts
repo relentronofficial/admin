@@ -12,8 +12,12 @@ export async function uploadRoutes(fastify: FastifyInstance) {
   // Catch-all: PDFs, Office docs, archives, audio, and any other file type
   fastify.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: VIDEO_LIMIT }, (_req, body, done) => done(null, body));
 
-  fastify.post('/presigned-url', getPresignedUrlHandler);
-  fastify.post('/bunny-video-create', createBunnyVideoHandler);
-  fastify.delete('/bunny-video/:videoId', deleteBunnyVideoHandler);
-  fastify.post('/image', { bodyLimit: VIDEO_LIMIT }, uploadImageHandler);
+  // Uploads are shared by the admin panel (Clerk) and members (web cookie /
+  // app Bearer JWT), so they accept either login — but never no login.
+  // Deleting a Bunny video is admin-only.
+  const either = { preHandler: fastify.authenticateAdminOrMember };
+  fastify.post('/presigned-url', either, getPresignedUrlHandler);
+  fastify.post('/bunny-video-create', either, createBunnyVideoHandler);
+  fastify.delete('/bunny-video/:videoId', { preHandler: fastify.authenticate }, deleteBunnyVideoHandler);
+  fastify.post('/image', { ...either, bodyLimit: VIDEO_LIMIT }, uploadImageHandler);
 }
