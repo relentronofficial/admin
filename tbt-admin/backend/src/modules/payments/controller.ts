@@ -341,7 +341,7 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
   await req.server.prisma.courseAccess.upsert({
     where: { memberId_courseId: { memberId: payment.memberId, courseId: payment.courseId } },
     create: { memberId: payment.memberId, courseId: payment.courseId, accessType: 'lifetime', isActive: true, paymentId, grantedBy: adminId },
-    update: { accessType: 'lifetime', isActive: true, revokedAt: null, revokedBy: null, paymentId, grantedBy: adminId },
+    update: { accessType: 'lifetime', expiresAt: null, isActive: true, revokedAt: null, revokedBy: null, paymentId, grantedBy: adminId },
   });
 
   await req.server.prisma.courseEnrollment.upsert({
@@ -379,6 +379,61 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
 // keeps the order id and appends an audit line to notes. Access and amounts are untouched.
 
 const RELABEL_METHODS = new Set(['manual', 'bank_transfer', 'upi', 'external']);
+
+// POST /api/payments/:paymentId/mark-duplicate — body { duplicateOf, note? }
+// Voids a completed payment that records the same money as another completed
+// payment (same member + course). Status becomes 'failed' so it leaves revenue;
+// course access is never touched (unlike refund, which revokes it). Refused for a
+// row Razorpay actually captured money on (that needs a real refund) and for the
+// row the member's access points at.
+export async function markPaymentDuplicateHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { paymentId } = req.params as { paymentId: string };
+  const { duplicateOf, note } = (req.body as any) ?? {};
+  const bad = (code: number, error: string) => reply.status(code).send({ success: false, data: null, error });
+  if (!duplicateOf || duplicateOf === paymentId) return bad(400, 'duplicateOf must be another payment id');
+
+  const rows = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, member_id AS "memberId", course_id AS "courseId", status, amount, razorpay_payment_id AS "rzpPaymentId"
+       FROM course_payments WHERE id = ANY($1::uuid[])`,
+    [paymentId, duplicateOf],
+  );
+  const target = rows.find((r) => r.id === paymentId);
+  const kept = rows.find((r) => r.id === duplicateOf);
+  if (!target || !kept) return bad(404, 'Payment not found');
+  if (target.memberId !== kept.memberId || target.courseId !== kept.courseId) return bad(409, 'Payments are for different members or courses');
+  if (target.status !== 'completed' || kept.status !== 'completed') return bad(409, 'Both payments must be completed');
+  if (Number(target.amount) !== Number(kept.amount)) return bad(409, 'Amounts differ — not a duplicate');
+  if (target.rzpPaymentId) return bad(409, 'Razorpay captured money on this payment — refund it instead');
+
+  const access = await (req.server.prisma as any).courseAccess.findUnique({
+    where: { memberId_courseId: { memberId: target.memberId, courseId: target.courseId } },
+    select: { id: true, paymentId: true, accessType: true, expiresAt: true },
+  });
+  if (access?.paymentId === paymentId) return bad(409, "The member's course access is linked to this payment — void the other one");
+
+  const adminId = await resolveAdminId(req);
+  const audit = `[${new Date().toISOString()}] Voided as duplicate of payment ${duplicateOf}`
+    + `${adminId ? ` (admin ${adminId})` : ''}${note ? ` — ${note}` : ''}`;
+  const n = await req.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments
+        SET status = 'failed',
+            notes = CASE WHEN COALESCE(notes,'') = '' THEN $1 ELSE notes || E'\\n' || $1 END,
+            updated_at = NOW()
+      WHERE id = $2::uuid AND status = 'completed'`,
+    audit, paymentId,
+  );
+  if (!n) return bad(409, 'Payment changed meanwhile — reload and try again');
+
+  // A lifetime grant never expires; clear a leftover expiry date so it can't mislead.
+  let clearedExpiry = false;
+  if (access && access.accessType === 'lifetime' && access.expiresAt) {
+    await (req.server.prisma as any).courseAccess.update({ where: { id: access.id }, data: { expiresAt: null } });
+    clearedExpiry = true;
+  }
+  reconcileCache = null;
+  req.log.info({ paymentId, duplicateOf, adminId, clearedExpiry }, 'payment voided as duplicate');
+  return reply.send({ success: true, data: { voided: true, clearedExpiry } });
+}
 
 export async function markPaymentManualHandler(req: FastifyRequest, reply: FastifyReply) {
   const { paymentId } = req.params as any;

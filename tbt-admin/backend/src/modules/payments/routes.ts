@@ -9,6 +9,7 @@ import {
   getRevenueByCourseHandler,
   razorpayReconcileHandler,
   markPaymentManualHandler,
+  markPaymentDuplicateHandler,
 } from './controller.js';
 
 export async function paymentRoutes(fastify: FastifyInstance) {
@@ -20,5 +21,6 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.get('/:paymentId/razorpay-sync', { preHandler: fastify.authenticate }, razorpaySyncHandler);
   fastify.post('/:paymentId/approve', { preHandler: fastify.authenticate }, approvePaymentHandler);
   fastify.post('/:paymentId/mark-manual', { preHandler: fastify.authenticate }, markPaymentManualHandler);
+  fastify.post('/:paymentId/mark-duplicate', { preHandler: fastify.authenticate }, markPaymentDuplicateHandler);
   fastify.post('/:paymentId/refund', { preHandler: fastify.authenticate }, refundPaymentHandler);
 }
