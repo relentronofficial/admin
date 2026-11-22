@@ -373,6 +373,57 @@ export async function approvePaymentHandler(req: FastifyRequest, reply: FastifyR
   return reply.send({ success: true, data: { approved: true } });
 }
 
+// ── POST /api/payments/:paymentId/mark-manual ────────────────────────────────
+// Relabel a completed "Razorpay" payment that Razorpay never received (approved by hand, no
+// captured payment on its order) as the way the member really paid. Re-checks Razorpay first;
+// keeps the order id and appends an audit line to notes. Access and amounts are untouched.
+
+const RELABEL_METHODS = new Set(['manual', 'bank_transfer', 'upi', 'external']);
+
+export async function markPaymentManualHandler(req: FastifyRequest, reply: FastifyReply) {
+  const { paymentId } = req.params as any;
+  const body = (req.body as any) ?? {};
+  const method = RELABEL_METHODS.has(body.method) ? body.method : 'manual';
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, 300) : '';
+
+  const [row] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id, status, method, amount, razorpay_payment_id, razorpay_order_id FROM course_payments WHERE id = $1::uuid`, paymentId,
+  ).catch(() => [] as any[]);
+  if (!row) return reply.status(404).send({ success: false, data: null, error: 'Payment not found' });
+  if (row.status !== 'completed' || row.method !== 'razorpay' || row.razorpay_payment_id) {
+    return reply.status(409).send({ success: false, data: null, error: 'Only a completed Razorpay payment without a Razorpay payment ID can be relabelled.' });
+  }
+  if (row.razorpay_order_id) {
+    let r: ReturnType<typeof reconcileCoursePayment>;
+    try {
+      r = reconcileCoursePayment(
+        { status: row.status, amount: Number(row.amount), razorpayOrderId: row.razorpay_order_id },
+        await fetchOrderPayments(getRazorpay(), row.razorpay_order_id),
+      );
+    } catch {
+      return reply.status(502).send({ success: false, data: null, error: 'Could not check this order with Razorpay.' });
+    }
+    if (r.capturedPaymentId) {
+      return reply.status(409).send({ success: false, data: null, error: 'Razorpay did receive this payment — it should stay Razorpay.' });
+    }
+  }
+
+  const adminId = await resolveAdminId(req);
+  const audit = `[${new Date().toISOString()}] Relabelled razorpay → ${method}: no payment on Razorpay order ${row.razorpay_order_id ?? '(none)'}`
+    + `${adminId ? ` (admin ${adminId})` : ''}${note ? ` — ${note}` : ''}`;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE course_payments
+        SET method = $1::"CoursePaymentMethod",
+            notes = CASE WHEN COALESCE(notes, '') = '' THEN $2 ELSE notes || E'\\n' || $2 END,
+            updated_at = NOW()
+      WHERE id = $3::uuid AND status = 'completed' AND method = 'razorpay' AND razorpay_payment_id IS NULL`,
+    method, audit, paymentId,
+  );
+  reconcileCache = null;
+  req.log.info({ paymentId, method, admin: (req as any).user }, '[payments] relabelled razorpay payment');
+  return reply.send({ success: true, data: { relabelled: true, method } });
+}
+
 // ── RZ-02-F: POST /api/payments/:paymentId/refund ────────────────────────────
 
 export async function refundPaymentHandler(req: FastifyRequest, reply: FastifyReply) {

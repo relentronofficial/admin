@@ -2520,6 +2520,18 @@ export const useRefundPayment = () => {
   });
 };
 
+/** Relabel a hand-approved "Razorpay" payment that Razorpay never received (server re-checks Razorpay). */
+export const useMarkPaymentManual = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ paymentId, method, note }: { paymentId: string; method?: string; note?: string }) => {
+      const res: any = await apiClient.post(`/api/payments/${paymentId}/mark-manual`, { method, note });
+      return res?.data ?? {};
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['payments'] }),
+  });
+};
+
 /** Read-only check of every Razorpay course order against Razorpay's records. Runs only when asked. */
 export const useRazorpayReconcile = (enabled: boolean) =>
   useQuery({

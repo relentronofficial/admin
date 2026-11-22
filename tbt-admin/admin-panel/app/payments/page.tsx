@@ -10,6 +10,7 @@ import {
   useRefundPayment,
   useRevenueByCourse,
   useRazorpayReconcile,
+  useMarkPaymentManual,
 } from "@/lib/hooks/useTbt";
 import {
   LineChart, Line, BarChart, Bar,
@@ -1019,6 +1020,29 @@ function ReconcilePanel() {
   const rows: any[] = (d?.rows ?? []).slice().sort((a: any, b: any) => VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict));
   const issues = rows.filter((r) => r.verdict !== "ok" && r.verdict !== "unpaid_checkout");
   const shown = showAll ? rows : issues;
+  const markManual = useMarkPaymentManual();
+  const notPaid = rows.filter((r) => r.verdict === "not_paid_on_razorpay");
+
+  const relabel = async (targets: any[]) => {
+    if (!targets.length) return;
+    const ok = window.confirm(
+      `Mark ${targets.length} payment${targets.length === 1 ? "" : "s"} as Manual instead of Razorpay?
+
+` +
+      "Razorpay has no payment on these orders, so they were paid another way. Amounts and course access stay the same; " +
+      "an audit note is added and the Razorpay order ID is kept.",
+    );
+    if (!ok) return;
+    let done = 0;
+    const failed: string[] = [];
+    for (const t of targets) {
+      try { await markManual.mutateAsync({ paymentId: t.id, method: "manual" }); done++; }
+      catch (e: any) { failed.push(`${t.memberName}: ${e?.response?.data?.error ?? e?.message ?? "failed"}`); }
+    }
+    if (done) toast.success(`Marked ${done} payment${done === 1 ? "" : "s"} as Manual`);
+    if (failed.length) toast.error(failed.join(" · "), { duration: 10000 });
+    q.refetch();
+  };
 
   const exportCsv = () => {
     const head = ["member", "phone", "course", "tbt_amount", "tbt_status", "tbt_method", "result", "razorpay_captured", "razorpay_payment_id", "razorpay_order_id", "created_at", "paid_at"];
@@ -1077,6 +1101,12 @@ function ReconcilePanel() {
           </div>
           <div className="flex items-center justify-between">
             <p className="text-sm text-[#a0a0a0]">{issues.length ? `${issues.length} payment${issues.length === 1 ? "" : "s"} need attention` : "No problems found."}</p>
+            {notPaid.length > 0 && (
+              <button onClick={() => relabel(notPaid)} disabled={markManual.isPending}
+                className="ml-auto mr-4 px-3 h-8 rounded-lg border border-[#333] bg-[#1a1a1a] text-xs text-[#f0f0f0] hover:bg-[#252525] disabled:opacity-50">
+                {markManual.isPending ? "Updating…" : `Mark all ${notPaid.length} "not paid on Razorpay" as Manual`}
+              </button>
+            )}
             <button onClick={() => setShowAll((v) => !v)} className="text-xs text-[#a0a0a0] hover:text-white underline">
               {showAll ? "Show problems only" : `Show all ${rows.length}`}
             </button>
@@ -1109,6 +1139,10 @@ function ReconcilePanel() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
                         <span title={r.apiError ?? VERDICT[r.verdict]?.hint} className={`px-2 py-0.5 rounded text-xs ${VERDICT[r.verdict]?.cls ?? ""}`}>{VERDICT[r.verdict]?.label ?? r.verdict}</span>
+                        {r.verdict === "not_paid_on_razorpay" && (
+                          <button onClick={() => relabel([r])} disabled={markManual.isPending}
+                            className="ml-2 text-[11px] text-[#a0a0a0] hover:text-white underline disabled:opacity-50">Mark as Manual</button>
+                        )}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap space-y-0.5">
                         {r.orderId ? <CopyableId value={r.orderId} /> : <span className="text-[#333]">—</span>}
