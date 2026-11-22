@@ -2934,6 +2934,16 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
         summary    TEXT
       )
     `).catch(() => {});
+    // Weekly report reminders sent (lib/weeklyReportReminders.ts): one row per member per IST
+    // week, claimed before sending so a member is never reminded twice within 20 hours.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS weekly_report_reminder_sends (
+        member_id  UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        week_start DATE NOT NULL,
+        sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (member_id, week_start)
+      )
+    `).catch(() => {});
     // members.last_active_at was never written before 2026-11-21 (only member_daily_activity
     // was). Backfill it from the newest real activity so analytics, At-Risk and My Workspace
     // see true "last active" dates. Idempotent (only moves dates forward); not awaited so it

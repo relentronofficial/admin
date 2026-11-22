@@ -24,6 +24,7 @@ import {
 import { computeDigest, sendWeeklyDigest } from '../../jobs/insightsDigest.js';
 import { istWeekStart } from '../../lib/weeklyReportGate.js';
 import { buildDigestText, digestAlerts } from '../../lib/insights/insightsLogic.js';
+import { listMembersDueWeeklyReport, sendWeeklyReportReminders, weeklyReminderWhatsappText } from '../../lib/weeklyReportReminders.js';
 
 type Q = Record<string, unknown>;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -124,4 +125,39 @@ export async function digestPreviewHandler(req: FastifyRequest, reply: FastifyRe
 export async function digestSendHandler(req: FastifyRequest, reply: FastifyReply) {
   const r = await sendWeeklyDigest(req.server, new Date(), { force: true });
   return reply.send({ success: true, data: r, error: null });
+}
+
+// ── Weekly report reminder (manual) ──────────────────────────────────────────
+
+export async function weeklyReminderPreviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const now = new Date();
+  const weekStart = istWeekStart(now);
+  const members = await listMembersDueWeeklyReport(req.server, weekStart);
+  return reply.send({
+    success: true,
+    data: {
+      weekStart: weekStart.toISOString(),
+      members: members.map((m) => ({
+        id: m.id, name: `${m.firstName ?? ''} ${m.lastName ?? ''}`.trim() || 'Member',
+        phone: m.phone, batch: m.batch, remindedAt: m.remindedAt,
+      })),
+      sampleMessage: weeklyReminderWhatsappText('{first name}'),
+    },
+    error: null,
+  });
+}
+
+let reminderSending = false;
+export async function weeklyReminderSendHandler(req: FastifyRequest, reply: FastifyReply) {
+  if (reminderSending) {
+    return reply.status(409).send({ success: false, data: null, error: { code: 'IN_PROGRESS', message: 'Reminders are already being sent.' } });
+  }
+  reminderSending = true;
+  try {
+    const result = await sendWeeklyReportReminders(req.server, new Date());
+    req.log.info({ result, admin: req.user }, '[insights] manual weekly report reminder');
+    return reply.send({ success: true, data: result, error: null });
+  } finally {
+    reminderSending = false;
+  }
 }

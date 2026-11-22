@@ -1,4 +1,4 @@
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '../api/apiClient';
 
 /** Range sent to every /api/insights endpoint (IST dates). */
@@ -71,3 +71,18 @@ export const useSendInsightsDigest = () =>
   useMutation({
     mutationFn: async () => ((await apiClient.post('/api/insights/digest/send')) as any)?.data,
   });
+
+export const useWeeklyReminderPreview = () =>
+  useQuery({
+    queryKey: ['insights', 'weekly-report-reminder'],
+    queryFn: async () => ((await apiClient.get('/api/insights/weekly-report-reminder')) as any)?.data,
+    staleTime: 30_000,
+  });
+
+export const useSendWeeklyReminder = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => ((await apiClient.post('/api/insights/weekly-report-reminder/send')) as any)?.data,
+    onSettled: () => qc.invalidateQueries({ queryKey: ['insights', 'weekly-report-reminder'] }),
+  });
+};

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { Search, Send, X } from "lucide-react";
+import { BellRing, Search, Send, X } from "lucide-react";
 import {
   Area, AreaChart, Bar as RBar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -16,7 +16,7 @@ import {
 import {
   useInsightsCohorts, useInsightsCourseLessons, useInsightsCourses, useInsightsDigestPreview, useInsightsFunnelStuck,
   useInsightsFunnels, useInsightsMentorship, useInsightsRevenue, useInsightsRisk, useInsightsSupport, useInsightsUsage,
-  useSendInsightsDigest, type InsightsRange,
+  useSendInsightsDigest, useSendWeeklyReminder, useWeeklyReminderPreview, type InsightsRange,
 } from "@/lib/hooks/useInsights";
 
 const TABS = [
@@ -655,6 +655,7 @@ function RiskTab() {
 
   return (
     <div className="space-y-5">
+      <WeeklyReminderPanel />
       <Section title="Members at risk of dropping off"
         subtitle="Score 0–100 from inactivity, falling activity, missed weekly reports, low ratings, stalled courses, ending access and stale tickets. High ≥ 50, medium ≥ 25."
         actions={
@@ -730,5 +731,65 @@ function RiskTab() {
           )}
       </Section>
     </div>
+  );
+}
+
+// ── Weekly report reminder ───────────────────────────────────────────────────
+
+const dueColumns: Column<any>[] = [
+  { key: "name", label: "Member", render: (r) => <MemberLink id={r.id} name={r.name} /> },
+  { key: "batch", label: "Batch", render: (r) => r.batch ?? "—" },
+  { key: "phone", label: "Phone", render: (r) => r.phone ?? <span className="text-amber-400">no phone</span> },
+  { key: "remindedAt", label: "Reminded this week",
+    render: (r) => (r.remindedAt ? new Date(r.remindedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "—"),
+    csv: (r) => r.remindedAt ?? "" },
+];
+
+function WeeklyReminderPanel() {
+  const { data, isLoading, isError } = useWeeklyReminderPreview();
+  const send = useSendWeeklyReminder();
+  const members: any[] = data?.members ?? [];
+  const recentCutoff = Date.now() - 20 * 3600_000;
+  const sendable = members.filter((m) => !m.remindedAt || new Date(m.remindedAt).getTime() < recentCutoff).length;
+  const weekLabel = data?.weekStart ? fmtDate(data.weekStart) : "";
+
+  const onSend = () => {
+    if (!window.confirm(`Send the weekly report reminder to ${sendable} member${sendable === 1 ? "" : "s"} now?
+
+They get an in-app notification, a push and a WhatsApp message.`)) return;
+    send.mutate(undefined, {
+      onSuccess: (r: any) => toast.success(
+        `Reminded ${r?.members ?? 0} member${r?.members === 1 ? "" : "s"} · WhatsApp sent ${r?.whatsappSent ?? 0}` +
+        `${r?.whatsappFailed ? `, failed ${r.whatsappFailed}` : ""}${r?.noPhone ? `, no phone ${r.noPhone}` : ""}` +
+        `${r?.skippedRecent ? ` · ${r.skippedRecent} already reminded today` : ""}`,
+        { duration: 8000 }),
+      onError: (e: any) => toast.error(e?.error?.message ?? e?.message ?? "Could not send reminders"),
+    });
+  };
+
+  return (
+    <Section title="Weekly report reminder"
+      subtitle={`Active members with a course who haven't sent this week's report${weekLabel ? ` (week from ${weekLabel})` : ""}`}
+      actions={
+        <>
+          <CsvButton filename="weekly-report-due" columns={dueColumns} rows={members} />
+          <button type="button" disabled={!sendable || send.isPending} onClick={onSend}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-[11px] font-bold uppercase tracking-wider font-rajdhani disabled:opacity-50">
+            <BellRing size={13} /> {send.isPending ? "Sending…" : `Send reminder (${sendable})`}
+          </button>
+        </>
+      }>
+      {isLoading ? <Loading /> : isError ? <ErrorNote /> : (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-[#2a2a2a] bg-[#141414] p-3">
+            <p className={`${labelCls} mb-1`}>WhatsApp message</p>
+            <p className="text-[13px] text-[#d0d0d0]">{data?.sampleMessage}</p>
+            <p className="text-[11px] text-[#777] mt-1.5">Plus an in-app notification and push: “Weekly report due”.</p>
+          </div>
+          <DataTable columns={dueColumns} rows={members} empty="Everyone has sent this week's report." maxHeight={360} />
+          <Note>A member is reminded at most once every 20 hours, so pressing the button twice is safe.</Note>
+        </div>
+      )}
+    </Section>
   );
 }

@@ -13,6 +13,8 @@ import {
   riskHandler,
   supportHandler,
   usageHandler,
+  weeklyReminderPreviewHandler,
+  weeklyReminderSendHandler,
 } from './controller.js';
 
 /** Admin Insights — registered at /api/insights (Clerk). */
@@ -31,4 +33,6 @@ export async function insightsRoutes(fastify: FastifyInstance) {
   fastify.get('/risk', riskHandler);
   fastify.get('/digest/preview', digestPreviewHandler);
   fastify.post('/digest/send', digestSendHandler);
+  fastify.get('/weekly-report-reminder', weeklyReminderPreviewHandler);
+  fastify.post('/weekly-report-reminder/send', weeklyReminderSendHandler);
 }
