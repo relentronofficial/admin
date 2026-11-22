@@ -7,6 +7,7 @@ import {
   approvePaymentHandler,
   refundPaymentHandler,
   getRevenueByCourseHandler,
+  razorpayReconcileHandler,
 } from './controller.js';
 
 export async function paymentRoutes(fastify: FastifyInstance) {
@@ -14,6 +15,7 @@ export async function paymentRoutes(fastify: FastifyInstance) {
   fastify.get('/list', { preHandler: fastify.authenticate }, getPaymentListHandler);
   fastify.get('/analytics', { preHandler: fastify.authenticate }, getPaymentAnalyticsHandler);
   fastify.get('/revenue-by-course', { preHandler: fastify.authenticate }, getRevenueByCourseHandler);
+  fastify.get('/razorpay-reconcile', { preHandler: fastify.authenticate }, razorpayReconcileHandler);
   fastify.get('/:paymentId/razorpay-sync', { preHandler: fastify.authenticate }, razorpaySyncHandler);
   fastify.post('/:paymentId/approve', { preHandler: fastify.authenticate }, approvePaymentHandler);
   fastify.post('/:paymentId/refund', { preHandler: fastify.authenticate }, refundPaymentHandler);

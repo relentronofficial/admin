@@ -2495,8 +2495,10 @@ export const useSyncRazorpayPayment = () => {
 export const useApprovePayment = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (paymentId: string) => {
-      const res: any = await apiClient.post(`/api/payments/${paymentId}/approve`);
+    /** `force` = approve a Razorpay checkout Razorpay has no payment for (member paid another way). */
+    mutationFn: async (arg: string | { paymentId: string; force?: boolean }) => {
+      const { paymentId, force } = typeof arg === 'string' ? { paymentId: arg, force: false } : arg;
+      const res: any = await apiClient.post(`/api/payments/${paymentId}/approve`, force ? { force: true } : {});
       return res?.data ?? {};
     },
     onSuccess: () => {
@@ -2517,6 +2519,19 @@ export const useRefundPayment = () => {
     },
   });
 };
+
+/** Read-only check of every Razorpay course order against Razorpay's records. Runs only when asked. */
+export const useRazorpayReconcile = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['payments', 'razorpay-reconcile'],
+    queryFn: async () => {
+      const res: any = await apiClient.get('/api/payments/razorpay-reconcile', { params: { fresh: '1' } });
+      return res?.data ?? null;
+    },
+    enabled,
+    staleTime: 2 * 60_000,
+    retry: false,
+  });
 
 export const useRevenueByCourse = () =>
   useQuery({

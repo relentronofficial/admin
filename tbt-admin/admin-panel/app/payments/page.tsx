@@ -9,13 +9,14 @@ import {
   useApprovePayment,
   useRefundPayment,
   useRevenueByCourse,
+  useRazorpayReconcile,
 } from "@/lib/hooks/useTbt";
 import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
   PieChart, Pie, Cell,
 } from "recharts";
-import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X, Copy } from "lucide-react";
+import { RefreshCw, CheckCircle, RotateCcw, Download, Search, Filter, X, Copy, ShieldCheck } from "lucide-react";
 import toast from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
@@ -245,6 +246,9 @@ function SyncModal({ payment, onClose }: { payment: any; onClose: () => void }) 
                   <span className="text-[#606060]">Refund Status</span>
                   <span className="text-[#f0f0f0]">{result.razorpayRefundStatus ?? "—"}</span>
                 </div>
+                {result.checkedBy === "order" && (
+                  <p className="text-[11px] text-[#606060]">No payment ID was stored for this row, so the Razorpay order was checked ({result.attempts ?? 0} payment attempt{result.attempts === 1 ? "" : "s"}).</p>
+                )}
                 {result.mismatch && (
                   <div className="mt-2 p-2 bg-red-900/30 border border-red-800 rounded text-red-400 text-xs">
                     Status mismatch detected. DB shows <strong>{result.dbStatus}</strong> but Razorpay shows <strong>{result.razorpayStatus}</strong>.
@@ -340,7 +344,23 @@ export default function PaymentsPage() {
       await approveMutation.mutateAsync(paymentId);
       toast.success("Payment approved and access granted");
     } catch (e: any) {
-      toast.error(e?.response?.data?.error ?? "Approval failed");
+      const body = e?.response?.data ?? e;
+      if (body?.code === "NOT_PAID_ON_RAZORPAY") {
+        const ok = window.confirm(
+          "Razorpay has NO captured payment for this checkout, so the member did not pay through Razorpay.\n\n" +
+          "Approve only if you have confirmed they paid another way (bank transfer, UPI, cash). " +
+          "It will be recorded as a manual payment and the course will be unlocked.\n\nApprove anyway?",
+        );
+        if (!ok) return;
+        try {
+          await approveMutation.mutateAsync({ paymentId, force: true });
+          toast.success("Approved as a manual payment and access granted");
+        } catch (e2: any) {
+          toast.error(e2?.response?.data?.error ?? "Approval failed");
+        }
+        return;
+      }
+      toast.error(body?.error ?? "Approval failed");
     }
   };
 
@@ -430,16 +450,20 @@ export default function PaymentsPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
           <StatCard label="Total Revenue" value={fmt(stats.totalRevenue ?? 0)} />
           <StatCard label="This Month" value={fmt(stats.thisMonthRevenue ?? 0)} />
-          <StatCard label="Razorpay" value={fmt(stats.razorpayRevenue ?? 0)} />
+          <StatCard label="Razorpay" value={fmt(stats.razorpayRevenue ?? 0)}
+            sub={(stats.razorpayUnconfirmedCount ?? 0) > 0
+              ? `${fmt(stats.razorpayConfirmedRevenue ?? 0)} confirmed by Razorpay · ${fmt(stats.razorpayUnconfirmedRevenue ?? 0)} approved by hand (${stats.razorpayUnconfirmedCount})`
+              : "all confirmed by Razorpay"} />
           <StatCard label="Manual / Other" value={fmt(stats.manualRevenue ?? 0)} />
-          <StatCard label="Pending" value={String(stats.pendingCount ?? 0)} sub="requires approval" />
+          <StatCard label="Awaiting Approval" value={String(stats.awaitingApprovalCount ?? 0)}
+            sub={`${stats.unpaidCheckoutCount ?? 0} unpaid Razorpay checkout${(stats.unpaidCheckoutCount ?? 0) === 1 ? "" : "s"}`} />
           <StatCard label="Refunded" value={fmt(stats.refundedTotal ?? 0)} />
           <StatCard label="Failed" value={String(stats.failedCount ?? 0)} />
         </div>
       )}
 
       {/* Pending alert */}
-      {!statsQuery.isLoading && (stats.pendingCount ?? 0) > 0 && (
+      {!statsQuery.isLoading && (stats.awaitingApprovalCount ?? 0) > 0 && (
         <div
           className="flex items-center justify-between px-4 py-3 bg-yellow-900/20 border border-yellow-800/50 rounded-xl cursor-pointer hover:bg-yellow-900/30 transition-colors"
           onClick={() => { setTab("list"); setFilters((f) => ({ ...f, status: "pending", page: 1 })); }}
@@ -447,7 +471,7 @@ export default function PaymentsPage() {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
             <span className="text-yellow-400 text-sm font-semibold">
-              {stats.pendingCount} payment{stats.pendingCount > 1 ? "s" : ""} pending approval
+              {stats.awaitingApprovalCount} manual payment{stats.awaitingApprovalCount > 1 ? "s" : ""} awaiting approval
             </span>
           </div>
           <span className="text-yellow-600 text-xs">Click to review →</span>
@@ -502,7 +526,13 @@ export default function PaymentsPage() {
           </div>
 
           {/* Summary */}
-          {analytics.summary && (
+          {analyticsQuery.isLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 h-[92px] animate-pulse" />
+              ))}
+            </div>
+          ) : analytics.summary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard label="Period Revenue" value={fmt(analytics.summary.totalRevenue ?? 0)} />
               <StatCard label="Razorpay" value={fmt(analytics.summary.razorpayRevenue ?? 0)} />
@@ -657,6 +687,7 @@ export default function PaymentsPage() {
         const rzMeta = razorpayListQuery.data?.meta ?? { total: 0, page: 1, limit: 25, totalRevenue: 0 };
         return (
           <div>
+            <ReconcilePanel />
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-[#a0a0a0]">{rzMeta.total} Razorpay payments · revenue: <span className="text-[#f0f0f0] font-semibold">{fmt(rzMeta.totalRevenue)}</span></p>
               <div className="flex gap-2">
@@ -963,5 +994,134 @@ export default function PaymentsPage() {
       )}
     </div>
     </DashboardLayout>
+  );
+}
+
+// ── Razorpay reconciliation ───────────────────────────────────────────────────
+
+const VERDICT: Record<string, { label: string; cls: string; hint: string }> = {
+  ok:                   { label: "Matches",              cls: "bg-green-900/40 text-green-400 border border-green-800", hint: "TBT and Razorpay agree" },
+  not_paid_on_razorpay: { label: "Not paid on Razorpay", cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "TBT shows it paid, Razorpay captured nothing for this order" },
+  paid_not_recorded:    { label: "Paid, not recorded",   cls: "bg-amber-900/40 text-amber-400 border border-amber-800", hint: "Razorpay captured money but TBT still shows pending/failed" },
+  amount_mismatch:      { label: "Amount differs",       cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "Captured amount differs from the TBT amount" },
+  refund_mismatch:      { label: "Refund differs",       cls: "bg-purple-900/40 text-purple-400 border border-purple-800", hint: "Refund state differs between TBT and Razorpay" },
+  unpaid_checkout:      { label: "Unpaid checkout",      cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]", hint: "Checkout opened, never paid — nothing to do" },
+  no_order:             { label: "No Razorpay order",    cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "Marked Razorpay but has no order to check" },
+  error:                { label: "Check failed",         cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]", hint: "Razorpay API error — try again" },
+};
+const VERDICT_ORDER = ["not_paid_on_razorpay", "paid_not_recorded", "amount_mismatch", "refund_mismatch", "no_order", "error", "ok", "unpaid_checkout"];
+
+function ReconcilePanel() {
+  const [run, setRun] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const q = useRazorpayReconcile(run);
+  const d: any = q.data;
+  const rows: any[] = (d?.rows ?? []).slice().sort((a: any, b: any) => VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict));
+  const issues = rows.filter((r) => r.verdict !== "ok" && r.verdict !== "unpaid_checkout");
+  const shown = showAll ? rows : issues;
+
+  const exportCsv = () => {
+    const head = ["member", "phone", "course", "tbt_amount", "tbt_status", "tbt_method", "result", "razorpay_captured", "razorpay_payment_id", "razorpay_order_id", "created_at", "paid_at"];
+    const body = rows.map((r) => [r.memberName, r.phone ?? "", r.courseTitle, r.amount, r.status, r.method, VERDICT[r.verdict]?.label ?? r.verdict,
+      r.capturedAmount ?? "", r.capturedPaymentId ?? "", r.orderId ?? "", r.createdAt ?? "", r.paidAt ?? ""]);
+    const csv = [head, ...body].map((x) => x.map((v: any) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `razorpay-check-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 mb-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#a0a0a0] font-rajdhani">Check against Razorpay</p>
+          <p className="text-xs text-[#606060] mt-1 max-w-[620px]">
+            Looks up every Razorpay course order on Razorpay itself and compares it with what TBT recorded. Read-only — nothing is changed.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          {d && (
+            <button onClick={exportCsv} className="flex items-center gap-2 px-3 h-9 rounded-lg border border-[#2a2a2a] text-[#a0a0a0] text-xs hover:bg-[#1a1a1a]">
+              <Download size={13} /> CSV
+            </button>
+          )}
+          <button
+            onClick={() => (run ? q.refetch() : setRun(true))}
+            disabled={q.isFetching}
+            className="flex items-center gap-2 px-4 h-9 rounded-lg bg-[#dc2626] hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-50"
+          >
+            <ShieldCheck size={14} className={q.isFetching ? "animate-pulse" : ""} />
+            {q.isFetching ? "Checking with Razorpay…" : d ? "Check again" : "Check all with Razorpay"}
+          </button>
+        </div>
+      </div>
+
+      {q.isError && <p className="mt-4 text-sm text-red-400">{(q.error as any)?.response?.data?.error ?? (q.error as any)?.error ?? "Could not reach Razorpay."}</p>}
+
+      {d && (
+        <div className="mt-5 space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <StatCard label="Captured on Razorpay" value={fmtSmall(d.totals.capturedOnRazorpay)} sub="money Razorpay actually received" />
+            <StatCard label="TBT Razorpay revenue" value={fmtSmall(d.totals.tbtRazorpayRevenue)} sub="what this page counts" />
+            <StatCard label="Not paid on Razorpay" value={fmtSmall(d.totals.notPaidOnRazorpayAmount)} sub={`${d.counts.not_paid_on_razorpay ?? 0} marked paid in TBT`} />
+            <StatCard label="Paid, not recorded" value={fmtSmall(d.totals.paidNotRecordedAmount)} sub={`${d.counts.paid_not_recorded ?? 0} — member may lack access`} />
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs items-center">
+            {VERDICT_ORDER.filter((k) => d.counts[k]).map((k) => (
+              <span key={k} title={VERDICT[k].hint} className={`px-2 py-0.5 rounded ${VERDICT[k].cls}`}>{VERDICT[k].label}: {d.counts[k]}</span>
+            ))}
+            <span className="text-[#606060] ml-auto">Checked {new Date(d.checkedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-[#a0a0a0]">{issues.length ? `${issues.length} payment${issues.length === 1 ? "" : "s"} need attention` : "No problems found."}</p>
+            <button onClick={() => setShowAll((v) => !v)} className="text-xs text-[#a0a0a0] hover:text-white underline">
+              {showAll ? "Show problems only" : `Show all ${rows.length}`}
+            </button>
+          </div>
+          {shown.length > 0 && (
+            <div className="overflow-x-auto border border-[#2a2a2a] rounded-lg">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#2a2a2a]">
+                    {["Member", "Course", "TBT", "Razorpay", "Result", "Order / Payment"].map((h) => (
+                      <th key={h} className="text-left text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani px-3 py-2 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((r) => (
+                    <tr key={r.id} className="border-b border-[#1e1e1e]">
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="text-[#f0f0f0]">{r.memberName || "Member"}</div>
+                        <div className="text-[#606060] text-xs">{r.phone}</div>
+                      </td>
+                      <td className="px-3 py-2"><div className="text-[#a0a0a0] max-w-[180px] truncate">{r.courseTitle}</div></td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="text-[#f0f0f0]">{fmtSmall(r.amount)}</div>
+                        <div className="text-[#606060] text-xs">{r.status} · {r.method}{r.paidAt ? ` · ${new Date(r.paidAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}` : ""}</div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="text-[#f0f0f0]">{r.capturedAmount != null ? fmtSmall(r.capturedAmount) : "—"}</div>
+                        <div className="text-[#606060] text-xs">{r.attempts} attempt{r.attempts === 1 ? "" : "s"}{r.refundedAmount ? ` · refunded ${fmtSmall(r.refundedAmount)}` : ""}</div>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <span title={r.apiError ?? VERDICT[r.verdict]?.hint} className={`px-2 py-0.5 rounded text-xs ${VERDICT[r.verdict]?.cls ?? ""}`}>{VERDICT[r.verdict]?.label ?? r.verdict}</span>
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap space-y-0.5">
+                        {r.orderId ? <CopyableId value={r.orderId} /> : <span className="text-[#333]">—</span>}
+                        {(r.capturedPaymentId || r.storedPaymentId) && <CopyableId value={r.capturedPaymentId || r.storedPaymentId} />}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
