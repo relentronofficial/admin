@@ -153,6 +153,8 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
   const pathname = usePathname();
   const [notifOpen, setNotifOpen] = useState(false);
   const [pendingSubmissions, setPendingSubmissions] = useState(0);
+  // Batch of the latest day submission, so the clipboard button opens where it can be reviewed.
+  const lastSubmissionBatchId = useRef<string | null>(null);
   const panelRef  = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount = 0 } = useAdminUnreadCount();
@@ -162,8 +164,9 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
   // Listen for day submissions from members
   useEffect(() => {
     let mounted = true;
-    function onDaySubmitted(data: { dayNumber: number; memberName?: string; batchName?: string }) {
+    function onDaySubmitted(data: { dayNumber: number; batchId?: string; memberName?: string; batchName?: string }) {
       if (!mounted) return;
+      if (data.batchId) lastSubmissionBatchId.current = data.batchId;
       setPendingSubmissions(n => n + 1);
       const who = data.memberName ?? "A member";
       const where = data.batchName ? ` (${data.batchName})` : "";
@@ -282,10 +285,16 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
 
         {/* Pending submissions badge */}
         <button
-          onClick={() => setPendingSubmissions(0)}
+          onClick={() => {
+            // Open the batch of the latest submission (where its days are approved),
+            // or the batch list when none arrived this session.
+            const batchId = lastSubmissionBatchId.current;
+            setPendingSubmissions(0);
+            router.push(batchId ? `/batches/${batchId}` : "/batches");
+          }}
           className="relative w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md flex items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm"
           aria-label="Pending submissions"
-          title="Pending day submissions"
+          title="Review day submissions"
         >
           <ClipboardList size={15} strokeWidth={2} />
           {pendingSubmissions > 0 && (
@@ -321,7 +330,11 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void } = {}) {
           {notifOpen && <NotifPanel onClose={() => setNotifOpen(false)} />}
         </div>
 
-        <button className="hidden sm:flex w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm">
+        <button
+          onClick={() => router.push("/settings/site")}
+          aria-label="Settings"
+          title="Site settings"
+          className="hidden sm:flex w-8 h-8 bg-[#1f1f1f] border border-[#2a2a2a] rounded-md items-center justify-center text-[#a0a0a0] hover:bg-[#2a2a2a] hover:text-[#f0f0f0] transition-all shadow-sm">
           <Settings size={15} strokeWidth={2} />
         </button>
 
