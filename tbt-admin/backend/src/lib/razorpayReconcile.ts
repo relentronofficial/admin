@@ -17,6 +17,7 @@ export interface RzpPaymentLite {
 export type ReconcileVerdict =
   | 'ok' // TBT and Razorpay agree
   | 'not_paid_on_razorpay' // TBT says completed, Razorpay has no captured payment
+  | 'paid_outside_razorpay' // recorded as a non-Razorpay (manual etc.) payment; the order was never paid — expected
   | 'paid_not_recorded' // Razorpay captured money, TBT still pending / failed
   | 'amount_mismatch' // both paid, amounts differ
   | 'refund_mismatch' // refund state differs between TBT and Razorpay
@@ -39,7 +40,7 @@ const PAID = new Set(['captured', 'refunded']);
 const sameAmount = (rupees: number, paise: number) => Math.round(rupees * 100) === paise;
 
 export function reconcileCoursePayment(
-  row: { status: string; amount: number; razorpayOrderId: string | null },
+  row: { status: string; amount: number; razorpayOrderId: string | null; method?: string | null },
   payments: RzpPaymentLite[] | null,
 ): ReconcileResult {
   const base = { capturedPaymentId: null, capturedAmount: null, refundedAmount: null, attempts: payments?.length ?? 0 };
@@ -58,7 +59,7 @@ export function reconcileCoursePayment(
   const rzpRefunded = !!best && (best.status === 'refunded' || (best.amount_refunded ?? 0) > 0);
 
   if (row.status === 'completed') {
-    if (!best) return { ...res, verdict: 'not_paid_on_razorpay' };
+    if (!best) return { ...res, verdict: row.method && row.method !== 'razorpay' ? 'paid_outside_razorpay' : 'not_paid_on_razorpay' };
     if (rzpRefunded) return { ...res, verdict: 'refund_mismatch' };
     if (!sameAmount(row.amount, best.amount)) return { ...res, verdict: 'amount_mismatch' };
     return res;

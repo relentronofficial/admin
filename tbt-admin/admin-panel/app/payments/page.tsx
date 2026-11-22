@@ -1003,6 +1003,7 @@ export default function PaymentsPage() {
 const VERDICT: Record<string, { label: string; cls: string; hint: string }> = {
   ok:                   { label: "Matches",              cls: "bg-green-900/40 text-green-400 border border-green-800", hint: "TBT and Razorpay agree" },
   not_paid_on_razorpay: { label: "Not paid on Razorpay", cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "TBT shows it paid, Razorpay captured nothing for this order" },
+  paid_outside_razorpay: { label: "Paid outside Razorpay", cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]", hint: "Recorded as a manual/other payment; the Razorpay checkout was never paid — expected" },
   paid_not_recorded:    { label: "Paid, not recorded",   cls: "bg-amber-900/40 text-amber-400 border border-amber-800", hint: "Razorpay captured money but TBT still shows pending/failed" },
   amount_mismatch:      { label: "Amount differs",       cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "Captured amount differs from the TBT amount" },
   refund_mismatch:      { label: "Refund differs",       cls: "bg-purple-900/40 text-purple-400 border border-purple-800", hint: "Refund state differs between TBT and Razorpay" },
@@ -1010,7 +1011,7 @@ const VERDICT: Record<string, { label: string; cls: string; hint: string }> = {
   no_order:             { label: "No Razorpay order",    cls: "bg-red-900/40 text-red-400 border border-red-800", hint: "Marked Razorpay but has no order to check" },
   error:                { label: "Check failed",         cls: "bg-[#2a2a2a] text-[#a0a0a0] border border-[#333]", hint: "Razorpay API error — try again" },
 };
-const VERDICT_ORDER = ["not_paid_on_razorpay", "paid_not_recorded", "amount_mismatch", "refund_mismatch", "no_order", "error", "ok", "unpaid_checkout"];
+const VERDICT_ORDER = ["not_paid_on_razorpay", "paid_not_recorded", "amount_mismatch", "refund_mismatch", "no_order", "error", "ok", "paid_outside_razorpay", "unpaid_checkout"];
 
 function ReconcilePanel() {
   const [run, setRun] = useState(false);
@@ -1018,7 +1019,7 @@ function ReconcilePanel() {
   const q = useRazorpayReconcile(run);
   const d: any = q.data;
   const rows: any[] = (d?.rows ?? []).slice().sort((a: any, b: any) => VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict));
-  const issues = rows.filter((r) => r.verdict !== "ok" && r.verdict !== "unpaid_checkout");
+  const issues = rows.filter((r) => r.verdict !== "ok" && r.verdict !== "unpaid_checkout" && r.verdict !== "paid_outside_razorpay");
   const shown = showAll ? rows : issues;
   const markManual = useMarkPaymentManual();
   const notPaid = rows.filter((r) => r.verdict === "not_paid_on_razorpay");

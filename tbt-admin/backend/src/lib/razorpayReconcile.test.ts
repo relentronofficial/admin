@@ -19,6 +19,11 @@ describe('reconcileCoursePayment', () => {
     expect(reconcileCoursePayment(row('completed'), [{ id: 'p', status: 'authorized', amount: 9000000 }]).verdict).toBe('not_paid_on_razorpay');
   });
 
+  it('completed manual row whose order was never paid → paid_outside_razorpay', () => {
+    expect(reconcileCoursePayment({ ...row('completed'), method: 'manual' }, []).verdict).toBe('paid_outside_razorpay');
+    expect(reconcileCoursePayment({ ...row('completed'), method: 'razorpay' }, []).verdict).toBe('not_paid_on_razorpay');
+  });
+
   it('pending but captured on Razorpay → paid_not_recorded', () => {
     expect(reconcileCoursePayment(row('pending'), [cap(9000000)]).verdict).toBe('paid_not_recorded');
     expect(reconcileCoursePayment(row('failed'), [cap(9000000)]).verdict).toBe('paid_not_recorded');

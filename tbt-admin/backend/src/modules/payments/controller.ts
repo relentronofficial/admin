@@ -568,7 +568,7 @@ export async function razorpayReconcileHandler(req: FastifyRequest, reply: Fasti
         try { payments = await fetchOrderPayments(rzp, r.orderId); }
         catch (e: any) { apiError = e?.error?.description ?? e?.message ?? 'Razorpay API error'; }
       }
-      const res = reconcileCoursePayment({ status: r.status, amount: Number(r.amount), razorpayOrderId: r.orderId }, payments);
+      const res = reconcileCoursePayment({ status: r.status, amount: Number(r.amount), razorpayOrderId: r.orderId, method: r.method }, payments);
       out[i] = {
         id: r.id, memberId: r.memberId, memberName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(), phone: r.phone,
         courseTitle: r.courseTitle, amount: Number(r.amount), status: r.status, method: r.method,
