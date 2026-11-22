@@ -56,6 +56,9 @@ export function resolveNotificationRoute(notification: {
     case "support_call_booked":
       return "/support-calls";
 
+    case "insights_digest":
+      return "/insights?tab=risk";
+
     case "announcement":
       return "/app-notifications";
 

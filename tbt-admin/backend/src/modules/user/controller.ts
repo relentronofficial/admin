@@ -27,6 +27,7 @@ import { computeStreakPointsSummary, type StreakPointsRow } from '../../lib/stre
 import { getRazorpay, verifyPaymentSignature, verifyWebhookSignature } from '../../lib/razorpay.js';
 import { grantCourseAccessAfterPayment, grantPaymentAccess, loadPaymentForGrant } from '../../lib/coursePaymentGrant.js';
 import { trackActivity, recordActiveMinute, ACTIVITY_TIMEZONE, getActivityToday, getTrackingStartDate, getMemberDailyRows } from '../../lib/memberActivity.js';
+import { pageSection } from '../../lib/insights/insightsLogic.js';
 import { isActiveHeartbeat, buildUsageHistory } from '../../lib/memberActivityLogic.js';
 import { isCourseModuleAllowed, validateModuleSelection, withGrantedCourseModules, type ModuleAccess } from '../../lib/mentorshipModules.js';
 import {
@@ -2592,6 +2593,17 @@ export async function activityHeartbeatHandler(request: FastifyRequest, reply: F
   if (!active) return ok(reply, { recorded: false });
   try {
     await recordActiveMinute(request.server.prisma, request.memberId!, media);
+    // Admin Insights > Usage: one active minute for the page section the member is on.
+    const sec = pageSection((request.body as { path?: unknown } | undefined)?.path);
+    if (sec) {
+      await request.server.prisma.$executeRawUnsafe(
+        `INSERT INTO member_section_minutes (member_id, activity_date, section, ref_id, minutes)
+         VALUES ($1::uuid, (now() AT TIME ZONE '${ACTIVITY_TIMEZONE}')::date, $2, $3, 1)
+         ON CONFLICT (member_id, activity_date, section, ref_id)
+         DO UPDATE SET minutes = member_section_minutes.minutes + 1`,
+        request.memberId!, sec.section, sec.refId,
+      ).catch((err: unknown) => request.log.warn({ err }, 'section minute failed'));
+    }
     return ok(reply, { recorded: true });
   } catch (err) {
     request.log.warn({ err }, 'activity heartbeat failed');

@@ -8,6 +8,8 @@ export interface ActivityHeartbeat {
   interacted: boolean;
   /** A video or audio element on the page is playing. */
   media: boolean;
+  /** Current page path, for per-section usage insights. */
+  path?: string;
 }
 
 /** GET /api/user/activity/history — the member's own date-wise Daily Time Spent. */

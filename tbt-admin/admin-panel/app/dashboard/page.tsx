@@ -18,6 +18,7 @@ import { getAdminSocket } from "@/lib/socket/client";
 import { cn } from "@/lib/utils";
 import { useAnalyticsOverview, useAtRiskMembers } from "@/lib/hooks/useTbt";
 import { formatDistanceToNow } from "date-fns";
+import { ExecutiveOverview } from "@/components/insights/ExecutiveOverview";
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -58,6 +59,8 @@ export default function DashboardPage() {
             <p className="text-[12px] text-[#888] font-medium uppercase tracking-wider font-rajdhani">Platform stats and at-risk member tracking.</p>
           </div>
         </div>
+
+        <ExecutiveOverview compact />
 
         {/* Stats Grid */}
         {overviewLoading ? (

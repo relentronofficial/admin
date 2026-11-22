@@ -2909,6 +2909,31 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_member_daily_activity_date ON member_daily_activity (activity_date)`
     ).catch(() => {});
+    // Admin Insights (2026-11-22): active minutes per member-app section, from the web
+    // activity heartbeat's page path (lib/insights/insightsLogic.ts#pageSection).
+    // ref_id = course id on course pages / the lesson player, '' elsewhere.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS member_section_minutes (
+        member_id     UUID        NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+        activity_date DATE        NOT NULL,
+        section       VARCHAR(40) NOT NULL,
+        ref_id        VARCHAR(64) NOT NULL DEFAULT '',
+        minutes       INT         NOT NULL DEFAULT 0,
+        PRIMARY KEY (member_id, activity_date, section, ref_id)
+      )
+    `).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_member_section_minutes_date ON member_section_minutes (activity_date, section)`
+    ).catch(() => {});
+    // One row per weekly Insights digest sent: the claim that stops two Cloud Run
+    // instances from both sending it (jobs/insightsDigest.ts).
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS insights_digest_runs (
+        week_start DATE PRIMARY KEY,
+        sent_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        summary    TEXT
+      )
+    `).catch(() => {});
     // members.last_active_at was never written before 2026-11-21 (only member_daily_activity
     // was). Backfill it from the newest real activity so analytics, At-Risk and My Workspace
     // see true "last active" dates. Idempotent (only moves dates forward); not awaited so it

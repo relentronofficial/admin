@@ -45,7 +45,7 @@ export function useActivityHeartbeat() {
       inFlight = true;
       lastSent = now;
       activityService
-        .heartbeat({ visible: true, interacted, media })
+        .heartbeat({ visible: true, interacted, media, path: window.location.pathname })
         .catch(() => {})
         .finally(() => {
           inFlight = false;

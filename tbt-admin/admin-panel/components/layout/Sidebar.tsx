@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
+  LineChart,
   LayoutDashboard,
   Users,
   UserCog,
@@ -186,6 +187,7 @@ const navGroups: NavGroup[] = [
   {
     label: "Analytics",
     items: [
+      { name: "Insights", href: "/insights", icon: LineChart },
       { name: "Analytics", href: "/analytics", icon: BarChart2 },
       { name: "Challenges", href: "/analytics/challenges", icon: Target },
       { name: "Assignments", href: "/assignments", icon: ClipboardCheck },

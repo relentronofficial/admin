@@ -27,6 +27,7 @@ import { weeklyGraphRoutes } from './modules/weekly-graph/routes.js';
 import { myWorkspaceRoutes } from './modules/my-workspace/routes.js';
 import { moduleFaqsRoutes } from './modules/module-faqs/routes.js';
 import { helpBotRoutes } from './modules/help-bot/routes.js';
+import { insightsRoutes } from './modules/insights/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
 import { psychometricRoutes } from './modules/psychometric/routes.js';
 import { psychometricPlatformAdminRoutes } from './modules/psychometric-platform/routes.js';
@@ -73,6 +74,7 @@ import { startBatchReportJobs } from './jobs/batchReports.js';
 import { startCourseReportJobs } from './jobs/courseReports.js';
 import { startDisappearingMessagesJob } from './jobs/disappearingMessages.js';
 import { startChatScheduledMessagesJob } from './jobs/chatScheduledMessages.js';
+import { startInsightsDigestJob } from './jobs/insightsDigest.js';
 import { startHelpdeskEscalationJob } from './jobs/helpdeskEscalation.js';
 import { startLifelineReconcileJob } from './jobs/lifelineReconcile.js';
 import { runMonthlyReports, runWeeklyReports } from './lib/batchReports.js';
@@ -227,6 +229,7 @@ async function bootstrap() {
     await fastify.register(myWorkspaceRoutes, { prefix: '/api/my-workspace' });
     await fastify.register(moduleFaqsRoutes, { prefix: '/api/module-faqs' });
     await fastify.register(helpBotRoutes, { prefix: '/api/help-bot' });
+    await fastify.register(insightsRoutes, { prefix: '/api/insights' });
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });
     await fastify.register(paymentRoutes, { prefix: '/api/payments' });
     await fastify.register(psychometricRoutes, { prefix: '/api/psychometric/admin' });
@@ -467,6 +470,7 @@ async function bootstrap() {
       // Admin-scheduled group-chat messages (one-time / daily) — 30 s sweep,
       // no Redis needed; rows are claimed atomically so instances never double-post.
       startChatScheduledMessagesJob(fastify);
+      startInsightsDigestJob(fastify);
 
       // Support-ticket escalation sweep (every 2 minutes — see
       // helpdeskEscalation.ts for why this deviates from the hourly norm).
