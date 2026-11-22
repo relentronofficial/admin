@@ -70,9 +70,9 @@ function CopyableId({ value }: { value: string }) {
 
 function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-5 flex flex-col gap-1">
+    <div className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 xl:p-5 flex flex-col gap-1 min-w-0">
       <p className="text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">{label}</p>
-      <p className="text-2xl font-bold text-[#f0f0f0]">{value}</p>
+      <p className="text-xl xl:text-2xl font-bold text-[#f0f0f0] break-words">{value}</p>
       {sub && <p className="text-xs text-[#606060]">{sub}</p>}
     </div>
   );
@@ -442,13 +442,13 @@ export default function PaymentsPage() {
       {/* Stats */}
       {/* Stat Cards */}
       {statsQuery.isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-3">
           {Array.from({ length: 7 }).map((_, i) => (
             <div key={i} className="bg-[#181818] border border-[#2a2a2a] rounded-xl p-4 h-20 animate-pulse" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7 gap-3">
           <StatCard label="Total Revenue" value={fmt(stats.totalRevenue ?? 0)} />
           <StatCard label="This Month" value={fmt(stats.thisMonthRevenue ?? 0)} />
           <StatCard label="Razorpay" value={fmt(stats.razorpayRevenue ?? 0)}
