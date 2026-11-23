@@ -637,7 +637,7 @@ export default function GroupChatPage() {
     <div className="max-w-3xl mx-auto flex flex-col h-[calc(100dvh-8rem)]">
       {/* Header */}
       <div
-        className="flex items-center gap-3 p-3 rounded-t-2xl flex-shrink-0"
+        className="chat-glass-bar flex items-center gap-3 p-3 rounded-t-2xl flex-shrink-0"
         style={{
           background: "var(--color-bg-surface)",
           border: "1px solid var(--color-border-subtle)",
@@ -720,11 +720,10 @@ export default function GroupChatPage() {
       {/* Message list */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto min-h-0 py-3 space-y-1"
+        className="chat-thread flex-1 overflow-y-auto min-h-0 py-3 space-y-1"
         style={{
-          background: "var(--color-bg-primary)",
-          borderLeft: "1px solid var(--color-border-subtle)",
-          borderRight: "1px solid var(--color-border-subtle)",
+          borderLeft: "1px solid color-mix(in srgb, var(--chat-red) 45%, transparent)",
+          borderRight: "1px solid color-mix(in srgb, var(--chat-red) 45%, transparent)",
         }}
       >
         {isFetchingNextPage && (
@@ -817,7 +816,7 @@ export default function GroupChatPage() {
 
       {/* Composer */}
       <div
-        className="flex-shrink-0 rounded-b-2xl"
+        className="chat-glass-bar flex-shrink-0 rounded-b-2xl"
         style={{
           background: "var(--color-bg-surface)",
           border: "1px solid var(--color-border-subtle)",
@@ -1020,7 +1019,7 @@ export default function GroupChatPage() {
               }}
               placeholder={pendingMedia ? "Add a caption…" : "Type a message… (@ to mention)"}
               rows={1}
-              className="w-full px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
+              className="chat-input-glass w-full px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
               style={{
                 background: "var(--color-bg-primary)",
                 border: "1px solid var(--color-border-subtle)",
@@ -1035,7 +1034,7 @@ export default function GroupChatPage() {
               pendingMedia?.uploading ||
               (draft.trim().length === 0 && !pendingMedia?.uploadedUrl)
             }
-            className="w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
+            className="chat-send-btn w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
             style={{ background: "var(--color-accent)" }}
             aria-label="Send"
           >
@@ -1343,14 +1342,8 @@ function MessageBubble({
           onPointerCancel={() => cancelLongPress()}
         >
           <div
-            className={cn("rounded-2xl overflow-hidden relative")}
+            className={cn("rounded-2xl overflow-hidden relative", isMine ? "chat-bubble-mine" : "chat-bubble-theirs")}
             style={{
-              background: isMine
-                ? "color-mix(in srgb, var(--color-accent) 12%, transparent)"
-                : "var(--color-bg-surface)",
-              border: `1px solid ${isMine
-                ? "color-mix(in srgb, var(--color-accent) 30%, transparent)"
-                : "var(--color-border-subtle)"}`,
               borderBottomLeftRadius: isMine ? undefined : 4,
               borderBottomRightRadius: isMine ? 4 : undefined,
             }}

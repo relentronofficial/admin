@@ -630,7 +630,7 @@ export default function MessagesPage() {
 
   return (
     <div
-      className="flex h-[calc(100dvh-140px)] rounded-xl border overflow-hidden"
+      className="chat-shell flex h-[calc(100dvh-140px)] rounded-xl border overflow-hidden"
       style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
     >
       {/* ── Left pane: unified list (groups + DMs interleaved) ───────────── */}
@@ -732,17 +732,16 @@ export default function MessagesPage() {
       {/* ── Right pane: chat thread ─────────────────────────────────────────── */}
       <div
         className={cn(
-          'flex-1 flex flex-col',
+          'chat-thread flex-1 flex flex-col',
           mobileView === 'list' ? 'hidden lg:flex' : 'flex'
         )}
-        style={{ background: 'var(--color-bg-primary)' }}
       >
         {activeGroupId ? (
           /* ── Inline group chat ──────────────────────────────────────────── */
           <>
             {/* Group header */}
             <div
-              className="px-4 py-3 border-b flex items-center gap-3"
+              className="chat-glass-bar px-4 py-3 border-b flex items-center gap-3"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -846,7 +845,7 @@ export default function MessagesPage() {
 
             {/* Group composer */}
             <div
-              className="border-t px-4 py-3"
+              className="chat-glass-bar border-t px-4 py-3"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -880,7 +879,7 @@ export default function MessagesPage() {
                 </div>
               )}
               <div
-                className="flex items-end gap-2 rounded-xl px-3 py-2"
+                className="chat-input-glass flex items-end gap-2 rounded-xl px-3 py-2"
                 style={{ background: 'var(--color-bg-primary)', border: '1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
               >
                 <textarea
@@ -900,7 +899,7 @@ export default function MessagesPage() {
                 <button
                   onClick={handleGroupSend}
                   disabled={!groupInput.trim() || sendGroupMessage.isPending || editGroupMessage.isPending}
-                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="chat-send-btn flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendGroupMessage.isPending || editGroupMessage.isPending ? (
@@ -916,7 +915,7 @@ export default function MessagesPage() {
           <>
             {/* Thread header */}
             <div
-              className="px-4 py-3 border-b flex items-center gap-3"
+              className="chat-glass-bar px-4 py-3 border-b flex items-center gap-3"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -1022,7 +1021,7 @@ export default function MessagesPage() {
 
             {/* Composer */}
             <div
-              className="border-t"
+              className="chat-glass-bar border-t"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -1146,7 +1145,7 @@ export default function MessagesPage() {
                     sendMessage.isPending ||
                     pendingMedia?.uploading
                   }
-                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="chat-send-btn flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendMessage.isPending ? (
@@ -1434,13 +1433,8 @@ function DmBubble({
         <div
           className={cn(
             'rounded-2xl overflow-hidden',
-            isMe ? 'rounded-tr-sm' : 'rounded-tl-sm',
+            isMe ? 'chat-bubble-mine rounded-tr-sm' : 'chat-bubble-theirs rounded-tl-sm',
           )}
-          style={{
-            background: isMe
-              ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
-              : 'var(--color-bg-surface)',
-          }}
         >
           {/* Reply quote */}
           {message.replyTo && (
@@ -2267,12 +2261,10 @@ function InlineGroupBubble({
         {/* Wrapper carries `group` so the hover trigger shows on mouse-over */}
         <div className="relative group">
           <div
-            className={cn('rounded-2xl overflow-hidden', isMe ? 'rounded-tr-sm' : 'rounded-tl-sm')}
-            style={{
-              background: isMe
-                ? 'color-mix(in srgb, var(--color-accent) 20%, transparent)'
-                : 'var(--color-bg-surface)',
-            }}
+            className={cn(
+              'rounded-2xl overflow-hidden',
+              isMe ? 'chat-bubble-mine rounded-tr-sm' : 'chat-bubble-theirs rounded-tl-sm',
+            )}
           >
             {!deleted && message.replyTo && (
               <div

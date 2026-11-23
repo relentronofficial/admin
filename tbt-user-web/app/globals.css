@@ -340,3 +340,150 @@ select option {
 @media (prefers-reduced-motion: reduce) {
   .live-dot { animation: none; }
 }
+
+/* ── Chat: TBT-red glass theme ───────────────────────────────────────────────
+ * Individual and group chat (/messages, /messages/group/[id]). Bright TBT-logo
+ * red (#ec1c24) with glass bubbles and white text. The thread sits on a deep
+ * red-black backdrop in both themes so the white text and the frosted bubbles
+ * always have something dark to sit on. */
+:root {
+  --chat-red: #ec1c24;
+  --chat-red-deep: #b3121a;
+  --chat-text: #ffffff;
+  --chat-text-muted: rgba(255, 255, 255, 0.72);
+}
+
+.chat-shell {
+  border-color: color-mix(in srgb, var(--chat-red) 45%, transparent) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--chat-red) 15%, transparent),
+    0 12px 40px -12px color-mix(in srgb, var(--chat-red) 35%, transparent);
+}
+
+.chat-thread {
+  background:
+    radial-gradient(120% 60% at 0% 0%, color-mix(in srgb, var(--chat-red) 30%, transparent), transparent 60%),
+    radial-gradient(90% 50% at 100% 100%, color-mix(in srgb, var(--chat-red) 22%, transparent), transparent 60%),
+    linear-gradient(180deg, #1a0306 0%, #0d0204 100%);
+}
+
+/* Header / composer strips around the thread */
+.chat-glass-bar {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--chat-red) 88%, transparent), color-mix(in srgb, var(--chat-red-deep) 88%, transparent)) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: var(--chat-text);
+}
+
+/* Message box inside the composer: frosted white on the red bar */
+.chat-input-glass {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.chat-input-glass textarea,
+.chat-input-glass input,
+textarea.chat-input-glass {
+  color: var(--chat-text) !important;
+}
+.chat-input-glass textarea::placeholder,
+textarea.chat-input-glass::placeholder {
+  color: var(--chat-text-muted) !important;
+}
+
+/* Bubbles */
+.chat-bubble-mine,
+.chat-bubble-theirs {
+  color: var(--chat-text);
+  -webkit-backdrop-filter: blur(14px) saturate(170%);
+  backdrop-filter: blur(14px) saturate(170%);
+}
+.chat-bubble-mine {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--chat-red) 92%, transparent), color-mix(in srgb, var(--chat-red-deep) 86%, transparent)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--chat-red) 70%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.chat-bubble-theirs {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--chat-red) 38%, transparent), rgba(255, 255, 255, 0.07)) !important;
+  border: 1px solid color-mix(in srgb, var(--chat-red) 55%, rgba(255, 255, 255, 0.2)) !important;
+  box-shadow: 0 8px 24px -10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+/* Everything inside a bubble, a red bar or on the thread backdrop reads white,
+ * whatever the theme. Pop-ups (menus, pickers, dialogs) keep their own colours. */
+:is(.chat-bubble-mine, .chat-bubble-theirs, .chat-glass-bar) :is(.text-foreground, p, span, strong, em, u, s):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *),
+.chat-thread .text-foreground:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+  color: var(--chat-text);
+}
+:is(.chat-bubble-mine, .chat-bubble-theirs, .chat-glass-bar, .chat-thread) .text-muted-foreground:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+  color: var(--chat-text-muted) !important;
+}
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="color-accent"] {
+  color: var(--chat-text) !important;
+}
+:is(.chat-bubble-mine, .chat-bubble-theirs) a {
+  color: var(--chat-text) !important;
+  text-decoration-color: rgba(255, 255, 255, 0.7);
+}
+/* Reply quotes, link previews and inline code inside a bubble */
+:is(.chat-bubble-mine, .chat-bubble-theirs) :is(.chat-quote, code) {
+  background: rgba(0, 0, 0, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+}
+
+/* Reply quotes inside a bubble: dark glass with a white edge */
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="border-color: var(--color-accent)"],
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="borderLeft"],
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="border-left: 3px solid var(--color-accent)"] {
+  border-color: rgba(255, 255, 255, 0.75) !important;
+}
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="background: var(--color-surface-overlay)"],
+:is(.chat-bubble-mine, .chat-bubble-theirs) [style*="background: color-mix(in srgb, var(--color-accent)"] {
+  background: rgba(0, 0, 0, 0.22) !important;
+}
+
+/* Reaction chips / pills under a bubble */
+.chat-chip-glass {
+  background: color-mix(in srgb, var(--chat-red) 30%, rgba(255, 255, 255, 0.08)) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: var(--chat-text) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* Send button: white disc with a red arrow so it stands out on the red bar */
+.chat-send-btn {
+  background: #ffffff !important;
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.45);
+}
+.chat-send-btn svg {
+  color: var(--chat-red) !important;
+}
+
+/* Accent-coloured text and icons on a red bar turn white */
+.chat-glass-bar [style*="color: var(--color-accent)"]:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+  color: var(--chat-text) !important;
+}
+.chat-glass-bar :is(button, a) svg:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+  color: inherit;
+}
+.chat-glass-bar :is(button, a):not(.chat-send-btn):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+  color: var(--chat-text-muted);
+}
+.chat-glass-bar :is(button, a):not(.chat-send-btn):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *):hover {
+  color: var(--chat-text);
+}
+/* Reply / edit / attachment banners inside a bar: darker glass */
+.chat-glass-bar > div[style*="background"]:not(.chat-input-glass) {
+  background: rgba(0, 0, 0, 0.22) !important;
+  border-color: rgba(255, 255, 255, 0.6) !important;
+}
+/* Textareas sitting straight on a bar (DM composer) */
+.chat-glass-bar textarea {
+  color: var(--chat-text) !important;
+}
+.chat-glass-bar textarea::placeholder {
+  color: var(--chat-text-muted) !important;
+}
