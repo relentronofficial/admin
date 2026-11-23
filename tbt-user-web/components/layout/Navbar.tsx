@@ -1,11 +1,12 @@
 "use client";
 
 import { START_TOUR_EVENT } from "@/components/features/onboarding-tour/OnboardingTour";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Bell, LifeBuoy, MessageSquare, Menu, X, Film,
+  Bell, LifeBuoy, MessageSquare, Menu, X, Film, CheckCheck, ArrowRight,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUIStore } from "@/lib/stores/useUIStore";
@@ -26,19 +27,39 @@ import { StreakButton } from "./StreakButton";
 import { TierAccessIndicator } from "./TierAccessIndicator";
 import { CoinBalanceIndicator } from "./CoinBalanceIndicator";
 import { getNotifIcon, normalizeNotifUrl } from "@/lib/utils/notifications";
+import { timeAgo } from "@/lib/utils/format";
 import { buildNavMenu } from "@/lib/utils/navOrder";
 import type { Notification } from "@/types";
 
 // ── Notification dropdown ─────────────────────────────────────────────────────
+// A frosted-glass panel. It is portalled to <body> and pinned under the bell:
+// the header itself has a backdrop blur, and a blur nested inside another blur
+// can't see the page behind it, so the glass would render flat in place.
 
-function NotifDropdown({ onClose }: { onClose: () => void }) {
+function NotifDropdown({ onClose, anchorRef }: { onClose: () => void; anchorRef: RefObject<HTMLElement | null> }) {
   const router = useRouter();
   const { data, isLoading } = useNotifications({ limit: 5 });
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
 
   const notifications: Notification[] = data?.data ?? [];
   const unreadInList = notifications.filter((n) => !n.isRead).length;
+
+  useEffect(() => {
+    function place() {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPos({ top: rect.bottom + 8, right: Math.max(12, window.innerWidth - rect.right) });
+    }
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [anchorRef]);
 
   function handleClick(n: Notification) {
     onClose();
@@ -46,117 +67,103 @@ function NotifDropdown({ onClose }: { onClose: () => void }) {
     router.push(n.actionUrl ? normalizeNotifUrl(n.actionUrl) : "/notifications");
   }
 
-  return (
+  if (!pos) return null;
+
+  return createPortal(
     <div
-      className="absolute right-0 top-full mt-2 w-[min(320px,calc(100vw-24px))] rounded-2xl overflow-hidden z-50 flex flex-col"
-      style={{
-        background: "var(--color-notif-bg)",
-        border: "1px solid var(--color-border-medium)",
-        boxShadow: "0 16px 48px rgba(0,0,0,0.7)",
-        maxHeight: "420px",
-      }}
+      role="dialog"
+      aria-label="Notifications"
+      className="notif-glass fixed z-50 w-[min(340px,calc(100vw-24px))] rounded-2xl overflow-hidden flex flex-col"
+      style={{ top: pos.top, right: pos.right, maxHeight: "min(460px, calc(100dvh - 96px))" }}
     >
       {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 py-3 flex-shrink-0"
-        style={{ borderBottom: "1px solid var(--color-border-subtle)" }}
-      >
-        <span className="text-sm font-bold text-foreground">Notifications</span>
+      <div className="notif-glass-divider flex items-center justify-between gap-2 px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-foreground">Notifications</span>
+          {unreadInList > 0 && (
+            <span className="notif-glass-count text-[10px] font-bold px-1.5 py-px rounded-full">{unreadInList} new</span>
+          )}
+        </div>
         {unreadInList > 0 && (
           <button
             onClick={() => markAll.mutate()}
             disabled={markAll.isPending}
-            className="text-[11px] font-bold disabled:opacity-50 transition-opacity"
-            style={{ color: "var(--color-accent)" }}
+            className="notif-glass-link inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg disabled:opacity-50"
           >
-            Mark all read
+            <CheckCheck size={12} /> Mark all read
           </button>
         )}
       </div>
 
       {/* List */}
-      <div className="overflow-y-auto flex-1">
+      <div className="overflow-y-auto flex-1 p-2 space-y-1.5">
         {isLoading ? (
-          <div className="space-y-1 p-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-14 rounded-xl animate-pulse" style={{ background: "var(--color-surface-overlay)" }} />
-            ))}
-          </div>
+          [1, 2, 3].map((i) => <div key={i} className="notif-glass-item h-16 rounded-xl animate-pulse" />)
         ) : notifications.length === 0 ? (
-          <div className="flex flex-col items-center py-8 gap-2">
-            <Bell size={22} className="text-muted-foreground opacity-30" />
+          <div className="flex flex-col items-center py-10 gap-2">
+            <div className="notif-glass-icon w-11 h-11 rounded-2xl flex items-center justify-center">
+              <Bell size={18} className="text-muted-foreground" />
+            </div>
             <p className="text-xs text-muted-foreground">You&apos;re all caught up</p>
           </div>
         ) : (
-          <div className="py-1">
-            {notifications.map((n) => {
-              const { Icon, color, bg } = getNotifIcon(n.iconType);
-              return (
-                <button
-                  key={n.id}
-                  onClick={() => handleClick(n)}
-                  className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--color-surface-overlay)]"
-                  style={!n.isRead ? { background: "var(--color-surface-overlay-xs)" } : undefined}
+          notifications.map((n) => {
+            const { Icon, color } = getNotifIcon(n.iconType);
+            return (
+              <button
+                key={n.id}
+                onClick={() => handleClick(n)}
+                data-unread={!n.isRead || undefined}
+                className="notif-glass-item group w-full flex items-start gap-3 p-3 rounded-xl text-left"
+              >
+                {/* Type icon in a tinted glass tile */}
+                <div
+                  className="notif-glass-icon w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ ["--notif-tint" as string]: color }}
                 >
-                  {/* Type icon */}
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ background: bg }}
-                  >
-                    <Icon size={14} style={{ color }} />
+                  <Icon size={15} style={{ color }} />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-2">
+                    <p className="flex-1 min-w-0 text-[13px] font-semibold text-foreground leading-snug truncate">{n.title}</p>
+                    {!n.isRead && <span className="notif-glass-dot w-2 h-2 rounded-full flex-shrink-0 mt-1.5" />}
                   </div>
+                  <p className="text-[11.5px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
+                  <p className="text-[10px] text-muted-foreground opacity-80 mt-1">{timeAgo(n.createdAt)}</p>
+                </div>
 
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-foreground leading-snug truncate">{n.title}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">{n.body}</p>
+                {/* Media thumbnail */}
+                {n.mediaType === "image" && n.mediaUrl && (
+                  <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0 ring-1 ring-white/15">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={n.mediaUrl} alt="" className="w-full h-full object-cover" />
                   </div>
-
-                  {/* Media thumbnail */}
-                  {n.mediaType === "image" && n.mediaUrl && (
-                    <div className="w-11 h-11 rounded-lg overflow-hidden flex-shrink-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={n.mediaUrl} alt="" className="w-full h-full object-cover" />
-                    </div>
-                  )}
-                  {n.mediaType === "video" && n.mediaUrl && (
-                    <div
-                      className="w-11 h-11 rounded-lg flex-shrink-0 flex items-center justify-center"
-                      style={{ background: "var(--color-surface-overlay-md)" }}
-                    >
-                      <Film size={14} className="text-muted-foreground" />
-                    </div>
-                  )}
-
-                  {/* Unread dot */}
-                  {!n.isRead && (
-                    <div
-                      className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5"
-                      style={{ background: "var(--color-accent)" }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
+                )}
+                {n.mediaType === "video" && n.mediaUrl && (
+                  <div className="notif-glass-icon w-11 h-11 rounded-lg flex-shrink-0 flex items-center justify-center">
+                    <Film size={14} className="text-muted-foreground" />
+                  </div>
+                )}
+              </button>
+            );
+          })
         )}
       </div>
 
       {/* Footer */}
-      <div
-        className="px-4 py-3 text-center flex-shrink-0"
-        style={{ borderTop: "1px solid var(--color-border-subtle)" }}
-      >
+      <div className="notif-glass-divider notif-glass-divider-top px-3 py-2.5 flex-shrink-0">
         <Link
           href="/notifications"
           onClick={onClose}
-          className="text-[11px] font-bold transition-colors"
-          style={{ color: "var(--color-accent)" }}
+          className="notif-glass-link flex items-center justify-center gap-1 w-full py-2 rounded-xl text-[12px] font-semibold"
         >
-          View all notifications →
+          View all notifications <ArrowRight size={13} />
         </Link>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -469,6 +476,7 @@ export function Navbar() {
   const navMenu = buildNavMenu({ nav, hiddenMenuKeys, navOrder });
 
   const [notifOpen, setNotifOpen] = useState(false);
+  const bellRef = useRef<HTMLButtonElement>(null);
 
   const { data: unreadCount = 0 } = useNotificationUnreadCount();
   const { data: unreadMsgCount = 0 } = useConversationUnreadCount();
@@ -674,6 +682,7 @@ export function Navbar() {
           {rightIcons.notifications && (
             <div className="relative" data-tour="notifications">
               <button
+                ref={bellRef}
                 onClick={() => setNotifOpen((v) => !v)}
                 className={cn(
                   "relative p-1.5 sm:p-2 rounded-xl transition-colors duration-200 group flex-shrink-0",
@@ -692,7 +701,7 @@ export function Navbar() {
                   </span>
                 )}
               </button>
-              {notifOpen && <NotifDropdown onClose={() => setNotifOpen(false)} />}
+              {notifOpen && <NotifDropdown onClose={() => setNotifOpen(false)} anchorRef={bellRef} />}
             </div>
           )}
 

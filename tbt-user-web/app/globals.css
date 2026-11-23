@@ -449,3 +449,96 @@ select option {
 .chat-glass-bar :is(button, a):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *):hover {
   color: var(--chat-text);
 }
+
+/* ── Notifications dropdown: frosted glass (Navbar NotifDropdown) ───────────── */
+:root {
+  --notif-glass-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.58));
+  --notif-glass-border: rgba(255, 255, 255, 0.7);
+  --notif-glass-shadow: 0 24px 60px -16px rgba(15, 15, 30, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --notif-glass-line: rgba(15, 15, 30, 0.08);
+  --notif-item-bg: rgba(255, 255, 255, 0.55);
+  --notif-item-border: rgba(255, 255, 255, 0.75);
+  --notif-item-hover: rgba(255, 255, 255, 0.85);
+}
+.dark {
+  --notif-glass-bg: linear-gradient(160deg, rgba(40, 10, 14, 0.62), rgba(12, 12, 14, 0.55));
+  --notif-glass-border: rgba(255, 255, 255, 0.12);
+  --notif-glass-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --notif-glass-line: rgba(255, 255, 255, 0.08);
+  --notif-item-bg: rgba(255, 255, 255, 0.04);
+  --notif-item-border: rgba(255, 255, 255, 0.07);
+  --notif-item-hover: rgba(255, 255, 255, 0.09);
+}
+
+.notif-glass {
+  background: var(--notif-glass-bg);
+  border: 1px solid var(--notif-glass-border);
+  box-shadow: var(--notif-glass-shadow);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  animation: notif-glass-in 160ms ease-out;
+}
+@keyframes notif-glass-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notif-glass { animation: none; }
+}
+.notif-glass-divider { border-bottom: 1px solid var(--notif-glass-line); }
+.notif-glass-divider-top { border-bottom: 0; border-top: 1px solid var(--notif-glass-line); }
+
+.notif-glass-item {
+  position: relative;
+  background: var(--notif-item-bg);
+  border: 1px solid var(--notif-item-border);
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+.notif-glass-item:hover {
+  background: var(--notif-item-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -12px rgba(0, 0, 0, 0.5);
+}
+.notif-glass-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+/* Unread: a soft accent wash with an accent edge on the left */
+.notif-glass-item[data-unread] {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--color-accent) 16%, transparent), var(--notif-item-bg) 70%);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, var(--notif-item-border));
+}
+.notif-glass-item[data-unread]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-accent);
+}
+
+/* Icon tile: glass tinted with the notification type's own colour */
+.notif-glass-icon {
+  --notif-tint: #6b7280;
+  background: color-mix(in srgb, var(--notif-tint) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--notif-tint) 32%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.notif-glass-dot {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+.notif-glass-count {
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.notif-glass-link {
+  color: var(--color-accent);
+  transition: background-color 150ms ease;
+}
+.notif-glass-link:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
