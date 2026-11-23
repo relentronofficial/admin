@@ -408,6 +408,14 @@ export interface UiStrings {
   coursesEmptyState?: string;
   coursesClearFilters?: string;
   coursesLoadMore?: string;
+
+  // Chat list search + filter chips
+  chatSearchPlaceholder?: string;
+  chatNoResults?: string;
+  chatFilterAll?: string;
+  chatFilterUnread?: string;
+  chatFilterGroups?: string;
+  chatFilterDirect?: string;
   coursesNewMemberTitle?: string;
   coursesNewMemberDesc?: string;
   coursesExplorePrograms?: string;

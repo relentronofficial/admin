@@ -8,6 +8,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Archive,
+  BellOff,
   Check,
   CheckCheck,
   ChevronDown,
@@ -24,6 +25,7 @@ import {
   Paperclip,
   Plus,
   Reply,
+  Search,
   Send,
   Smile,
   Star,
@@ -116,6 +118,34 @@ function Avatar({
       {initial}
     </div>
   );
+}
+
+// ── Chat list time: "10:42 AM" today, "Yesterday", weekday this week, else a date ──
+
+function chatListTime(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const dayStart = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((dayStart(now) - dayStart(d)) / 86_400_000);
+  if (days <= 0) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (days === 1) {
+    const y = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(-1, 'day');
+    return y.charAt(0).toUpperCase() + y.slice(1);
+  }
+  if (days < 7) return d.toLocaleDateString(undefined, { weekday: 'short' });
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== now.getFullYear() ? { year: '2-digit' as const } : {}),
+  });
+}
+
+type ChatListFilter = 'all' | 'unread' | 'groups' | 'direct';
+
+function rowUnreadCount(r: { type: string; data: any }): number {
+  return r.type === 'group' ? (r.data?.unreadCount ?? 0) : (r.data?.memberUnreadCount ?? 0);
 }
 
 // ── Date separator helpers ────────────────────────────────────────────────────
@@ -276,6 +306,10 @@ export default function MessagesPage() {
     });
     return merged;
   }, [conversations, groups]);
+
+  // Chat list search + filter chips (client-side only).
+  const [listQuery, setListQuery] = useState('');
+  const [listFilter, setListFilter] = useState<ChatListFilter>('all');
 
   // Open the conversation a notification links to (?conversation=<id>), once
   // the conversation list has loaded. Falls through to auto-selecting the
@@ -628,6 +662,24 @@ export default function MessagesPage() {
 
   const isClosed = activeMeta?.status === 'closed';
 
+  const listQ = listQuery.trim().toLowerCase();
+  const visibleRows = rows.filter((r) => {
+    if (listFilter === 'unread' && rowUnreadCount(r) === 0) return false;
+    if (listFilter === 'groups' && r.type !== 'group') return false;
+    if (listFilter === 'direct' && r.type !== 'dm') return false;
+    if (!listQ) return true;
+    const name = r.type === 'group' ? (r.data as any)?.name : (r.data as any)?.subject;
+    const body = (r.data as any)?.lastMessage?.body ?? '';
+    return `${name ?? ''} ${body}`.toLowerCase().includes(listQ);
+  });
+  const totalUnread = rows.reduce((sum, r) => sum + rowUnreadCount(r), 0);
+  const listFilters: { key: ChatListFilter; label: string }[] = [
+    { key: 'all', label: uiStrings?.chatFilterAll ?? 'All' },
+    { key: 'unread', label: uiStrings?.chatFilterUnread ?? 'Unread' },
+    { key: 'groups', label: uiStrings?.chatFilterGroups ?? 'Groups' },
+    { key: 'direct', label: uiStrings?.chatFilterDirect ?? 'Direct' },
+  ];
+
   return (
     <div
       className="chat-shell flex h-[calc(100dvh-140px)] rounded-xl border overflow-hidden"
@@ -636,47 +688,88 @@ export default function MessagesPage() {
       {/* ── Left pane: unified list (groups + DMs interleaved) ───────────── */}
       <div
         className={cn(
-          'w-full lg:w-72 lg:flex-shrink-0 border-r flex flex-col',
+          'chat-list w-full lg:w-80 lg:flex-shrink-0 border-r flex flex-col',
           mobileView === 'chat' ? 'hidden lg:flex' : 'flex'
         )}
-        style={{
-          borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
-          background: 'var(--color-bg-surface)',
-        }}
+        style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)' }}
       >
-        <div
-          className="relative flex items-center justify-between px-4 py-3 border-b"
-          style={{ borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)' }}
-        >
-          <h2 className="font-bold text-sm text-foreground">{uiStrings?.chatPageTitle}</h2>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setShowReportModal(true)}
-              className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded"
-              style={{ color: 'var(--color-accent)' }}
-            >
-              <FileText size={12} /> Report
-            </button>
-            <button
-              onClick={() => setShowNewForm(true)}
-              className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded"
-              style={{ color: 'var(--color-accent)' }}
-            >
-              <Plus size={12} /> {uiStrings?.chatNewLabel}
-            </button>
-            <button
-              onClick={() => setTopMenuOpen((v) => !v)}
-              className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-              aria-label="More options"
-            >
-              <MoreVertical size={14} />
-            </button>
+        <div className="relative px-4 pt-4 pb-2 space-y-3 flex-shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="text-lg font-bold tracking-tight text-foreground truncate">{uiStrings?.chatPageTitle}</h2>
+              {totalUnread > 0 && (
+                <span className="chat-unread-badge">{totalUnread > 99 ? '99+' : totalUnread}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => setShowReportModal(true)}
+                className="chat-icon-btn"
+                title="Report"
+                aria-label="Report"
+              >
+                <FileText size={15} />
+              </button>
+              <button
+                onClick={() => setTopMenuOpen((v) => !v)}
+                className="chat-icon-btn"
+                title="More options"
+                aria-label="More options"
+              >
+                <MoreVertical size={15} />
+              </button>
+              <button
+                onClick={() => setShowNewForm(true)}
+                className="chat-new-btn"
+                title={uiStrings?.chatNewLabel}
+                aria-label={uiStrings?.chatNewLabel}
+              >
+                <Plus size={17} strokeWidth={2.5} />
+              </button>
+            </div>
           </div>
+
+          <label className="chat-list-search flex items-center gap-2 h-9 px-3 rounded-full">
+            <Search size={14} className="text-muted-foreground flex-shrink-0" />
+            <input
+              value={listQuery}
+              onChange={(e) => setListQuery(e.target.value)}
+              placeholder={uiStrings?.chatSearchPlaceholder ?? 'Search chats'}
+              aria-label={uiStrings?.chatSearchPlaceholder ?? 'Search chats'}
+              className="flex-1 min-w-0 bg-transparent outline-none text-sm text-foreground placeholder:text-muted-foreground"
+            />
+            {listQuery && (
+              <button
+                type="button"
+                onClick={() => setListQuery('')}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </label>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {listFilters.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setListFilter(f.key)}
+                data-active={listFilter === f.key || undefined}
+                aria-pressed={listFilter === f.key}
+                className="chat-filter-chip"
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           {topMenuOpen && (
             <>
               <div className="fixed inset-0 z-30" onClick={() => setTopMenuOpen(false)} />
               <div
-                className="absolute right-2 top-full mt-1 z-40 w-44 rounded-xl overflow-hidden py-1"
+                className="absolute right-3 top-14 z-40 w-44 rounded-xl overflow-hidden py-1"
                 style={{
                   background: 'var(--color-modal-bg)',
                   border: '1px solid var(--color-border-medium)',
@@ -695,15 +788,22 @@ export default function MessagesPage() {
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-0.5">
           {rows.length === 0 ? (
-            <div className="p-4 text-center">
-              <MessageSquare size={28} className="mx-auto mb-2 opacity-30" />
+            <div className="p-6 text-center">
+              <div className="chat-avatar-group w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center">
+                <MessageSquare size={20} className="text-muted-foreground" />
+              </div>
               <p className="text-xs text-muted-foreground">{uiStrings?.chatEmptyTitle}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{uiStrings?.chatEmptyDesc}</p>
             </div>
+          ) : visibleRows.length === 0 ? (
+            <div className="p-6 text-center">
+              <Search size={20} className="mx-auto mb-2 opacity-30" />
+              <p className="text-xs text-muted-foreground">{uiStrings?.chatNoResults ?? 'No chats found'}</p>
+            </div>
           ) : (
-            rows.map((row) =>
+            visibleRows.map((row) =>
               row.type === 'group' ? (
                 <GroupRow
                   key={`g-${row.id}`}
@@ -1977,52 +2077,53 @@ function DmRow({
   const lastMineById = lastMsg && meId && lastMsg.senderId ? lastMsg.senderId === meId : false;
   const lastMine = lastMineById || lastMineByType;
 
+  const unread = convo.memberUnreadCount > 0;
+  const preview = lastMsg
+    ? `${lastMine ? 'You: ' : ''}${stripFormatting(lastMsg.body) ?? (lastMsg.mediaType ? `📎 ${lastMsg.mediaType}` : '')}`
+    : '';
+  const initial = (convo.subject ?? '').trim().charAt(0).toUpperCase() || '?';
+
   return (
     <div
-      className={cn(
-        'group relative w-full text-left px-4 py-3 border-b transition-colors cursor-pointer',
-        isActive ? 'bg-accent/10' : 'hover:bg-[var(--color-surface-overlay)]',
-      )}
-      style={{
-        borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-        background: isActive ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : undefined,
-      }}
+      role="button"
+      tabIndex={0}
+      data-active={isActive || undefined}
+      className="chat-list-row group w-full text-left flex items-center gap-3 px-3 py-2.5 cursor-pointer"
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(); }
+      }}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-semibold text-foreground truncate flex-1">{convo.subject}</p>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {convo.memberUnreadCount > 0 && (
-            <span
-              className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white"
-              style={{ background: 'var(--color-accent)' }}
-            >
-              {convo.memberUnreadCount}
-            </span>
-          )}
+      <div className="chat-avatar-dm w-11 h-11 rounded-full flex-shrink-0 flex items-center justify-center text-base font-bold">
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <p className={cn('flex-1 min-w-0 truncate text-sm text-foreground', unread ? 'font-bold' : 'font-semibold')}>
+            {convo.subject}
+          </p>
+          <span className="chat-row-time" data-unread={unread || undefined}>{chatListTime(convo.lastMessageAt)}</span>
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <p className={cn('flex-1 min-w-0 truncate text-xs', unread ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+            {convo.status === 'closed' && <span className="chat-closed-tag">Closed</span>}
+            {preview}
+          </p>
           <button
             onClick={(e) => {
               e.stopPropagation();
               onArchive();
             }}
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-foreground transition-opacity"
+            className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 -m-1 rounded text-muted-foreground hover:text-foreground transition-opacity"
             title="Archive"
+            aria-label="Archive"
           >
-            <Archive size={12} />
+            <Archive size={13} />
           </button>
+          {unread && (
+            <span className="chat-unread-badge">{convo.memberUnreadCount > 99 ? '99+' : convo.memberUnreadCount}</span>
+          )}
         </div>
-      </div>
-      {lastMsg && (
-        <p className="text-xs text-muted-foreground mt-0.5 truncate">
-          {lastMine ? 'You: ' : ''}
-          {stripFormatting(lastMsg.body) ?? (lastMsg.mediaType ? `📎 ${lastMsg.mediaType}` : '')}
-        </p>
-      )}
-      <div className="flex items-center gap-1.5 mt-1">
-        {convo.status === 'closed' && (
-          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Closed •</span>
-        )}
-        <p className="text-[10px] text-muted-foreground">{timeAgo(convo.lastMessageAt)}</p>
       </div>
     </div>
   );
@@ -2043,56 +2144,43 @@ function GroupRow({ group, active, onSelect }: { group: any; active?: boolean; o
     })();
   }, [group.id]);
 
+  const unread = (group.unreadCount ?? 0) > 0;
+  const preview = group.lastMessage
+    ? `${group.lastMessage.senderName ? `${group.lastMessage.senderName}: ` : ''}${stripFormatting(group.lastMessage.body) ?? ''}`
+    : 'No messages yet';
+
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="w-full text-left flex items-center gap-3 px-4 py-3 border-b transition-colors hover:bg-[var(--color-surface-overlay)]"
-      style={{
-        borderColor: 'color-mix(in srgb, var(--color-accent) 10%, transparent)',
-        background: active ? 'color-mix(in srgb, var(--color-accent) 8%, transparent)' : undefined,
-      }}
+      data-active={active || undefined}
+      className="chat-list-row w-full text-left flex items-center gap-3 px-3 py-2.5"
     >
-      <div
-        className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center relative"
-        style={{ background: 'var(--color-surface-overlay)' }}
-      >
+      <div className="chat-avatar-group w-11 h-11 rounded-full overflow-hidden flex-shrink-0 flex items-center justify-center">
         {group.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={group.avatarUrl} alt="" className="w-full h-full object-cover" />
         ) : (
-          <Users size={16} className="text-muted-foreground" />
+          <Users size={18} className="text-muted-foreground" />
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-bold text-foreground truncate">{group.name}</span>
-          {muted && (
-            <span
-              className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-              style={{
-                background: 'var(--color-surface-overlay)',
-                color: 'var(--color-text-secondary)',
-              }}
-            >
-              Muted
-            </span>
+        <div className="flex items-center gap-2">
+          <span className={cn('flex-1 min-w-0 truncate text-sm text-foreground', unread ? 'font-bold' : 'font-semibold')}>
+            {group.name}
+          </span>
+          <span className="chat-row-time" data-unread={unread || undefined}>{chatListTime(group.lastMessageAt)}</span>
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className={cn('flex-1 min-w-0 truncate text-xs', unread ? 'text-foreground font-medium' : 'text-muted-foreground')}>
+            {preview}
+          </span>
+          {muted && <BellOff size={12} className="text-muted-foreground flex-shrink-0" aria-label="Muted" />}
+          {unread && (
+            <span className="chat-unread-badge">{group.unreadCount > 99 ? '99+' : group.unreadCount}</span>
           )}
         </div>
-        <div className="text-[11px] text-muted-foreground truncate">
-          {group.lastMessage
-            ? `${group.lastMessage.senderName ? `${group.lastMessage.senderName}: ` : ''}${stripFormatting(group.lastMessage.body) ?? ''}`
-            : 'No messages yet'}
-        </div>
       </div>
-      {group.unreadCount > 0 && (
-        <span
-          className="min-w-[18px] h-[18px] rounded-full flex items-center justify-center text-[9px] font-bold text-white px-1"
-          style={{ background: 'var(--color-accent)' }}
-        >
-          {group.unreadCount > 99 ? '99+' : group.unreadCount}
-        </span>
-      )}
     </button>
   );
 }
