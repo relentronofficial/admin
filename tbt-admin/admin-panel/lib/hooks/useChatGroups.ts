@@ -47,6 +47,8 @@ export interface AdminChatGroupMessage {
   deletedAt: string | null;
   deletedForEveryone: boolean;
   sender: { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null } | null;
+  replyToId?: string | null;
+  replyTo?: { id: string; body: string | null; mediaType: string | null; senderName: string | null; deletedForEveryone: boolean } | null;
 }
 
 interface CreateGroupBody {
@@ -198,9 +200,9 @@ export function useAdminUnpinGroupMessage() {
 }
 
 /**
- * Admin-only recent-messages reader for a group — powers the "Messages"
- * modal used to raise a ticket from a message. Read-only; not a full
- * chat viewer (see GroupMessagesModal.tsx).
+ * Admin recent-messages reader for a group — powers the "Messages" modal
+ * (read, reply, raise a ticket). Refreshes every 10 s while open, since the
+ * admin socket is not joined to group rooms.
  */
 export function useAdminListGroupMessages(groupId: string | null) {
   return useQuery({
@@ -212,7 +214,40 @@ export function useAdminListGroupMessages(groupId: string | null) {
       return (res as unknown as { data: AdminChatGroupMessage[] }).data ?? [];
     },
     enabled: !!groupId,
-    staleTime: 15 * 1000,
+    staleTime: 5 * 1000,
+    refetchInterval: groupId ? 10 * 1000 : false,
+  });
+}
+
+/** Admin posts into a group (`POST /api/chat-groups/admin/:id/messages`). */
+export function useAdminSendGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      groupId,
+      body,
+      mediaUrl,
+      mediaType,
+      replyToId,
+    }: {
+      groupId: string;
+      body?: string;
+      mediaUrl?: string;
+      mediaType?: "image" | "video" | "audio" | "document";
+      replyToId?: string;
+    }) => {
+      const res = await apiClient.post(`/api/chat-groups/admin/${groupId}/messages`, {
+        body,
+        mediaUrl,
+        mediaType,
+        replyToId,
+      });
+      return (res as unknown as { data: AdminChatGroupMessage }).data;
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["admin", "chat-group", vars.groupId, "messages"] });
+      qc.invalidateQueries({ queryKey: ["admin", "chat-groups"] });
+    },
   });
 }
 

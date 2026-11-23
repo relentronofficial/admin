@@ -1801,20 +1801,32 @@ export async function memberListGroupMediaHandler(
  */
 export async function postAdminGroupMessage(
   server: FastifyInstance,
-  args: { groupId: string; adminId: string | null; body: string },
+  args: {
+    groupId: string;
+    adminId: string | null;
+    body: string;
+    mediaUrl?: string | null;
+    mediaType?: string | null;
+    replyToId?: string | null;
+  },
 ): Promise<string> {
   const { groupId, adminId } = args;
   const body = args.body.trim();
+  const mediaUrl = args.mediaUrl || null;
+  const mediaType = mediaUrl ? args.mediaType || 'document' : null;
   const prisma = server.prisma;
   const req = { server } as unknown as FastifyRequest;
 
   const inserted = await prisma.$queryRawUnsafe<RawMessageRow[]>(
-    `INSERT INTO chat_group_messages (group_id, sender_admin_id, body)
-     VALUES ($1::uuid, $2::uuid, $3)
+    `INSERT INTO chat_group_messages (group_id, sender_admin_id, body, media_url, media_type, reply_to_id)
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
      RETURNING *`,
     groupId,
     adminId,
-    body,
+    body || null,
+    mediaUrl,
+    mediaType,
+    args.replyToId || null,
   );
   await prisma.$executeRawUnsafe(`UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`, groupId);
   await prisma.$executeRawUnsafe(
@@ -1844,7 +1856,9 @@ export async function postAdminGroupMessage(
   );
   const groupName = groupNameRow[0]?.name ?? 'Group';
   const senderName = hydrated[0].sender?.first_name || 'TBT Admin';
-  const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
+  const preview = body
+    ? body.length > 120 ? `${body.slice(0, 120)}…` : body
+    : mediaType ? `📎 ${mediaType}` : 'sent a message';
   const unmuted = await filterUnmutedMembers(server, groupId, memberIds);
   if (unmuted.length > 0) {
     void notifyMembers(server, {
@@ -1857,6 +1871,57 @@ export async function postAdminGroupMessage(
     });
   }
   return payload.id;
+}
+
+/**
+ * POST /api/chat-groups/admin/:id/messages — an admin posts into a group
+ * directly (text, an attachment, or both; optionally as a reply), with the
+ * same unread counts, live socket events and push notifications a member's
+ * message gets. Admins may post in announcement-only groups.
+ */
+export async function adminSendMessageHandler(
+  req: FastifyRequest<{ Params: { id: string }; Body: SendMessageBody }>,
+  reply: FastifyReply,
+) {
+  const { id } = req.params;
+  const { body, mediaUrl, mediaType, replyToId } = req.body ?? {};
+  if (!body?.trim() && !mediaUrl) return fail(reply, 400, 'BAD_REQUEST', 'Message body or media required.');
+  if (body && body.length > 5000) return fail(reply, 400, 'BAD_REQUEST', 'Message body too long.');
+  if (mediaType && !['image', 'video', 'audio', 'document'].includes(mediaType)) {
+    return fail(reply, 400, 'BAD_REQUEST', 'Unsupported media type.');
+  }
+
+  const prisma = req.server.prisma;
+  const groups = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM chat_groups WHERE id = $1::uuid AND is_deleted = false`,
+    id,
+  );
+  if (groups.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Group not found.');
+  if (replyToId) {
+    const parent = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `SELECT id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+      replyToId,
+      id,
+    );
+    if (parent.length === 0) return fail(reply, 400, 'BAD_REQUEST', 'The message you are replying to is not in this group.');
+  }
+
+  // Set by fastify.authenticate (the caller is always an active admin).
+  const adminId = req.adminId ?? null;
+  const messageId = await postAdminGroupMessage(req.server, {
+    groupId: id,
+    adminId,
+    body: body ?? '',
+    mediaUrl,
+    mediaType,
+    replyToId,
+  });
+  const rows = await prisma.$queryRawUnsafe<RawMessageRow[]>(
+    `SELECT * FROM chat_group_messages WHERE id = $1::uuid`,
+    messageId,
+  );
+  const hydrated = await hydrateSenders(req, rows);
+  return ok(reply, messageJson(hydrated[0]));
 }
 
 function groupToJson(g: RawGroupRow) {

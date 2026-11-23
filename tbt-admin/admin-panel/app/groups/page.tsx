@@ -152,8 +152,8 @@ function GroupRow({
       </div>
       <button
         onClick={onViewMessages}
-        aria-label="View messages"
-        title="View messages / raise a ticket"
+        aria-label="Open group chat"
+        title="Open chat: read, send messages, raise a ticket"
         className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
       >
         <MessageSquare size={14} />
