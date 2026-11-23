@@ -845,7 +845,7 @@ export default function MessagesPage() {
 
             {/* Group composer */}
             <div
-              className="chat-glass-bar border-t px-4 py-3"
+              className="border-t px-4 py-3"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -879,7 +879,7 @@ export default function MessagesPage() {
                 </div>
               )}
               <div
-                className="chat-input-glass flex items-end gap-2 rounded-xl px-3 py-2"
+                className="flex items-end gap-2 rounded-xl px-3 py-2"
                 style={{ background: 'var(--color-bg-primary)', border: '1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
               >
                 <textarea
@@ -899,7 +899,7 @@ export default function MessagesPage() {
                 <button
                   onClick={handleGroupSend}
                   disabled={!groupInput.trim() || sendGroupMessage.isPending || editGroupMessage.isPending}
-                  className="chat-send-btn flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendGroupMessage.isPending || editGroupMessage.isPending ? (
@@ -1021,7 +1021,7 @@ export default function MessagesPage() {
 
             {/* Composer */}
             <div
-              className="chat-glass-bar border-t"
+              className="border-t"
               style={{
                 borderColor: 'color-mix(in srgb, var(--color-accent) 15%, transparent)',
                 background: 'var(--color-bg-surface)',
@@ -1145,7 +1145,7 @@ export default function MessagesPage() {
                     sendMessage.isPending ||
                     pendingMedia?.uploading
                   }
-                  className="chat-send-btn flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
+                  className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
                   {sendMessage.isPending ? (

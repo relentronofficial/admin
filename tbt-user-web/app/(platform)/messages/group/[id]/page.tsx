@@ -816,7 +816,7 @@ export default function GroupChatPage() {
 
       {/* Composer */}
       <div
-        className="chat-glass-bar flex-shrink-0 rounded-b-2xl"
+        className="flex-shrink-0 rounded-b-2xl"
         style={{
           background: "var(--color-bg-surface)",
           border: "1px solid var(--color-border-subtle)",
@@ -1019,7 +1019,7 @@ export default function GroupChatPage() {
               }}
               placeholder={pendingMedia ? "Add a caption…" : "Type a message… (@ to mention)"}
               rows={1}
-              className="chat-input-glass w-full px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
+              className="w-full px-4 py-2.5 rounded-full text-sm text-foreground outline-none resize-none max-h-32"
               style={{
                 background: "var(--color-bg-primary)",
                 border: "1px solid var(--color-border-subtle)",
@@ -1034,7 +1034,7 @@ export default function GroupChatPage() {
               pendingMedia?.uploading ||
               (draft.trim().length === 0 && !pendingMedia?.uploadedUrl)
             }
-            className="chat-send-btn w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white disabled:opacity-60 flex-shrink-0"
             style={{ background: "var(--color-accent)" }}
             aria-label="Send"
           >

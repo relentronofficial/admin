@@ -375,23 +375,6 @@ select option {
   color: var(--chat-text);
 }
 
-/* Message box inside the composer: frosted white on the red bar */
-.chat-input-glass {
-  background: rgba(255, 255, 255, 0.14) !important;
-  border: 1px solid rgba(255, 255, 255, 0.28) !important;
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-}
-.chat-input-glass textarea,
-.chat-input-glass input,
-textarea.chat-input-glass {
-  color: var(--chat-text) !important;
-}
-.chat-input-glass textarea::placeholder,
-textarea.chat-input-glass::placeholder {
-  color: var(--chat-text-muted) !important;
-}
-
 /* Bubbles */
 .chat-bubble-mine,
 .chat-bubble-theirs {
@@ -453,15 +436,6 @@ textarea.chat-input-glass::placeholder {
   backdrop-filter: blur(10px);
 }
 
-/* Send button: white disc with a red arrow so it stands out on the red bar */
-.chat-send-btn {
-  background: #ffffff !important;
-  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.45);
-}
-.chat-send-btn svg {
-  color: var(--chat-red) !important;
-}
-
 /* Accent-coloured text and icons on a red bar turn white */
 .chat-glass-bar [style*="color: var(--color-accent)"]:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
   color: var(--chat-text) !important;
@@ -469,21 +443,9 @@ textarea.chat-input-glass::placeholder {
 .chat-glass-bar :is(button, a) svg:not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
   color: inherit;
 }
-.chat-glass-bar :is(button, a):not(.chat-send-btn):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
+.chat-glass-bar :is(button, a):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *) {
   color: var(--chat-text-muted);
 }
-.chat-glass-bar :is(button, a):not(.chat-send-btn):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *):hover {
+.chat-glass-bar :is(button, a):not(:is(.fixed, .absolute, [role="menu"], [role="dialog"]) *):hover {
   color: var(--chat-text);
-}
-/* Reply / edit / attachment banners inside a bar: darker glass */
-.chat-glass-bar > div[style*="background"]:not(.chat-input-glass) {
-  background: rgba(0, 0, 0, 0.22) !important;
-  border-color: rgba(255, 255, 255, 0.6) !important;
-}
-/* Textareas sitting straight on a bar (DM composer) */
-.chat-glass-bar textarea {
-  color: var(--chat-text) !important;
-}
-.chat-glass-bar textarea::placeholder {
-  color: var(--chat-text-muted) !important;
 }
