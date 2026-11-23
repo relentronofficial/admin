@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileText, Loader2, MessageSquare, Star, Users } from "lucide-react";
+import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
 import { useStarredMessages } from "@/lib/hooks/useChatGroups";
 import { useDmStarredMessages } from "@/lib/hooks/useDashboard";
 import type { StarredMessage } from "@/lib/api/services/chatGroups.service";
@@ -101,7 +102,7 @@ function DmStarredRow({ message }: { message: DmStarred }) {
     hour: "numeric",
     minute: "2-digit",
   });
-  const preview = message.body || (message.mediaType ? `📎 ${message.mediaType}` : "…");
+  const fallback = message.mediaType ? `📎 ${message.mediaType}` : "…";
 
   return (
     <Link
@@ -154,7 +155,9 @@ function DmStarredRow({ message }: { message: DmStarred }) {
               <span className="text-xs text-foreground">Attachment</span>
             </div>
           ) : null}
-          <p className="text-sm text-foreground mt-0.5 line-clamp-3 break-words">{preview}</p>
+          <p className="text-sm text-foreground mt-0.5 line-clamp-3 break-words whitespace-pre-wrap">
+            {message.body ? <LinkifiedText text={message.body} links={false} /> : fallback}
+          </p>
         </div>
       </div>
     </Link>
@@ -171,7 +174,7 @@ function StarredRow({ message }: { message: StarredMessage }) {
     minute: "2-digit",
   });
 
-  const preview = message.body || (message.mediaType ? `📎 ${message.mediaType}` : "…");
+  const fallback = message.mediaType ? `📎 ${message.mediaType}` : "…";
 
   // Deep link: opens the group page. The group chat page itself handles
   // an optional URL fragment #msg-<id> to auto-scroll and highlight —
@@ -228,7 +231,9 @@ function StarredRow({ message }: { message: StarredMessage }) {
               <span className="text-xs text-foreground">Attachment</span>
             </div>
           ) : null}
-          <p className="text-sm text-foreground mt-0.5 line-clamp-3 break-words">{preview}</p>
+          <p className="text-sm text-foreground mt-0.5 line-clamp-3 break-words whitespace-pre-wrap">
+            {message.body ? <LinkifiedText text={message.body} links={false} /> : fallback}
+          </p>
         </div>
       </div>
     </Link>

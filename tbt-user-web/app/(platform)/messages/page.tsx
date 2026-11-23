@@ -1,6 +1,7 @@
 'use client';
 
 import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
+import { handleFormatShortcut, stripFormatting } from "@/components/features/chat/chatFormatting";
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -865,7 +866,7 @@ export default function MessagesPage() {
                           Replying to {[groupReplyTo.sender?.firstName, groupReplyTo.sender?.lastName].filter(Boolean).join(' ') || 'Member'}
                         </span>
                         {': '}
-                        {groupReplyTo.body || (groupReplyTo.mediaType ? `📎 ${groupReplyTo.mediaType}` : '…')}
+                        {stripFormatting(groupReplyTo.body) || (groupReplyTo.mediaType ? `📎 ${groupReplyTo.mediaType}` : '…')}
                       </>
                     )}
                   </span>
@@ -887,6 +888,7 @@ export default function MessagesPage() {
                   value={groupInput}
                   onChange={(e) => { setGroupInput(e.target.value); autoResizeGroup(); }}
                   onKeyDown={(e) => {
+                    if (handleFormatShortcut(e, (v) => { setGroupInput(v); autoResizeGroup(); })) return;
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGroupSend(); }
                     else if (e.key === 'Escape' && groupEditing) { e.preventDefault(); cancelGroupEdit(); }
                   }}
@@ -954,7 +956,7 @@ export default function MessagesPage() {
               >
                 <MapPin size={12} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
                 <span className="flex-1 truncate text-muted-foreground">
-                  {dmPinnedMsg.body || (dmPinnedMsg.mediaType ? `📎 ${dmPinnedMsg.mediaType}` : 'Pinned message')}
+                  {stripFormatting(dmPinnedMsg.body) || (dmPinnedMsg.mediaType ? `📎 ${dmPinnedMsg.mediaType}` : 'Pinned message')}
                 </span>
                 <button
                   onClick={(e) => {
@@ -1122,6 +1124,7 @@ export default function MessagesPage() {
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => {
+                    if (handleFormatShortcut(e, handleInputChange)) return;
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSend();
@@ -1452,7 +1455,7 @@ function DmBubble({
                 {message.replyTo.senderName ?? 'Member'}
               </div>
               <div className="text-muted-foreground truncate">
-                {message.replyTo.body || (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : '…')}
+                {stripFormatting(message.replyTo.body) || (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : '…')}
               </div>
             </div>
           )}
@@ -1762,7 +1765,7 @@ function DmBubble({
               </button>
             </div>
             <p className="text-xs text-muted-foreground truncate">
-              {message.body || (message.mediaType ? `📎 ${message.mediaType}` : '')}
+              {stripFormatting(message.body) || (message.mediaType ? `📎 ${message.mediaType}` : '')}
             </p>
             {forwardTargets.length === 0 && chatGroups.length === 0 ? (
               <p className="text-xs text-muted-foreground">
@@ -2018,7 +2021,7 @@ function DmRow({
       {lastMsg && (
         <p className="text-xs text-muted-foreground mt-0.5 truncate">
           {lastMine ? 'You: ' : ''}
-          {lastMsg.body ?? (lastMsg.mediaType ? `📎 ${lastMsg.mediaType}` : '')}
+          {stripFormatting(lastMsg.body) ?? (lastMsg.mediaType ? `📎 ${lastMsg.mediaType}` : '')}
         </p>
       )}
       <div className="flex items-center gap-1.5 mt-1">
@@ -2084,7 +2087,7 @@ function GroupRow({ group, active, onSelect }: { group: any; active?: boolean; o
         </div>
         <div className="text-[11px] text-muted-foreground truncate">
           {group.lastMessage
-            ? `${group.lastMessage.senderName ? `${group.lastMessage.senderName}: ` : ''}${group.lastMessage.body}`
+            ? `${group.lastMessage.senderName ? `${group.lastMessage.senderName}: ` : ''}${stripFormatting(group.lastMessage.body) ?? ''}`
             : 'No messages yet'}
         </div>
       </div>
@@ -2282,7 +2285,7 @@ function InlineGroupBubble({
                 <div className="text-muted-foreground truncate">
                   {message.replyTo.deletedForEveryone
                     ? 'message deleted'
-                    : message.replyTo.body ||
+                    : stripFormatting(message.replyTo.body) ||
                       (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : '…')}
                 </div>
               </div>

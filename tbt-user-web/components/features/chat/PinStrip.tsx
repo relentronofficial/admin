@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Pin } from "lucide-react";
 import type { PinnedMessage } from "@/lib/api/services/chatGroups.service";
+import { stripFormatting } from "@/components/features/chat/chatFormatting";
 
 interface PinStripProps {
   pinned: PinnedMessage[];
@@ -21,7 +22,7 @@ export function PinStrip({ pinned, onJumpTo }: PinStripProps) {
 
   const first = pinned[0];
   const preview =
-    first.body ||
+    stripFormatting(first.body) ||
     (first.mediaType ? `\u{1F4CE} ${first.mediaType}` : "…");
   const senderName =
     [first.sender?.firstName, first.sender?.lastName].filter(Boolean).join(" ") || "Member";
@@ -71,7 +72,7 @@ export function PinStrip({ pinned, onJumpTo }: PinStripProps) {
           style={{ borderTop: "1px solid var(--color-border-subtle)" }}
         >
           {pinned.slice(1).map((m) => {
-            const text = m.body || (m.mediaType ? `\u{1F4CE} ${m.mediaType}` : "…");
+            const text = stripFormatting(m.body) || (m.mediaType ? `\u{1F4CE} ${m.mediaType}` : "…");
             const sName =
               [m.sender?.firstName, m.sender?.lastName].filter(Boolean).join(" ") || "Member";
             return (

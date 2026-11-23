@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { splitBold, splitLinks } from "./LinkifiedText";
+import { splitLinks } from "./LinkifiedText";
+import { parseFormatting, stripFormatting, toggleWrap } from "./chatFormatting";
 
 const links = (t: string) => splitLinks(t).filter((p) => p.href).map((p) => p.href);
 
@@ -36,27 +37,92 @@ describe("splitLinks", () => {
   });
 });
 
-describe("splitBold", () => {
-  it("renders **text** as bold without the asterisks", () => {
-    expect(splitBold("This is **important** news")).toEqual([
-      { text: "This is " },
-      { text: "important", bold: true },
-      { text: " news" },
+const t = (text: string) => ({ type: "text", text });
+
+describe("parseFormatting", () => {
+  it("parses WhatsApp markers: *bold* _italic_ ~strike~ __underline__", () => {
+    expect(parseFormatting("a *b* _i_ ~s~ __u__")).toEqual([
+      t("a "),
+      { type: "bold", children: [t("b")] },
+      t(" "),
+      { type: "italic", children: [t("i")] },
+      t(" "),
+      { type: "strike", children: [t("s")] },
+      t(" "),
+      { type: "underline", children: [t("u")] },
     ]);
   });
 
-  it("handles several bold runs, multi-word runs and line breaks", () => {
-    expect(splitBold("**Step 1:** do this\n**Step 2:** then that")).toEqual([
-      { text: "Step 1:", bold: true },
-      { text: " do this\n" },
-      { text: "Step 2:", bold: true },
-      { text: " then that" },
+  it("keeps **markdown bold** working and nests styles", () => {
+    expect(parseFormatting("**Step 1:** go")).toEqual([{ type: "bold", children: [t("Step 1:")] }, t(" go")]);
+    expect(parseFormatting("*_both_*")).toEqual([
+      { type: "bold", children: [{ type: "italic", children: [t("both")] }] },
     ]);
   });
 
-  it("leaves unmatched or spaced asterisks as typed", () => {
-    expect(splitBold("2 ** 3 = 8")).toEqual([{ text: "2 ** 3 = 8" }]);
-    expect(splitBold("**not closed")).toEqual([{ text: "**not closed" }]);
-    expect(splitBold("** spaced **")).toEqual([{ text: "** spaced **" }]);
+  it("parses inline code and ``` blocks without formatting inside", () => {
+    expect(parseFormatting("run `a*b*c` now")).toEqual([t("run "), { type: "code", text: "a*b*c" }, t(" now")]);
+    expect(parseFormatting("```x *y*\nz```")).toEqual([{ type: "mono", text: "x *y*\nz" }]);
+  });
+
+  it("turns '> ' lines into a quote block", () => {
+    expect(parseFormatting("> *hi*\nok")).toEqual([
+      { type: "quote", children: [{ type: "bold", children: [t("hi")] }] },
+      t("ok"),
+    ]);
+  });
+
+  it("leaves markers inside words, spaced markers and maths as typed", () => {
+    expect(parseFormatting("my_var_name")).toEqual([t("my_var_name")]);
+    expect(parseFormatting("2*3*4")).toEqual([t("2*3*4")]);
+    expect(parseFormatting("a * b * c")).toEqual([t("a * b * c")]);
+    expect(parseFormatting("2 ** 3 = 8")).toEqual([t("2 ** 3 = 8")]);
+    expect(parseFormatting("*not closed")).toEqual([t("*not closed")]);
+  });
+
+  it("does not span lines and does not break links", () => {
+    expect(parseFormatting("*a\nb*")).toEqual([t("*a\nb*")]);
+    expect(parseFormatting("see https://x.com/a_b_c ok")).toEqual([t("see https://x.com/a_b_c ok")]);
+    expect(parseFormatting("*https://x.com*")).toEqual([{ type: "bold", children: [t("https://x.com")] }]);
+  });
+
+  it("stripFormatting removes markers for previews", () => {
+    expect(stripFormatting("*Hi* _there_ ~old~")).toBe("Hi there old");
+  });
+});
+
+describe("splitLinks with formatting", () => {
+  it("does not swallow a closing marker into the link", () => {
+    expect(links("*https://tbt.com/x*")).toEqual(["https://tbt.com/x"]);
+  });
+});
+
+describe("toggleWrap (composer shortcuts)", () => {
+  it("wraps the selection, keeping edge spaces outside", () => {
+    expect(toggleWrap("say hello now", 4, 10, "*")).toEqual({ value: "say *hello* now", selStart: 5, selEnd: 10 });
+  });
+  it("unwraps an already wrapped selection", () => {
+    expect(toggleWrap("say *hello* now", 5, 10, "*")).toEqual({ value: "say hello now", selStart: 4, selEnd: 9 });
+  });
+  it("inserts an empty pair at the caret", () => {
+    expect(toggleWrap("ab", 1, 1, "__")).toEqual({ value: "a____b", selStart: 3, selEnd: 3 });
+  });
+});
+
+describe("LinkifiedText rendering", () => {
+  it("renders each style with the right element and keeps links clickable", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { LinkifiedText } = await import("./LinkifiedText");
+    const html = renderToStaticMarkup(<LinkifiedText text={"*b* _i_ ~s~ __u__ `c` https://tbt.com"} />);
+    expect(html).toContain("<strong");
+    expect(html).toContain("<em");
+    expect(html).toContain("<s ");
+    expect(html).toContain("<u ");
+    expect(html).toContain("<code");
+    expect(html).toContain('href="https://tbt.com"');
+    expect(html).not.toMatch(/[*~`]/);
+    const noLinks = renderToStaticMarkup(<LinkifiedText text={"*see* https://tbt.com"} links={false} />);
+    expect(noLinks).not.toContain("<a ");
+    expect(noLinks).toContain("<strong");
   });
 });

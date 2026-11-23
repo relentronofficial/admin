@@ -1,6 +1,7 @@
 "use client";
 
 import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
+import { handleFormatShortcut, stripFormatting } from "@/components/features/chat/chatFormatting";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -1000,6 +1001,7 @@ export default function GroupChatPage() {
               value={draft}
               onChange={(e) => onDraftChange(e.target.value)}
               onKeyDown={(e) => {
+                if (handleFormatShortcut(e, onDraftChange)) return;
                 if (
                   mentionQuery !== null &&
                   mentionSuggestions.length > 0 &&
@@ -1368,7 +1370,7 @@ function MessageBubble({
                 <div className="text-muted-foreground truncate">
                   {message.replyTo.deletedForEveryone
                     ? "message deleted"
-                    : message.replyTo.body ||
+                    : stripFormatting(message.replyTo.body) ||
                       (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : "…")}
                 </div>
               </div>
@@ -1898,7 +1900,7 @@ function SearchPanel({
                   <span className="text-muted-foreground">· {when}</span>
                 </div>
                 <div className="text-xs text-foreground mt-0.5 line-clamp-2">
-                  {m.body ?? (m.mediaType ? `📎 ${m.mediaType}` : "…")}
+                  {stripFormatting(m.body) ?? (m.mediaType ? `📎 ${m.mediaType}` : "…")}
                 </div>
               </button>
             );

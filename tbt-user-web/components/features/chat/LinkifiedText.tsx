@@ -1,27 +1,10 @@
 import type { ReactNode } from "react";
+import { parseFormatting, type FmtNode } from "./chatFormatting";
 
 // http(s):// links and bare www. links. Trailing punctuation is trimmed off below.
 const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
 const MENTION_RE = /(@[A-Za-z0-9_]+)/g;
-const TRAILING_PUNCT = /[.,!?;:'")\]}>]+$/;
-// Markdown bold: **text** (as pasted from ChatGPT/Claude). The inner text must not start
-// or end with a space, so a lone "**" or "2 ** 3" stays as typed.
-const BOLD_RE = /\*\*(?=\S)([\s\S]*?\S)\*\*/g;
-
-/** Splits text into plain and bold chunks; the ** markers are removed from bold chunks. */
-export function splitBold(text: string): Array<{ text: string; bold?: boolean }> {
-  const out: Array<{ text: string; bold?: boolean }> = [];
-  let last = 0;
-  for (const m of text.matchAll(BOLD_RE)) {
-    const start = m.index ?? 0;
-    if (start > last) out.push({ text: text.slice(last, start) });
-    out.push({ text: m[1]!, bold: true });
-    last = start + m[0].length;
-  }
-  if (last < text.length) out.push({ text: text.slice(last) });
-  return out;
-}
-
+const TRAILING_PUNCT = /[.,!?;:'")\]}>*_~]+$/;
 /** Splits text into plain chunks and links. Only http/https hrefs are ever produced. */
 export function splitLinks(text: string): Array<{ text: string; href?: string }> {
   const out: Array<{ text: string; href?: string }> = [];
@@ -57,23 +40,73 @@ function renderMentions(text: string, keyPrefix: string): ReactNode[] {
 }
 
 /**
- * Chat message text: **bold** markdown is rendered bold, links are clickable (opened in
- * a new tab), and with `mentions` @-mention tokens are highlighted too (group chat).
+ * Chat message text with WhatsApp-style formatting (*bold*, _italic_, ~strike~,
+ * __underline__, `code`, ```mono```, "> " quotes — see chatFormatting.ts). Links are
+ * clickable (opened in a new tab), and with `mentions` @-mention tokens are highlighted
+ * too (group chat).
  */
-export function LinkifiedText({ text, mentions = false }: { text: string; mentions?: boolean }) {
-  return (
-    <>
-      {splitBold(text).map((chunk, b) =>
-        chunk.bold ? (
-          <strong key={b} className="font-semibold">
-            <LinksAndMentions text={chunk.text} mentions={mentions} />
-          </strong>
+export function LinkifiedText({
+  text,
+  mentions = false,
+  links = true,
+}: {
+  text: string;
+  mentions?: boolean;
+  /** false inside an element that is itself a link (e.g. a starred-message row). */
+  links?: boolean;
+}) {
+  return <>{renderNodes(parseFormatting(text), mentions, links, "f")}</>;
+}
+
+const MONO_STYLE = {
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  fontSize: "0.9em",
+} as const;
+
+function renderNodes(nodes: FmtNode[], mentions: boolean, links: boolean, key: string): ReactNode[] {
+  return nodes.map((n, i) => {
+    const k = `${key}-${i}`;
+    switch (n.type) {
+      case "text":
+        return links ? (
+          <LinksAndMentions key={k} text={n.text} mentions={mentions} />
+        ) : mentions ? (
+          <span key={k}>{renderMentions(n.text, k)}</span>
         ) : (
-          <LinksAndMentions key={b} text={chunk.text} mentions={mentions} />
-        ),
-      )}
-    </>
-  );
+          <span key={k}>{n.text}</span>
+        );
+      case "bold":
+        return <strong key={k} className="font-semibold">{renderNodes(n.children, mentions, links, k)}</strong>;
+      case "italic":
+        return <em key={k} className="italic">{renderNodes(n.children, mentions, links, k)}</em>;
+      case "strike":
+        return <s key={k} className="line-through">{renderNodes(n.children, mentions, links, k)}</s>;
+      case "underline":
+        return <u key={k} className="underline underline-offset-2">{renderNodes(n.children, mentions, links, k)}</u>;
+      case "code":
+        return (
+          <code
+            key={k}
+            className="px-1 py-px rounded"
+            style={{ ...MONO_STYLE, background: "var(--color-surface-overlay)" }}
+          >
+            {n.text}
+          </code>
+        );
+      case "mono":
+        return <span key={k} style={MONO_STYLE}>{n.text}</span>;
+      case "quote":
+        return (
+          <span
+            key={k}
+            className="block pl-2 my-0.5 opacity-80"
+            style={{ borderLeft: "3px solid var(--color-accent)" }}
+          >
+            {renderNodes(n.children, mentions, links, k)}
+          </span>
+        );
+    }
+  });
 }
 
 function LinksAndMentions({ text, mentions }: { text: string; mentions: boolean }) {

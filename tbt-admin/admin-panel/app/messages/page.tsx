@@ -42,6 +42,8 @@ import { getAdminSocket } from "@/lib/socket/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import toast from "react-hot-toast";
+import { FormattedText } from "@/components/chat/FormattedText";
+import { handleFormatShortcut, stripFormatting } from "@/lib/utils/chatFormatting";
 
 const TYPING_DEBOUNCE_MS = 2000;
 const EMOJI_SET = ["👍", "❤️", "😂", "😮", "😢", "🙏"] as const;
@@ -293,7 +295,7 @@ function AdminBubble({
                 {replyTo.senderType === "admin" ? "You" : replyTo.senderName}
               </div>
               <div className="text-[#888] truncate">
-                {replyTo.deletedForEveryone ? "This message was deleted" : (replyTo.body || "📎 attachment")}
+                {replyTo.deletedForEveryone ? "This message was deleted" : (stripFormatting(replyTo.body) || "📎 attachment")}
               </div>
             </div>
           )}
@@ -333,7 +335,7 @@ function AdminBubble({
           ) : (
             !deleted && message.body && (
               <p className="text-sm text-[#f0f0f0] leading-relaxed px-3.5 py-2 whitespace-pre-wrap break-words">
-                {message.body}
+                <FormattedText text={message.body} />
               </p>
             )
           )}
@@ -614,7 +616,7 @@ function AdminBubble({
               {/* Source preview */}
               {message.body && (
                 <div className="mx-5 mt-4 px-3 py-2 rounded-lg text-xs text-[#888] flex-shrink-0" style={{ background: "#1a1a1a", borderLeft: "3px solid #555" }}>
-                  <div className="line-clamp-2 whitespace-pre-wrap text-[#a0a0a0]">{message.body}</div>
+                  <div className="line-clamp-2 whitespace-pre-wrap text-[#a0a0a0]"><FormattedText text={message.body} /></div>
                 </div>
               )}
 
@@ -761,7 +763,7 @@ function AdminBubble({
                 {message.body && (
                   <div className="rounded-lg px-3 py-2 text-xs text-[#888]" style={{ background: "#1a1a1a", borderLeft: "3px solid #555" }}>
                     <div className="text-[10px] font-bold uppercase tracking-widest text-[#666] font-rajdhani mb-1">Source message</div>
-                    <div className="text-[#a0a0a0] line-clamp-3 whitespace-pre-wrap">{message.body}</div>
+                    <div className="text-[#a0a0a0] line-clamp-3 whitespace-pre-wrap"><FormattedText text={message.body} /></div>
                   </div>
                 )}
                 <div>
@@ -1159,7 +1161,7 @@ export default function AdminMessagesPage() {
                     {c.lastMessage && (
                       <p className="text-[11px] text-[#888] truncate mt-0.5">
                         {c.lastMessage.senderType === "admin" ? "You: " : ""}
-                        {c.lastMessage.body}
+                        {stripFormatting(c.lastMessage.body)}
                       </p>
                     )}
                     <div className="flex items-center justify-between mt-1">
@@ -1254,7 +1256,7 @@ export default function AdminMessagesPage() {
                             {replyTo.senderType === "admin" ? "You" : replyTo.senderName}
                           </span>
                           <span className="text-[10px] text-[#888] truncate block">
-                            {replyTo.body || "📎 attachment"}
+                            {stripFormatting(replyTo.body) || "📎 attachment"}
                           </span>
                         </div>
                         <button
@@ -1272,6 +1274,7 @@ export default function AdminMessagesPage() {
                         value={input}
                         onChange={(e) => handleInputChange(e.target.value)}
                         onKeyDown={(e) => {
+                          if (handleFormatShortcut(e, handleInputChange)) return;
                           if (e.key === "Enter" && !e.shiftKey) {
                             e.preventDefault();
                             handleSend();

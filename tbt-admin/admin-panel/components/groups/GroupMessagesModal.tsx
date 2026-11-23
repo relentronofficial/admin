@@ -19,6 +19,8 @@ import {
   type AdminChatGroupMessage,
 } from "@/lib/hooks/useChatGroups";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
+import { FormattedText } from "@/components/chat/FormattedText";
+import { handleFormatShortcut, stripFormatting } from "@/lib/utils/chatFormatting";
 
 interface Props {
   group: AdminChatGroup;
@@ -41,7 +43,7 @@ function senderNameOf(m: AdminChatGroupMessage): string {
 
 function previewText(m: { body: string | null; mediaType: string | null; deletedForEveryone: boolean }): string {
   if (m.deletedForEveryone) return "message deleted";
-  return m.body ?? (m.mediaType ? `[${m.mediaType}]` : "");
+  return stripFormatting(m.body) ?? (m.mediaType ? `[${m.mediaType}]` : "");
 }
 
 export function GroupMessagesModal({ group, onClose }: Props) {
@@ -157,7 +159,7 @@ export function GroupMessagesModal({ group, onClose }: Props) {
                     )}
                     {(m.body || m.deletedForEveryone || !m.mediaUrl) && (
                       <p className="text-sm text-[#a0a0a0] mt-1 whitespace-pre-wrap break-words">
-                        {m.deletedForEveryone ? "message deleted" : m.body ?? ""}
+                        {m.deletedForEveryone ? "message deleted" : m.body ? <FormattedText text={m.body} /> : ""}
                       </p>
                     )}
                   </div>
@@ -234,6 +236,7 @@ export function GroupMessagesModal({ group, onClose }: Props) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
+                if (handleFormatShortcut(e, setText)) return;
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   void send();
@@ -242,6 +245,7 @@ export function GroupMessagesModal({ group, onClose }: Props) {
               rows={1}
               maxLength={5000}
               placeholder={`Message ${group.name} as admin…`}
+              title="Ctrl+B bold · Ctrl+I italic · Ctrl+U underline · Ctrl+Shift+X strikethrough"
               className="flex-1 min-w-0 max-h-32 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg px-4 py-3 text-sm text-white outline-none focus:border-[#dc2626] resize-none"
             />
             <button
@@ -325,7 +329,7 @@ function RaiseTicketDialog({
               Original message — {senderName}
             </div>
             <p className="text-xs text-[#a0a0a0] whitespace-pre-wrap break-words line-clamp-4">
-              {message.body ?? (message.mediaType ? `[${message.mediaType}]` : "")}
+              {message.body ? <FormattedText text={message.body} /> : message.mediaType ? `[${message.mediaType}]` : ""}
             </p>
           </div>
 

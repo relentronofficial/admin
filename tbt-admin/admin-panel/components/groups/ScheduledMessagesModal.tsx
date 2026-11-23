@@ -6,6 +6,8 @@
 // optionally until an end date. All dates and times are IST. The backend posts them as the admin who created
 // them (jobs/chatScheduledMessages.ts).
 
+import { FormattedText } from "@/components/chat/FormattedText";
+import { handleFormatShortcut } from "@/lib/utils/chatFormatting";
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -230,7 +232,7 @@ export function ScheduledMessagesModal({ group, onClose }: Props) {
                       </span>
                     </div>
                     <p className="text-sm text-[#d0d0d0] mt-1.5 whitespace-pre-wrap break-words line-clamp-4">
-                      {s.body}
+                      <FormattedText text={s.body} />
                     </p>
                     <div className="text-[11px] text-[#606060] mt-2 flex flex-wrap gap-x-3 gap-y-0.5">
                       {s.nextRunAt && s.status === "active" && <span>Next: {fmtInstant(s.nextRunAt)}</span>}
@@ -357,6 +359,7 @@ function ScheduleForm({
           id="sched-body"
           value={body}
           onChange={(e) => setBody(e.target.value)}
+          onKeyDown={(e) => { handleFormatShortcut(e, setBody); }}
           rows={4}
           maxLength={5000}
           placeholder="e.g. Good morning, tribe! Share today's top priority in this group."
