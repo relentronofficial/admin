@@ -4,6 +4,7 @@ import { LinkifiedText } from "@/components/features/chat/LinkifiedText";
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Archive,
   Check,
@@ -127,6 +128,13 @@ function getDateLabel(iso: string): string {
   const sameYear = now.getFullYear() === d.getFullYear();
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(!sameYear && { year: 'numeric' }) });
 }
+
+const GROUP_REFRESH_EVENTS = [
+  'group:reaction',
+  'group:message:edited',
+  'group:message:deleted',
+  'group:pinned',
+] as const;
 
 function groupMessagesByDay(msgs: any[]): { label: string; messages: any[] }[] {
   const groups: { label: string; messages: any[] }[] = [];
@@ -387,17 +395,27 @@ export default function MessagesPage() {
       queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
     };
 
+    const handleChange = (payload?: { groupId?: string }) => {
+      if (!mounted) return;
+      if (payload?.groupId && payload.groupId !== activeGroupId) return;
+      queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(activeGroupId) });
+    };
+
     getSocket().then((s) => {
       if (!mounted) return;
       sock = s;
       s.emit('join:chat_group', { groupId: activeGroupId });
       s.on('group:message:new', handleNew);
+      // Reactions, edits, deletes and pins from other members refresh the
+      // thread live too (the full group page does the same).
+      for (const ev of GROUP_REFRESH_EVENTS) s.on(ev, handleChange);
     });
 
     return () => {
       mounted = false;
       if (sock) {
         sock.emit('leave:chat_group', { groupId: activeGroupId });
+        for (const ev of GROUP_REFRESH_EVENTS) sock.off(ev, handleChange);
         sock.off('group:message:new', handleNew);
       }
     };
@@ -2109,6 +2127,40 @@ function InlineGroupBubble({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
+  // The menu is portalled with fixed positioning so the thread's scroll
+  // container and the composer below it can never cut it off; it opens
+  // upward when there isn't room for the whole list below the trigger.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
+
+  function closeMenu() {
+    setMenuOpen(false);
+    setMenuPos(null);
+  }
+
+  function openMenu() {
+    const MENU_WIDTH = 176; // w-44
+    const MENU_HEIGHT = 340; // ~10 items
+    const GAP = 4;
+    const SAFE = 8;
+    const rect = menuTriggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const spaceBelow = window.innerHeight - rect.bottom - GAP - SAFE;
+    const spaceAbove = rect.top - GAP - SAFE;
+    let top: number;
+    let maxHeight: number;
+    if (spaceBelow >= MENU_HEIGHT || spaceBelow >= spaceAbove) {
+      top = rect.bottom + GAP;
+      maxHeight = Math.max(Math.min(spaceBelow, MENU_HEIGHT), 120);
+    } else {
+      maxHeight = Math.max(Math.min(spaceAbove, MENU_HEIGHT), 120);
+      top = Math.max(SAFE, rect.top - GAP - maxHeight);
+    }
+    let left = rect.right - MENU_WIDTH;
+    left = Math.max(SAFE, Math.min(left, window.innerWidth - MENU_WIDTH - SAFE));
+    setMenuPos({ top, left, maxHeight });
+    setMenuOpen(true);
+  }
   const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
 
   const deleteMsg = useDeleteChatGroupMessage(groupId);
@@ -2131,7 +2183,7 @@ function InlineGroupBubble({
   }
 
   function toggleStar() {
-    setMenuOpen(false);
+    closeMenu();
     starMsg.mutate(
       { messageId: message.id, starred: isStarred },
       {
@@ -2142,7 +2194,7 @@ function InlineGroupBubble({
   }
 
   function togglePin() {
-    setMenuOpen(false);
+    closeMenu();
     pinMsg.mutate(
       { messageId: message.id, isPinned },
       {
@@ -2169,7 +2221,7 @@ function InlineGroupBubble({
   }, [message.reactions]);
 
   async function handleCopy() {
-    setMenuOpen(false);
+    closeMenu();
     const result = await copyMessageText(message.body);
     if (result === 'copied') toast.success('Copied');
     else if (result === 'empty') toast(noTextToCopyMessage(message.mediaType), { icon: 'ℹ️' });
@@ -2253,7 +2305,8 @@ function InlineGroupBubble({
           </div>
           {!deleted && (
             <button
-              onClick={() => setMenuOpen((v) => !v)}
+              ref={menuTriggerRef}
+              onClick={() => (menuOpen ? closeMenu() : openMenu())}
               className="absolute top-0 right-0 w-6 h-6 rounded-full flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100 z-10"
               style={{
                 background: 'var(--color-modal-bg)',
@@ -2265,27 +2318,30 @@ function InlineGroupBubble({
               <ChevronDown size={12} />
             </button>
           )}
-          {menuOpen && (
+          {menuOpen && menuPos && createPortal(
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+              <div className="fixed inset-0 z-[200]" onClick={closeMenu} />
               <div
-                className="absolute top-6 right-0 z-50 w-44 rounded-xl overflow-hidden py-1"
+                className="fixed z-[201] w-44 rounded-xl overflow-y-auto py-1"
                 style={{
+                  top: menuPos.top,
+                  left: menuPos.left,
+                  maxHeight: menuPos.maxHeight,
                   background: 'var(--color-modal-bg)',
                   border: '1px solid var(--color-border-medium)',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
                 }}
               >
-                <button onClick={() => { setMenuOpen(false); onReply(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                <button onClick={() => { closeMenu(); onReply(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Reply size={13} /> Reply
                 </button>
                 <button onClick={handleCopy} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Copy size={13} /> Copy
                 </button>
-                <button onClick={() => { setMenuOpen(false); setReactPickerOpen(true); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                <button onClick={() => { closeMenu(); setReactPickerOpen(true); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Smile size={13} /> React
                 </button>
-                <button onClick={() => { setMenuOpen(false); onForward(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                <button onClick={() => { closeMenu(); onForward(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Reply size={13} className="scale-x-[-1]" /> Forward
                 </button>
                 <button onClick={toggleStar} disabled={starMsg.isPending} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50">
@@ -2296,30 +2352,31 @@ function InlineGroupBubble({
                   <MapPin size={13} className={isPinned ? 'fill-current' : ''} style={isPinned ? { color: 'var(--color-accent)' } : {}} />
                   {isPinned ? 'Unpin' : 'Pin'}
                 </button>
-                <button onClick={() => { setMenuOpen(false); onInfo(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                <button onClick={() => { closeMenu(); onInfo(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Info size={13} /> Info
                 </button>
                 {canEdit && (
-                  <button onClick={() => { setMenuOpen(false); onEdit(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                  <button onClick={() => { closeMenu(); onEdit(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                     <Edit3 size={13} /> Edit
                   </button>
                 )}
                 <button
-                  onClick={() => { setMenuOpen(false); setConfirmDelete('me'); }}
+                  onClick={() => { closeMenu(); setConfirmDelete('me'); }}
                   className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
                 >
                   <Trash2 size={13} /> Delete for me
                 </button>
                 {isMe && (
                   <button
-                    onClick={() => { setMenuOpen(false); setConfirmDelete('everyone'); }}
+                    onClick={() => { closeMenu(); setConfirmDelete('everyone'); }}
                     className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-[var(--color-surface-overlay)]"
                   >
                     <Trash2 size={13} /> Delete for everyone
                   </button>
                 )}
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
         {reactPickerOpen && !deleted && (
