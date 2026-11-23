@@ -54,8 +54,15 @@ import {
   useSendChatGroupMessage,
   useDeleteChatGroupMessage,
   useToggleChatGroupStar,
+  useEditChatGroupMessage,
+  useForwardChatGroupMessage,
+  useToggleChatGroupReaction,
+  useTogglePinChatGroupMessage,
+  useStarredMessages,
   chatGroupKeys,
 } from '@/lib/hooks/useChatGroups';
+import { ForwardPickerSheet } from '@/components/features/chat/ForwardPickerSheet';
+import { GroupMessageInfoSheet } from '@/components/features/chat/GroupMessageInfoSheet';
 import { senderColor } from '@/components/features/chat/senderColor';
 import { useMe } from '@/lib/hooks/useUser';
 import { WeeklyReportModal } from '@/components/features/reports/WeeklyReportModal';
@@ -166,6 +173,11 @@ export default function MessagesPage() {
   const [topMenuOpen, setTopMenuOpen]     = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [replyingTo, setReplyingTo]       = useState<any | null>(null);
+  // Inline group chat: reply / edit / forward / info, matching the DM menu.
+  const [groupReplyTo, setGroupReplyTo]   = useState<any | null>(null);
+  const [groupEditing, setGroupEditing]   = useState<{ messageId: string; body: string } | null>(null);
+  const [groupForwardMsg, setGroupForwardMsg] = useState<any | null>(null);
+  const [groupInfoMsgId, setGroupInfoMsgId]   = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{
     file: File;
     previewUrl: string;
@@ -201,6 +213,13 @@ export default function MessagesPage() {
   // useSendChatGroupMessage closes over the group ID; TanStack Query v5
   // re-evaluates the closure on every render, so switching groups is safe.
   const sendGroupMessage          = useSendChatGroupMessage(activeGroupId ?? '');
+  const editGroupMessage          = useEditChatGroupMessage(activeGroupId ?? '');
+  const forwardGroupMessage       = useForwardChatGroupMessage(activeGroupId ?? '');
+  const { data: groupStarredList = [] } = useStarredMessages();
+  const groupStarredIdSet = useMemo(
+    () => new Set(groupStarredList.map((s: any) => s.id)),
+    [groupStarredList]
+  );
 
   const { data: dmStarredList = [] } = useDmStarredMessages();
   const { data: dmPinnedMsg }        = useDmPinnedMessage(activeId ?? '');
@@ -426,6 +445,10 @@ export default function MessagesPage() {
     setActiveId(null);
     setMobileView('chat');
     setGroupInput('');
+    setGroupReplyTo(null);
+    setGroupEditing(null);
+    setGroupForwardMsg(null);
+    setGroupInfoMsgId(null);
     if (groupTextareaRef.current) groupTextareaRef.current.style.height = 'auto';
   }
 
@@ -436,13 +459,36 @@ export default function MessagesPage() {
     el.style.height = Math.min(el.scrollHeight, 96) + 'px';
   }
 
-  function handleGroupSend() {
-    const body = groupInput.trim();
-    if (!body || !activeGroupId || sendGroupMessage.isPending) return;
+  function cancelGroupEdit() {
+    setGroupEditing(null);
     setGroupInput('');
     if (groupTextareaRef.current) groupTextareaRef.current.style.height = 'auto';
+  }
+
+  function handleGroupSend() {
+    const body = groupInput.trim();
+    if (!body || !activeGroupId || sendGroupMessage.isPending || editGroupMessage.isPending) return;
+    const groupId = activeGroupId;
+    if (groupEditing) {
+      const { messageId } = groupEditing;
+      editGroupMessage.mutate(
+        { messageId, body },
+        {
+          onSuccess: () => {
+            cancelGroupEdit();
+            queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(groupId) });
+          },
+          onError: () => toast.error('Could not edit the message'),
+        }
+      );
+      return;
+    }
+    const replyToId = groupReplyTo?.id as string | undefined;
+    setGroupInput('');
+    setGroupReplyTo(null);
+    if (groupTextareaRef.current) groupTextareaRef.current.style.height = 'auto';
     sendGroupMessage.mutate(
-      { body },
+      { body, ...(replyToId ? { replyToId } : {}) },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(activeGroupId) });
@@ -733,11 +779,51 @@ export default function MessagesPage() {
                     clustered={clustered}
                     meId={(me as any)?.id ?? ''}
                     groupId={activeGroupId!}
+                    isStarred={groupStarredIdSet.has(m.id)}
+                    onReply={() => {
+                      setGroupEditing(null);
+                      setGroupReplyTo(m);
+                      groupTextareaRef.current?.focus();
+                    }}
+                    onEdit={() => {
+                      if (!m.body) return;
+                      setGroupReplyTo(null);
+                      setGroupEditing({ messageId: m.id, body: m.body });
+                      setGroupInput(m.body);
+                      setTimeout(() => { autoResizeGroup(); groupTextareaRef.current?.focus(); }, 0);
+                    }}
+                    onForward={() => setGroupForwardMsg(m)}
+                    onInfo={() => setGroupInfoMsgId(m.id)}
                   />
                 );
               })}
               <div ref={groupMsgsEndRef} />
             </div>
+
+            {groupForwardMsg && (
+              <ForwardPickerSheet
+                fromGroupId={activeGroupId!}
+                previewText={groupForwardMsg.body}
+                previewMediaType={groupForwardMsg.mediaType}
+                onClose={() => setGroupForwardMsg(null)}
+                onSubmit={async (toGroupIds) => {
+                  try {
+                    await forwardGroupMessage.mutateAsync({ messageId: groupForwardMsg.id, toGroupIds });
+                    toast.success(`Forwarded to ${toGroupIds.length} group${toGroupIds.length === 1 ? '' : 's'}`);
+                    queryClient.invalidateQueries({ queryKey: chatGroupKeys.mine });
+                  } catch {
+                    toast.error('Failed to forward message');
+                  }
+                }}
+              />
+            )}
+            {groupInfoMsgId && (
+              <GroupMessageInfoSheet
+                groupId={activeGroupId!}
+                messageId={groupInfoMsgId}
+                onClose={() => setGroupInfoMsgId(null)}
+              />
+            )}
 
             {/* Group composer */}
             <div
@@ -747,6 +833,33 @@ export default function MessagesPage() {
                 background: 'var(--color-bg-surface)',
               }}
             >
+              {(groupReplyTo || groupEditing) && (
+                <div
+                  className="mb-2 px-3 py-1.5 rounded-lg text-[11px] flex items-center justify-between gap-2"
+                  style={{ background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)' }}
+                >
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {groupEditing ? (
+                      <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>Editing message</span>
+                    ) : (
+                      <>
+                        <span className="font-semibold" style={{ color: 'var(--color-accent)' }}>
+                          Replying to {[groupReplyTo.sender?.firstName, groupReplyTo.sender?.lastName].filter(Boolean).join(' ') || 'Member'}
+                        </span>
+                        {': '}
+                        {groupReplyTo.body || (groupReplyTo.mediaType ? `📎 ${groupReplyTo.mediaType}` : '…')}
+                      </>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => (groupEditing ? cancelGroupEdit() : setGroupReplyTo(null))}
+                    className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label={groupEditing ? 'Cancel edit' : 'Cancel reply'}
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
               <div
                 className="flex items-end gap-2 rounded-xl px-3 py-2"
                 style={{ background: 'var(--color-bg-primary)', border: '1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)' }}
@@ -757,6 +870,7 @@ export default function MessagesPage() {
                   onChange={(e) => { setGroupInput(e.target.value); autoResizeGroup(); }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleGroupSend(); }
+                    else if (e.key === 'Escape' && groupEditing) { e.preventDefault(); cancelGroupEdit(); }
                   }}
                   rows={1}
                   placeholder="Type a message… (Enter to send)"
@@ -765,11 +879,11 @@ export default function MessagesPage() {
                 />
                 <button
                   onClick={handleGroupSend}
-                  disabled={!groupInput.trim() || sendGroupMessage.isPending}
+                  disabled={!groupInput.trim() || sendGroupMessage.isPending || editGroupMessage.isPending}
                   className="flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center disabled:opacity-40"
                   style={{ background: 'var(--color-accent)' }}
                 >
-                  {sendGroupMessage.isPending ? (
+                  {sendGroupMessage.isPending || editGroupMessage.isPending ? (
                     <Loader2 size={13} className="animate-spin text-white" />
                   ) : (
                     <Send size={13} className="text-white" />
@@ -1976,19 +2090,70 @@ function InlineGroupBubble({
   clustered,
   meId,
   groupId,
+  isStarred,
+  onReply,
+  onEdit,
+  onForward,
+  onInfo,
 }: {
   message: any;
   isMe: boolean;
   clustered: boolean;
   meId: string;
   groupId: string;
+  isStarred: boolean;
+  onReply: () => void;
+  onEdit: () => void;
+  onForward: () => void;
+  onInfo: () => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [reactPickerOpen, setReactPickerOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<null | 'me' | 'everyone'>(null);
 
   const deleteMsg = useDeleteChatGroupMessage(groupId);
   const starMsg = useToggleChatGroupStar(groupId);
+  const reactMsg = useToggleChatGroupReaction(groupId);
+  const pinMsg = useTogglePinChatGroupMessage(groupId);
   const qc = useQueryClient();
+  const isPinned = !!message.isPinned;
+  const canEdit = isMe && !!message.body && !message.mediaUrl;
+
+  function react(emoji: string) {
+    setReactPickerOpen(false);
+    reactMsg.mutate(
+      { messageId: message.id, emoji },
+      {
+        onSuccess: () => qc.invalidateQueries({ queryKey: chatGroupKeys.messages(groupId) }),
+        onError: () => toast.error('Could not react to the message'),
+      }
+    );
+  }
+
+  function toggleStar() {
+    setMenuOpen(false);
+    starMsg.mutate(
+      { messageId: message.id, starred: isStarred },
+      {
+        onSuccess: () => toast.success(isStarred ? 'Unstarred' : 'Starred'),
+        onError: () => toast.error('Failed to update star'),
+      }
+    );
+  }
+
+  function togglePin() {
+    setMenuOpen(false);
+    pinMsg.mutate(
+      { messageId: message.id, isPinned },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: chatGroupKeys.messages(groupId) });
+          toast.success(isPinned ? 'Unpinned' : 'Pinned');
+        },
+        onError: () => toast.error('Failed to update pin'),
+      }
+    );
+  }
 
   const deleted = message.deletedForEveryone || !!message.deletedAt;
   const color = senderColor(message.senderMemberId);
@@ -2054,6 +2219,22 @@ function InlineGroupBubble({
                 : 'var(--color-bg-surface)',
             }}
           >
+            {!deleted && message.replyTo && (
+              <div
+                className="mx-2 mt-2 px-2 py-1 rounded-md text-[11px] border-l-2"
+                style={{ borderColor: 'var(--color-accent)', background: 'var(--color-surface-overlay)' }}
+              >
+                <div className="font-semibold" style={{ color: 'var(--color-accent)' }}>
+                  {message.replyTo.senderName ?? 'Member'}
+                </div>
+                <div className="text-muted-foreground truncate">
+                  {message.replyTo.deletedForEveryone
+                    ? 'message deleted'
+                    : message.replyTo.body ||
+                      (message.replyTo.mediaType ? `📎 ${message.replyTo.mediaType}` : '…')}
+                </div>
+              </div>
+            )}
             {deleted ? (
               <p className="text-sm italic text-muted-foreground px-3.5 py-2">This message was deleted</p>
             ) : (
@@ -2063,7 +2244,10 @@ function InlineGroupBubble({
                 </p>
               )
             )}
-            <p className="text-[10px] text-muted-foreground px-3.5 pb-1.5 text-right">
+            <p className="text-[10px] text-muted-foreground px-3.5 pb-1.5 flex items-center justify-end gap-1">
+              {isPinned && !deleted && <MapPin size={9} style={{ color: 'var(--color-accent)' }} />}
+              {isStarred && !deleted && <Star size={9} className="fill-current" style={{ color: '#f59e0b' }} />}
+              {message.editedAt && !deleted && <span>edited ·</span>}
               {timeAgo(message.createdAt)}
             </p>
           </div>
@@ -2092,30 +2276,34 @@ function InlineGroupBubble({
                   boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
                 }}
               >
-                <button
-                  onClick={handleCopy}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
+                <button onClick={() => { setMenuOpen(false); onReply(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                  <Reply size={13} /> Reply
+                </button>
+                <button onClick={handleCopy} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
                   <Copy size={13} /> Copy
                 </button>
-                <button
-                  onClick={() => {
-                    setMenuOpen(false);
-                    starMsg.mutate({ messageId: message.id, starred: false });
-                    toast.success('Starred');
-                  }}
-                  disabled={starMsg.isPending}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50"
-                >
-                  <Star size={13} /> Star
+                <button onClick={() => { setMenuOpen(false); setReactPickerOpen(true); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                  <Smile size={13} /> React
                 </button>
-                <Link
-                  href={`/messages/group/${groupId}`}
-                  onClick={() => setMenuOpen(false)}
-                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
-                >
-                  <ExternalLink size={13} /> Full view
-                </Link>
+                <button onClick={() => { setMenuOpen(false); onForward(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                  <Reply size={13} className="scale-x-[-1]" /> Forward
+                </button>
+                <button onClick={toggleStar} disabled={starMsg.isPending} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50">
+                  <Star size={13} className={isStarred ? 'fill-current' : ''} style={isStarred ? { color: '#f59e0b' } : {}} />
+                  {isStarred ? 'Unstar' : 'Star'}
+                </button>
+                <button onClick={togglePin} disabled={pinMsg.isPending} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)] disabled:opacity-50">
+                  <MapPin size={13} className={isPinned ? 'fill-current' : ''} style={isPinned ? { color: 'var(--color-accent)' } : {}} />
+                  {isPinned ? 'Unpin' : 'Pin'}
+                </button>
+                <button onClick={() => { setMenuOpen(false); onInfo(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                  <Info size={13} /> Info
+                </button>
+                {canEdit && (
+                  <button onClick={() => { setMenuOpen(false); onEdit(); }} className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]">
+                    <Edit3 size={13} /> Edit
+                  </button>
+                )}
                 <button
                   onClick={() => { setMenuOpen(false); setConfirmDelete('me'); }}
                   className="w-full text-left flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:bg-[var(--color-surface-overlay)]"
@@ -2134,11 +2322,41 @@ function InlineGroupBubble({
             </>
           )}
         </div>
+        {reactPickerOpen && !deleted && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setReactPickerOpen(false)} />
+            <div
+              className={cn('relative z-50 mt-1 flex gap-1 px-2 py-1 rounded-full', isMe ? 'self-end' : 'self-start')}
+              style={{
+                background: 'var(--color-modal-bg)',
+                border: '1px solid var(--color-border-medium)',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              }}
+              role="group"
+              aria-label="Pick a reaction"
+            >
+              {DM_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => react(emoji)}
+                  className="text-lg leading-none p-1 rounded-full hover:bg-[var(--color-surface-overlay)]"
+                  aria-label={`React ${emoji}`}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {reactionGroups.length > 0 && !deleted && (
           <div className={cn('flex gap-1 mt-0.5 flex-wrap', isMe ? 'justify-end' : 'justify-start')}>
             {reactionGroups.map(([emoji, memberIds]) => (
-              <span
+              <button
                 key={emoji}
+                onClick={() => react(emoji)}
+                disabled={reactMsg.isPending}
+                title={memberIds.includes(meId) ? 'Remove your reaction' : 'React with this'}
+                aria-pressed={memberIds.includes(meId)}
                 className="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full"
                 style={{
                   background: memberIds.includes(meId)
@@ -2150,7 +2368,7 @@ function InlineGroupBubble({
                 }}
               >
                 {emoji} <span className="text-muted-foreground">{memberIds.length}</span>
-              </span>
+              </button>
             ))}
           </div>
         )}
