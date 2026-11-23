@@ -14,6 +14,10 @@ import {
   adminListGroupMessagesHandler,
   adminSendMessageHandler,
   adminRaiseTicketHandler,
+  adminEditMessageHandler,
+  adminDeleteMessageHandler,
+  adminForwardMessageHandler,
+  adminMessageInfoHandler,
   memberListMyGroupsHandler,
   memberGetGroupHandler,
   memberListMessagesHandler,
@@ -70,6 +74,10 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
       adminScope.get('/:id/messages', adminListGroupMessagesHandler);
       adminScope.post('/:id/messages', adminSendMessageHandler);
       adminScope.post('/:id/messages/:messageId/raise-ticket', adminRaiseTicketHandler);
+      adminScope.put('/:id/messages/:messageId', adminEditMessageHandler);
+      adminScope.delete('/:id/messages/:messageId', adminDeleteMessageHandler);
+      adminScope.post('/:id/messages/:messageId/forward', adminForwardMessageHandler);
+      adminScope.get('/:id/messages/:messageId/info', adminMessageInfoHandler);
       // Scheduled messages (one-time or daily) — scheduled.controller.ts
       adminScope.get('/:id/scheduled-messages', adminListScheduledHandler);
       adminScope.post('/:id/scheduled-messages', adminCreateScheduledHandler);

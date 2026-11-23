@@ -63,6 +63,7 @@ type RawMessageRow = {
   deleted_at: Date | null;
   deleted_for_everyone: boolean;
   link_preview?: Record<string, unknown> | null;
+  is_pinned?: boolean;
 };
 
 // ── Link preview scraper (Sprint 3, 2026-08-19) ─────────────────────────────
@@ -342,6 +343,7 @@ function messageJson(m: HydratedMessage) {
     readByCount: m.readByCount,
     readByMemberIds: m.readByMemberIds,
     linkPreview: m.deleted_for_everyone ? null : (m.link_preview ?? null),
+    isPinned: !m.deleted_for_everyone && !!m.is_pinned,
   };
 }
 
@@ -1149,7 +1151,12 @@ export async function adminListGroupMessagesHandler(
   );
 
   const hydrated = await hydrateSenders(req, rows.reverse());
-  return ok(reply, hydrated.map(messageJson));
+  // sentByMe lets the admin chat offer Edit only on the caller's own messages.
+  const adminId = req.adminId ?? null;
+  return ok(
+    reply,
+    hydrated.map((m) => ({ ...messageJson(m), sentByMe: !!adminId && m.sender_admin_id === adminId })),
+  );
 }
 
 export async function memberToggleReactionHandler(req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: { emoji: string } }>, reply: FastifyReply) {
@@ -1808,6 +1815,8 @@ export async function postAdminGroupMessage(
     mediaUrl?: string | null;
     mediaType?: string | null;
     replyToId?: string | null;
+    /** Set when the admin forwards an existing message. */
+    forwardedFromMessageId?: string | null;
   },
 ): Promise<string> {
   const { groupId, adminId } = args;
@@ -1818,8 +1827,9 @@ export async function postAdminGroupMessage(
   const req = { server } as unknown as FastifyRequest;
 
   const inserted = await prisma.$queryRawUnsafe<RawMessageRow[]>(
-    `INSERT INTO chat_group_messages (group_id, sender_admin_id, body, media_url, media_type, reply_to_id)
-     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
+    `INSERT INTO chat_group_messages
+       (group_id, sender_admin_id, body, media_url, media_type, reply_to_id, forwarded_from_message_id)
+     VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7::uuid)
      RETURNING *`,
     groupId,
     adminId,
@@ -1827,6 +1837,7 @@ export async function postAdminGroupMessage(
     mediaUrl,
     mediaType,
     args.replyToId || null,
+    args.forwardedFromMessageId || null,
   );
   await prisma.$executeRawUnsafe(`UPDATE chat_groups SET last_message_at = NOW() WHERE id = $1::uuid`, groupId);
   await prisma.$executeRawUnsafe(
@@ -1936,4 +1947,159 @@ function groupToJson(g: RawGroupRow) {
     announcementOnly: (g as any).announcement_only ?? false,
     disappearingDurationSeconds: (g as any).disappearing_duration_seconds ?? null,
   };
+}
+
+// ── Admin message actions (hover menu in the admin group chat) ──────────────
+
+/**
+ * PUT /api/chat-groups/admin/:id/messages/:messageId — an admin edits a
+ * message they posted, under the same 5-minute window members have.
+ */
+export async function adminEditMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: { body?: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const body = req.body?.body?.trim();
+  if (!body) return fail(reply, 400, 'BAD_REQUEST', 'Body required.');
+  if (body.length > 5000) return fail(reply, 400, 'BAD_REQUEST', 'Message body too long.');
+  const adminId = req.adminId;
+  if (!adminId) return fail(reply, 403, 'FORBIDDEN', 'Only the sender can edit.');
+
+  const rows = await req.server.prisma.$queryRawUnsafe<
+    Array<{ sender_admin_id: string | null; created_at: Date; deleted_at: Date | null }>
+  >(
+    `SELECT sender_admin_id, created_at, deleted_at FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  const check = canEditMessage({
+    senderMemberId: rows[0].sender_admin_id,
+    requesterMemberId: adminId,
+    createdAt: new Date(rows[0].created_at),
+    deletedAt: rows[0].deleted_at ? new Date(rows[0].deleted_at) : null,
+    now: new Date(),
+  });
+  if (!check.allowed) {
+    return fail(reply, check.code === 'FORBIDDEN' ? 403 : 400, check.code ?? 'FORBIDDEN', check.message ?? 'Cannot edit this message.');
+  }
+
+  const updated = await req.server.prisma.$queryRawUnsafe<RawMessageRow[]>(
+    `UPDATE chat_group_messages SET body = $1, edited_at = NOW() WHERE id = $2::uuid RETURNING *`,
+    body,
+    messageId,
+  );
+  const hydrated = await hydrateSenders(req, updated);
+  const payload = messageJson(hydrated[0]);
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:message:edited', payload);
+  return ok(reply, payload);
+}
+
+/**
+ * DELETE /api/chat-groups/admin/:id/messages/:messageId — moderation: an
+ * admin removes any message for everyone in the group.
+ */
+export async function adminDeleteMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const rows = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `UPDATE chat_group_messages
+     SET deleted_at = COALESCE(deleted_at, NOW()),
+         deleted_for_everyone = true,
+         is_pinned = false,
+         pinned_at = NULL
+     WHERE id = $1::uuid AND group_id = $2::uuid
+     RETURNING id`,
+    messageId,
+    id,
+  );
+  if (rows.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  const io = (req.server as any).io;
+  if (io) io.to(`group:${id}`).emit('group:message:deleted', { messageId, forEveryone: true });
+  return ok(reply, { deleted: true, forEveryone: true });
+}
+
+/**
+ * POST /api/chat-groups/admin/:id/messages/:messageId/forward — an admin
+ * forwards a message into other groups. Each copy is posted as the admin,
+ * like any admin message (unread counts, socket events, push).
+ */
+export async function adminForwardMessageHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string }; Body: { toGroupIds?: string[] } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const raw = req.body?.toGroupIds;
+  const toGroupIds = Array.isArray(raw) ? raw.filter((g): g is string => typeof g === 'string') : [];
+  if (toGroupIds.length === 0) return fail(reply, 400, 'BAD_REQUEST', 'toGroupIds required.');
+  if (toGroupIds.length > 20) return fail(reply, 400, 'BAD_REQUEST', 'Forward to at most 20 groups at a time.');
+  const prisma = req.server.prisma;
+
+  const source = await prisma.$queryRawUnsafe<
+    Array<Pick<RawMessageRow, 'id' | 'body' | 'media_url' | 'media_type' | 'deleted_for_everyone' | 'is_system'>>
+  >(
+    `SELECT id, body, media_url, media_type, deleted_for_everyone, is_system
+     FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  const src = source[0];
+  if (!src || src.deleted_for_everyone || src.is_system || (!src.body && !src.media_url)) {
+    return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  }
+
+  const targets = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM chat_groups WHERE id = ANY($1::uuid[]) AND is_deleted = false`,
+    toGroupIds,
+  );
+  if (targets.length === 0) return fail(reply, 404, 'NOT_FOUND', 'No target groups found.');
+
+  const adminId = req.adminId ?? null;
+  const forwardedTo: string[] = [];
+  for (const t of targets) {
+    await postAdminGroupMessage(req.server, {
+      groupId: t.id,
+      adminId,
+      body: src.body ?? '',
+      mediaUrl: src.media_url,
+      mediaType: src.media_type,
+      forwardedFromMessageId: src.id,
+    });
+    forwardedTo.push(t.id);
+  }
+  return ok(reply, { forwardedTo, count: forwardedTo.length });
+}
+
+/** GET /api/chat-groups/admin/:id/messages/:messageId/info — who has read a message. */
+export async function adminMessageInfoHandler(
+  req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
+  reply: FastifyReply,
+) {
+  const { id, messageId } = req.params;
+  const exists = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+    messageId,
+    id,
+  );
+  if (exists.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  const rows = await req.server.prisma.$queryRawUnsafe<MessageInfoReadRow[]>(
+    `SELECT r.member_id, r.read_at, m.first_name, m.last_name, m.profile_photo_url
+     FROM chat_group_message_reads r
+     JOIN members m ON m.id = r.member_id
+     WHERE r.message_id = $1::uuid
+     ORDER BY r.read_at ASC`,
+    messageId,
+  );
+  return ok(reply, {
+    readBy: rows.map((r) => ({
+      memberId: r.member_id,
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member',
+      profilePhotoUrl: r.profile_photo_url,
+      readAt: r.read_at,
+    })),
+  });
 }

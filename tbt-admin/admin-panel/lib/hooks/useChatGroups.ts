@@ -49,6 +49,11 @@ export interface AdminChatGroupMessage {
   sender: { id: string; firstName: string | null; lastName: string | null; profilePhotoUrl: string | null } | null;
   replyToId?: string | null;
   replyTo?: { id: string; body: string | null; mediaType: string | null; senderName: string | null; deletedForEveryone: boolean } | null;
+  isPinned?: boolean;
+  /** True when the signed-in admin sent this message (admin list only). */
+  sentByMe?: boolean;
+  reactions?: Array<{ emoji: string; memberId: string; memberName: string | null }>;
+  readByCount?: number;
 }
 
 interface CreateGroupBody {
@@ -279,6 +284,65 @@ export function useAdminRaiseTicketFromMessage() {
       return (res as unknown as { data: HelpdeskTicket }).data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["helpdesk"] }),
+  });
+}
+
+// ── Message actions (hover menu in the admin group chat) ────────────────────
+
+function invalidateGroupMessages(qc: ReturnType<typeof useQueryClient>, groupId: string) {
+  qc.invalidateQueries({ queryKey: ["admin", "chat-group", groupId, "messages"] });
+  qc.invalidateQueries({ queryKey: ["admin", "chat-group", groupId] });
+}
+
+/** Edit the admin's own message (5-minute window, enforced server-side). */
+export function useAdminEditGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, messageId, body }: { groupId: string; messageId: string; body: string }) => {
+      const res = await apiClient.put(`/api/chat-groups/admin/${groupId}/messages/${messageId}`, { body });
+      return (res as unknown as { data: AdminChatGroupMessage }).data;
+    },
+    onSuccess: (_d, vars) => invalidateGroupMessages(qc, vars.groupId),
+  });
+}
+
+/** Moderation: delete any message for everyone in the group. */
+export function useAdminDeleteGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, messageId }: { groupId: string; messageId: string }) => {
+      await apiClient.delete(`/api/chat-groups/admin/${groupId}/messages/${messageId}`);
+    },
+    onSuccess: (_d, vars) => invalidateGroupMessages(qc, vars.groupId),
+  });
+}
+
+/** Forward a message into other groups, posted as the admin. */
+export function useAdminForwardGroupMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ groupId, messageId, toGroupIds }: { groupId: string; messageId: string; toGroupIds: string[] }) => {
+      const res = await apiClient.post(`/api/chat-groups/admin/${groupId}/messages/${messageId}/forward`, { toGroupIds });
+      return (res as unknown as { data: { forwardedTo: string[]; count: number } }).data;
+    },
+    onSuccess: (_d, vars) => {
+      for (const id of vars.toGroupIds) invalidateGroupMessages(qc, id);
+      qc.invalidateQueries({ queryKey: ["admin", "chat-groups"] });
+    },
+  });
+}
+
+/** Who has read a message (read receipts). */
+export function useAdminGroupMessageInfo(groupId: string, messageId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "chat-group", groupId, "message-info", messageId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/chat-groups/admin/${groupId}/messages/${messageId}/info`);
+      return (res as unknown as {
+        data: { readBy: Array<{ memberId: string; name: string; profilePhotoUrl: string | null; readAt: string }> };
+      }).data;
+    },
+    enabled: !!messageId,
   });
 }
 

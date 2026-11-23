@@ -54,6 +54,7 @@ describe("parseFormatting", () => {
   });
 
   it("keeps **markdown bold** working and nests styles", () => {
+    expect(parseFormatting("abc**def**")).toEqual([t("abc"), { type: "bold", children: [t("def")] }]);
     expect(parseFormatting("**Step 1:** go")).toEqual([{ type: "bold", children: [t("Step 1:")] }, t(" go")]);
     expect(parseFormatting("*_both_*")).toEqual([
       { type: "bold", children: [{ type: "italic", children: [t("both")] }] },

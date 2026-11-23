@@ -65,9 +65,11 @@ function findMatch(text: string, rule: (typeof INLINE_RULES)[number], from: numb
     const start = m.index;
     const end = start + m[0].length;
     const closeAt = end - rule.len;
+    // "**bold**" is pasted markdown, which also bolds inside a word ("word**bold**"),
+    // so it skips the word-edge rule that the single WhatsApp markers follow.
+    const markdownBold = rule.len === 2 && m[0][0] === "*";
     const ok =
-      isEdge(text[start - 1]) &&
-      isEdge(text[end]) &&
+      (markdownBold || (isEdge(text[start - 1]) && isEdge(text[end]))) &&
       // a single marker must not sit right against the same marker ("***")
       !(rule.len === 1 && (text[start - 1] === m[0][0] || text[end] === m[0][0])) &&
       !inRanges(start, links) &&
