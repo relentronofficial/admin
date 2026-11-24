@@ -69,6 +69,8 @@ const envSchema = z.object({
   WABA_TEMPLATE_LANGUAGE: z.string().default('en'),
   WABA_API_BASE_URL: z.string().url().default('https://graph.facebook.com/v21.0'),
   ANTHROPIC_API_KEY: z.string().optional().or(z.literal('')),
+  // Admin Assistant (/api/admin-assistant); the feature is off without it.
+  OPENROUTER_API_KEY: z.string().optional().or(z.literal('')),
   CRON_SECRET: z.string().optional().or(z.literal('')),
   // Mentorship dashboard demo mode (lib/mentorshipDemo.ts) — overlays demo
   // values on the mentorship revenue/social/stats, navbar streak and weekly

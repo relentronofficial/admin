@@ -1593,6 +1593,37 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_chat_group_starred_member ON chat_group_starred_messages(member_id, starred_at DESC)`
     ).catch(() => {});
 
+    // ── Admin Assistant chats (modules/admin-assistant). Each belongs to one admin.
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS admin_assistant_conversations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        admin_id UUID NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+        title VARCHAR(80) NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((err) => fastify.log.warn({ err }, 'admin_assistant_conversations DDL failed'));
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS admin_assistant_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        conversation_id UUID NOT NULL REFERENCES admin_assistant_conversations(id) ON DELETE CASCADE,
+        role VARCHAR(10) NOT NULL,
+        content TEXT NOT NULL,
+        tools JSONB,
+        cost_usd NUMERIC(10,6),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `).catch((err) => fastify.log.warn({ err }, 'admin_assistant_messages DDL failed'));
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_admin_assistant_conv ON admin_assistant_conversations(admin_id, updated_at DESC)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_admin_assistant_msg ON admin_assistant_messages(conversation_id, created_at)`
+    ).catch(() => {});
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_admin_assistant_msg_created ON admin_assistant_messages(created_at)`
+    ).catch(() => {});
+
     // ── Admin-scheduled group-chat messages (one-time or daily). Sent by the
     // sweep in jobs/chatScheduledMessages.ts; rules in lib/chatScheduleLogic.ts.
     // Runs after the parallel block so chat_groups exists for the FK.

@@ -94,6 +94,7 @@ const navGroups: NavGroup[] = [
     label: null,
     items: [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { name: "AI Assistant", href: "/assistant", icon: Bot },
       { name: "Admins", href: "/admins", icon: UserCog },
       { name: "Members", href: "/members", icon: Users },
       { name: "Onboarding", href: "/onboarding", icon: UserCheck },
