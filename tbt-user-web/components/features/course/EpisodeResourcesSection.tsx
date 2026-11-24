@@ -1,10 +1,10 @@
 "use client";
 
 import React from "react";
-import { Download, FileText } from "lucide-react";
+import { Download, ExternalLink, FileText, Link2 } from "lucide-react";
 import type { EpisodeResource } from "@/lib/api/services/courses.service";
 
-export type ResourceKind = "image" | "video" | "audio" | "file";
+export type ResourceKind = "image" | "video" | "audio" | "link" | "file";
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|avif|svg|bmp)(\?|#|$)/i;
 const VIDEO_EXT = /\.(mp4|webm|mov|m4v|ogv)(\?|#|$)/i;
@@ -17,6 +17,7 @@ const AUDIO_EXT = /\.(mp3|wav|m4a|aac|ogg|oga|flac)(\?|#|$)/i;
 export function getResourceKind(r: Pick<EpisodeResource, "fileType" | "fileUrl">): ResourceKind {
   const type = (r.fileType ?? "").toLowerCase();
   const url = r.fileUrl ?? "";
+  if (type === "link") return "link";
   if (type === "image" || type.startsWith("image/") || IMAGE_EXT.test(url)) return "image";
   if (type === "video" || type.startsWith("video/") || VIDEO_EXT.test(url)) return "video";
   if (type === "audio" || type.startsWith("audio/") || AUDIO_EXT.test(url)) return "audio";
@@ -42,6 +43,7 @@ interface Props {
   resources: EpisodeResource[];
   heading: string;
   defaultDownloadLabel: string;
+  openLinkLabel?: string;
   showEmpty?: boolean;
   unavailableLabel?: string;
   unavailableHint?: string;
@@ -49,6 +51,7 @@ interface Props {
 
 export function EpisodeResourcesSection({
   resources, heading, defaultDownloadLabel, showEmpty = false,
+  openLinkLabel = "Open Link",
   unavailableLabel = "File unavailable",
   unavailableHint = "This file can't be downloaded right now. Please contact support.",
 }: Props) {
@@ -80,7 +83,11 @@ export function EpisodeResourcesSection({
           return (
             <div key={r.id} data-testid="episode-resource" data-kind={kind} className="px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
-                <FileText size={16} style={{ color: "var(--color-text-subtle)", flexShrink: 0 }} />
+                {kind === "link" ? (
+                  <Link2 size={16} style={{ color: "var(--color-accent)", flexShrink: 0 }} />
+                ) : (
+                  <FileText size={16} style={{ color: "var(--color-text-subtle)", flexShrink: 0 }} />
+                )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate" style={{ color: "var(--color-text-normal)" }}>{r.title}</p>
                   {r.description && (
@@ -92,11 +99,15 @@ export function EpisodeResourcesSection({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    download
+                    download={kind === "link" ? undefined : true}
                     className="shrink-0 flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg font-semibold transition-opacity hover:opacity-80 text-white"
                     style={{ background: "var(--color-accent)" }}
                   >
-                    <Download size={11} /> {r.downloadLabel || defaultDownloadLabel}
+                    {kind === "link" ? (
+                      <><ExternalLink size={11} /> {!r.downloadLabel || r.downloadLabel === "Download" ? openLinkLabel : r.downloadLabel}</>
+                    ) : (
+                      <><Download size={11} /> {r.downloadLabel || defaultDownloadLabel}</>
+                    )}
                   </a>
                 ) : (
                   <span

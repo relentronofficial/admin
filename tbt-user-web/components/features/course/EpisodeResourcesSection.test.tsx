@@ -49,6 +49,15 @@ describe("EpisodeResourcesSection", () => {
     expect(screen.getAllByRole("link", { name: /Download/ })).toHaveLength(3);
   });
 
+  it("opens a link resource in a new tab instead of downloading or embedding it", () => {
+    const { container } = renderSection([{ ...res("1", "link", "https://example.com/a.mp4", "Guide"), downloadLabel: "Download" as any }]);
+    const a = screen.getByRole("link", { name: "Open Link" });
+    expect(a.getAttribute("href")).toBe("https://example.com/a.mp4");
+    expect(a.getAttribute("target")).toBe("_blank");
+    expect(a.hasAttribute("download")).toBe(false);
+    expect(container.querySelector("video")).toBeNull();
+  });
+
   it("renders nothing when the episode has no resources", () => {
     const { container } = renderSection([]);
     expect(container.innerHTML).toBe("");

@@ -1,4 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { linkResourceError } from '../../lib/resourceUrl.js';
 
 export async function listResourcesHandler(req: FastifyRequest, reply: FastifyReply) {
   const { search, page = 1, limit = 50 } = req.query as any;
@@ -17,6 +18,8 @@ export async function listResourcesHandler(req: FastifyRequest, reply: FastifyRe
 
 export async function createResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const body = req.body as any;
+  const linkError = linkResourceError(body);
+  if (linkError) return reply.status(400).send({ success: false, data: null, error: linkError });
   const count = await req.server.prisma.appResource.count();
   const batchIds: string[] = Array.isArray(body.batchIds) ? body.batchIds : [];
   const resource = await req.server.prisma.appResource.create({
@@ -43,6 +46,8 @@ export async function createResourceHandler(req: FastifyRequest, reply: FastifyR
 export async function updateResourceHandler(req: FastifyRequest, reply: FastifyReply) {
   const { id } = req.params as any;
   const body = req.body as any;
+  const linkError = linkResourceError(body);
+  if (linkError) return reply.status(400).send({ success: false, data: null, error: linkError });
   const data: any = {};
   ['title', 'author', 'fileUrl', 'previewUrl', 'fileType', 'fileTypeIconUrl', 'isVisible', 'previewLabel', 'downloadLabel', 'description'].forEach(f => {
     if (body[f] !== undefined) data[f] = body[f];

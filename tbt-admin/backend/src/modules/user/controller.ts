@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { LINK_RESOURCE_TYPE, linkButtonLabel } from '../../lib/resourceUrl.js';
 import { env } from '../../config/env.js';
 import { generateBunnyToken } from '../../lib/bunnyToken.js';
 import { bunnyCdnOrigin } from '../../lib/bunny.js';
@@ -5621,13 +5622,15 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
       const locked = vis?.batchIds && vis.batchIds.length > 0
         ? !memberBatchId || !vis.batchIds.includes(memberBatchId)
         : false;
+      const isLink = r.fileType === LINK_RESOURCE_TYPE;
       return {
         id: r.id,
         title: r.title,
         author: r.author ?? null,
         date: r.date ? r.date.toISOString().split('T')[0] : null,
-        fileUrl: r.fileUrl,
-        previewUrl: r.previewUrl ?? null,
+        // A link's address is the whole resource, so a locked one doesn't expose it.
+        fileUrl: isLink && locked ? '' : r.fileUrl,
+        previewUrl: isLink ? null : r.previewUrl ?? null,
         fileType: r.fileType,
         fileTypeIconUrl: r.fileTypeIconUrl ?? null,
         fileCount: r.fileCount,
@@ -5635,10 +5638,12 @@ export async function getUserResourcesHandler(request: FastifyRequest, reply: Fa
         isVisible: r.isVisible,
         description: (r as any).description ?? null,
         locked,
-        hoverActions: [
-          { type: 'preview', iconType: 'eye', label: r.previewLabel },
-          { type: 'download', iconType: 'download', label: r.downloadLabel },
-        ],
+        hoverActions: isLink
+          ? [{ type: 'open', iconType: 'link', label: linkButtonLabel(r.downloadLabel) }]
+          : [
+              { type: 'preview', iconType: 'eye', label: r.previewLabel },
+              { type: 'download', iconType: 'download', label: r.downloadLabel },
+            ],
       };
     }),
     pagination: { total, page: Number(page), limit: Number(limit) },

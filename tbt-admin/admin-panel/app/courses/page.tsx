@@ -10,6 +10,7 @@ import {
   CheckCircle2, Clock, ChevronLeft, ChevronRight, ChevronDown, FileText, ListTodo, Link2,
   MessageSquare, Star, ThumbsUp, Layers, Copy, HelpCircle, Video, Type,
 } from "lucide-react";
+import { isWebLink, normalizeLink } from "@/lib/utils/resourceLink";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   useListVodCourses, useCreateVodCourse, useUpdateVodCourse, useDeleteVodCourse,
@@ -3350,7 +3351,7 @@ function AnalyticsTab({ course }: { course: any }) {
 }
 
 // ── Episode Resources Modal ────────────────────────────────────────────
-const FILE_TYPES = ["pdf", "doc", "xlsx", "ppt", "video", "audio", "image", "archive", "other"];
+const FILE_TYPES = ["link", "pdf", "doc", "xlsx", "ppt", "video", "audio", "image", "archive", "other"];
 const EMPTY_RESOURCE = { title: "", fileUrl: "", previewUrl: "", fileType: "pdf", description: "", isVisible: true };
 
 function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: () => void }) {
@@ -3411,19 +3412,26 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
     finally { setUploading(null); }
   };
 
+  const isLink = form.fileType === "link";
+  // Crossing between a link and a file clears the address.
+  const handleTypeChange = (fileType: string) => setForm((f: any) =>
+    (fileType === "link") === (f.fileType === "link") ? { ...f, fileType } : { ...f, fileType, fileUrl: "", previewUrl: "" });
+
   const openCreate = () => { setForm(EMPTY_RESOURCE); setEditing(null); setShowForm(true); };
   const openEdit = (r: any) => { setForm({ title: r.title, fileUrl: r.fileUrl || "", previewUrl: r.previewUrl || "", fileType: r.fileType || "pdf", description: r.description || "", isVisible: r.isVisible ?? true }); setEditing(r); setShowForm(true); };
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error("Title required"); return; }
-    if (!form.fileUrl.trim()) { toast.error("File URL required"); return; }
+    if (!form.fileUrl.trim()) { toast.error(isLink ? "Link URL required" : "File URL required"); return; }
+    const payload = isLink ? { ...form, fileUrl: normalizeLink(form.fileUrl), previewUrl: "" } : form;
+    if (isLink && !isWebLink(payload.fileUrl)) { toast.error("Enter a valid link, e.g. https://example.com"); return; }
     // A pasted local path (file:///C:/...) only opens on this computer — members get a dead link.
     const isWebUrl = (v: string) => { try { return ["http:", "https:"].includes(new URL(v.trim()).protocol); } catch { return false; } };
-    if (!isWebUrl(form.fileUrl)) { toast.error("File URL must be an https:// link. Use the upload button to upload the file; a local file path can't be opened by members."); return; }
-    if (form.previewUrl?.trim() && !isWebUrl(form.previewUrl)) { toast.error("Preview Image URL must be an https:// link, or left empty."); return; }
+    if (!isWebUrl(payload.fileUrl)) { toast.error("File URL must be an https:// link. Use the upload button to upload the file; a local file path can't be opened by members."); return; }
+    if (payload.previewUrl?.trim() && !isWebUrl(payload.previewUrl)) { toast.error("Preview Image URL must be an https:// link, or left empty."); return; }
     try {
-      if (editing) { await updateRes.mutateAsync({ id: editing.id, data: form }); toast.success("Resource updated"); }
-      else { await createRes.mutateAsync(form); toast.success("Resource created"); }
+      if (editing) { await updateRes.mutateAsync({ id: editing.id, data: payload }); toast.success("Resource updated"); }
+      else { await createRes.mutateAsync(payload); toast.success("Resource created"); }
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
@@ -3479,6 +3487,9 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
                   <div className="flex-1 min-w-0">
                     <p className="text-[12px] font-medium text-[#f0f0f0] truncate">{r.title}</p>
                     <p className="text-[10px] text-[#666] uppercase font-rajdhani">{r.fileType}</p>
+                    {r.fileType === "link" && (
+                      <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="block text-[10px] text-sky-400 truncate hover:underline">{r.fileUrl}</a>
+                    )}
                   </div>
                   {!r.isVisible && <EyeOff size={11} className="text-[#555] shrink-0" />}
                   {deleting === r.id ? (
@@ -3507,26 +3518,26 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
                   className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">File Type</label>
-                <select value={form.fileType} onChange={e => setForm((f: any) => ({ ...f, fileType: e.target.value }))}
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Type</label>
+                <select value={form.fileType} onChange={e => handleTypeChange(e.target.value)}
                   className="w-full bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]">
                   {FILE_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">File URL *</label>
+                <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">{isLink ? "Link URL *" : "File URL *"}</label>
                 <div className="flex gap-2">
-                  <input value={form.fileUrl} onChange={e => setForm((f: any) => ({ ...f, fileUrl: e.target.value }))} placeholder="https://... or upload"
+                  <input value={form.fileUrl} onChange={e => setForm((f: any) => ({ ...f, fileUrl: e.target.value }))} placeholder={isLink ? "https://example.com" : "https://... or upload"}
                     className="flex-1 bg-[#141414] border border-[#333] rounded px-3 py-2 text-[12px] text-white outline-none focus:border-[#dc2626]" />
-                  <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading === "fileUrl"}
+                  {!isLink && <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading === "fileUrl"}
                     className="flex items-center gap-1 bg-[#2a2a2a] hover:bg-[#333] border border-[#333] text-[#a0a0a0] px-2 py-1.5 rounded text-[10px] font-rajdhani font-bold uppercase transition-all disabled:opacity-50">
                     {uploading === "fileUrl" ? <Loader2 size={10} className="animate-spin" /> : <Upload size={10} />}
-                  </button>
+                  </button>}
                   <input ref={fileInputRef} type="file" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f, "fileUrl"); e.target.value = ""; }} />
                 </div>
               </div>
-              <div>
+              {!isLink && <div>
                 <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Preview Image URL</label>
                 <div className="flex gap-2">
                   <input value={form.previewUrl} onChange={e => setForm((f: any) => ({ ...f, previewUrl: e.target.value }))} placeholder="https://... (optional)"
@@ -3538,7 +3549,7 @@ function EpisodeResourcesModal({ episode, onClose }: { episode: any; onClose: ()
                   <input ref={previewInputRef} type="file" accept="image/*" className="hidden"
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadFile(f, "previewUrl"); e.target.value = ""; }} />
                 </div>
-              </div>
+              </div>}
               <div>
                 <label className="block text-[10px] font-bold text-[#888] uppercase tracking-widest mb-1 font-rajdhani">Description</label>
                 <textarea value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} rows={2} placeholder="Optional description"

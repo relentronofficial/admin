@@ -8,10 +8,11 @@ import {
   useGetResourcesPageConfig, useUpdateResourcesPageConfig, useReorderAppResources, useListBatches,
 } from "@/lib/hooks/useTbt";
 import { useUploadImage } from "@/lib/hooks/useAdmin";
+import { isWebLink, normalizeLink } from "@/lib/utils/resourceLink";
 import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 
-const FILE_TYPES = ["image", "pdf", "doc", "xlsx", "ppt", "video", "audio", "archive", "other"];
+const FILE_TYPES = ["link", "image", "pdf", "doc", "xlsx", "ppt", "video", "audio", "archive", "other"];
 
 const EMPTY_FORM = {
   title: "", author: "", date: "", description: "", fileUrl: "", previewUrl: "",
@@ -34,6 +35,7 @@ const detectFileType = (filename: string): string => {
 };
 
 const fileTypeColor = (t: string) => {
+  if (t === "link") return "text-sky-400 bg-sky-400/10 border-sky-400/20";
   if (t === "pdf") return "text-red-400 bg-red-400/10 border-red-400/20";
   if (t === "image") return "text-pink-400 bg-pink-400/10 border-pink-400/20";
   if (t === "video") return "text-blue-400 bg-blue-400/10 border-blue-400/20";
@@ -154,6 +156,21 @@ export default function AppResourcesPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [form, setForm] = useState<any>(EMPTY_FORM);
 
+  const isLink = form.fileType === "link";
+
+  // A link has an address, a file has an upload: crossing between the two
+  // clears the address and swaps the default button text.
+  const handleTypeChange = (fileType: string) => setForm((f: any) => {
+    const toLink = fileType === "link";
+    if (toLink === (f.fileType === "link")) return { ...f, fileType };
+    return {
+      ...f, fileType, fileUrl: "", previewUrl: "", fileCount: "1",
+      downloadLabel: toLink
+        ? (f.downloadLabel === "Download" ? "Open Link" : f.downloadLabel)
+        : (f.downloadLabel === "Open Link" ? "Download" : f.downloadLabel),
+    };
+  });
+
   const openCreate = () => { setForm(EMPTY_FORM); setEditing(null); setShowForm(true); };
 
   const openEdit = (r: any) => {
@@ -172,15 +189,17 @@ export default function AppResourcesPage() {
   };
 
   const handleSave = async () => {
-    if (!form.title || !form.fileUrl) return toast.error("Title and file are required");
+    const fileUrl = isLink ? normalizeLink(form.fileUrl) : form.fileUrl;
+    if (!form.title || !fileUrl) return toast.error(isLink ? "Title and link are required" : "Title and file are required");
+    if (isLink && !isWebLink(fileUrl)) return toast.error("Enter a valid link, e.g. https://example.com");
     try {
       const payload: any = {
         title: form.title, author: form.author || null, date: form.date || null,
         description: form.description || null,
-        fileUrl: form.fileUrl, previewUrl: form.previewUrl || null,
+        fileUrl, previewUrl: form.previewUrl || null,
         fileType: form.fileType, fileTypeIconUrl: form.fileTypeIconUrl || null,
         fileCount: Number(form.fileCount) || 1, isVisible: form.isVisible,
-        previewLabel: form.previewLabel || "Preview", downloadLabel: form.downloadLabel || "Download",
+        previewLabel: form.previewLabel || "Preview", downloadLabel: form.downloadLabel || (isLink ? "Open Link" : "Download"),
         batchIds: form.batchIds || [],
       };
       if (editing) { await updateResource.mutateAsync({ id: editing.id, data: payload }); toast.success("Resource updated"); }
@@ -284,7 +303,11 @@ export default function AppResourcesPage() {
                     </td>
                     <td className="px-4 py-4">
                       <p className="font-bold text-[#f0f0f0] text-sm">{r.title}</p>
-                      <p className="text-[11px] text-[#777] mt-0.5">{r.fileCount} file{r.fileCount > 1 ? "s" : ""}</p>
+                      {r.fileType === "link" ? (
+                        <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" className="block max-w-[320px] truncate text-[11px] text-sky-400 hover:underline mt-0.5">{r.fileUrl}</a>
+                      ) : (
+                        <p className="text-[11px] text-[#777] mt-0.5">{r.fileCount} file{r.fileCount > 1 ? "s" : ""}</p>
+                      )}
                     </td>
                     <td className="px-4 py-4">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${fileTypeColor(r.fileType)}`}>
@@ -348,7 +371,30 @@ export default function AppResourcesPage() {
                 </div>
               </div>
 
+              {/* Type + File Count */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelCls}>Type</label>
+                  <select value={form.fileType} onChange={e => handleTypeChange(e.target.value)} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
+                    {FILE_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                  </select>
+                </div>
+                {!isLink && <div>
+                  <label className={labelCls}>File Count</label>
+                  <input type="number" min={1} value={form.fileCount} onChange={e => setForm((f: any) => ({ ...f, fileCount: e.target.value }))} className={inputCls} />
+                </div>}
+              </div>
+
+              {/* Link address */}
+              {isLink && (
+              <div>
+                <label className={labelCls}>Link URL * <span className="text-[#666] normal-case font-normal">(opens in a new tab for members)</span></label>
+                <input type="url" inputMode="url" value={form.fileUrl} onChange={e => setForm((f: any) => ({ ...f, fileUrl: e.target.value }))} onBlur={() => setForm((f: any) => ({ ...f, fileUrl: normalizeLink(f.fileUrl) }))} placeholder="https://example.com" className={inputCls} />
+              </div>
+              )}
+
               {/* Main file upload — any file type */}
+              {!isLink && (
               <div>
                 <label className={labelCls}>File * <span className="text-[#666] normal-case font-normal">(image, PDF, video, doc, archive — any type)</span></label>
                 <input ref={fileInputRef} type="file" className="hidden" onChange={handleMainFileChange} />
@@ -367,8 +413,10 @@ export default function AppResourcesPage() {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Preview file upload */}
+              {!isLink && (
               <div>
                 <label className={labelCls}>Preview File <span className="text-[#666] normal-case font-normal">(optional — lighter version for in-browser view)</span></label>
                 <input ref={previewInputRef} type="file" className="hidden" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={handlePreviewFileChange} />
@@ -387,20 +435,7 @@ export default function AppResourcesPage() {
                   </div>
                 )}
               </div>
-
-              {/* File Type + File Count */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className={labelCls}>File Type</label>
-                  <select value={form.fileType} onChange={e => setForm((f: any) => ({ ...f, fileType: e.target.value }))} className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg h-11 px-4 text-white outline-none focus:border-[#dc2626] transition-all text-sm appearance-none">
-                    {FILE_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelCls}>File Count</label>
-                  <input type="number" min={1} value={form.fileCount} onChange={e => setForm((f: any) => ({ ...f, fileCount: e.target.value }))} className={inputCls} />
-                </div>
-              </div>
+              )}
 
               {/* Icon upload */}
               <div>
@@ -463,13 +498,13 @@ export default function AppResourcesPage() {
 
               {/* Labels */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                {!isLink && <div>
                   <label className={labelCls}>Preview Label</label>
                   <input value={form.previewLabel} onChange={e => setForm((f: any) => ({ ...f, previewLabel: e.target.value }))} placeholder="Preview" className={inputCls} />
-                </div>
+                </div>}
                 <div>
-                  <label className={labelCls}>Download Label</label>
-                  <input value={form.downloadLabel} onChange={e => setForm((f: any) => ({ ...f, downloadLabel: e.target.value }))} placeholder="Download" className={inputCls} />
+                  <label className={labelCls}>{isLink ? "Button Label" : "Download Label"}</label>
+                  <input value={form.downloadLabel} onChange={e => setForm((f: any) => ({ ...f, downloadLabel: e.target.value }))} placeholder={isLink ? "Open Link" : "Download"} className={inputCls} />
                 </div>
               </div>
 

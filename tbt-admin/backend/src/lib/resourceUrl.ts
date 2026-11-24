@@ -32,6 +32,21 @@ export function resourceUrlError(body: Record<string, unknown>, required: string
   return null;
 }
 
+/** Resource type for a web address instead of an uploaded file. */
+export const LINK_RESOURCE_TYPE = 'link';
+
+/** Error message when a "link" resource has no valid web address, else null. */
+export function linkResourceError(body: Record<string, unknown>): string | null {
+  if (body.fileType !== LINK_RESOURCE_TYPE || isWebUrl(body.fileUrl)) return null;
+  return 'Enter a valid link that starts with https:// or http://.';
+}
+
+/** Button text for a link resource; the stored file default ("Download") makes no sense for one. */
+export function linkButtonLabel(downloadLabel: string | null | undefined): string {
+  const label = downloadLabel?.trim();
+  return !label || label === 'Download' ? 'Open Link' : label;
+}
+
 /**
  * Public CDN URL for a storage key, with each path segment percent-encoded so a
  * filename containing spaces, #, ? or % still points at the stored object.

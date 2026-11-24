@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cdnObjectUrl, isWebUrl, resourceUrlError } from './resourceUrl.js';
+import { cdnObjectUrl, isWebUrl, linkButtonLabel, linkResourceError, resourceUrlError } from './resourceUrl.js';
 
 describe('isWebUrl', () => {
   it('accepts http(s) URLs', () => {
@@ -13,6 +13,24 @@ describe('isWebUrl', () => {
     expect(isWebUrl('javascript:alert(1)')).toBe(false);
     expect(isWebUrl('')).toBe(false);
     expect(isWebUrl(null)).toBe(false);
+  });
+});
+
+describe('link resources', () => {
+  it('require a web address', () => {
+    expect(linkResourceError({ fileType: 'link', fileUrl: 'https://example.com/a?b=1' })).toBeNull();
+    expect(linkResourceError({ fileType: 'link', fileUrl: 'example.com' })).toMatch(/valid link/);
+    expect(linkResourceError({ fileType: 'link', fileUrl: 'javascript:alert(1)' })).toMatch(/valid link/);
+    expect(linkResourceError({ fileType: 'link' })).toMatch(/valid link/);
+  });
+  it('leave other types and partial updates alone', () => {
+    expect(linkResourceError({ fileType: 'pdf', fileUrl: 'anything' })).toBeNull();
+    expect(linkResourceError({ isVisible: false })).toBeNull();
+  });
+  it('never show "Download" as the button text', () => {
+    expect(linkButtonLabel('Download')).toBe('Open Link');
+    expect(linkButtonLabel(null)).toBe('Open Link');
+    expect(linkButtonLabel('Join group')).toBe('Join group');
   });
 });
 

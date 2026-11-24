@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, Download, LayoutList, LayoutGrid, Lock } from "lucide-react";
+import { Eye, Download, ExternalLink, LayoutList, LayoutGrid, Link2, Lock } from "lucide-react";
 import { useUserResources } from "@/lib/hooks/useConfig";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { cn } from "@/lib/utils/cn";
@@ -16,6 +16,9 @@ function FileTypeIcon({ resource, large = false }: { resource: Resource; large?:
       <img src={resource.fileTypeIconUrl} alt={resource.fileType} className={`${sz} object-contain`} />
     );
   }
+  if (resource.fileType === "link") {
+    return <Link2 size={large ? 40 : 18} style={{ color: "var(--color-accent)" }} aria-label="Link" />;
+  }
   return (
     <span className={cn("font-bold text-foreground", large ? "text-lg" : "text-xs")}>
       {resource.fileType.toUpperCase().slice(0, 3)}
@@ -28,6 +31,8 @@ function resolveHoverIcon(iconType: string) {
     case "eye":
     case "preview":
       return <Eye size={14} />;
+    case "link":
+      return <ExternalLink size={14} />;
     case "download":
     default:
       return <Download size={14} />;
@@ -82,7 +87,7 @@ function ResourceRow({ resource }: { resource: Resource }) {
           <Lock size={14} />
         </div>
       ) : (
-        <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className={cn("flex gap-1.5 transition-opacity", resource.fileType !== "link" && "opacity-0 group-hover:opacity-100")}>
           {resource.hoverActions.map((action) => (
             <a
               key={action.type}
