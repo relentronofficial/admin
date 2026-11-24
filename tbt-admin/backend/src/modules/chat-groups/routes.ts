@@ -43,7 +43,10 @@ import {
 } from './controller.js';
 import {
   adminListScheduledHandler,
+  adminBulkCreateRelativeHandler,
   adminCreateScheduledHandler,
+  adminGetScheduleStartHandler,
+  adminSetScheduleStartHandler,
   adminUpdateScheduledHandler,
   adminSetScheduledStatusHandler,
   adminDeleteScheduledHandler,
@@ -81,6 +84,9 @@ export async function chatGroupsRoutes(fastify: FastifyInstance) {
       // Scheduled messages (one-time or daily) — scheduled.controller.ts
       adminScope.get('/:id/scheduled-messages', adminListScheduledHandler);
       adminScope.post('/:id/scheduled-messages', adminCreateScheduledHandler);
+      adminScope.post('/:id/scheduled-messages/bulk', adminBulkCreateRelativeHandler);
+      adminScope.get('/:id/schedule-start', adminGetScheduleStartHandler);
+      adminScope.put('/:id/schedule-start', adminSetScheduleStartHandler);
       adminScope.put('/:id/scheduled-messages/:scheduleId', adminUpdateScheduledHandler);
       adminScope.patch('/:id/scheduled-messages/:scheduleId/status', adminSetScheduledStatusHandler);
       adminScope.delete('/:id/scheduled-messages/:scheduleId', adminDeleteScheduledHandler);

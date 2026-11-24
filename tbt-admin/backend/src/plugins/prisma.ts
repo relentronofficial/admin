@@ -1622,6 +1622,17 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `ALTER TABLE chat_group_scheduled_messages DROP CONSTRAINT IF EXISTS chat_group_scheduled_messages_schedule_type_check`
     ).catch(() => {});
+    // Relative-day messages: the group's start date is its linked batch's
+    // starts_at, or a custom date; day_number counts from it (1 = that date).
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS schedule_batch_id UUID`
+    ).catch((err) => fastify.log.warn({ err }, 'chat_groups.schedule_batch_id DDL failed'));
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS schedule_start_date DATE`
+    ).catch((err) => fastify.log.warn({ err }, 'chat_groups.schedule_start_date DDL failed'));
+    await prisma.$executeRawUnsafe(
+      `ALTER TABLE chat_group_scheduled_messages ADD COLUMN IF NOT EXISTS day_number INT`
+    ).catch((err) => fastify.log.warn({ err }, 'chat_group_scheduled_messages.day_number DDL failed'));
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_chat_sched_due ON chat_group_scheduled_messages(next_run_at) WHERE status = 'active'`
     ).catch(() => {});

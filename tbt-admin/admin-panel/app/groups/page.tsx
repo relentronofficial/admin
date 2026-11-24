@@ -161,7 +161,7 @@ function GroupRow({
       <button
         onClick={onSchedule}
         aria-label="Scheduled messages"
-        title="Schedule messages (one-time or daily)"
+        title="Schedule messages (one-time, repeating, or by day from a start date)"
         className="p-2 rounded-lg text-[#a0a0a0] hover:text-[#f0f0f0] hover:bg-[#1a1a1a]"
       >
         <CalendarClock size={14} />

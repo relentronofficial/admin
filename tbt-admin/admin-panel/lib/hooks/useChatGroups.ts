@@ -355,7 +355,7 @@ export function useAdminGroupMessageInfo(groupId: string, messageId: string | nu
 
 // ── Scheduled messages (one-time, daily, weekly or monthly; IST) ─────────────────────────────
 
-export type ScheduleFrequency = "once" | "daily" | "weekly" | "monthly";
+export type ScheduleFrequency = "once" | "daily" | "weekly" | "monthly" | "relative";
 
 export type ScheduledMessageStatus = "active" | "paused" | "completed" | "missed" | "cancelled";
 
@@ -369,6 +369,8 @@ export interface ScheduledGroupMessage {
   /** IST time, HH:MM. */
   time: string | null;
   endDate: string | null;
+  /** relative only: day from the group's start date (1 = that date, -1 = the day before). */
+  day: number | null;
   sendAt: string | null;
   nextRunAt: string | null;
   status: ScheduledMessageStatus;
@@ -382,9 +384,19 @@ export interface ScheduledGroupMessage {
 export interface ScheduledMessageInput {
   scheduleType: ScheduleFrequency;
   body: string;
-  date: string;
+  date?: string;
   time: string;
   endDate?: string | null;
+  day?: number;
+}
+
+export interface GroupScheduleStart {
+  batchId: string | null;
+  batchName: string | null;
+  batchMissing: boolean;
+  customDate: string | null;
+  /** IST date Day 1 falls on, or null when not set. */
+  startDate: string | null;
 }
 
 const scheduledKey = (groupId: string) => ["admin", "chat-groups", groupId, "scheduled"];
@@ -409,6 +421,41 @@ export function useAdminSaveScheduledMessage(groupId: string) {
         ? await apiClient.put(`/api/chat-groups/admin/${groupId}/scheduled-messages/${id}`, body)
         : await apiClient.post(`/api/chat-groups/admin/${groupId}/scheduled-messages`, body);
       return (res as unknown as { data: ScheduledGroupMessage }).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
+  });
+}
+
+export function useAdminScheduleStart(groupId: string) {
+  return useQuery({
+    queryKey: [...scheduledKey(groupId), "start"],
+    queryFn: async () => {
+      const res = await apiClient.get(`/api/chat-groups/admin/${groupId}/schedule-start`);
+      return (res as unknown as { data: GroupScheduleStart }).data;
+    },
+    // The linked batch's date may be edited on another page.
+    staleTime: 0,
+  });
+}
+
+export function useAdminSetScheduleStart(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { batchId?: string | null; startDate?: string | null }) => {
+      const res = await apiClient.put(`/api/chat-groups/admin/${groupId}/schedule-start`, body);
+      return (res as unknown as { data: GroupScheduleStart }).data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
+  });
+}
+
+/** Pre-feed several relative-day messages — all are added, or none. */
+export function useAdminBulkScheduleRelative(groupId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: Array<{ day: number; time: string; body: string }>) => {
+      const res = await apiClient.post(`/api/chat-groups/admin/${groupId}/scheduled-messages/bulk`, { items });
+      return (res as unknown as { data: { created: number } }).data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: scheduledKey(groupId) }),
   });

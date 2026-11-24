@@ -9,6 +9,7 @@ import {
   resumeNextRun,
   validateScheduleInput,
 } from './chatScheduleLogic.js';
+import { relativeDate, relativeRunAt, syncRelative } from './chatScheduleLogic.js';
 
 // 2026-11-21 10:00 IST = 04:30 UTC
 const NOW = new Date('2026-11-21T04:30:00Z');
@@ -186,5 +187,51 @@ describe('ruleFromRow', () => {
     expect(ruleFromRow('weekly', '2026-11-16', '09:00', null)).toEqual({ frequency: 'weekly', startDate: '2026-11-16', timeOfDay: '09:00', endDate: null });
     expect(ruleFromRow('once', '2026-11-16', '09:00', null)).toBeNull();
     expect(ruleFromRow('yearly', '2026-11-16', '09:00', null)).toBeNull();
+  });
+});
+
+describe('relative to the start date', () => {
+  it('Day 1 is the start date, Day 10 is nine days later, -1 is the day before', () => {
+    expect(relativeDate('2026-12-01', 1)).toBe('2026-12-01');
+    expect(relativeDate('2026-12-01', 10)).toBe('2026-12-10');
+    expect(relativeDate('2026-12-01', -1)).toBe('2026-11-30');
+    expect(relativeDate('2027-01-01', -2)).toBe('2026-12-30');
+    expect(relativeDate('2026-12-01', 0)).toBeNull();
+  });
+  it('validates and computes the send time', () => {
+    const v = validateScheduleInput({ scheduleType: 'relative', body: 'x', day: -2, time: '09:00' }, NOW, '2026-12-01');
+    expect(v.ok && v.value.nextRunAt.toISOString()).toBe('2026-11-29T03:30:00.000Z');
+    expect(v.ok && v.value.relative).toEqual({ day: -2, timeOfDay: '09:00' });
+  });
+  it('refuses day 0, fractions, text, missing start date and past days', () => {
+    const base = { scheduleType: 'relative', body: 'x', time: '09:00' };
+    for (const day of [0, 1.5, '3', 1001, -366, null]) {
+      expect(validateScheduleInput({ ...base, day }, NOW, '2026-12-01').ok).toBe(false);
+    }
+    expect(validateScheduleInput({ ...base, day: 1 }, NOW, null).ok).toBe(false);
+    expect(validateScheduleInput({ ...base, day: 1 }, NOW, '2026-11-21').ok).toBe(false); // 09:00, now is 10:00
+    expect(validateScheduleInput({ ...base, day: 2 }, NOW, '2026-11-21').ok).toBe(true);
+  });
+  it('sends once: no next run, and no repeating rule', () => {
+    const due = relativeRunAt('2026-11-21', 1, '10:00')!;
+    expect(decideDueRun({ scheduleType: 'relative', nextRunAt: due, recurring: null }, NOW)).toEqual({ send: true, nextRunAt: null });
+    expect(ruleFromRow('relative', null, '10:00', null)).toBeNull();
+  });
+  it('follows a moved start date, and never posts a passed day late', () => {
+    const old = relativeRunAt('2026-12-01', 5, '09:00')!;
+    const later = relativeRunAt('2026-12-08', 5, '09:00')!;
+    const past = relativeRunAt('2026-11-01', 5, '09:00')!;
+    expect(syncRelative({ status: 'active', nextRunAt: old, runAt: old }, NOW)).toBeNull();
+    expect(syncRelative({ status: 'active', nextRunAt: old, runAt: later }, NOW)).toEqual({ status: 'active', nextRunAt: later, error: null });
+    expect(syncRelative({ status: 'paused', nextRunAt: old, runAt: later }, NOW)?.status).toBe('paused');
+    expect(syncRelative({ status: 'active', nextRunAt: old, runAt: past }, NOW)).toMatchObject({ status: 'missed', nextRunAt: null });
+    expect(syncRelative({ status: 'missed', nextRunAt: null, runAt: later }, NOW)).toEqual({ status: 'active', nextRunAt: later, error: null });
+    expect(syncRelative({ status: 'missed', nextRunAt: null, runAt: past }, NOW)).toBeNull();
+    expect(syncRelative({ status: 'completed', nextRunAt: null, runAt: later }, NOW)).toBeNull();
+  });
+  it('waits without a start date; a due message is left for the sender', () => {
+    const due = relativeRunAt('2026-11-21', 1, '10:00')!;
+    expect(syncRelative({ status: 'active', nextRunAt: due, runAt: null }, NOW)).toMatchObject({ status: 'active', nextRunAt: null });
+    expect(syncRelative({ status: 'active', nextRunAt: due, runAt: due }, NOW)).toBeNull();
   });
 });

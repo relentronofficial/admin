@@ -10,17 +10,21 @@
  *               day of the month in months too short for it, e.g. the 31st),
  * each starting on a date and optionally until an end date (inclusive).
  *
+ * or relative — once, on a day counted from the group's start date (its linked
+ *               batch's start date, or a custom date): Day 1 is the start date,
+ *               Day 10 is nine days later, and -1 is the day before. No Day 0.
+ *
  * Every date and time an admin types is IST (Asia/Kolkata, fixed +05:30, no
  * DST), the same convention as support-call slots.
  */
 
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
-export type ScheduleType = 'once' | RecurringFrequency;
+export type ScheduleType = 'once' | 'relative' | RecurringFrequency;
 
-export const SCHEDULE_TYPES: readonly ScheduleType[] = ['once', 'daily', 'weekly', 'monthly'];
+export const SCHEDULE_TYPES: readonly ScheduleType[] = ['once', 'daily', 'weekly', 'monthly', 'relative'];
 
 export function isRecurring(t: ScheduleType): t is RecurringFrequency {
-  return t !== 'once';
+  return t !== 'once' && t !== 'relative';
 }
 
 export const SCHEDULE_BODY_MAX = 5000;
@@ -81,6 +85,47 @@ export function istTimeOf(at: Date): string {
   return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
 }
 
+export const RELATIVE_DAY_MIN = -365;
+export const RELATIVE_DAY_MAX = 1000;
+/** Most relative messages one bulk request may add. */
+export const RELATIVE_BULK_MAX = 100;
+
+/** The IST date of a day number counted from `startDate` (Day 1 = startDate, -1 = the day before). */
+export function relativeDate(startDate: string, day: number): string | null {
+  const start = istDateStartMs(startDate);
+  if (start == null || !Number.isInteger(day) || day === 0) return null;
+  return istDateOf(new Date(start + (day > 0 ? day - 1 : day) * DAY_MS));
+}
+
+/** When a relative message sends, or null while the group has no start date. */
+export function relativeRunAt(startDate: string | null, day: number | null, time: string | null): Date | null {
+  if (!startDate || day == null || !time) return null;
+  const date = relativeDate(startDate, day);
+  return date ? istDateTime(date, time) : null;
+}
+
+/**
+ * What an unsent relative message should become once its group's start date
+ * is (re)read. Null → leave it alone. A day that is now in the past is never
+ * posted late: the message is marked missed, and comes back by itself if the
+ * start date later moves so that the day is ahead again.
+ */
+export function syncRelative(
+  row: { status: string; nextRunAt: Date | null; runAt: Date | null },
+  now: Date,
+): { status: string; nextRunAt: Date | null; error: string | null } | null {
+  const { status, nextRunAt, runAt } = row;
+  const ahead = !!runAt && runAt.getTime() > now.getTime();
+  if (status === 'missed') return ahead ? { status: 'active', nextRunAt: runAt, error: null } : null;
+  if (status !== 'active' && status !== 'paused') return null;
+  if ((nextRunAt?.getTime() ?? null) === (runAt?.getTime() ?? null)) return null;
+  if (!runAt) return { status, nextRunAt: null, error: 'Waiting: this group has no start date.' };
+  if (!ahead && status === 'active') {
+    return { status: 'missed', nextRunAt: null, error: 'Not sent: the start date changed and this day has already passed.' };
+  }
+  return { status, nextRunAt: runAt, error: null };
+}
+
 export interface RecurringRule {
   frequency: RecurringFrequency;
   startDate: string; // YYYY-MM-DD, IST
@@ -135,6 +180,8 @@ export interface ScheduleInput {
   date?: unknown;
   time?: unknown;
   endDate?: unknown;
+  /** relative only: day number (1 = start date, -1 = the day before). */
+  day?: unknown;
 }
 
 export interface ValidSchedule {
@@ -142,7 +189,9 @@ export interface ValidSchedule {
   body: string;
   /** once: the instant to send. daily: null. */
   sendAt: Date | null;
-  /** daily/weekly/monthly: the rule. once: null. */
+  /** relative: the day number and time of day. Otherwise null. */
+  relative: { day: number; timeOfDay: string } | null;
+  /** daily/weekly/monthly: the rule. once/relative: null. */
   recurring: RecurringRule | null;
   /** The first time this schedule will send. */
   nextRunAt: Date;
@@ -151,10 +200,10 @@ export interface ValidSchedule {
 export type ValidationResult = { ok: true; value: ValidSchedule } | { ok: false; error: string };
 
 /** Validate an admin's create/edit request. */
-export function validateScheduleInput(input: ScheduleInput, now: Date): ValidationResult {
+export function validateScheduleInput(input: ScheduleInput, now: Date, groupStartDate: string | null = null): ValidationResult {
   const type = input.scheduleType;
   if (!SCHEDULE_TYPES.includes(type as ScheduleType)) {
-    return { ok: false, error: 'Choose one time, daily, weekly or monthly.' };
+    return { ok: false, error: 'Choose one time, daily, weekly, monthly or relative to the start date.' };
   }
 
   const body = typeof input.body === 'string' ? input.body.trim() : '';
@@ -163,13 +212,24 @@ export function validateScheduleInput(input: ScheduleInput, now: Date): Validati
 
   const date = typeof input.date === 'string' ? input.date : '';
   const time = typeof input.time === 'string' ? input.time : '';
+  if (type === 'relative') {
+    const day = input.day;
+    if (typeof day !== 'number' || !Number.isInteger(day) || day === 0 || day < RELATIVE_DAY_MIN || day > RELATIVE_DAY_MAX) {
+      return { ok: false, error: `Day must be a whole number from ${RELATIVE_DAY_MIN} to ${RELATIVE_DAY_MAX}, not 0 (Day 1 is the start date, -1 is the day before).` };
+    }
+    if (timeOfDayMinutes(time) == null) return { ok: false, error: 'Pick a valid time (HH:MM).' };
+    const runAt = relativeRunAt(groupStartDate, day, time);
+    if (!runAt) return { ok: false, error: 'Set the start date for this group first.' };
+    if (runAt.getTime() <= now.getTime()) return { ok: false, error: `Day ${day} (${istDateOf(runAt)} ${time} IST) has already passed.` };
+    return { ok: true, value: { scheduleType: 'relative', body, sendAt: null, relative: { day, timeOfDay: time }, recurring: null, nextRunAt: runAt } };
+  }
   if (istDateStartMs(date) == null) return { ok: false, error: 'Pick a valid date.' };
   if (timeOfDayMinutes(time) == null) return { ok: false, error: 'Pick a valid time (HH:MM).' };
 
   if (type === 'once') {
     const sendAt = istDateTime(date, time)!;
     if (sendAt.getTime() <= now.getTime()) return { ok: false, error: 'Pick a date and time in the future.' };
-    return { ok: true, value: { scheduleType: 'once', body, sendAt, recurring: null, nextRunAt: sendAt } };
+    return { ok: true, value: { scheduleType: 'once', body, sendAt, relative: null, recurring: null, nextRunAt: sendAt } };
   }
 
   let endDate: string | null = null;
@@ -184,7 +244,7 @@ export function validateScheduleInput(input: ScheduleInput, now: Date): Validati
   const recurring: RecurringRule = { frequency, startDate: date, timeOfDay: time, endDate };
   const nextRunAt = nextRecurringRun(recurring, now);
   if (!nextRunAt) return { ok: false, error: 'No send time is left before the end date — pick a later end date.' };
-  return { ok: true, value: { scheduleType: frequency, body, sendAt: null, recurring, nextRunAt } };
+  return { ok: true, value: { scheduleType: frequency, body, sendAt: null, relative: null, recurring, nextRunAt } };
 }
 
 export interface DueSchedule {
@@ -216,7 +276,7 @@ export function decideDueRun(s: DueSchedule, now: Date, graceMs = SEND_GRACE_MS)
  * run at or after `now`. A one-time message whose moment has passed has none.
  */
 export function resumeNextRun(s: { scheduleType: ScheduleType; sendAt: Date | null; recurring: RecurringRule | null }, now: Date): Date | null {
-  if (s.scheduleType === 'once') return s.sendAt && s.sendAt.getTime() > now.getTime() ? s.sendAt : null;
+  if (!isRecurring(s.scheduleType)) return s.sendAt && s.sendAt.getTime() > now.getTime() ? s.sendAt : null;
   return s.recurring ? nextRecurringRun(s.recurring, now) : null;
 }
 
@@ -227,7 +287,7 @@ export function ruleFromRow(
   timeOfDay: string | null,
   endDate: string | null,
 ): RecurringRule | null {
-  if (!SCHEDULE_TYPES.includes(scheduleType as ScheduleType) || scheduleType === 'once') return null;
+  if (!SCHEDULE_TYPES.includes(scheduleType as ScheduleType) || !isRecurring(scheduleType as ScheduleType)) return null;
   if (!startDate || !timeOfDay) return null;
   return { frequency: scheduleType as RecurringFrequency, startDate, timeOfDay, endDate };
 }

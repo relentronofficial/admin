@@ -15,7 +15,7 @@
 import type { FastifyInstance } from 'fastify';
 import { decideDueRun, ruleFromRow, type ScheduleType } from '../lib/chatScheduleLogic.js';
 import { postAdminGroupMessage } from '../modules/chat-groups/controller.js';
-import { SCHEDULED_COLUMNS, type ScheduledRow } from '../modules/chat-groups/scheduled.controller.js';
+import { SCHEDULED_COLUMNS, syncRelativeSchedules, type ScheduledRow } from '../modules/chat-groups/scheduled.controller.js';
 
 const INTERVAL_MS = 30_000;
 const BATCH = 25;
@@ -24,6 +24,8 @@ type DueRow = ScheduledRow & { group_deleted: boolean | null };
 
 export async function runDueChatScheduledMessages(fastify: FastifyInstance, now = new Date()): Promise<number> {
   const prisma = fastify.prisma;
+  // Batch start dates may have moved since the last sweep — re-time first.
+  await syncRelativeSchedules(prisma, now);
   const due = await prisma.$queryRawUnsafe<DueRow[]>(
     `SELECT ${SCHEDULED_COLUMNS}, (g.id IS NULL OR g.is_deleted) AS group_deleted
      FROM chat_group_scheduled_messages s
@@ -58,7 +60,7 @@ export async function runDueChatScheduledMessages(fastify: FastifyInstance, now 
     );
     const status = decision.nextRunAt
       ? 'active'
-      : decision.send ? 'completed' : row.schedule_type === 'once' ? 'missed' : 'completed';
+      : decision.send ? 'completed' : row.schedule_type === 'once' || row.schedule_type === 'relative' ? 'missed' : 'completed';
 
     // Claim: only the instance whose UPDATE matches the run it read posts it.
     const claimed = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
