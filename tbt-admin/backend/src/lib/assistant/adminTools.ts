@@ -359,10 +359,13 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
       else if (want === 'resolved') and.push({ status: { in: ['resolved', 'closed'] } });
       if (a.priority) and.push({ priority: String(a.priority) });
       const where = { AND: and };
-      const [total, byPriority, unassigned, rows] = await Promise.all([
+      const inScope: Prisma.HelpdeskTicketWhereInput = { AND: [...(SCOPED.has(c.admin.role) ? [{ OR: [{ assignedTo: c.admin.id }, { member: memberScope(c) }] }] : []), open] };
+      const [total, openTotal, openOverdue, openUnassigned, openByPriority, rows] = await Promise.all([
         c.prisma.helpdeskTicket.count({ where }),
-        c.prisma.helpdeskTicket.groupBy({ by: ['priority'], where, _count: { _all: true } }),
-        c.prisma.helpdeskTicket.count({ where: { AND: [...and, { assignedTo: null }] } }),
+        c.prisma.helpdeskTicket.count({ where: inScope }),
+        c.prisma.helpdeskTicket.count({ where: { AND: [inScope, { resolveDeadline: { lt: c.now } }] } }),
+        c.prisma.helpdeskTicket.count({ where: { AND: [inScope, { assignedTo: null }] } }),
+        c.prisma.helpdeskTicket.groupBy({ by: ['priority'], where: inScope, _count: { _all: true } }),
         c.prisma.helpdeskTicket.findMany({
           where, take: limitOf(a), orderBy: { createdAt: 'desc' },
           select: {
@@ -371,7 +374,10 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
           },
         }),
       ]);
-      return { showingStatus: want, totalByPriority: Object.fromEntries(byPriority.map((p) => [p.priority, p._count._all])), totalUnassigned: unassigned, ...listed(rows.map((t) => ({
+      return {
+        // Every open ticket, whatever the list below is filtered to.
+        allOpenTickets: { total: openTotal, overdue: openOverdue, unassigned: openUnassigned, byPriority: Object.fromEntries(openByPriority.map((p) => [p.priority, p._count._all])) },
+        listFilter: { status: want, priority: a.priority ?? 'any' }, ...listed(rows.map((t) => ({
         ticket: t.displayNumber, subject: t.subject, category: t.category?.name ?? null, member: fullName(t.member),
         status: t.status, priority: t.priority, assignedTo: t.assignedToAdmin?.fullName ?? null,
         created: ist(t.createdAt), overdue: isTicketOverdue(t, c.now), resolved: ist(t.resolvedAt),

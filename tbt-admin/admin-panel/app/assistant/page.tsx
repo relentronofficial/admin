@@ -81,6 +81,8 @@ export default function AssistantPage() {
   // The answer being read aloud; "loading" until the sound starts.
   const [speaking, setSpeaking] = useState<{ id: string; loading: boolean } | null>(null);
   const speakRef = useRef<AbortController | null>(null);
+  // Answers already voiced here: playing one again costs nothing.
+  const voicedRef = useRef(new Map<string, Blob>());
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(
@@ -117,7 +119,25 @@ export default function AssistantPage() {
     speakRef.current = abort;
     setSpeaking({ id, loading: true });
     try {
-      const body = await fetchAnswerSpeech(await getToken(), id, abort.signal);
+      const voiced = voicedRef.current;
+      const made = voiced.get(id);
+      const chunks: Uint8Array<ArrayBuffer>[] = [];
+      const body = made
+        ? made.stream()
+        : (await fetchAnswerSpeech(await getToken(), id, abort.signal)).pipeThrough(
+            new TransformStream<Uint8Array, Uint8Array>({
+              transform(chunk, out) {
+                chunks.push(new Uint8Array(chunk));
+                out.enqueue(chunk);
+              },
+              // Only a clip that arrived whole is kept.
+              flush() {
+                if (!chunks.length) return;
+                voiced.set(id, new Blob(chunks));
+                if (voiced.size > 20) voiced.delete(voiced.keys().next().value!);
+              },
+            }),
+          );
       await playPcm(body, abort.signal, () => {
         if (!abort.signal.aborted) setSpeaking({ id, loading: false });
       });
@@ -163,7 +183,6 @@ export default function AssistantPage() {
     if (busy || opening || recRef.current) return;
     const n = ++micRef.current;
     stopSpeaking();
-    unlockAudio(); // the answer will be read aloud later, when there is no click
     setError(null);
     try {
       const rec = await startVoiceRecording();
@@ -230,8 +249,6 @@ export default function AssistantPage() {
           else if (ev.t === "tool") setStep(ev.name === "checkAnswer" ? "Checking the figures…" : `Looking up ${label(ev.name).toLowerCase()}…`);
           else if (ev.t === "answer") {
             setMessages((m) => [...m, { id: ev.messageId ?? `a-${Date.now()}`, role: "assistant", content: ev.text, tools: ev.tools }]);
-            // Asked aloud, answered aloud.
-            if (voice && ev.messageId) void speak(ev.messageId);
           } else setError(ev.message);
         },
         abort.signal,
@@ -365,11 +382,12 @@ export default function AssistantPage() {
                             void speak(m.id);
                           }}
                           disabled={busy || recording}
-                          aria-label={speaking?.id === m.id ? "Stop the voice" : "Listen to this answer"}
+                          aria-label={speaking?.id === m.id ? "Stop the voice" : "Request voice for this answer"}
+                          title="The voice is made only when you press this"
                           className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#333] text-xs text-[#d0d0d0] hover:bg-[#222] disabled:opacity-40"
                         >
                           {speaking?.id !== m.id ? (
-                            <><Volume2 size={14} /> Listen</>
+                            <><Volume2 size={14} /> {voicedRef.current.has(m.id) ? "Play voice" : "Request voice"}</>
                           ) : speaking.loading ? (
                             <><Loader2 size={14} className="animate-spin" /> Preparing…</>
                           ) : (

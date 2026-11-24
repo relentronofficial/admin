@@ -26,7 +26,7 @@ import { evalCases, gradeAnswer } from '../../lib/assistant/evalCases.js';
 import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
 import { compileQuery, queryDataTool, runCompiled, selfTest } from '../../lib/assistant/queryData.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
-import { SPEECH_SAMPLE_RATE, speechStream, spokenScript } from '../../lib/assistant/speak.js';
+import { SPEECH_SAMPLE_RATE, spokenScript, startSpeech } from '../../lib/assistant/speak.js';
 import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
 
 const BURST_LIMIT = 15; // questions per 10 minutes, per admin
@@ -231,9 +231,9 @@ export async function speechHandler(req: FastifyRequest<{ Params: { id: string }
   const abort = new AbortController();
   reply.raw.on('close', () => abort.abort());
   const o = { apiKey: key, signal: abort.signal, log: (info: unknown) => req.log.error(info as object, '[admin-assistant] speech failed') };
-  let stream: ReadableStream<Uint8Array>;
+  let stream: AsyncIterable<Uint8Array>;
   try {
-    stream = await speechStream(await spokenScript(message.content, o), o);
+    stream = await startSpeech(await spokenScript(message.content, o), o);
   } catch (err) {
     if (abort.signal.aborted) return reply;
     if (!(err instanceof AssistantServiceError)) req.log.error({ errorName: (err as Error)?.name }, '[admin-assistant] speech failed');
@@ -247,7 +247,7 @@ export async function speechHandler(req: FastifyRequest<{ Params: { id: string }
     'X-Accel-Buffering': 'no',
   });
   try {
-    for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+    for await (const chunk of stream) {
       if (reply.raw.destroyed) break;
       reply.raw.write(chunk);
     }

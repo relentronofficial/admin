@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanScript, sayNumbers, scriptProblem, spokenScript, speechStream, tamilNumber } from './speak.js';
+import { cleanScript, sayNumbers, scriptProblem, speechParts, spokenScript, speechStream, startSpeech, tamilNumber } from './speak.js';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -20,7 +20,7 @@ it('sayNumbers handles amounts, decimals, times and "1 thing"', () => {
   expect(sayNumbers('8,17,599 ரூபா')).toBe('எட்டு லட்சத்தி பதினேழாயிரத்தி ஐநூத்தி தொண்ணூத்தி ஒம்போது ரூபா');
   expect(sayNumbers('1 payment, 10, 12')).toBe('ஒரு payment, பத்து, பன்னெண்டு');
   expect(sayNumbers('6.70 percent')).toBe('ஆறு புள்ளி ஏழு percent');
-  expect(sayNumbers('9:46')).toBe('ஒம்போது நாப்பத்தி ஆறு');
+  expect(sayNumbers('November 20, 2:04 PM-க்கு 3 பேர்')).toBe('November 20, 2:04 PM-க்கு மூணு பேர்');
   expect(sayNumbers('pending-ல 5.')).toBe('pending-ல அஞ்சு.');
 });
 
@@ -36,7 +36,25 @@ describe('scriptProblem', () => {
   it('cleans markup', () => expect(cleanScript('**ஆமா** ₹ 5 <laugh>\n| x |')).toBe('ஆமா 5 laugh x'));
 });
 
+it('speechParts keeps every word, in order, in three parts or fewer', () => {
+  const s = 'இந்த மாசம் revenue நல்லா இருக்கு. ஆமா. Course payments பதினொன்னு இருக்கு. பத்து payments pending-ல இருக்கு. மீதி screen-ல இருக்கு.';
+  expect(speechParts(s).join(' ')).toBe(s);
+  expect(speechParts(s).length).toBeLessThanOrEqual(3);
+  expect(speechParts(s)[0]).toBe('இந்த மாசம் revenue நல்லா இருக்கு.');
+  expect(speechParts('ஆமா')).toEqual(['ஆமா']);
+});
+
 describe('calls', () => {
+  it('startSpeech plays parts in order even when a later one is ready first', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: any) => {
+      const text = JSON.parse(init.body).input as string;
+      if (text.startsWith('A')) await new Promise((r) => setTimeout(r, 30));
+      return new Response(text[0], { headers: { 'content-type': 'audio/pcm' } });
+    }));
+    let out = '';
+    for await (const c of await startSpeech(`A${'a'.repeat(30)}. B${'b'.repeat(30)}. C${'c'.repeat(30)}.`, o())) out += new TextDecoder().decode(c);
+    expect(out).toBe('ABC');
+  });
   const o = () => ({ apiKey: 'sk-or-secret', log: vi.fn() });
   const reply = (content: string) => new Response(JSON.stringify({ choices: [{ message: { content }, finish_reason: 'stop' }] }));
   it('retries a script that changes a figure, then says it', async () => {
