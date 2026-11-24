@@ -6,7 +6,6 @@ import { AdHost } from "@/components/features/ads/AdHost";
 import { SessionRevocationGuard } from "@/components/guards/SessionRevocationGuard";
 import { NavAccessGuard } from "@/components/guards/NavAccessGuard";
 import { ActivityHeartbeat } from "@/components/guards/ActivityHeartbeat";
-import { HelpBotWidget } from "@/components/features/help-bot/HelpBotWidget";
 import { WeeklyReportReminder } from "@/components/features/reports/WeeklyReportReminder";
 
 export default function PlatformPlayerLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +28,6 @@ export default function PlatformPlayerLayout({ children }: { children: React.Rea
       <Suspense fallback={null}>
         <WeeklyReportReminder />
       </Suspense>
-      <HelpBotWidget />
     </div>
   );
 }

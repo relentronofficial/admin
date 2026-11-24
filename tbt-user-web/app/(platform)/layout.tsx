@@ -41,7 +41,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <Suspense fallback={null}>
         <WeeklyReportReminder />
       </Suspense>
-      {/* TBT Assistant — floating AI help chat ("coming soon" for members it isn't opened to). */}
+      {/* TBT Assistant — floating AI help chat (hidden when the backend has no AI key). */}
       <HelpBotWidget />
     </div>
   );
