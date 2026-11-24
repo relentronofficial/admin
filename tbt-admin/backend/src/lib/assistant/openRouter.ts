@@ -10,6 +10,8 @@ export const ASSISTANT_MODEL = 'anthropic/claude-sonnet-5.5';
 export const HARD_MODEL = 'anthropic/claude-opus-5.5';
 const URL = 'https://openrouter.ai/api/v1/chat/completions';
 const TIMEOUT_MS = 60_000;
+/** New accounts get 20 AI calls a minute per model: wait for the next minute once rather than fail. */
+const MAX_WAIT_MS = 45_000;
 const MAX_TOKENS = 6_000; // reasoning + answer
 
 export interface ToolCall {
@@ -30,7 +32,7 @@ export interface Completion {
   costUsd: number;
 }
 
-export type Complete = (messages: ChatMessage[], tools: unknown[], signal?: AbortSignal) => Promise<Completion>;
+export type Complete = (messages: ChatMessage[], tools: unknown[], signal?: AbortSignal, retried?: boolean) => Promise<Completion>;
 
 /** The configured key, or null when it is missing or is not an OpenRouter key. */
 export function usableKey(raw: string | undefined): string | null {
@@ -69,8 +71,29 @@ export function readCompletion(json: any): Completion {
   };
 }
 
+/** How long to wait before trying a refused call again, or null when waiting won't help. */
+export function retryDelay(status: number, body: string, now: number): number | null {
+  if (status !== 429) return null;
+  const reset = Number(/"X-RateLimit-Reset":"?(\d{13})/.exec(body)?.[1]);
+  const wait = reset ? reset - now + 500 : 5_000;
+  return wait > MAX_WAIT_MS ? null : Math.max(wait, 1_000);
+}
+
+const pause = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const done = () => {
+    signal?.removeEventListener('abort', stop);
+    resolve();
+  };
+  const timer = setTimeout(done, ms);
+  const stop = () => {
+    clearTimeout(timer);
+    reject(signal!.reason);
+  };
+  signal?.addEventListener('abort', stop, { once: true });
+});
+
 export function openRouterComplete(apiKey: string, log: (info: unknown) => void, model = ASSISTANT_MODEL): Complete {
-  return async (messages, tools, signal) => {
+  return async function call(messages, tools, signal, retried = false): Promise<Completion> {
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     let res: Response;
     try {
@@ -96,7 +119,13 @@ export function openRouterComplete(apiKey: string, log: (info: unknown) => void,
       throw new AssistantServiceError('The AI service took too long or could not be reached. Please try again.');
     }
     if (!res.ok) {
-      log({ status: res.status, body: (await res.text().catch(() => '')).slice(0, 500) });
+      const body = (await res.text().catch(() => '')).slice(0, 500);
+      const wait = retried ? null : retryDelay(res.status, body, Date.now());
+      if (wait !== null && !signal?.aborted) {
+        await pause(wait, signal);
+        return call(messages, tools, signal, true);
+      }
+      log({ status: res.status, body });
       throw new AssistantServiceError(explainStatus(res.status));
     }
     return readCompletion(await res.json());

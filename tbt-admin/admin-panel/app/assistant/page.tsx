@@ -7,13 +7,15 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bot, Loader2, MessageSquare, Mic, Plus, Send, Square, Trash2, X } from "lucide-react";
+import { AlertTriangle, Bot, Loader2, MessageSquare, Mic, Plus, Send, Square, Trash2, Volume2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { AnswerText } from "@/components/assistant/AnswerText";
 import { VOICE_MAX_SECONDS, startVoiceRecording, type VoiceRecorder } from "@/lib/audio/voiceNote";
+import { playPcm, unlockAudio } from "@/lib/audio/pcmPlayer";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
+  fetchAnswerSpeech,
   fetchAssistantConversation,
   streamAssistantChat,
   transcribeVoice,
@@ -76,6 +78,9 @@ export default function AssistantPage() {
   const micRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const openRef = useRef(0);
+  // The answer being read aloud; "loading" until the sound starts.
+  const [speaking, setSpeaking] = useState<{ id: string; loading: boolean } | null>(null);
+  const speakRef = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(
@@ -83,6 +88,7 @@ export default function AssistantPage() {
       abortRef.current?.abort();
       micRef.current++;
       recRef.current?.cancel();
+      speakRef.current?.abort();
     },
     [],
   );
@@ -99,7 +105,31 @@ export default function AssistantPage() {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, error]);
 
+  function stopSpeaking() {
+    speakRef.current?.abort();
+    speakRef.current = null;
+    setSpeaking(null);
+  }
+
+  async function speak(id: string) {
+    stopSpeaking();
+    const abort = new AbortController();
+    speakRef.current = abort;
+    setSpeaking({ id, loading: true });
+    try {
+      const body = await fetchAnswerSpeech(await getToken(), id, abort.signal);
+      await playPcm(body, abort.signal, () => {
+        if (!abort.signal.aborted) setSpeaking({ id, loading: false });
+      });
+    } catch (e) {
+      if (!abort.signal.aborted) toast.error((e as Error)?.message || "The voice could not be played.");
+    } finally {
+      if (speakRef.current === abort) stopSpeaking();
+    }
+  }
+
   function reset() {
+    stopSpeaking();
     abortRef.current?.abort();
     setBusy(false);
     cancelVoice();
@@ -112,6 +142,7 @@ export default function AssistantPage() {
 
   async function open(id: string) {
     if (busy) return;
+    stopSpeaking();
     cancelVoice();
     const n = ++openRef.current;
     setActiveId(id);
@@ -131,6 +162,8 @@ export default function AssistantPage() {
   async function recordVoice() {
     if (busy || opening || recRef.current) return;
     const n = ++micRef.current;
+    stopSpeaking();
+    unlockAudio(); // the answer will be read aloud later, when there is no click
     setError(null);
     try {
       const rec = await startVoiceRecording();
@@ -178,6 +211,7 @@ export default function AssistantPage() {
   async function ask(text: string, voice?: AbortController) {
     const q = text.trim();
     if (!q || (!voice && (busy || opening || recording))) return;
+    stopSpeaking();
     const abort = voice ?? new AbortController();
     abortRef.current = abort;
     setBusy(true);
@@ -194,9 +228,11 @@ export default function AssistantPage() {
           if (abort.signal.aborted) return;
           if (ev.t === "start") setActiveId(ev.conversationId);
           else if (ev.t === "tool") setStep(ev.name === "checkAnswer" ? "Checking the figures…" : `Looking up ${label(ev.name).toLowerCase()}…`);
-          else if (ev.t === "answer")
-            setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "assistant", content: ev.text, tools: ev.tools }]);
-          else setError(ev.message);
+          else if (ev.t === "answer") {
+            setMessages((m) => [...m, { id: ev.messageId ?? `a-${Date.now()}`, role: "assistant", content: ev.text, tools: ev.tools }]);
+            // Asked aloud, answered aloud.
+            if (voice && ev.messageId) void speak(ev.messageId);
+          } else setError(ev.message);
         },
         abort.signal,
       );
@@ -319,9 +355,32 @@ export default function AssistantPage() {
                 ) : (
                   <div key={m.id} className="max-w-[95%] rounded-xl border border-[#2a2a2a] bg-[#181818] px-4 py-3">
                     <AnswerText text={m.content} />
-                    {!!m.tools?.length && (
-                      <p className="mt-2.5 text-[11px] text-[#808080]">Source: {m.tools.map(label).join(", ")}</p>
-                    )}
+                    <div className="mt-2.5 flex items-center gap-3">
+                      {!m.id.startsWith("a-") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (speaking?.id === m.id) return stopSpeaking();
+                            unlockAudio();
+                            void speak(m.id);
+                          }}
+                          disabled={busy || recording}
+                          aria-label={speaking?.id === m.id ? "Stop the voice" : "Listen to this answer"}
+                          className="h-9 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#333] text-xs text-[#d0d0d0] hover:bg-[#222] disabled:opacity-40"
+                        >
+                          {speaking?.id !== m.id ? (
+                            <><Volume2 size={14} /> Listen</>
+                          ) : speaking.loading ? (
+                            <><Loader2 size={14} className="animate-spin" /> Preparing…</>
+                          ) : (
+                            <><Square size={12} /> Stop</>
+                          )}
+                        </button>
+                      )}
+                      {!!m.tools?.length && (
+                        <p className="text-[11px] text-[#808080]">Source: {m.tools.map(label).join(", ")}</p>
+                      )}
+                    </div>
                   </div>
                 ),
               )

@@ -12,7 +12,7 @@ export interface AssistantMessage {
 export type AssistantEvent =
   | { t: "start"; conversationId: string }
   | { t: "tool"; name: string }
-  | { t: "answer"; text: string; conversationId: string; title: string; tools: string[] }
+  | { t: "answer"; text: string; messageId?: string | null; conversationId: string; title: string; tools: string[] }
   | { t: "error"; message: string };
 
 const KEY = ["admin-assistant"];
@@ -96,6 +96,20 @@ export async function transcribeVoice(token: string | null, audio: string, signa
     throw new Error(typeof j?.error === "string" ? j.error : "The voice note could not be processed. Please try again.");
   }
   return j.data.text as string;
+}
+
+/** The spoken form of a saved answer, as it is made (16-bit mono PCM). Throws with a message to show. */
+export async function fetchAnswerSpeech(token: string | null, messageId: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+  const res = await fetch(`${apiClient.defaults.baseURL}/api/admin-assistant/messages/${messageId}/speech`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const j = await res.json().catch(() => null);
+    throw new Error(typeof j?.error === "string" ? j.error : "The voice could not be played. Please try again.");
+  }
+  return res.body;
 }
 
 /** Sends a question and reports each server event. fetch, because axios can't stream in the browser. */

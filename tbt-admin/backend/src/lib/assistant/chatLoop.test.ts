@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HISTORY_CHARS, HISTORY_TURNS, MAX_CALLS_PER_ROUND, MAX_ROUNDS, adminSystemPrompt, conversationTitle, runChatLoop } from './chatLoop.js';
-import { AssistantServiceError, explainStatus, openRouterComplete, readCompletion, usableKey, type Completion } from './openRouter.js';
+import { AssistantServiceError, explainStatus, openRouterComplete, readCompletion, usableKey, type Completion, retryDelay } from './openRouter.js';
 
 const answer = (text: string | null, finishReason = 'stop'): Completion => ({ message: { role: 'assistant', content: text }, finishReason, costUsd: 0.01 });
 const asks = (...names: string[]): Completion => ({
@@ -74,6 +74,17 @@ describe('runChatLoop', () => {
     await runChatLoop({ ...base, history, complete, runTool: vi.fn() });
     expect(sent[0]).toHaveLength(HISTORY_TURNS + 2);
     expect(sent[0][1].content).toHaveLength(HISTORY_CHARS);
+  });
+});
+
+describe('retryDelay', () => {
+  it('waits for the next minute, but not for long or for other errors', () => {
+    const body = (t: number) => `{"headers":{"X-RateLimit-Reset":"${t}"}}`;
+    const now = 1795536530000;
+    expect(retryDelay(429, body(now + 10_000), now)).toBe(10_500);
+    expect(retryDelay(429, '', now)).toBe(5_000);
+    expect(retryDelay(429, body(now + 90_000), now)).toBeNull();
+    expect(retryDelay(402, '', now)).toBeNull();
   });
 });
 

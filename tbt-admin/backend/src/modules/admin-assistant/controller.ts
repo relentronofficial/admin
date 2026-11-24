@@ -4,12 +4,15 @@
  *
  * POST /chat { message, conversationId? } streams Server-Sent Events:
  *   {"t":"tool","name":"getBatchSummary"}   — a lookup started
- *   {"t":"answer","text","conversationId","title","tools"} — finished
+ *   {"t":"answer","text","messageId","conversationId","title","tools"} — finished
  *   {"t":"error","message"}
  *
  * POST /transcribe { audio } turns a voice note (base64 16 kHz mono WAV) into
  * { text }; the client then asks it through /chat with voice: true. The audio
  * is not stored.
+ *
+ * POST /messages/:id/speech reads one of the admin's own saved answers aloud: it
+ * streams 16-bit mono 24 kHz PCM, or answers with a JSON error. Not stored.
  *
  * The conversation is kept on the server and belongs to one admin; the client
  * never supplies earlier turns. Off when OPENROUTER_API_KEY is not set.
@@ -23,6 +26,7 @@ import { evalCases, gradeAnswer } from '../../lib/assistant/evalCases.js';
 import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
 import { compileQuery, queryDataTool, runCompiled, selfTest } from '../../lib/assistant/queryData.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
+import { SPEECH_SAMPLE_RATE, speechStream, spokenScript } from '../../lib/assistant/speak.js';
 import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
 
 const BURST_LIMIT = 15; // questions per 10 minutes, per admin
@@ -205,6 +209,57 @@ export async function transcribeHandler(req: FastifyRequest<{ Body: { audio?: un
   }
 }
 
+const SPEECH_LIMIT = 30; // answers read aloud per admin in 10 minutes (this instance)
+const speechTimes = new Map<string, number[]>();
+
+export async function speechHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const key = apiKey();
+  if (!key) return fail(reply, 503, 'The assistant is not set up yet.');
+  const admin = await actingAdmin(req, reply);
+  if (!admin) return reply;
+  const [message] = UUID_RE.test(req.params.id)
+    ? await req.server.prisma.$queryRawUnsafe<Array<{ content: string }>>(
+      `SELECT m.content FROM admin_assistant_messages m JOIN admin_assistant_conversations c ON c.id = m.conversation_id
+        WHERE m.id = $1::uuid AND m.role = 'assistant' AND c.admin_id = $2::uuid`, req.params.id, admin.id)
+    : [];
+  if (!message) return fail(reply, 404, 'Answer not found.');
+  const now = Date.now();
+  const recent = (speechTimes.get(admin.id) ?? []).filter((t) => now - t < 600_000);
+  if (recent.length >= SPEECH_LIMIT) return fail(reply, 429, 'You are playing answers very quickly. Please wait a few minutes.');
+  speechTimes.set(admin.id, [...recent, now]);
+
+  const abort = new AbortController();
+  reply.raw.on('close', () => abort.abort());
+  const o = { apiKey: key, signal: abort.signal, log: (info: unknown) => req.log.error(info as object, '[admin-assistant] speech failed') };
+  let stream: ReadableStream<Uint8Array>;
+  try {
+    stream = await speechStream(await spokenScript(message.content, o), o);
+  } catch (err) {
+    if (abort.signal.aborted) return reply;
+    if (!(err instanceof AssistantServiceError)) req.log.error({ errorName: (err as Error)?.name }, '[admin-assistant] speech failed');
+    return fail(reply, 502, err instanceof AssistantServiceError ? err.message : 'The voice could not be made. Please try again.');
+  }
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    ...(reply.getHeaders() as Record<string, string>),
+    'Content-Type': `audio/l16; rate=${SPEECH_SAMPLE_RATE}; channels=1`,
+    'Cache-Control': 'no-store, no-transform',
+    'X-Accel-Buffering': 'no',
+  });
+  try {
+    for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
+      if (reply.raw.destroyed) break;
+      reply.raw.write(chunk);
+    }
+    if (!reply.raw.writableEnded) reply.raw.end();
+  } catch (err) {
+    if (!abort.signal.aborted) req.log.error({ errorName: (err as Error)?.name }, '[admin-assistant] speech stream failed');
+    // A cut connection, not a clean end: half a sentence must not look finished.
+    reply.raw.destroy();
+  }
+  return reply;
+}
+
 export async function chatHandler(
   req: FastifyRequest<{ Body: { message?: unknown; conversationId?: unknown; voice?: unknown } }>,
   reply: FastifyReply,
@@ -273,11 +328,11 @@ export async function chatHandler(
       onTool: (name) => send({ t: 'tool', name }),
       signal: abort.signal,
     });
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO admin_assistant_messages (conversation_id, role, content, tools, cost_usd) VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4::numeric)`,
+    const [saved] = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `INSERT INTO admin_assistant_messages (conversation_id, role, content, tools, cost_usd) VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4::numeric) RETURNING id::text`,
       conversationId, r.text, JSON.stringify(r.toolsUsed), String(r.costUsd));
     await prisma.$executeRawUnsafe(`UPDATE admin_assistant_conversations SET updated_at = NOW() WHERE id = $1::uuid`, conversationId);
-    send({ t: 'answer', text: r.text, conversationId, title, tools: r.toolsUsed });
+    send({ t: 'answer', text: r.text, messageId: saved?.id ?? null, conversationId, title, tools: r.toolsUsed });
   } catch (err) {
     if (!abort.signal.aborted) {
       if (!(err instanceof AssistantServiceError)) req.log.error({ err }, '[admin-assistant] chat failed');
