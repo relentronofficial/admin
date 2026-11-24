@@ -769,8 +769,8 @@ export default function MessagesPage() {
               <button
                 onClick={() => setShowNewForm(true)}
                 className="chat-new-btn"
-                title={uiStrings?.chatNewLabel}
-                aria-label={uiStrings?.chatNewLabel}
+                title={uiStrings?.chatWithAdminLabel ?? "Chat with Admin"}
+                aria-label={uiStrings?.chatWithAdminLabel ?? "Chat with Admin"}
               >
                 <Plus size={17} strokeWidth={2.5} />
               </button>
@@ -1321,7 +1321,7 @@ export default function MessagesPage() {
             style={{ background: 'var(--color-bg-surface)' }}
           >
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-foreground">{uiStrings?.chatNewLabel}</h3>
+              <h3 className="font-bold text-foreground">{uiStrings?.chatWithAdminLabel ?? "Chat with Admin"}</h3>
               <button onClick={() => setShowNewForm(false)}>
                 <X size={16} />
               </button>

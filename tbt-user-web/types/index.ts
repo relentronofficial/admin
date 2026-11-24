@@ -280,6 +280,7 @@ export interface UiStrings {
   messagesEmptyDesc: string;
   chatPageTitle: string;
   chatNewLabel: string;
+  chatWithAdminLabel?: string;
   chatSubjectLabel: string;
   chatTypingText: string;
   chatClosedLabel: string;

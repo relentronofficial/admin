@@ -78,7 +78,7 @@ export const APP_GUIDE = `# APP GUIDE
 - Personal details (edit and "Save Changes"), "Your Mentorship Benefits" (your support-call quotas and credits), "Buy Extra Credits" (request extra calls; the team reviews the payment and activates it), Streak Points, Notification Preferences, Active Devices, the Business Psychometric Assessment, and Sign Out.
 
 ## Messages (/messages)
-- Chat with the TBT team: "New Conversation", add a subject and message.
+- Chat with the TBT team: tap + to open "Chat with Admin", then add a subject and message.
 - Group chats you've been added to work like WhatsApp: reply, react, @mention, voice notes, photos, pin, star, mute, search. In announcement-only groups only admins post. Admins may also post scheduled announcements.
 
 ## Support (/support)
