@@ -78,7 +78,7 @@ export default function MyMembersPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-[13px]">
                 <thead>
-                  <tr className="text-left text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani border-b border-[#2a2a2a]">
+                  <tr className="text-left text-[11px] font-bold uppercase tracking-widest text-[#f0f0f0] font-rajdhani border-b border-[#2a2a2a]">
                     <th className="px-4 py-3">Member</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">KYC</th>
