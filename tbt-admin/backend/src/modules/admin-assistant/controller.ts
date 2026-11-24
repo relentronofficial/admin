@@ -17,8 +17,11 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { adminTools, type AdminToolCtx } from '../../lib/assistant/adminTools.js';
+import { calculateTool } from '../../lib/assistant/calculate.js';
 import { HISTORY_TURNS, QUESTION_MAX, adminSystemPrompt, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
-import { AssistantServiceError, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
+import { evalCases, gradeAnswer } from '../../lib/assistant/evalCases.js';
+import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
+import { compileQuery, queryDataTool, runCompiled, selfTest } from '../../lib/assistant/queryData.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
 import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
 
@@ -26,6 +29,8 @@ const BURST_LIMIT = 15; // questions per 10 minutes, per admin
 const DAILY_LIMIT = 150; // per admin per IST day
 const TEAM_DAILY_LIMIT = 600; // everyone together, so a runaway client cannot drain the credit
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const tools = [...adminTools, queryDataTool, calculateTool];
 
 const apiKey = () => usableKey(env.OPENROUTER_API_KEY);
 
@@ -64,7 +69,75 @@ export async function statusHandler(req: FastifyRequest, reply: FastifyReply) {
   const admin = await actingAdmin(req, reply);
   if (!admin) return reply;
   const ctx: AdminToolCtx = { prisma: req.server.prisma as any, now: new Date(), admin };
-  return reply.send({ success: true, data: { enabled: !!apiKey(), keyInvalid: !!env.OPENROUTER_API_KEY && !apiKey(), tools: toolDefinitions(adminTools, ctx).map((t) => t.function.name) }, error: null });
+  return reply.send({ success: true, data: { enabled: !!apiKey(), keyInvalid: !!env.OPENROUTER_API_KEY && !apiKey(), tools: toolDefinitions(tools, ctx).map((t) => t.function.name), canTest: admin.role === 'super_admin' }, error: null });
+}
+
+/** Super admin: checks that every queryData dataset still matches the database. Returns names only. */
+export async function selfTestHandler(req: FastifyRequest, reply: FastifyReply) {
+  const admin = await superAdmin(req, reply);
+  if (!admin) return reply;
+  const data = await selfTest({ prisma: req.server.prisma as any, now: new Date(), admin },
+    (dataset, err) => req.log.error({ err, dataset }, '[admin-assistant] selftest failed'));
+  return reply.send({ success: true, data, error: null });
+}
+
+const istToday = (now: Date) => new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10);
+
+async function superAdmin(req: FastifyRequest, reply: FastifyReply) {
+  const admin = await actingAdmin(req, reply);
+  if (admin && admin.role !== 'super_admin') {
+    fail(reply, 403, 'Super admins only.');
+    return null;
+  }
+  return admin;
+}
+
+export async function evalListHandler(req: FastifyRequest, reply: FastifyReply) {
+  if (!(await superAdmin(req, reply))) return reply;
+  return reply.send({ success: true, data: evalCases(istToday(new Date())).map((c) => ({ id: c.id, question: c.question })), error: null });
+}
+
+const EVALS_PER_HOUR = 150; // on this instance: each one is a paid question
+let evalTimes: number[] = [];
+
+/** Asks one test question exactly as an admin would and grades it. Nothing is saved. */
+export async function evalRunHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const key = apiKey();
+  if (!key) return fail(reply, 503, 'The assistant is not set up yet.');
+  const admin = await superAdmin(req, reply);
+  if (!admin) return reply;
+  const now = new Date();
+  const test = evalCases(istToday(now)).find((c) => c.id === req.params.id);
+  if (!test) return fail(reply, 404, 'Test question not found.');
+  evalTimes = evalTimes.filter((t) => now.getTime() - t < 3600_000);
+  if (evalTimes.length >= EVALS_PER_HOUR) return fail(reply, 429, 'Too many tests this hour. Please try again later.');
+  evalTimes.push(now.getTime());
+
+  const abort = new AbortController();
+  reply.raw.on('close', () => abort.abort());
+  const ctx: AdminToolCtx = { prisma: req.server.prisma as any, now, admin };
+  const log = (info: unknown) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed');
+  try {
+    const r = await runChatLoop({
+      complete: openRouterComplete(key, log),
+      completeHard: openRouterComplete(key, log, HARD_MODEL),
+      system: adminSystemPrompt({ adminName: admin.fullName, role: admin.role, today: istToday(now) }),
+      history: [],
+      question: test.question,
+      tools: toolDefinitions(tools, ctx),
+      runTool: (name, args) => runTool(tools, ctx, name, args, { onError: (err) => req.log.error({ err, tool: name }, '[admin-assistant] tool failed') }),
+      signal: abort.signal,
+    });
+    const ref = test.query ? await runCompiled(ctx, compileQuery(test.query)) : { rows: [] };
+    return reply.send({
+      success: true, error: null,
+      data: { ...gradeAnswer(test, ref.rows, r.text), answer: r.text, tools: r.toolsUsed, costUsd: r.costUsd, hard: !!r.hard, ms: Date.now() - now.getTime() },
+    });
+  } catch (err) {
+    if (abort.signal.aborted) return reply;
+    if (!(err instanceof AssistantServiceError)) req.log.error({ err }, '[admin-assistant] test failed');
+    return fail(reply, 502, err instanceof AssistantServiceError ? err.message : 'The test could not be run.');
+  }
 }
 
 export async function listConversationsHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -188,13 +261,15 @@ export async function chatHandler(
   try {
     const now = new Date();
     const ctx: AdminToolCtx = { prisma: prisma as any, now, admin };
+    const log = (info: unknown) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed');
     const r = await runChatLoop({
-      complete: openRouterComplete(key, (info) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed')),
+      complete: openRouterComplete(key, log),
+      completeHard: openRouterComplete(key, log, HARD_MODEL),
       system: adminSystemPrompt({ adminName: admin.fullName, role: admin.role, today: new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10), voice: req.body?.voice === true }),
       history,
       question,
-      tools: toolDefinitions(adminTools, ctx),
-      runTool: (name, args) => runTool(adminTools, ctx, name, args, { onError: (err) => req.log.error({ err, tool: name }, '[admin-assistant] tool failed') }),
+      tools: toolDefinitions(tools, ctx),
+      runTool: (name, args) => runTool(tools, ctx, name, args, { onError: (err) => req.log.error({ err, tool: name }, '[admin-assistant] tool failed') }),
       onTool: (name) => send({ t: 'tool', name }),
       signal: abort.signal,
     });

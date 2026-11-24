@@ -100,6 +100,7 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
       search: { type: 'string', maxLength: 100, description: 'Name, member code, phone, email or business name.' },
       status: { type: 'string', enum: MEMBER_STATUSES, description: 'Only members with this account status.' },
       batch: BATCH,
+      sort: { type: 'string', enum: ['name', 'newest', 'oldest', 'recently_active'], description: 'newest/oldest = by joining date. Default name.' },
       limit: LIMIT,
     },
     allowed: canSeeMembers,
@@ -113,13 +114,20 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
       const [total, rows] = await Promise.all([
         c.prisma.member.count({ where }),
         c.prisma.member.findMany({
-          where, take: limitOf(a), orderBy: [{ firstName: 'asc' }, { id: 'asc' }],
-          select: { id: true, memberId: true, firstName: true, lastName: true, status: true, membershipPlan: true, lastActiveAt: true, batch: { select: { name: true } } },
+          where, take: limitOf(a),
+          orderBy: [
+            a.sort === 'newest' ? { createdAt: 'desc' }
+              : a.sort === 'oldest' ? { createdAt: 'asc' }
+                : a.sort === 'recently_active' ? { lastActiveAt: { sort: 'desc', nulls: 'last' } }
+                  : { firstName: 'asc' },
+            { id: 'asc' },
+          ],
+          select: { id: true, memberId: true, firstName: true, lastName: true, status: true, membershipPlan: true, createdAt: true, lastActiveAt: true, batch: { select: { name: true } } },
         }),
       ]);
       return listed(rows.map((m) => ({
         id: m.id, memberCode: m.memberId, name: fullName(m), status: m.status, plan: m.membershipPlan,
-        batch: m.batch?.name ?? null, lastActive: ist(m.lastActiveAt),
+        batch: m.batch?.name ?? null, joined: ist(m.createdAt), lastActive: ist(m.lastActiveAt),
       })), total);
     },
   },
@@ -351,8 +359,10 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
       else if (want === 'resolved') and.push({ status: { in: ['resolved', 'closed'] } });
       if (a.priority) and.push({ priority: String(a.priority) });
       const where = { AND: and };
-      const [total, rows] = await Promise.all([
+      const [total, byPriority, unassigned, rows] = await Promise.all([
         c.prisma.helpdeskTicket.count({ where }),
+        c.prisma.helpdeskTicket.groupBy({ by: ['priority'], where, _count: { _all: true } }),
+        c.prisma.helpdeskTicket.count({ where: { AND: [...and, { assignedTo: null }] } }),
         c.prisma.helpdeskTicket.findMany({
           where, take: limitOf(a), orderBy: { createdAt: 'desc' },
           select: {
@@ -361,7 +371,7 @@ export const adminTools: AssistantTool<AdminToolCtx>[] = [
           },
         }),
       ]);
-      return { showingStatus: want, ...listed(rows.map((t) => ({
+      return { showingStatus: want, totalByPriority: Object.fromEntries(byPriority.map((p) => [p.priority, p._count._all])), totalUnassigned: unassigned, ...listed(rows.map((t) => ({
         ticket: t.displayNumber, subject: t.subject, category: t.category?.name ?? null, member: fullName(t.member),
         status: t.status, priority: t.priority, assignedTo: t.assignedToAdmin?.fullName ?? null,
         created: ist(t.createdAt), overdue: isTicketOverdue(t, c.now), resolved: ist(t.resolvedAt),

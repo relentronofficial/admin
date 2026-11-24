@@ -21,7 +21,7 @@ const base = { system: { shared: 'S', personal: 'P' }, history: [], question: 'Q
 describe('runChatLoop', () => {
   it('answers without tools', async () => {
     const { complete } = script(answer(' Hi '));
-    expect(await runChatLoop({ ...base, complete, runTool: vi.fn() })).toEqual({ text: 'Hi', toolsUsed: [], costUsd: 0.01 });
+    expect(await runChatLoop({ ...base, complete, runTool: vi.fn() })).toEqual({ text: 'Hi', toolsUsed: [], costUsd: 0.01, hard: false });
   });
   it('runs tools, returns results in order, keeps reasoning, sums cost', async () => {
     const { complete, sent } = script(asks('a', 'b'), answer('done'));
@@ -30,7 +30,7 @@ describe('runChatLoop', () => {
       ...base, complete, onTool: (n) => seen.push(n),
       runTool: async (n) => (n === 'a' ? { ok: true, data: { n: 1 } } : { ok: false, error: 'nope' }),
     });
-    expect(r).toEqual({ text: 'done', toolsUsed: ['a', 'b'], costUsd: 0.03 });
+    expect(r).toEqual({ text: 'done', toolsUsed: ['a', 'b'], costUsd: 0.03, hard: false });
     expect(seen).toEqual(['a', 'b']);
     expect(sent[1].slice(2)).toEqual([
       asks('a', 'b').message,
@@ -74,6 +74,34 @@ describe('runChatLoop', () => {
     await runChatLoop({ ...base, history, complete, runTool: vi.fn() });
     expect(sent[0]).toHaveLength(HISTORY_TURNS + 2);
     expect(sent[0][1].content).toHaveLength(HISTORY_CHARS);
+  });
+});
+
+describe('answer check', () => {
+  const run = async (...steps: Completion[]) => {
+    const s = script(...steps);
+    const r = await runChatLoop({ ...base, complete: s.complete, runTool: async () => ({ ok: true, data: { revenue: 817599 } }) });
+    return { r, sent: s.sent };
+  };
+  it('lets a supported figure straight through', async () => {
+    const { r, sent } = await run(asks('a'), answer('₹8,17,599'));
+    expect(r.text).toBe('₹8,17,599');
+    expect(sent).toHaveLength(2);
+  });
+  it('makes the model look again at an unsupported one', async () => {
+    const { r, sent } = await run(asks('a'), answer('₹9,00,000'), answer('₹8,17,599'));
+    expect(r.text).toBe('₹8,17,599');
+    expect(sent[2].at(-1).content).toContain('9,00,000');
+  });
+  it('labels what is still unsupported, and checks only once', async () => {
+    const { r, sent } = await run(asks('a'), answer('₹9,00,000'));
+    expect(r.text).toMatch(/Calculated, not read directly.*9,00,000/);
+    expect(sent).toHaveLength(3);
+  });
+  it('does not trust figures from earlier answers', async () => {
+    const s = script(answer('It was 5,555'), answer('Let me say nothing'));
+    const r = await runChatLoop({ ...base, history: [{ role: 'assistant', content: '5555' }], complete: s.complete, runTool: vi.fn() });
+    expect(r.text).toBe('Let me say nothing');
   });
 });
 

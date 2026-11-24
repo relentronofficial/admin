@@ -18,6 +18,8 @@ export type ParamSpec = {
 } & (
   | { type: 'string'; enum?: readonly string[]; maxLength?: number; pattern?: RegExp }
   | { type: 'integer'; min: number; max: number }
+  // An object the tool validates itself; it reaches run() as JSON text.
+  | { type: 'json'; schema: Record<string, unknown> }
 );
 
 export type ToolArgs = Record<string, string | number | undefined>;
@@ -47,7 +49,7 @@ export function toolDefinitions<Ctx>(tools: readonly AssistantTool<Ctx>[], ctx: 
       description: t.description,
       parameters: {
         type: 'object' as const,
-        properties: Object.fromEntries(Object.entries(t.params).map(([k, p]) => [k, {
+        properties: Object.fromEntries(Object.entries(t.params).map(([k, p]) => [k, p.type === 'json' ? { ...p.schema, description: p.description } : {
           type: p.type,
           description: p.description,
           ...(p.type === 'string' && p.enum ? { enum: [...p.enum] } : {}),
@@ -83,6 +85,18 @@ export function parseArgs(
     if (typeof v === 'string') v = v.trim();
     if (v == null || v === '') {
       if (spec.required) return { ok: false, error: `"${key}" is required.` };
+      continue;
+    }
+    if (spec.type === 'json') {
+      // Models sometimes send the object as JSON text.
+      const text = typeof v === 'string' ? v : JSON.stringify(v);
+      if (text.length > 5_000) return { ok: false, error: `"${key}" is too long.` };
+      try {
+        JSON.parse(text);
+      } catch {
+        return { ok: false, error: `"${key}" is not valid JSON.` };
+      }
+      args[key] = text;
       continue;
     }
     if (spec.type === 'integer') {

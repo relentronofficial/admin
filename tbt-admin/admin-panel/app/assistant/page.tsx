@@ -4,6 +4,7 @@
 // from backend lookups limited to what the signed-in admin may see.
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bot, Loader2, MessageSquare, Mic, Plus, Send, Square, Trash2, X } from "lucide-react";
@@ -38,6 +39,8 @@ const TOOL_LABELS: Record<string, string> = {
   getSupportTickets: "Support tickets",
   getSupportStats: "Support stats",
   getSupportCalls: "Support calls",
+  queryData: "TBT data",
+  calculate: "Calculation",
 };
 const label = (t: string) => TOOL_LABELS[t] ?? t;
 
@@ -190,7 +193,7 @@ export default function AssistantPage() {
         (ev) => {
           if (abort.signal.aborted) return;
           if (ev.t === "start") setActiveId(ev.conversationId);
-          else if (ev.t === "tool") setStep(`Looking up ${label(ev.name).toLowerCase()}…`);
+          else if (ev.t === "tool") setStep(ev.name === "checkAnswer" ? "Checking the figures…" : `Looking up ${label(ev.name).toLowerCase()}…`);
           else if (ev.t === "answer")
             setMessages((m) => [...m, { id: `a-${Date.now()}`, role: "assistant", content: ev.text, tools: ev.tools }]);
           else setError(ev.message);
@@ -230,6 +233,11 @@ export default function AssistantPage() {
             >
               <Plus size={14} /> New chat
             </button>
+            {status?.canTest && (
+              <Link href="/assistant/accuracy" className="mt-2 block text-center text-xs text-[#a0a0a0] hover:text-white">
+                Accuracy test
+              </Link>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             {conversations.length === 0 && <p className="p-2 text-xs text-[#606060]">Your chats appear here.</p>}

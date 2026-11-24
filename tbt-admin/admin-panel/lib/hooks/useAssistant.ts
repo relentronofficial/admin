@@ -22,7 +22,7 @@ export function useAssistantStatus() {
     queryKey: [...KEY, "status"],
     queryFn: async () => {
       const res: any = await apiClient.get("/api/admin-assistant/status");
-      return res.data as { enabled: boolean; keyInvalid?: boolean; tools: string[] };
+      return res.data as { enabled: boolean; keyInvalid?: boolean; tools: string[]; canTest?: boolean };
     },
   });
 }
@@ -48,6 +48,39 @@ export function useDeleteAssistantConversation() {
     mutationFn: async (id: string) => apiClient.delete(`/api/admin-assistant/conversations/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, "conversations"] }),
   });
+}
+
+export interface AccuracyResult {
+  pass: boolean;
+  expected: string[];
+  missing: string[];
+  answer: string;
+  tools: string[];
+  costUsd: number;
+  hard: boolean;
+  ms: number;
+}
+
+export function useAccuracyCases(enabled: boolean) {
+  return useQuery({
+    queryKey: [...KEY, "eval"],
+    enabled,
+    queryFn: async () => {
+      const res: any = await apiClient.get("/api/admin-assistant/eval");
+      return (res.data ?? []) as Array<{ id: string; question: string }>;
+    },
+  });
+}
+
+export async function runAccuracyCase(id: string): Promise<AccuracyResult> {
+  const res: any = await apiClient.post(`/api/admin-assistant/eval/${id}`, {}, { timeout: 240_000 });
+  return res.data as AccuracyResult;
+}
+
+/** Datasets that no longer match the database. */
+export async function runAssistantSelfTest(): Promise<{ datasets: number; failed: string[] }> {
+  const res: any = await apiClient.get("/api/admin-assistant/selftest", { timeout: 120_000 });
+  return res.data;
 }
 
 /** Turns a voice note (base64 WAV) into text. Throws with a message to show. */

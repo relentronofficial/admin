@@ -6,9 +6,11 @@
 
 /** Good at choosing tools; about $2 in / $10 out per million tokens (2026-11). */
 export const ASSISTANT_MODEL = 'anthropic/claude-sonnet-5.5';
+/** For questions that turn out hard; about twice the price. */
+export const HARD_MODEL = 'anthropic/claude-opus-5.5';
 const URL = 'https://openrouter.ai/api/v1/chat/completions';
 const TIMEOUT_MS = 60_000;
-const MAX_TOKENS = 3_000; // reasoning + answer
+const MAX_TOKENS = 6_000; // reasoning + answer
 
 export interface ToolCall {
   id: string;
@@ -67,7 +69,7 @@ export function readCompletion(json: any): Completion {
   };
 }
 
-export function openRouterComplete(apiKey: string, log: (info: unknown) => void): Complete {
+export function openRouterComplete(apiKey: string, log: (info: unknown) => void, model = ASSISTANT_MODEL): Complete {
   return async (messages, tools, signal) => {
     const timeout = AbortSignal.timeout(TIMEOUT_MS);
     let res: Response;
@@ -76,11 +78,11 @@ export function openRouterComplete(apiKey: string, log: (info: unknown) => void)
         method: 'POST',
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: ASSISTANT_MODEL,
+          model,
           messages,
           tools,
           max_tokens: MAX_TOKENS,
-          reasoning: { effort: 'low', exclude: false },
+          reasoning: { effort: 'medium', exclude: false },
           usage: { include: true },
           // Only providers that do not store or train on the data.
           provider: { data_collection: 'deny', require_parameters: true },
