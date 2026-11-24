@@ -63,6 +63,7 @@ import {
   useToggleChatGroupReaction,
   useTogglePinChatGroupMessage,
   useStarredMessages,
+  useMarkGroupReadOnView,
   chatGroupKeys,
 } from '@/lib/hooks/useChatGroups';
 import { ForwardPickerSheet } from '@/components/features/chat/ForwardPickerSheet';
@@ -391,6 +392,11 @@ export default function MessagesPage() {
       queryClient.invalidateQueries({ queryKey: ['user', 'dm-pinned', activeId] });
     };
 
+    const handleRead = ({ conversationId: cid }: any) => {
+      if (cid !== activeId) return;
+      queryClient.invalidateQueries({ queryKey: ['user', 'dm-msg-info', activeId] });
+    };
+
     getSocket().then((s) => {
       if (!mounted) return;
       socketRef.current = s;
@@ -401,6 +407,7 @@ export default function MessagesPage() {
       s.on('chat:conversation_closed', handleClosed);
       s.on('chat:conversation_reopened', handleReopened);
       s.on('chat:pinned', handlePinned);
+      s.on('chat:read', handleRead);
     });
 
     return () => {
@@ -412,6 +419,7 @@ export default function MessagesPage() {
         socketRef.current.off('chat:typing', handleTyping);
         socketRef.current.off('chat:conversation_closed', handleClosed);
         socketRef.current.off('chat:pinned', handlePinned);
+        socketRef.current.off('chat:read', handleRead);
         socketRef.current.off('chat:conversation_reopened', handleReopened);
       }
       socketRef.current = null;
@@ -436,11 +444,16 @@ export default function MessagesPage() {
       queryClient.invalidateQueries({ queryKey: chatGroupKeys.messages(activeGroupId) });
     };
 
+    const handleGroupRead = () => {
+      queryClient.invalidateQueries({ queryKey: ['chat-group-msg-info', activeGroupId] });
+    };
+
     getSocket().then((s) => {
       if (!mounted) return;
       sock = s;
       s.emit('join:chat_group', { groupId: activeGroupId });
       s.on('group:message:new', handleNew);
+      s.on('group:read', handleGroupRead);
       // Reactions, edits, deletes and pins from other members refresh the
       // thread live too (the full group page does the same).
       for (const ev of GROUP_REFRESH_EVENTS) s.on(ev, handleChange);
@@ -452,9 +465,45 @@ export default function MessagesPage() {
         sock.emit('leave:chat_group', { groupId: activeGroupId });
         for (const ev of GROUP_REFRESH_EVENTS) sock.off(ev, handleChange);
         sock.off('group:message:new', handleNew);
+        sock.off('group:read', handleGroupRead);
       }
     };
   }, [activeGroupId, queryClient]);
+
+  // Report the open group chat as read (read receipts + unread badge).
+  // On phones the thread is hidden while the chat list shows, so it isn't read.
+  const [isWide, setIsWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setIsWide(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  const threadVisible = isWide || mobileView === 'chat';
+  useMarkGroupReadOnView(
+    threadVisible ? activeGroupId ?? '' : '',
+    groupMessages[groupMessages.length - 1]?.id,
+  );
+
+  // Report the open one-on-one chat as read: on open (tapped, auto-selected or
+  // deep-linked), on each new message, and on returning to the tab.
+  const newestDmId = messages[messages.length - 1]?.id;
+  const { mutate: reportDmRead } = markConversationRead;
+  const dmReadReportedRef = useRef('');
+  const dmOnScreen = threadVisible && !!activeId && !activeGroupId;
+  useEffect(() => {
+    if (!dmOnScreen || !activeId || !newestDmId || String(newestDmId).startsWith('temp')) return;
+    const key = `${activeId}:${newestDmId}`;
+    const report = () => {
+      if (document.visibilityState !== 'visible' || dmReadReportedRef.current === key) return;
+      dmReadReportedRef.current = key;
+      reportDmRead(activeId);
+    };
+    report();
+    document.addEventListener('visibilitychange', report);
+    return () => document.removeEventListener('visibilitychange', report);
+  }, [dmOnScreen, activeId, newestDmId, reportDmRead]);
 
   // Scroll to bottom when group messages load or change
   useEffect(() => {
@@ -490,7 +539,6 @@ export default function MessagesPage() {
     if (pendingMedia?.previewUrl) URL.revokeObjectURL(pendingMedia.previewUrl);
     setPendingMedia(null);
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    markConversationRead.mutate(id);
   }
 
   function selectGroup(id: string) {
@@ -1371,11 +1419,24 @@ function DmMessageInfoSheet({
         ) : info ? (
           <div className="space-y-3 text-sm">
             <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <span className="text-muted-foreground">Sender</span>
+              <span className="text-foreground font-medium">{info.senderName}</span>
+            </div>
+            <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
               <span className="text-muted-foreground">Sent</span>
               <span className="text-foreground font-medium">{fmt(info.sentAt)}</span>
             </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="text-muted-foreground">Read</span>
+            {info.editedAt && (
+            <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <span className="text-muted-foreground">Edited</span>
+              <span className="text-foreground font-medium">{fmt(info.editedAt)}</span>
+            </div>
+            )}
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pt-1">
+              {info.readAt ? 'Read by' : 'Not seen yet'}
+            </p>
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-foreground">{info.readerName}</span>
               <span className={info.readAt ? 'text-foreground font-medium' : 'text-muted-foreground italic'}>
                 {info.readAt ? fmt(info.readAt) : 'Not yet read'}
               </span>

@@ -567,17 +567,20 @@ function AdminBubble({
                 </button>
               </div>
               <div className="p-5 space-y-3 text-xs text-[#a0a0a0]">
-                <Row label="Sender"   value={message.senderType === "admin" ? "You (Admin)" : message.senderName} />
+                <Row label="Sender"   value={message.senderType === "admin" ? message.senderName || "Admin" : message.senderName} />
                 <Row label="Sent"     value={format(new Date(message.createdAt), "PPpp")} />
                 {message.editedAt && <Row label="Edited"   value={format(new Date(message.editedAt), "PPpp")} />}
-                <Row
-                  label="Read by admin"
-                  value={message.readByAdminAt ? format(new Date(message.readByAdminAt), "PPpp") : "—"}
-                />
-                <Row
-                  label="Read by member"
-                  value={message.readByMemberAt ? format(new Date(message.readByMemberAt), "PPpp") : "—"}
-                />
+                {message.senderType === "admin" ? (
+                  <Row
+                    label={`Read by ${conversations.find((c: any) => c.id === conversationId)?.member?.name ?? "member"}`}
+                    value={message.readByMemberAt ? format(new Date(message.readByMemberAt), "PPpp") : "Not read yet"}
+                  />
+                ) : (
+                  <Row
+                    label="Read by TBT Team"
+                    value={message.readByAdminAt ? format(new Date(message.readByAdminAt), "PPpp") : "Not read yet"}
+                  />
+                )}
                 {message.isForwarded && <Row label="Type" value="Forwarded message" />}
                 {message.isPinned && (
                   <Row label="Pinned" value={message.pinnedAt ? format(new Date(message.pinnedAt), "PPpp") : "Yes"} />
@@ -956,6 +959,11 @@ export default function AdminMessagesPage() {
         queryClient.invalidateQueries({ queryKey: ["admin", "conversations"] });
       });
 
+      s.on("chat:read", ({ conversationId }: any) => {
+        if (conversationId !== activeId) return;
+        queryClient.invalidateQueries({ queryKey: ["admin", "conversations", activeId, "messages"] });
+      });
+
       s.on("chat:reaction", ({ conversationId }: any) => {
         if (conversationId !== activeId) return;
         queryClient.invalidateQueries({ queryKey: ["admin", "conversations", activeId, "messages"] });
@@ -980,6 +988,7 @@ export default function AdminMessagesPage() {
         s.emit("chat:leave", { conversationId: activeId });
         s.off("chat:message");
         s.off("chat:reaction");
+        s.off("chat:read");
         s.off("chat:typing");
         s.off("chat:conversation_closed");
       });

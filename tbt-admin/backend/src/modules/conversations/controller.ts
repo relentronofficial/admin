@@ -64,6 +64,16 @@ export async function getAdminConversationMessagesHandler(request: FastifyReques
   const convo = await request.server.prisma.conversation.findUnique({ where: { id } });
   if (!convo) return reply.status(404).send({ success: false, data: null, error: 'Conversation not found' });
 
+  // Read receipts: the member's messages the team is now looking at. Done before
+  // the load below so this response already carries the new read times.
+  const read = await request.server.prisma.directMessage.updateMany({
+    where: { conversationId: id, senderType: 'member', readByAdminAt: null },
+    data: { readByAdminAt: new Date() },
+  });
+  if (read.count > 0) {
+    (request.server as any).io?.to(`conversation:${id}`).emit('chat:read', { conversationId: id, readerType: 'admin' });
+  }
+
   // Level 2 — parallelise: reset admin unread + load messages + load member profile.
   // All three are independent once we have the conversation row.
   const [, messages, member] = await Promise.all([

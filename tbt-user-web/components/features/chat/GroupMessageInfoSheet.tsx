@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Loader2, X } from "lucide-react";
 import { useChatGroupMessageInfo } from "@/lib/hooks/useChatGroups";
 
@@ -46,33 +47,59 @@ export function GroupMessageInfoSheet({
             <Loader2 size={16} className="animate-spin text-muted-foreground" />
           </div>
         ) : info ? (
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
-              <span className="text-muted-foreground">Sent</span>
-              <span className="text-foreground font-medium">{fmt(info.sentAt)}</span>
-            </div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pt-1">
-              Read by {info.readByCount}
-            </p>
-            {info.readByCount === 0 ? (
+          <div className="space-y-2 text-sm max-h-[60vh] overflow-y-auto overscroll-contain">
+            <Row label="Sender" value={info.senderName} />
+            <Row label="Sent" value={fmt(info.sentAt)} />
+            {info.editedAt && <Row label="Edited" value={fmt(info.editedAt)} />}
+            <SectionTitle>Read by {info.readByCount}</SectionTitle>
+            {info.readBy.length === 0 ? (
               <p className="text-sm text-muted-foreground italic py-2">No one has read this message yet.</p>
             ) : (
-              <div className="max-h-48 overflow-y-auto space-y-1">
-                {info.readBy.map((r) => (
-                  <div key={r.memberId} className="flex items-center justify-between py-1.5">
-                    <span className="text-foreground text-xs">
-                      {[r.firstName, r.lastName].filter(Boolean).join(" ") || "Member"}
-                    </span>
-                    <span className="text-muted-foreground text-[10px]">{fmt(r.readAt)}</span>
-                  </div>
-                ))}
-              </div>
+              info.readBy.map((r) => <Person key={r.memberId} person={r} time={fmt(r.readAt)} />)
+            )}
+            {info.notReadBy.length > 0 && (
+              <>
+                <SectionTitle>Not seen yet {info.notReadByCount}</SectionTitle>
+                {info.notReadBy.map((r) => <Person key={r.memberId} person={r} />)}
+              </>
             )}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Could not load message info.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2 border-b" style={{ borderColor: "var(--color-border-subtle)" }}>
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground font-medium text-right">{value}</span>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest pt-2">{children}</p>;
+}
+
+function Person({ person, time }: { person: { name: string; profilePhotoUrl: string | null }; time?: string }) {
+  return (
+    <div className="flex items-center gap-2.5 py-1">
+      {person.profilePhotoUrl ? (
+        <img src={person.profilePhotoUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+      ) : (
+        <span
+          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-foreground flex-shrink-0"
+          style={{ background: "var(--color-surface-overlay-md)" }}
+        >
+          {person.name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="flex-1 min-w-0 truncate text-foreground text-sm">{person.name}</span>
+      {time && <span className="text-muted-foreground text-[11px] flex-shrink-0">{time}</span>}
     </div>
   );
 }

@@ -668,6 +668,7 @@ function MessageInfoDialog({
 }) {
   const { data, isLoading } = useAdminGroupMessageInfo(group.id, message.id);
   const readBy = data?.readBy ?? [];
+  const notReadBy = data?.notReadBy ?? [];
   return (
     <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -684,6 +685,7 @@ function MessageInfoDialog({
           <div className="text-[11px] text-[#808080]">
             Sent by <span className="text-[#f0f0f0] font-semibold">{senderNameOf(message)}</span> ·{" "}
             {format(new Date(message.createdAt), "d MMM yyyy, HH:mm")}
+            {data?.editedAt && <> · Edited {format(new Date(data.editedAt), "d MMM, HH:mm")}</>}
           </div>
           <div className="text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
             Read by {isLoading ? "" : readBy.length}
@@ -710,6 +712,27 @@ function MessageInfoDialog({
                 </li>
               ))}
             </ul>
+          )}
+          {notReadBy.length > 0 && (
+            <>
+              <div className="pt-2 text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+                Not seen yet {notReadBy.length}
+              </div>
+              <ul className="space-y-2">
+                {notReadBy.map((r) => (
+                  <li key={r.memberId} className="flex items-center gap-2.5">
+                    {r.profilePhotoUrl ? (
+                      <img src={r.profilePhotoUrl} alt="" className="w-7 h-7 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-[#2a2a2a] flex items-center justify-center text-[11px] text-[#a0a0a0]">
+                        {r.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className="flex-1 min-w-0 text-sm text-[#a0a0a0] truncate">{r.name}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       </div>

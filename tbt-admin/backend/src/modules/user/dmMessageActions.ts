@@ -251,14 +251,18 @@ export async function getDmMessageInfoHandler(req: FastifyRequest, reply: Fastif
     const rows = await req.server.prisma.$queryRawUnsafe<Array<{
       id: string;
       created_at: Date;
+      edited_at: Date | null;
+      admin_name: string | null;
       read_by_member_at: Date | null;
       read_by_admin_at: Date | null;
       sender_type: string;
       sender_id: string;
     }>>(
-      `SELECT id::text AS id, created_at, read_by_member_at, read_by_admin_at, sender_type, sender_id::text AS sender_id
-         FROM direct_messages
-        WHERE id = $1::uuid AND conversation_id = $2::uuid`,
+      `SELECT dm.id::text AS id, dm.created_at, dm.edited_at, dm.read_by_member_at, dm.read_by_admin_at,
+              dm.sender_type, dm.sender_id::text AS sender_id, a.full_name AS admin_name
+         FROM direct_messages dm
+         LEFT JOIN admins a ON a.id = dm.sender_id AND dm.sender_type = 'admin'
+        WHERE dm.id = $1::uuid AND dm.conversation_id = $2::uuid`,
       messageId, id,
     );
     if (!rows.length) return fail(reply, 404, 'Message not found');
@@ -273,6 +277,10 @@ export async function getDmMessageInfoHandler(req: FastifyRequest, reply: Fastif
     return ok(reply, {
       messageId,
       sentAt: r.created_at,
+      editedAt: r.edited_at ?? null,
+      senderName: isSentByMe ? 'You' : r.admin_name ?? 'TBT Team',
+      // Any admin opening the chat counts as the team having read it.
+      readerName: isSentByMe ? 'TBT Team' : 'You',
       readAt: readAt ?? null,
       sentByMe: isSentByMe,
     });

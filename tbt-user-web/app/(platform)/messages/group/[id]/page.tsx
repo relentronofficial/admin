@@ -49,7 +49,7 @@ import {
   useDeleteChatGroupMessage,
   useEditChatGroupMessage,
   useForwardChatGroupMessage,
-  useMarkChatGroupRead,
+  useMarkGroupReadOnView,
   useMuteChatGroup,
   usePinnedMessages,
   useSendChatGroupMessage,
@@ -96,7 +96,6 @@ export default function GroupChatPage() {
   const editMsg = useEditChatGroupMessage(groupId);
   const deleteMsg = useDeleteChatGroupMessage(groupId);
   const toggleReaction = useToggleChatGroupReaction(groupId);
-  const markRead = useMarkChatGroupRead(groupId);
   const forwardMsg = useForwardChatGroupMessage(groupId);
   const toggleStar = useToggleChatGroupStar(groupId);
   const togglePin = useTogglePinChatGroupMessage(groupId);
@@ -174,8 +173,6 @@ export default function GroupChatPage() {
           if (!already) pages[lastIdx] = [...pages[lastIdx], msg];
           return { ...prev, pages };
         });
-        // Auto-mark this message read since we're inside the chat.
-        markRead.mutate(msg.id);
       };
 
       const onEdited = (msg: ChatGroupMessage) => {
@@ -309,7 +306,7 @@ export default function GroupChatPage() {
       cancelled = true;
       cleanup?.();
     };
-  }, [groupId, me?.id, markRead, qc]);
+  }, [groupId, me?.id, qc]);
 
   // Typing indicator — emit debounced. 2s window with reset on new keystrokes.
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -371,13 +368,13 @@ export default function GroupChatPage() {
       .slice(0, 6);
   }, [mentionQuery, group, me?.id]);
 
-  // Mark the latest message read on mount / when new tail arrives.
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    markRead.mutate(last.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  // Report the newest message as read. Older pages come after newer ones in
+  // `messages`, so pick it by time rather than by position.
+  const newestMessageId = useMemo(
+    () => messages.reduce<ChatGroupMessage | undefined>((n, m) => (!n || m.createdAt > n.createdAt ? m : n), undefined)?.id,
+    [messages],
+  );
+  useMarkGroupReadOnView(groupId, newestMessageId);
 
   // Auto-scroll to bottom on new tail messages.
   useLayoutEffect(() => {

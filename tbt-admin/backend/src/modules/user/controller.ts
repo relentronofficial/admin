@@ -5812,8 +5812,18 @@ export async function markConversationReadHandler(request: FastifyRequest, reply
   const { id } = request.params as { id: string };
   const convo = await request.server.prisma.conversation.findFirst({ where: { id, memberId } });
   if (!convo) return fail(reply, 404, 'Conversation not found');
-  void request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } });
+  // Read receipts: the TBT team's messages the member is now looking at.
+  const [, read] = await Promise.all([
+    request.server.prisma.conversation.update({ where: { id }, data: { memberUnreadCount: 0 } }),
+    request.server.prisma.directMessage.updateMany({
+      where: { conversationId: id, senderType: 'admin', readByMemberAt: null },
+      data: { readByMemberAt: new Date() },
+    }),
+  ]);
   void invalidateCache(request.server.redis ?? null, `conv:unread:${memberId}`);
+  if (read.count > 0) {
+    (request.server as any).io?.to(`conversation:${id}`).emit('chat:read', { conversationId: id, readerType: 'member' });
+  }
   return ok(reply, { ok: true });
 }
 

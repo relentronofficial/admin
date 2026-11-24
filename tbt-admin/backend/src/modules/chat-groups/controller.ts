@@ -1232,11 +1232,10 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
 
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
-  // Fetch the target message's createdAt so we can mark every prior
-  // message as read too. Matches WhatsApp semantics — opening a chat
+  // Every message up to and including the target is marked read. Matches WhatsApp semantics — opening a chat
   // reads everything up to (and including) the latest visible message.
-  const target = await req.server.prisma.$queryRawUnsafe<Array<{ created_at: Date }>>(
-    `SELECT created_at FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
+  const target = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+    `SELECT id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
     messageId,
     id,
   );
@@ -1244,22 +1243,24 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
 
   // Insert reads for every message in this group up to and including
   // the target that the member hasn't already read AND that they didn't
-  // send themselves.
+  // send themselves. The timestamp is compared inside SQL: a JS Date drops
+  // microseconds, which left the newest message itself out.
   const inserted = await req.server.prisma.$queryRawUnsafe<Array<{ message_id: string }>>(
     `INSERT INTO chat_group_message_reads (message_id, member_id)
      SELECT m.id, $2::uuid
      FROM chat_group_messages m
      WHERE m.group_id = $1::uuid
-       AND m.created_at <= $3::timestamptz
+       AND m.created_at <= (SELECT t.created_at FROM chat_group_messages t WHERE t.id = $3::uuid)
        AND (m.sender_member_id IS NULL OR m.sender_member_id <> $2::uuid)
        AND NOT EXISTS (
          SELECT 1 FROM chat_group_message_reads r
          WHERE r.message_id = m.id AND r.member_id = $2::uuid
        )
+     ON CONFLICT DO NOTHING
      RETURNING message_id`,
     id,
     memberId,
-    target[0].created_at,
+    messageId,
   );
 
   await req.server.prisma.$executeRawUnsafe(
@@ -1274,7 +1275,7 @@ export async function memberMarkReadHandler(req: FastifyRequest<{ Params: { id: 
   );
 
   const io = (req.server as any).io;
-  if (io) {
+  if (io && inserted.length > 0) {
     // Emit one event per newly-read message so every sender's client can
     // update per-message tick state. Batching to a single array keeps
     // the payload compact even when catching up from a large unread.
@@ -1669,13 +1670,93 @@ export async function memberUnpinMessageHandler(
   return ok(reply, { pinned: false });
 }
 
-type MessageInfoReadRow = {
+type MessageInfoPersonRow = {
   member_id: string;
-  read_at: Date;
   first_name: string | null;
   last_name: string | null;
   profile_photo_url: string | null;
 };
+type MessageInfoReadRow = MessageInfoPersonRow & { read_at: Date };
+
+const messageInfoPerson = (r: MessageInfoPersonRow) => ({
+  memberId: r.member_id,
+  name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member',
+  firstName: r.first_name,
+  lastName: r.last_name,
+  profilePhotoUrl: r.profile_photo_url,
+});
+
+/**
+ * Message Info for one group message: sender, times, who has read it and who
+ * has not. The sender is in neither list. `notReadBy` holds current members
+ * who were already in the group when the message was sent.
+ * Null when the message is not in this group.
+ */
+async function loadGroupMessageInfo(req: FastifyRequest, groupId: string, messageId: string) {
+  const prisma = req.server.prisma;
+  const found = await prisma.$queryRawUnsafe<Array<{
+    created_at: Date;
+    edited_at: Date | null;
+    sender_first: string | null;
+    sender_last: string | null;
+    sender_member_id: string | null;
+    admin_name: string | null;
+  }>>(
+    `SELECT msg.created_at, msg.edited_at, msg.sender_member_id,
+            m.first_name AS sender_first, m.last_name AS sender_last, a.full_name AS admin_name
+     FROM chat_group_messages msg
+     LEFT JOIN members m ON m.id = msg.sender_member_id
+     LEFT JOIN admins a ON a.id = msg.sender_admin_id
+     WHERE msg.id = $1::uuid AND msg.group_id = $2::uuid`,
+    messageId,
+    groupId,
+  );
+  if (found.length === 0) return null;
+  const msg = found[0];
+
+  const [read, notRead] = await Promise.all([
+    prisma.$queryRawUnsafe<MessageInfoReadRow[]>(
+      `SELECT r.member_id, r.read_at, m.first_name, m.last_name, m.profile_photo_url
+       FROM chat_group_message_reads r
+       JOIN chat_group_messages msg ON msg.id = r.message_id
+       JOIN members m ON m.id = r.member_id
+       WHERE r.message_id = $1::uuid
+         AND r.member_id IS DISTINCT FROM msg.sender_member_id
+       ORDER BY r.read_at DESC`,
+      messageId,
+    ),
+    prisma.$queryRawUnsafe<MessageInfoPersonRow[]>(
+      `SELECT cgm.member_id, m.first_name, m.last_name, m.profile_photo_url
+       FROM chat_group_members cgm
+       JOIN chat_group_messages msg ON msg.id = $1::uuid
+       JOIN members m ON m.id = cgm.member_id
+       WHERE cgm.group_id = $2::uuid
+         AND cgm.left_at IS NULL
+         AND cgm.joined_at <= msg.created_at
+         AND cgm.member_id IS DISTINCT FROM msg.sender_member_id
+         AND NOT EXISTS (
+           SELECT 1 FROM chat_group_message_reads r
+           WHERE r.message_id = msg.id AND r.member_id = cgm.member_id
+         )
+       ORDER BY m.first_name ASC, m.last_name ASC`,
+      messageId,
+      groupId,
+    ),
+  ]);
+
+  return {
+    messageId,
+    sentAt: msg.created_at,
+    editedAt: msg.edited_at,
+    senderName: msg.sender_member_id
+      ? [msg.sender_first, msg.sender_last].filter(Boolean).join(' ') || 'Member'
+      : msg.admin_name ?? 'TBT Team',
+    readByCount: read.length,
+    readBy: read.map((r) => ({ ...messageInfoPerson(r), readAt: r.read_at })),
+    notReadByCount: notRead.length,
+    notReadBy: notRead.map(messageInfoPerson),
+  };
+}
 
 export async function memberMessageInfoHandler(
   req: FastifyRequest<{ Params: { id: string; messageId: string } }>,
@@ -1684,22 +1765,9 @@ export async function memberMessageInfoHandler(
   const { id, messageId } = req.params;
   if (!(await requireMemberOfGroup(req, id))) return fail(reply, 403, 'FORBIDDEN', "You aren't in this group.");
 
-  const rows = await req.server.prisma.$queryRawUnsafe<MessageInfoReadRow[]>(
-    `SELECT r.member_id, r.read_at, m.first_name, m.last_name, m.profile_photo_url
-     FROM chat_group_message_reads r
-     JOIN members m ON m.id = r.member_id
-     WHERE r.message_id = $1::uuid
-     ORDER BY r.read_at ASC`,
-    messageId,
-  );
-  return ok(reply, {
-    readBy: rows.map((r) => ({
-      memberId: r.member_id,
-      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member',
-      profilePhotoUrl: r.profile_photo_url,
-      readAt: r.read_at,
-    })),
-  });
+  const info = await loadGroupMessageInfo(req, id, messageId);
+  if (!info) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  return ok(reply, info);
 }
 
 interface SetAnnouncementOnlyBody {
@@ -2080,26 +2148,7 @@ export async function adminMessageInfoHandler(
   reply: FastifyReply,
 ) {
   const { id, messageId } = req.params;
-  const exists = await req.server.prisma.$queryRawUnsafe<Array<{ id: string }>>(
-    `SELECT id FROM chat_group_messages WHERE id = $1::uuid AND group_id = $2::uuid`,
-    messageId,
-    id,
-  );
-  if (exists.length === 0) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
-  const rows = await req.server.prisma.$queryRawUnsafe<MessageInfoReadRow[]>(
-    `SELECT r.member_id, r.read_at, m.first_name, m.last_name, m.profile_photo_url
-     FROM chat_group_message_reads r
-     JOIN members m ON m.id = r.member_id
-     WHERE r.message_id = $1::uuid
-     ORDER BY r.read_at ASC`,
-    messageId,
-  );
-  return ok(reply, {
-    readBy: rows.map((r) => ({
-      memberId: r.member_id,
-      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || 'Member',
-      profilePhotoUrl: r.profile_photo_url,
-      readAt: r.read_at,
-    })),
-  });
+  const info = await loadGroupMessageInfo(req, id, messageId);
+  if (!info) return fail(reply, 404, 'NOT_FOUND', 'Message not found.');
+  return ok(reply, info);
 }

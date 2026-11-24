@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import {
   useInfiniteQuery,
   useMutation,
@@ -152,6 +153,33 @@ export function useMarkChatGroupRead(id: string) {
   });
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Reports the newest message as read while the group is on screen: on open,
+ * on each new message, and when the member comes back to the tab.
+ */
+export function useMarkGroupReadOnView(groupId: string, newestMessageId: string | undefined) {
+  const { mutate } = useMarkChatGroupRead(groupId);
+  const reported = useRef("");
+  useEffect(() => {
+    if (!groupId || !newestMessageId || !UUID_RE.test(newestMessageId)) return;
+    const key = `${groupId}:${newestMessageId}`;
+    const report = () => {
+      if (document.visibilityState !== "visible" || reported.current === key) return;
+      reported.current = key;
+      mutate(newestMessageId, {
+        onError: () => {
+          if (reported.current === key) reported.current = "";
+        },
+      });
+    };
+    report();
+    document.addEventListener("visibilitychange", report);
+    return () => document.removeEventListener("visibilitychange", report);
+  }, [groupId, newestMessageId, mutate]);
+}
+
 export function useLeaveChatGroup(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -247,6 +275,8 @@ export function useChatGroupMessageInfo(groupId: string, messageId: string | nul
     queryKey: ["chat-group-msg-info", groupId, messageId],
     queryFn: async () => (await chatGroupsService.getMessageInfo(groupId, messageId!)).data ?? null,
     enabled: !!groupId && !!messageId,
-    staleTime: 30_000,
+    // Reads change by the second: always fetch when the sheet opens.
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }

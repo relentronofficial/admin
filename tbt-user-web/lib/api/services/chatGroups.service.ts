@@ -194,8 +194,12 @@ export const chatGroupsService = {
     apiClient.get<never, ApiResponse<{
       messageId: string;
       sentAt: string;
+      editedAt: string | null;
+      senderName: string;
       readByCount: number;
-      readBy: Array<{ memberId: string; firstName: string | null; lastName: string | null; readAt: string }>;
+      readBy: Array<{ memberId: string; name: string; profilePhotoUrl: string | null; readAt: string }>;
+      notReadByCount: number;
+      notReadBy: Array<{ memberId: string; name: string; profilePhotoUrl: string | null }>;
     }>>(`/api/chat-groups/${id}/messages/${messageId}/info`),
 };
 

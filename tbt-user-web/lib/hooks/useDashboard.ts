@@ -368,12 +368,17 @@ export const useDmMessageInfo = (conversationId: string, messageId: string | nul
       return (res?.data ?? null) as {
         messageId: string;
         sentAt: string;
+        editedAt: string | null;
+        senderName: string;
+        readerName: string;
         readAt: string | null;
         sentByMe: boolean;
       } | null;
     },
     enabled: !!conversationId && !!messageId,
-    staleTime: 30_000,
+    // Always fetch when the sheet opens, so a fresh read shows.
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 
 export const useArchiveConversation = () => {

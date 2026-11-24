@@ -339,10 +339,17 @@ export function useAdminGroupMessageInfo(groupId: string, messageId: string | nu
     queryFn: async () => {
       const res = await apiClient.get(`/api/chat-groups/admin/${groupId}/messages/${messageId}/info`);
       return (res as unknown as {
-        data: { readBy: Array<{ memberId: string; name: string; profilePhotoUrl: string | null; readAt: string }> };
+        data: {
+          editedAt?: string | null;
+          readBy: Array<{ memberId: string; name: string; profilePhotoUrl: string | null; readAt: string }>;
+          notReadBy?: Array<{ memberId: string; name: string; profilePhotoUrl: string | null }>;
+        };
       }).data;
     },
     enabled: !!messageId,
+    // Reads change by the second: always fetch when the dialog opens.
+    staleTime: 0,
+    refetchInterval: 15_000,
   });
 }
 
