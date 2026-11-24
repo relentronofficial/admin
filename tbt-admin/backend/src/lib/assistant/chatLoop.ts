@@ -53,6 +53,8 @@ export async function runChatLoop(o: {
   runTool: (name: string, args: string) => Promise<ToolResult>;
   onTool?: (name: string) => void;
   signal?: AbortSignal;
+  /** Trusted text in the prompt whose figures may be quoted. */
+  facts?: string;
 }): Promise<LoopResult> {
   let messages: ChatMessage[] = [
     // Cache point 1: tool definitions + shared rules (reused across questions and admins).
@@ -67,7 +69,7 @@ export async function runChatLoop(o: {
   let costUsd = 0;
   // What the answer's figures may come from. Earlier answers are not a source.
   // The shared rules are not either: they hold example figures.
-  const sources = [o.question, o.system.personal];
+  const sources = [o.question, o.system.personal, ...(o.facts ? [o.facts] : [])];
   let rechecked = false;
   let failures = 0;
   let hard = false;
@@ -104,7 +106,7 @@ export async function runChatLoop(o: {
           o.onTool?.('checkAnswer');
           messages.push(c.message, {
             role: 'user',
-            content: `[Automatic check, not from the admin] These figures in your answer are not in this turn's lookup results: ${unsupported.slice(0, 15).join(', ')}. Look them up now with a tool. If one is your own arithmetic, work it out with calculate. Remove anything you cannot support. Then reply with the full corrected answer only, in the admin's language, without mentioning this check.`,
+            content: `[Automatic check, not from the user] These figures in your answer are not in this turn's lookup results: ${unsupported.slice(0, 15).join(', ')}. Look them up now with a tool. If one is your own arithmetic, work it out with calculate. Remove anything you cannot support. Then reply with the full corrected answer only, in the user's language, without mentioning this check.`,
           });
           continue;
         }

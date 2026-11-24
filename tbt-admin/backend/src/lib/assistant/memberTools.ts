@@ -8,6 +8,7 @@ import type { PrismaClient } from '@prisma/client';
 import { loadCategoryQuota, loadCoinBalance } from '../supportCallData.js';
 import { SUPPORT_CALL_CATEGORIES } from '../supportCallLogic.js';
 import { isTaskVisibleToMember } from '../weeklyGraphLogic.js';
+import type { HelpBotAction } from '../helpBot/actions.js';
 import { batchDay, loadProgress } from './adminTools.js';
 import { ToolError, ist, listed, type AssistantTool } from './registry.js';
 
@@ -15,6 +16,8 @@ export interface MemberToolCtx {
   prisma: PrismaClient;
   now: Date;
   memberId: string;
+  /** Things prepared for the member to confirm; nothing is done until they do. */
+  actions?: HelpBotAction[];
 }
 
 const always = () => true;

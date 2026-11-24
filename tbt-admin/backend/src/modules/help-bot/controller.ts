@@ -1,50 +1,59 @@
 /**
- * TBT help bot — member-facing in-app assistant (`/api/help-bot`).
+ * TBT Assistant for members (`/api/help-bot`, JWT cookie).
  *
- * POST /chat streams the answer as Server-Sent Events:
- *   data: {"t":"delta","text":"…"}   — append text
- *   data: {"t":"reset"}              — discard what was shown (model fallback restarted the answer)
- *   data: {"t":"done"}               — finished
- *   data: {"t":"error","message":"…"}
+ * POST /chat { message, conversationId?, page? } streams Server-Sent Events:
+ *   {"t":"start","conversationId"}  {"t":"tool","name"}
+ *   {"t":"answer","text","messageId","actions"}  {"t":"error","message"}
+ * The conversation is kept on the server; the client never supplies earlier turns.
  *
- * Accuracy comes from three system blocks: the static guide + rules
- * (knowledge.ts), a live reference (menu, published courses, FAQs — shared
- * by every member, prompt-cached), and the asking member's own facts.
- * Hidden when ANTHROPIC_API_KEY is not set (GET /status → enabled:false).
+ * Only members the admin opened it to may use it (lib/helpBot/access.ts); every
+ * route checks. Answers come from the app guide, live reference and the member
+ * tools, all read-only. Things to do come back as `actions`: the app shows a
+ * card and the member's own Confirm calls the normal API for it.
+ * POST /messages/:id/speech makes the voice, only when asked.
+ * /admin/* (Clerk, super admin) sets who may use it and shows how it is doing.
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import type Anthropic from '@anthropic-ai/sdk';
 import { env } from '../../config/env.js';
+import { calculateTool } from '../../lib/assistant/calculate.js';
+import { HISTORY_TURNS, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
+import { memberActionTools } from '../../lib/assistant/memberActionTools.js';
+import { memberTools, type MemberToolCtx } from '../../lib/assistant/memberTools.js';
+import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
+import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
+import { SPEECH_SAMPLE_RATE, spokenScript, startSpeech } from '../../lib/assistant/speak.js';
+import { isAudience, loadHelpBotAccess } from '../../lib/helpBot/access.js';
+import { MAX_ACTIONS, allowedFrom, type HelpBotAction } from '../../lib/helpBot/actions.js';
+import { exactFaq, offlineAnswer } from '../../lib/helpBot/fallback.js';
 import { APP_GUIDE, HELP_BOT_INSTRUCTIONS } from '../../lib/helpBot/knowledge.js';
 import {
+  MAX_USER_CHARS,
   buildMemberContext,
   buildReferenceBlock,
-  cleanHistory,
   type CatalogCourse,
   type FaqItem,
 } from '../../lib/helpBot/helpBotLogic.js';
 
-const MODEL = 'claude-opus-5-5';
-const FALLBACK_MODEL = 'claude-opus-5';
-const MAX_TOKENS = 1200;
 const REFERENCE_TTL_MS = 5 * 60_000;
+const BURST_LIMIT = 15; // questions per 10 minutes, per member
+const TOTAL_DAILY_LIMIT = 1_500; // everyone together, so the AI credit cannot be drained
+const VOICE_DAILY_LIMIT = 30; // per member
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Per-member limits: a burst window and a daily cap.
-const BURST_LIMIT = 20;
-const BURST_WINDOW_S = 10 * 60;
-const DAILY_LIMIT = 100;
+const tools = [...memberTools, ...memberActionTools, calculateTool];
+const apiKey = () => usableKey(env.OPENROUTER_API_KEY);
+const istToday = () => new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10);
 
-export function helpBotEnabled(): boolean {
-  return !!env.ANTHROPIC_API_KEY;
+const ok = (reply: FastifyReply, data: unknown) => reply.send({ success: true, data, error: null });
+function fail(reply: FastifyReply, status: number, message: string) {
+  return reply.code(status).send({ success: false, data: null, error: message });
 }
 
-let client: Anthropic | null = null;
-async function getClient(): Promise<Anthropic> {
-  if (!client) {
-    const Sdk = (await import('@anthropic-ai/sdk')).default;
-    client = new Sdk({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 2, timeout: 60_000 });
-  }
-  return client;
+const OFF = 'The assistant is not available right now.';
+
+/** Registered for every member route: not opened to this member = the same answer as switched off. */
+export async function requireHelpBot(req: FastifyRequest, reply: FastifyReply) {
+  if (!(await loadHelpBotAccess(req.server.prisma, req.memberId!)).allowed) return fail(reply, 404, OFF);
 }
 
 // ── Rate limit (Redis, in-memory fallback) ───────────────────────────────────
@@ -73,13 +82,18 @@ async function bump(req: FastifyRequest, key: string, windowS: number): Promise<
 }
 
 async function overLimit(req: FastifyRequest, memberId: string): Promise<string | null> {
-  const day = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 10); // IST date
-  const [burst, daily] = await Promise.all([
-    bump(req, `helpbot:b:${memberId}`, BURST_WINDOW_S),
-    bump(req, `helpbot:d:${memberId}:${day}`, 26 * 3600),
+  const [{ dailyLimit }, rows] = await Promise.all([
+    loadHelpBotAccess(req.server.prisma, memberId),
+    req.server.prisma.$queryRawUnsafe<Array<{ burst: number; mine: number; everyone: number }>>(
+      `SELECT COUNT(*) FILTER (WHERE c.member_id = $1::uuid AND m.created_at > NOW() - INTERVAL '10 minutes')::int AS burst,
+              COUNT(*) FILTER (WHERE c.member_id = $1::uuid)::int AS mine, COUNT(*)::int AS everyone
+         FROM help_bot_messages m JOIN help_bot_conversations c ON c.id = m.conversation_id
+        WHERE m.role = 'user' AND m.created_at >= (date_trunc('day', NOW() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata')`, memberId),
   ]);
-  if (daily > DAILY_LIMIT) return "You've reached today's question limit. Please try again tomorrow, or raise a ticket in Support.";
-  if (burst > BURST_LIMIT) return "You're asking very quickly — please wait a few minutes and try again.";
+  const r = rows[0];
+  if (r.burst >= BURST_LIMIT) return "You're asking very quickly — please wait a few minutes and try again.";
+  if (r.mine >= dailyLimit) return "You've reached today's question limit. Please try again tomorrow, or raise a ticket in Support.";
+  if (r.everyone >= TOTAL_DAILY_LIMIT) return 'The assistant is very busy today. Please try again tomorrow, or raise a ticket in Support.';
   return null;
 }
 
@@ -89,10 +103,14 @@ const MENU_KEY_PATHS: Record<string, string> = {
   community: '/community', ebooks: '/ebooks', podcasts: '/podcasts', support: '/support',
 };
 
-let referenceCache: { text: string; at: number } | null = null;
-let referenceInflight: Promise<string> | null = null;
+interface Reference {
+  text: string;
+  faqs: FaqItem[];
+}
+let referenceCache: (Reference & { at: number }) | null = null;
+let referenceInflight: Promise<Reference> | null = null;
 
-async function loadReference(req: FastifyRequest): Promise<string> {
+async function loadReference(req: FastifyRequest): Promise<Reference> {
   const prisma = req.server.prisma;
   const safe = <T>(p: Promise<T[]>): Promise<T[]> => p.catch((err) => {
     req.log.warn({ err }, '[help-bot] reference query failed');
@@ -140,7 +158,7 @@ async function loadReference(req: FastifyRequest): Promise<string> {
   const faqs = (rows: Array<{ question: string; answer: string; topic?: string | null }>): FaqItem[] =>
     rows.filter((r) => r.question && r.answer).map((r) => ({ question: r.question, answer: r.answer, topic: r.topic ?? null }));
 
-  return buildReferenceBlock({
+  const text = buildReferenceBlock({
     visibleMenu,
     hiddenPaths: [...hiddenPaths].sort(),
     courses: catalog,
@@ -148,19 +166,20 @@ async function loadReference(req: FastifyRequest): Promise<string> {
     courseFaqs: faqs(courseFaqs),
     moduleFaqs: faqs(moduleFaqs),
   });
+  return { text, faqs: [...faqs(supportFaqs), ...faqs(courseFaqs), ...faqs(moduleFaqs)] };
 }
 
-async function getReference(req: FastifyRequest): Promise<string> {
-  if (referenceCache && Date.now() - referenceCache.at < REFERENCE_TTL_MS) return referenceCache.text;
+async function getReference(req: FastifyRequest): Promise<Reference> {
+  if (referenceCache && Date.now() - referenceCache.at < REFERENCE_TTL_MS) return referenceCache;
   if (!referenceInflight) {
     referenceInflight = loadReference(req)
-      .then((text) => { referenceCache = { text, at: Date.now() }; return text; })
+      .then((r) => { referenceCache = { ...r, at: Date.now() }; return r; })
       .finally(() => { referenceInflight = null; });
   }
   try {
     return await referenceInflight;
   } catch {
-    return referenceCache?.text ?? '# LIVE REFERENCE\n(unavailable right now — rely on the guide)';
+    return referenceCache ?? { text: '# LIVE REFERENCE\n(unavailable right now — rely on the guide)', faqs: [] };
   }
 }
 
@@ -216,34 +235,157 @@ async function loadMemberContext(req: FastifyRequest, memberId: string, page: un
   });
 }
 
-// ── Handlers ─────────────────────────────────────────────────────────────────
+// ── Member handlers ──────────────────────────────────────────────────────────
 
-export async function helpBotStatusHandler(_req: FastifyRequest, reply: FastifyReply) {
-  return reply.send({ success: true, data: { enabled: helpBotEnabled() }, error: null });
+export async function helpBotStatusHandler(req: FastifyRequest, reply: FastifyReply) {
+  const access = await loadHelpBotAccess(req.server.prisma, req.memberId!).catch((err) => {
+    req.log.error({ err }, '[help-bot] access check failed');
+    return { allowed: false, comingSoon: false };
+  });
+  return ok(reply, { enabled: access.allowed && !!apiKey(), comingSoon: access.comingSoon });
+}
+
+export async function listConversationsHandler(req: FastifyRequest, reply: FastifyReply) {
+  return ok(reply, await req.server.prisma.$queryRawUnsafe(
+    `SELECT id::text, title, updated_at AS "updatedAt" FROM help_bot_conversations
+      WHERE member_id = $1::uuid ORDER BY updated_at DESC LIMIT 30`, req.memberId!));
+}
+
+export async function getConversationHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  if (!UUID_RE.test(req.params.id)) return fail(reply, 404, 'Chat not found.');
+  const [own] = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `SELECT id FROM help_bot_conversations WHERE id = $1::uuid AND member_id = $2::uuid`, req.params.id, req.memberId!);
+  if (!own) return fail(reply, 404, 'Chat not found.');
+  const messages = await req.server.prisma.$queryRawUnsafe(
+    `SELECT * FROM (
+       SELECT id::text, role, content, actions, rating, created_at AS "createdAt" FROM help_bot_messages
+        WHERE conversation_id = $1::uuid ORDER BY created_at DESC LIMIT 100) m ORDER BY m."createdAt"`, req.params.id);
+  return ok(reply, { id: req.params.id, messages });
+}
+
+export async function deleteConversationHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const n = UUID_RE.test(req.params.id)
+    ? await req.server.prisma.$executeRawUnsafe(`DELETE FROM help_bot_conversations WHERE id = $1::uuid AND member_id = $2::uuid`, req.params.id, req.memberId!)
+    : 0;
+  return n ? ok(reply, { deleted: true }) : fail(reply, 404, 'Chat not found.');
+}
+
+const MINE = `m.role = 'assistant' AND m.conversation_id IN (SELECT id FROM help_bot_conversations WHERE member_id = $2::uuid)`;
+
+export async function rateHandler(req: FastifyRequest<{ Params: { id: string }; Body: { rating?: unknown } }>, reply: FastifyReply) {
+  const rating = req.body?.rating;
+  if (rating !== 1 && rating !== -1 && rating !== null) return fail(reply, 400, 'Choose a rating.');
+  const n = UUID_RE.test(req.params.id)
+    ? await req.server.prisma.$executeRawUnsafe(`UPDATE help_bot_messages m SET rating = $3::smallint WHERE m.id = $1::uuid AND ${MINE}`, req.params.id, req.memberId!, rating)
+    : 0;
+  return n ? ok(reply, { rating }) : fail(reply, 404, 'Answer not found.');
+}
+
+/** Moves a card on (see actions.ts). Claiming it ("working") succeeds once, so a double tap or a second tab cannot do it twice. */
+export async function actionHandler(req: FastifyRequest<{ Params: { id: string; index: string }; Body: { status?: unknown } }>, reply: FastifyReply) {
+  const to = req.body?.status;
+  const from = allowedFrom(to);
+  const index = Number(req.params.index);
+  if (!UUID_RE.test(req.params.id) || !Number.isInteger(index) || index < 0 || index >= MAX_ACTIONS || !from.length) return fail(reply, 400, 'That is not possible.');
+  const n = await req.server.prisma.$executeRawUnsafe(
+    `UPDATE help_bot_messages m SET actions = jsonb_set(m.actions, ARRAY[$3::text, 'status'], to_jsonb($4::text))
+      WHERE m.id = $1::uuid AND ${MINE} AND m.actions -> $3::int ->> 'status' = ANY($5::text[])`,
+    req.params.id, req.memberId!, String(index), to, from);
+  return n ? ok(reply, { status: to }) : fail(reply, 409, 'This was already done or closed.');
+}
+
+export async function listHabitsHandler(req: FastifyRequest, reply: FastifyReply) {
+  return ok(reply, await req.server.prisma.$queryRawUnsafe(
+    `SELECT habit_id::text AS "habitId", done FROM member_habit_answers WHERE member_id = $1::uuid AND answer_date = $2::date`, req.memberId!, istToday()));
+}
+
+export async function saveHabitHandler(req: FastifyRequest<{ Body: { habitId?: unknown; done?: unknown } }>, reply: FastifyReply) {
+  const { habitId, done } = req.body ?? {};
+  if (typeof habitId !== 'string' || !UUID_RE.test(habitId) || typeof done !== 'boolean') return fail(reply, 400, 'Choose a habit.');
+  const n = await req.server.prisma.$executeRawUnsafe(
+    `INSERT INTO member_habit_answers (member_id, habit_id, answer_date, done)
+     SELECT $1::uuid, h.id, $3::date, $4::boolean FROM habits h WHERE h.id = $2::uuid AND h.status = 'active'
+     ON CONFLICT (member_id, habit_id, answer_date) DO UPDATE SET done = EXCLUDED.done, updated_at = NOW()`,
+    req.memberId!, habitId, istToday(), done);
+  return n ? ok(reply, { habitId, done }) : fail(reply, 404, 'Habit not found.');
+}
+
+export async function speechHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const key = apiKey();
+  if (!key) return fail(reply, 503, OFF);
+  const memberId = req.memberId!;
+  const [message] = UUID_RE.test(req.params.id)
+    ? await req.server.prisma.$queryRawUnsafe<Array<{ content: string }>>(`SELECT m.content FROM help_bot_messages m WHERE m.id = $1::uuid AND ${MINE}`, req.params.id, memberId)
+    : [];
+  if (!message) return fail(reply, 404, 'Answer not found.');
+  if ((await bump(req, `helpbot:v:${memberId}:${istToday()}`, 26 * 3600)) > VOICE_DAILY_LIMIT) return fail(reply, 429, "You've reached today's voice limit. Please read the answer, or try again tomorrow.");
+
+  const abort = new AbortController();
+  reply.raw.on('close', () => abort.abort());
+  const o = { apiKey: key, signal: abort.signal, log: (info: unknown) => req.log.error(info as object, '[help-bot] speech failed') };
+  let stream: AsyncIterable<Uint8Array>;
+  try {
+    stream = await startSpeech(await spokenScript(message.content, o), o);
+  } catch (err) {
+    if (abort.signal.aborted) return reply;
+    if (!(err instanceof AssistantServiceError)) req.log.error({ errorName: (err as Error)?.name }, '[help-bot] speech failed');
+    return fail(reply, 502, 'The voice could not be made. Please read the answer, or try again.');
+  }
+  reply.hijack();
+  reply.raw.writeHead(200, {
+    ...(reply.getHeaders() as Record<string, string>),
+    'Content-Type': `audio/l16; rate=${SPEECH_SAMPLE_RATE}; channels=1`,
+    'Cache-Control': 'no-store, no-transform',
+    'X-Accel-Buffering': 'no',
+  });
+  try {
+    for await (const chunk of stream) {
+      if (reply.raw.destroyed) break;
+      reply.raw.write(chunk);
+    }
+    if (!reply.raw.writableEnded) reply.raw.end();
+  } catch (err) {
+    if (!abort.signal.aborted) req.log.error({ errorName: (err as Error)?.name }, '[help-bot] speech stream failed');
+    reply.raw.destroy(); // half a sentence must not look finished
+  }
+  return reply;
 }
 
 export async function helpBotChatHandler(
-  req: FastifyRequest<{ Body: { messages?: unknown; page?: unknown } }>,
+  req: FastifyRequest<{ Body: { message?: unknown; conversationId?: unknown; page?: unknown } }>,
   reply: FastifyReply,
 ) {
-  if (!helpBotEnabled()) {
-    return reply.code(503).send({ success: false, data: null, error: 'The assistant is not available right now.' });
-  }
+  const key = apiKey();
+  if (!key) return fail(reply, 503, OFF);
   const memberId = req.memberId!;
-  const cleaned = cleanHistory(req.body?.messages);
-  if (!cleaned.ok) return reply.code(400).send({ success: false, data: null, error: cleaned.error });
+  const prisma = req.server.prisma;
+  const question = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+  if (!question) return fail(reply, 400, 'Ask a question first.');
+  if (question.length > MAX_USER_CHARS) return fail(reply, 400, `Please keep your question under ${MAX_USER_CHARS} characters.`);
 
+  let conversationId = req.body?.conversationId;
+  let history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  if (conversationId != null) {
+    const [own] = typeof conversationId === 'string' && UUID_RE.test(conversationId)
+      ? await prisma.$queryRawUnsafe<any[]>(`SELECT id FROM help_bot_conversations WHERE id = $1::uuid AND member_id = $2::uuid`, conversationId, memberId)
+      : [];
+    if (!own) return fail(reply, 404, 'Chat not found.');
+    history = (await prisma.$queryRawUnsafe<any[]>(
+      `SELECT role, content FROM help_bot_messages WHERE conversation_id = $1::uuid ORDER BY created_at DESC LIMIT ${HISTORY_TURNS}`, conversationId)).reverse();
+  }
   const limited = await overLimit(req, memberId);
-  if (limited) return reply.code(429).send({ success: false, data: null, error: limited });
+  if (limited) return fail(reply, 429, limited);
+  const [reference, memberCtx] = await Promise.all([getReference(req), loadMemberContext(req, memberId, req.body?.page)]);
+  if (!memberCtx) return fail(reply, 404, 'Member not found.');
 
-  const [reference, memberCtx, anthropic] = await Promise.all([
-    getReference(req),
-    loadMemberContext(req, memberId, req.body?.page),
-    getClient(),
-  ]);
-  if (!memberCtx) return reply.code(404).send({ success: false, data: null, error: 'Member not found.' });
+  if (conversationId == null) {
+    const [c] = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `INSERT INTO help_bot_conversations (member_id, title) VALUES ($1::uuid, $2) RETURNING id::text`, memberId, conversationTitle(question));
+    conversationId = c.id;
+  }
+  // Saved first, so a question that fails still counts towards the limits.
+  await prisma.$executeRawUnsafe(`INSERT INTO help_bot_messages (conversation_id, role, content) VALUES ($1::uuid, 'user', $2)`, conversationId, question);
 
-  // Stream SSE from here on. Keep CORS headers that hooks already set.
   reply.hijack();
   reply.raw.writeHead(200, {
     ...(reply.getHeaders() as Record<string, string>),
@@ -255,50 +397,104 @@ export async function helpBotChatHandler(
   const send = (ev: Record<string, unknown>) => {
     if (!reply.raw.writableEnded) reply.raw.write(`data: ${JSON.stringify(ev)}\n\n`);
   };
-
+  send({ t: 'start', conversationId });
   const abort = new AbortController();
   reply.raw.on('close', () => abort.abort());
+  // Keeps proxies from closing a quiet connection.
+  const ping = setInterval(() => { if (!reply.raw.writableEnded) reply.raw.write(': \n\n'); }, 10_000);
+
+  const answer = async (text: string, used: string[], costUsd: number, prepared: HelpBotAction[]) => {
+    const actions = prepared.map((a) => ({ ...a, status: 'pending' }));
+    const [saved] = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
+      `INSERT INTO help_bot_messages (conversation_id, role, content, tools, actions, cost_usd) VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4::jsonb, $5::numeric) RETURNING id::text`,
+      conversationId, text, JSON.stringify(used), JSON.stringify(actions), String(costUsd));
+    await prisma.$executeRawUnsafe(`UPDATE help_bot_conversations SET updated_at = NOW() WHERE id = $1::uuid`, conversationId);
+    send({ t: 'answer', text, messageId: saved?.id ?? null, conversationId, actions });
+  };
 
   try {
-    const stream = anthropic.beta.messages.stream(
-      {
-        model: MODEL,
-        max_tokens: MAX_TOKENS,
-        betas: ['server-side-fallback-2026-06-01'],
-        fallbacks: [{ model: FALLBACK_MODEL }],
-        output_config: { effort: 'low' },
-        system: [
-          { type: 'text', text: `${HELP_BOT_INSTRUCTIONS}\n\n${APP_GUIDE}` },
-          { type: 'text', text: reference, cache_control: { type: 'ephemeral' } },
-          { type: 'text', text: memberCtx },
-        ],
-        messages: cleaned.messages,
-        metadata: { user_id: memberId },
-      },
-      { signal: abort.signal },
-    );
-
-    for await (const event of stream) {
-      if (event.type === 'content_block_start' && (event.content_block as { type: string }).type === 'fallback') {
-        send({ t: 'reset' });
-      } else if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        send({ t: 'delta', text: event.delta.text });
-      }
+    const faq = history.length ? null : exactFaq(question, reference.faqs);
+    if (faq) {
+      await answer(faq.answer.trim(), ['faq'], 0, []);
+      return;
     }
-    const final = await stream.finalMessage();
-    if (final.stop_reason === 'refusal') {
-      send({ t: 'reset' });
-      send({ t: 'delta', text: "Sorry, I can't help with that. I can answer questions about using the TBT app — or raise a ticket in [Support](/support/new)." });
-    } else if (final.stop_reason === 'max_tokens') {
-      send({ t: 'delta', text: '…' });
-    }
-    send({ t: 'done' });
+    const prepared: HelpBotAction[] = [];
+    const ctx: MemberToolCtx = { prisma: prisma as any, now: new Date(), memberId, actions: prepared };
+    const log = (info: unknown) => req.log.error(info as object, '[help-bot] OpenRouter call failed');
+    const guide = `${APP_GUIDE}\n\n${reference.text}`;
+    const r = await runChatLoop({
+      complete: openRouterComplete(key, log),
+      completeHard: openRouterComplete(key, log, HARD_MODEL),
+      system: { shared: `${HELP_BOT_INSTRUCTIONS}\n\n${guide}`, personal: memberCtx },
+      facts: guide,
+      history,
+      question,
+      tools: toolDefinitions(tools, ctx),
+      runTool: (name, args) => runTool(tools, ctx, name, args, { onError: (err) => req.log.error({ err, tool: name }, '[help-bot] tool failed') }),
+      onTool: (name) => send({ t: 'tool', name }),
+      signal: abort.signal,
+    });
+    await answer(r.text, r.toolsUsed, r.costUsd, prepared);
   } catch (err) {
     if (!abort.signal.aborted) {
-      req.log.error({ err }, '[help-bot] chat failed');
-      send({ t: 'error', message: 'Sorry, I could not answer just now. Please try again in a moment.' });
+      if (!(err instanceof AssistantServiceError)) req.log.error({ err }, '[help-bot] chat failed');
+      // The help answers still work without the AI.
+      await answer(offlineAnswer(question, reference.faqs), ['offline'], 0, []).catch(() =>
+        send({ t: 'error', message: 'Sorry, I could not answer just now. Please try again in a moment.' }));
     }
   } finally {
+    clearInterval(ping);
     if (!reply.raw.writableEnded) reply.raw.end();
   }
+}
+
+// ── Admin (super admin) ──────────────────────────────────────────────────────
+
+export async function requireSuperAdmin(req: FastifyRequest, reply: FastifyReply) {
+  const a = await req.server.prisma.admin.findUnique({ where: { clerkId: req.user as string }, select: { role: true, status: true, deletedAt: true } });
+  if (!a || a.deletedAt || a.status !== 'active' || a.role !== 'super_admin') return fail(reply, 403, 'Super admins only.');
+}
+
+export async function adminOverviewHandler(req: FastifyRequest, reply: FastifyReply) {
+  const db = req.server.prisma;
+  const [settings, testers, stats, poor] = await Promise.all([
+    db.$queryRawUnsafe<any[]>(`SELECT audience, daily_limit AS "dailyLimit" FROM help_bot_settings`),
+    db.$queryRawUnsafe<any[]>(
+      `SELECT m.id::text, TRIM(CONCAT(m.first_name, ' ', m.last_name)) AS name, m.status::text FROM help_bot_testers t JOIN members m ON m.id = t.member_id ORDER BY t.added_at`),
+    db.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*) FILTER (WHERE m.role = 'user')::int AS questions, COUNT(DISTINCT c.member_id)::int AS members,
+              COUNT(*) FILTER (WHERE m.rating = 1)::int AS up, COUNT(*) FILTER (WHERE m.rating = -1)::int AS down,
+              COUNT(*) FILTER (WHERE m.tools ? 'offline')::int AS offline, COUNT(*) FILTER (WHERE m.tools ? 'faq')::int AS faq,
+              COALESCE(SUM(m.cost_usd), 0)::float8 AS "costUsd"
+         FROM help_bot_messages m JOIN help_bot_conversations c ON c.id = m.conversation_id WHERE m.created_at > NOW() - INTERVAL '30 days'`),
+    // Without names: this list is for improving the help answers.
+    db.$queryRawUnsafe<any[]>(
+      `SELECT m.id::text, m.content AS answer, m.created_at AS "createdAt",
+              (SELECT q.content FROM help_bot_messages q WHERE q.conversation_id = m.conversation_id AND q.role = 'user' AND q.created_at <= m.created_at ORDER BY q.created_at DESC LIMIT 1) AS question
+         FROM help_bot_messages m WHERE m.role = 'assistant' AND (m.rating = -1 OR m.tools ? 'offline') AND m.created_at > NOW() - INTERVAL '30 days'
+        ORDER BY m.created_at DESC LIMIT 50`),
+  ]);
+  return ok(reply, { ready: !!apiKey(), ...(settings[0] ?? { audience: 'testers', dailyLimit: 0 }), testers, stats: stats[0], poor });
+}
+
+export async function adminSettingsHandler(req: FastifyRequest<{ Body: { audience?: unknown; dailyLimit?: unknown } }>, reply: FastifyReply) {
+  const { audience, dailyLimit } = req.body ?? {};
+  if (!isAudience(audience) || typeof dailyLimit !== 'number' || !Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 500) return fail(reply, 400, 'Choose who can use it and a daily limit from 1 to 500.');
+  await req.server.prisma.$executeRawUnsafe(`UPDATE help_bot_settings SET audience = $1, daily_limit = $2::int, updated_at = NOW()`, audience, dailyLimit);
+  return ok(reply, { audience, dailyLimit });
+}
+
+export async function addTesterHandler(req: FastifyRequest<{ Body: { memberId?: unknown } }>, reply: FastifyReply) {
+  const id = req.body?.memberId;
+  if (typeof id !== 'string' || !UUID_RE.test(id)) return fail(reply, 400, 'Choose a member.');
+  const found = await req.server.prisma.$queryRawUnsafe<any[]>(
+    `INSERT INTO help_bot_testers (member_id) SELECT id FROM members WHERE id = $1::uuid AND deleted_at IS NULL
+     ON CONFLICT (member_id) DO UPDATE SET member_id = EXCLUDED.member_id RETURNING member_id`, id);
+  return found.length ? ok(reply, { added: true }) : fail(reply, 404, 'Member not found.');
+}
+
+export async function removeTesterHandler(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  if (!UUID_RE.test(req.params.id)) return fail(reply, 404, 'Member not found.');
+  await req.server.prisma.$executeRawUnsafe(`DELETE FROM help_bot_testers WHERE member_id = $1::uuid`, req.params.id);
+  return ok(reply, { removed: true });
 }

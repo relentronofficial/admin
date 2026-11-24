@@ -126,7 +126,7 @@ interface SpeakOptions {
 
 /** The words to say, figures already in words when they are Tamil. */
 export async function spokenScript(answer: string, o: SpeakOptions): Promise<string> {
-  const said = answer.split('\n⚠')[0];
+  const said = answer.split('\n⚠')[0].replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
   let problem: string | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const res = await post('https://openrouter.ai/api/v1/chat/completions', o.apiKey, {

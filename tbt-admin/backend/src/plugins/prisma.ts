@@ -1624,6 +1624,55 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_admin_assistant_msg_created ON admin_assistant_messages(created_at)`
     ).catch(() => {});
 
+    // ── TBT Assistant for members (modules/help-bot). Off for everyone unless the
+    // member is a tester or the audience is 'all' (admin → Member Assistant).
+    for (const ddl of [
+      `CREATE TABLE IF NOT EXISTS help_bot_settings (
+         id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+         audience VARCHAR(10) NOT NULL DEFAULT 'testers',
+         daily_limit INT NOT NULL DEFAULT 50,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `INSERT INTO help_bot_settings (id) VALUES (TRUE) ON CONFLICT DO NOTHING`,
+      `CREATE TABLE IF NOT EXISTS help_bot_testers (
+         member_id UUID PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+         added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE TABLE IF NOT EXISTS help_bot_conversations (
+         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+         title VARCHAR(80) NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE TABLE IF NOT EXISTS help_bot_messages (
+         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         conversation_id UUID NOT NULL REFERENCES help_bot_conversations(id) ON DELETE CASCADE,
+         role VARCHAR(10) NOT NULL,
+         content TEXT NOT NULL,
+         tools JSONB,
+         actions JSONB,
+         rating SMALLINT,
+         cost_usd NUMERIC(10,6),
+         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_help_bot_conv ON help_bot_conversations(member_id, updated_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS idx_help_bot_msg ON help_bot_messages(conversation_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_help_bot_msg_created ON help_bot_messages(created_at)`,
+      `CREATE TABLE IF NOT EXISTS member_habit_answers (
+         member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+         habit_id UUID NOT NULL REFERENCES habits(id) ON DELETE CASCADE,
+         answer_date DATE NOT NULL,
+         done BOOLEAN NOT NULL,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         PRIMARY KEY (member_id, habit_id, answer_date)
+       )`,
+      // Chats are kept for 90 days.
+      `DELETE FROM help_bot_conversations WHERE updated_at < NOW() - INTERVAL '90 days'`,
+    ]) {
+      await prisma.$executeRawUnsafe(ddl).catch((err) => fastify.log.warn({ err }, 'help_bot DDL failed'));
+    }
+
     // ── Admin-scheduled group-chat messages (one-time or daily). Sent by the
     // sweep in jobs/chatScheduledMessages.ts; rules in lib/chatScheduleLogic.ts.
     // Runs after the parallel block so chat_groups exists for the FK.

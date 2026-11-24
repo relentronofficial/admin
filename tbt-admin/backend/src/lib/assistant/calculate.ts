@@ -1,5 +1,4 @@
 /** Exact arithmetic for the assistant, so it never works figures out in its head. No eval: a small parser. */
-import type { AdminToolCtx } from './adminTools.js';
 import { ToolError, type AssistantTool } from './registry.js';
 
 export function evaluate(expression: string): number {
@@ -40,7 +39,7 @@ export function evaluate(expression: string): number {
   return Math.round(v * 1e4) / 1e4;
 }
 
-export const calculateTool: AssistantTool<AdminToolCtx> = {
+export const calculateTool: AssistantTool<any> = {
   name: 'calculate',
   description: 'Exact arithmetic on figures you have already looked up: differences, ratios, growth %, sums across lookups. One expression per call. Every figure in it must come from a lookup result or the question.',
   params: { expression: { type: 'string', required: true, maxLength: 400, description: 'e.g. (817599 - 270000) / 270000 * 100. Digits without commas.' } },
