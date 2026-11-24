@@ -289,8 +289,8 @@ export function SubmissionsPanel({ batches, variant = "grouped" }: { batches: an
         </div>
       ) : isRecent ? (
         <section className="bg-[#181818] border border-[#2a2a2a] rounded-xl overflow-hidden">
-          <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2.5 bg-[#1a1a1a] border-b border-[#2a2a2a] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
-            <span>Student</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
+          <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2.5 bg-[#1a1a1a] border-b border-[#2a2a2a] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+            <span>Student</span><span>Account manager</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
           </div>
           <div className="divide-y divide-[#1e1e1e]">
             {rows.map((sub) => (
@@ -335,8 +335,8 @@ export function SubmissionsPanel({ batches, variant = "grouped" }: { batches: an
 
                 {!isCollapsed && (
                   <>
-                    <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2 border-b border-[#1e1e1e] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
-                      <span>Student</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
+                    <div className="hidden lg:grid grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-4 px-5 pl-[90px] py-2 border-b border-[#1e1e1e] text-[10px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">
+                      <span>Student</span><span>Account manager</span><span>Batch</span><span>Task</span><span>Submitted</span><span>Status</span>
                     </div>
                     <div className="divide-y divide-[#1e1e1e]">
                       {g.rows.map((sub) => (
@@ -414,10 +414,20 @@ function SubmissionRow({
             {memberName(sub).charAt(0).toUpperCase()}
           </div>
         )}
-        <div className="flex-1 min-w-0 grid grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,2.2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-x-4 gap-y-2 items-center">
+        <div className="flex-1 min-w-0 grid grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.4fr)_minmax(0,1.3fr)_minmax(0,2fr)_minmax(0,1.3fr)_minmax(0,1.2fr)] gap-x-4 gap-y-2 items-center">
           <div className="min-w-0">
             <p className="text-[13px] text-[#f0f0f0] font-medium truncate">{memberName(sub)}</p>
             <p className="text-[11px] text-[#666] truncate">{[sub.memberCode, sub.memberPhone].filter(Boolean).join(" · ")}</p>
+          </div>
+          <div className="min-w-0">
+            {/* Column header is hidden below lg, so label the value there */}
+            <p className="lg:hidden text-[10px] text-[#666] uppercase font-rajdhani font-bold">Account manager</p>
+            <p
+              className={cn("text-[12px] truncate", sub.accountManagerName ? "text-[#d0d0d0]" : "text-[#666] italic")}
+              title={sub.accountManagerName ?? undefined}
+            >
+              {sub.accountManagerName ?? "Unassigned"}
+            </p>
           </div>
           <div className="min-w-0">
             <p className="text-[12px] text-[#a0a0a0] truncate">{sub.batchName ?? "No batch"}</p>
@@ -442,7 +452,8 @@ function SubmissionRow({
 
       {expanded && (
         <div className="px-6 lg:pl-16 pb-5 pt-3 bg-[#141414] border-t border-[#1e1e1e] space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[12px]">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-[12px]">
+            <Detail label="Account manager" value={sub.accountManagerName ?? "Unassigned"} />
             <Detail label="Submitted" value={`${fmtDate(sub.submittedAt)}, ${fmtTime(sub.submittedAt)} IST`} />
             <Detail label="Batch" value={sub.batchName ?? "No batch assigned"} />
             <Detail label="Points on approval" value={sub.basePoints != null ? `${sub.basePoints}${sub.isMilestone ? " + milestone" : ""}` : "—"} />

@@ -364,7 +364,8 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
      JOIN tasks t ON t.id = ts.task_id
      JOIN members m ON m.id = ts.member_id
      LEFT JOIN batches b ON b.id = COALESCE(ts.batch_id, m.batch_id)
-     LEFT JOIN admins r ON r.id = ts.reviewed_by`;
+     LEFT JOIN admins r ON r.id = ts.reviewed_by
+     LEFT JOIN admins am ON am.id = m.account_manager_id`;
 
   const countParams = [...params];
   const rowWhere = q.status
@@ -388,6 +389,7 @@ export async function listAllTaskSubmissionsHandler(request: FastifyRequest, rep
               t.timer_seconds AS "timerSeconds",
               m.first_name AS "firstName", m.last_name AS "lastName", m.phone AS "memberPhone",
               m.member_id AS "memberCode", m.profile_photo_url AS "profilePhotoUrl",
+              am.id AS "accountManagerId", am.full_name AS "accountManagerName",
               b.id AS "batchId", b.name AS "batchName"
        ${fromSql}
        ${rowWhere}
