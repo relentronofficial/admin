@@ -18,7 +18,7 @@ export interface ToolCall {
 
 export type ChatMessage =
   | { role: 'system'; content: string | unknown[] }
-  | { role: 'user'; content: string }
+  | { role: 'user'; content: string | unknown[] }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; reasoning_details?: unknown }
   | { role: 'tool'; tool_call_id: string; content: string };
 

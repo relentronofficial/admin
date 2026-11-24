@@ -16,7 +16,7 @@ function script(...steps: Completion[]) {
   const complete = async (m: any[]) => { sent.push(structuredClone(m)); return steps[Math.min(sent.length, steps.length) - 1]; };
   return { complete, sent };
 }
-const base = { system: 'S', history: [], question: 'Q', tools: [] };
+const base = { system: { shared: 'S', personal: 'P' }, history: [], question: 'Q', tools: [] };
 
 describe('runChatLoop', () => {
   it('answers without tools', async () => {
@@ -57,6 +57,16 @@ describe('runChatLoop', () => {
     expect(await go(answer(null))).toMatch(/could not put together/);
     expect(await go(answer('x', 'content_filter'))).toMatch(/can't help/);
     expect(await go(answer('part', 'length'))).toMatch(/^part[\s\S]*cut short/);
+  });
+  it('marks the shared rules and the question for caching, not tool results', async () => {
+    const { complete, sent } = script(asks('a'), answer('x'));
+    await runChatLoop({ ...base, complete, runTool: async () => ({ ok: true, data: 1 }) });
+    const cache_control = { type: 'ephemeral' };
+    for (const m of sent) {
+      expect(m[0].content).toEqual([{ type: 'text', text: 'S', cache_control }, { type: 'text', text: 'P' }]);
+      expect(m[1].content).toEqual([{ type: 'text', text: 'Q', cache_control }]);
+    }
+    expect(JSON.stringify(sent[1]).match(/cache_control/g)).toHaveLength(2);
   });
   it('trims history', async () => {
     const { complete, sent } = script(answer('x'));
@@ -104,15 +114,23 @@ describe('key safety', () => {
 
 describe('prompt', () => {
   it('gives the date and role, and flags limited access', () => {
-    const p = (role: string) => adminSystemPrompt({ adminName: 'A', role, today: '2026-11-24' });
+    const p = (role: string) => adminSystemPrompt({ adminName: 'A', role, today: '2026-11-24' }).personal;
     expect(p('admin')).toContain('2026-11-24');
     expect(p('admin')).not.toContain('only has access to part');
     expect(p('mentor')).toContain('only has access to part');
   });
   it('warns about misheard names only for voice', () => {
-    const p = (voice?: boolean) => adminSystemPrompt({ adminName: 'A', role: 'admin', today: '2026-11-24', voice });
+    const p = (voice?: boolean) => adminSystemPrompt({ adminName: 'A', role: 'admin', today: '2026-11-24', voice }).personal;
     expect(p(true)).toContain('misspelt');
     expect(p()).not.toContain('misspelt');
+  });
+  it('shares one identical prefix across admins, roles, dates and voice', () => {
+    const a = adminSystemPrompt({ adminName: 'A', role: 'admin', today: '2026-11-24' });
+    const b = adminSystemPrompt({ adminName: 'Bee', role: 'mentor', today: '2026-11-25', voice: true });
+    expect(a.shared).toBe(b.shared);
+    expect(a.shared).toContain('Accuracy rules');
+    expect(a.shared).not.toMatch(/undefined|\$\{/);
+    expect(a.personal).not.toBe(b.personal);
   });
   it('titles are short', () => expect(conversationTitle(` a\n${'b'.repeat(80)}`).length).toBe(60));
 });
