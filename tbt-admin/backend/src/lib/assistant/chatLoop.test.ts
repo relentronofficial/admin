@@ -109,5 +109,10 @@ describe('prompt', () => {
     expect(p('admin')).not.toContain('only has access to part');
     expect(p('mentor')).toContain('only has access to part');
   });
+  it('warns about misheard names only for voice', () => {
+    const p = (voice?: boolean) => adminSystemPrompt({ adminName: 'A', role: 'admin', today: '2026-11-24', voice });
+    expect(p(true)).toContain('misspelt');
+    expect(p()).not.toContain('misspelt');
+  });
   it('titles are short', () => expect(conversationTitle(` a\n${'b'.repeat(80)}`).length).toBe(60));
 });

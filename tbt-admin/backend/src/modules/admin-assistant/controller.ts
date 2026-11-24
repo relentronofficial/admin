@@ -7,6 +7,10 @@
  *   {"t":"answer","text","conversationId","title","tools"} — finished
  *   {"t":"error","message"}
  *
+ * POST /transcribe { audio } turns a voice note (base64 16 kHz mono WAV) into
+ * { text }; the client then asks it through /chat with voice: true. The audio
+ * is not stored.
+ *
  * The conversation is kept on the server and belongs to one admin; the client
  * never supplies earlier turns. Off when OPENROUTER_API_KEY is not set.
  */
@@ -16,6 +20,7 @@ import { adminTools, type AdminToolCtx } from '../../lib/assistant/adminTools.js
 import { HISTORY_TURNS, QUESTION_MAX, adminSystemPrompt, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
 import { AssistantServiceError, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
+import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
 
 const BURST_LIMIT = 15; // questions per 10 minutes, per admin
 const DAILY_LIMIT = 150; // per admin per IST day
@@ -95,8 +100,40 @@ export async function deleteConversationHandler(req: FastifyRequest<{ Params: { 
   return reply.send({ success: true, data: { deleted: true }, error: null });
 }
 
+// Voice notes per admin in the last 10 minutes (this instance); /chat's own
+// limits only see notes that became questions.
+const voiceTimes = new Map<string, number[]>();
+
+export async function transcribeHandler(req: FastifyRequest<{ Body: { audio?: unknown } }>, reply: FastifyReply) {
+  const key = apiKey();
+  if (!key) return fail(reply, 503, 'The assistant is not set up yet.');
+  const admin = await actingAdmin(req, reply);
+  if (!admin) return reply;
+  const audio = validVoiceNote(req.body?.audio);
+  if (!audio) return fail(reply, 400, 'That voice note could not be read. Please record it again (up to 60 seconds).');
+
+  const now = Date.now();
+  const recent = (voiceTimes.get(admin.id) ?? []).filter((t) => now - t < 600_000);
+  if (recent.length >= BURST_LIMIT) return fail(reply, 429, 'You are sending voice notes very quickly. Please wait a few minutes.');
+  const limited = await overLimit(req, admin.id);
+  if (limited) return fail(reply, 429, limited);
+  voiceTimes.set(admin.id, [...recent, now]);
+
+  try {
+    const text = await transcribeVoiceNote({
+      apiKey: key, wavBase64: audio, max: QUESTION_MAX,
+      log: (info) => req.log.error(info as object, '[admin-assistant] transcription failed'),
+    });
+    if (!text) return fail(reply, 422, "I couldn't hear any words. Please try again, closer to the microphone.");
+    return reply.send({ success: true, data: { text }, error: null });
+  } catch (err) {
+    if (!(err instanceof AssistantServiceError)) req.log.error({ errorName: (err as Error)?.name }, '[admin-assistant] transcription failed');
+    return fail(reply, 502, err instanceof AssistantServiceError ? err.message : 'The voice note could not be processed. Please try again.');
+  }
+}
+
 export async function chatHandler(
-  req: FastifyRequest<{ Body: { message?: unknown; conversationId?: unknown } }>,
+  req: FastifyRequest<{ Body: { message?: unknown; conversationId?: unknown; voice?: unknown } }>,
   reply: FastifyReply,
 ) {
   const key = apiKey();
@@ -153,7 +190,7 @@ export async function chatHandler(
     const ctx: AdminToolCtx = { prisma: prisma as any, now, admin };
     const r = await runChatLoop({
       complete: openRouterComplete(key, (info) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed')),
-      system: adminSystemPrompt({ adminName: admin.fullName, role: admin.role, today: new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10) }),
+      system: adminSystemPrompt({ adminName: admin.fullName, role: admin.role, today: new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10), voice: req.body?.voice === true }),
       history,
       question,
       tools: toolDefinitions(adminTools, ctx),

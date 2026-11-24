@@ -6,6 +6,7 @@ export interface AssistantMessage {
   role: "user" | "assistant";
   content: string;
   tools?: string[] | null;
+  voice?: boolean;
 }
 
 export type AssistantEvent =
@@ -49,10 +50,25 @@ export function useDeleteAssistantConversation() {
   });
 }
 
+/** Turns a voice note (base64 WAV) into text. Throws with a message to show. */
+export async function transcribeVoice(token: string | null, audio: string, signal: AbortSignal): Promise<string> {
+  const res = await fetch(`${apiClient.defaults.baseURL}/api/admin-assistant/transcribe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify({ audio }),
+    signal,
+  });
+  const j = await res.json().catch(() => null);
+  if (!res.ok || !j?.data?.text) {
+    throw new Error(typeof j?.error === "string" ? j.error : "The voice note could not be processed. Please try again.");
+  }
+  return j.data.text as string;
+}
+
 /** Sends a question and reports each server event. fetch, because axios can't stream in the browser. */
 export async function streamAssistantChat(
   token: string | null,
-  body: { message: string; conversationId: string | null },
+  body: { message: string; conversationId: string | null; voice?: boolean },
   onEvent: (ev: AssistantEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

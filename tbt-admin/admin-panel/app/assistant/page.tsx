@@ -6,14 +6,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Bot, Loader2, MessageSquare, Plus, Send, Square, Trash2 } from "lucide-react";
+import { AlertTriangle, Bot, Loader2, MessageSquare, Mic, Plus, Send, Square, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import { AnswerText } from "@/components/assistant/AnswerText";
+import { VOICE_MAX_SECONDS, startVoiceRecording, type VoiceRecorder } from "@/lib/audio/voiceNote";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import {
   fetchAssistantConversation,
   streamAssistantChat,
+  transcribeVoice,
   useAssistantConversations,
   useAssistantStatus,
   useDeleteAssistantConversation,
@@ -65,17 +67,39 @@ export default function AssistantPage() {
   const [opening, setOpening] = useState(false);
   const [step, setStep] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const recRef = useRef<VoiceRecorder | null>(null);
+  const micRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const openRef = useRef(0);
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+      micRef.current++;
+      recRef.current?.cancel();
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [recording]);
+  useEffect(() => {
+    if (recording && seconds >= VOICE_MAX_SECONDS) sendVoice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording, seconds]);
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, busy, error]);
 
   function reset() {
     abortRef.current?.abort();
+    setBusy(false);
+    cancelVoice();
     openRef.current++;
     setOpening(false);
     setActiveId(null);
@@ -85,6 +109,7 @@ export default function AssistantPage() {
 
   async function open(id: string) {
     if (busy) return;
+    cancelVoice();
     const n = ++openRef.current;
     setActiveId(id);
     setMessages([]);
@@ -100,21 +125,68 @@ export default function AssistantPage() {
     }
   }
 
-  async function ask(text: string) {
-    const q = text.trim();
-    if (!q || busy || opening) return;
+  async function recordVoice() {
+    if (busy || opening || recRef.current) return;
+    const n = ++micRef.current;
+    setError(null);
+    try {
+      const rec = await startVoiceRecording();
+      // Cancelled or left the page while the browser was asking for permission.
+      if (micRef.current !== n) return rec.cancel();
+      recRef.current = rec;
+      setSeconds(0);
+      setRecording(true);
+    } catch (e) {
+      if (micRef.current === n) setError((e as Error).message);
+    }
+  }
+
+  function cancelVoice() {
+    micRef.current++;
+    recRef.current?.cancel();
+    recRef.current = null;
+    setRecording(false);
+  }
+
+  async function sendVoice() {
+    const rec = recRef.current;
+    if (!rec) return;
+    recRef.current = null;
+    setRecording(false);
     const abort = new AbortController();
     abortRef.current = abort;
     setBusy(true);
     setError(null);
+    setStep("Listening to your voice note…");
+    try {
+      const audio = await rec.finish();
+      if (abort.signal.aborted) return;
+      const text = await transcribeVoice(await getToken(), audio, abort.signal);
+      if (abort.signal.aborted) return;
+      await ask(text, abort);
+    } catch (e) {
+      if (!abort.signal.aborted) setError((e as Error)?.message || "The voice note could not be processed. Please try again.");
+    } finally {
+      if (abortRef.current === abort) setBusy(false);
+    }
+  }
+
+  /** `voice` is the voice note's own controller when the text came from one. */
+  async function ask(text: string, voice?: AbortController) {
+    const q = text.trim();
+    if (!q || (!voice && (busy || opening || recording))) return;
+    const abort = voice ?? new AbortController();
+    abortRef.current = abort;
+    setBusy(true);
+    setError(null);
     setStep("Thinking…");
-    setInput("");
-    setMessages((m) => [...m, { id: `q-${Date.now()}`, role: "user", content: q }]);
+    if (!voice) setInput("");
+    setMessages((m) => [...m, { id: `q-${Date.now()}`, role: "user", content: q, voice: !!voice }]);
     try {
       const token = await getToken();
       await streamAssistantChat(
         token,
-        { message: q, conversationId: activeId },
+        { message: q, conversationId: activeId, voice: !!voice },
         (ev) => {
           if (abort.signal.aborted) return;
           if (ev.t === "start") setActiveId(ev.conversationId);
@@ -214,7 +286,7 @@ export default function AssistantPage() {
               <div className="py-8 max-w-xl mx-auto text-center">
                 <Bot size={30} className="mx-auto text-[#606060] mb-3" />
                 <p className="text-sm text-[#d0d0d0]">Ask about members, batches, courses, revenue or support.</p>
-                <p className="text-xs text-[#606060] mt-1">In English, Tamil or Tanglish.</p>
+                <p className="text-xs text-[#606060] mt-1">Type or send a voice note, in English, Tamil or Tanglish.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-5">
                   {suggestions.map(([, s]) => (
                     <button
@@ -231,7 +303,10 @@ export default function AssistantPage() {
               messages.map((m) =>
                 m.role === "user" ? (
                   <div key={m.id} className="flex justify-end">
-                    <p className="max-w-[85%] rounded-xl bg-[#dc2626] px-4 py-2.5 text-sm text-white whitespace-pre-wrap break-words">{m.content}</p>
+                    <p className="max-w-[85%] rounded-xl bg-[#dc2626] px-4 py-2.5 text-sm text-white whitespace-pre-wrap break-words">
+                      {m.voice && <Mic size={13} className="inline mr-1.5 -mt-0.5" aria-label="Voice note" />}
+                      {m.content}
+                    </p>
                   </div>
                 ) : (
                   <div key={m.id} className="max-w-[95%] rounded-xl border border-[#2a2a2a] bg-[#181818] px-4 py-3">
@@ -263,6 +338,31 @@ export default function AssistantPage() {
             }}
             className="p-3 border-t border-[#2a2a2a]"
           >
+            {recording ? (
+              <div className="flex items-center gap-3 rounded-lg border border-[#dc2626] bg-[#1a1a1a] px-3 py-2.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#dc2626] animate-pulse" />
+                <span className="flex-1 text-sm text-[#f0f0f0] tabular-nums">
+                  Recording {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+                  <span className="text-[#808080]"> / 1:00</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={cancelVoice}
+                  aria-label="Cancel voice note"
+                  className="h-10 w-10 grid place-items-center rounded-lg border border-[#333] text-[#f0f0f0] hover:bg-[#222]"
+                >
+                  <X size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={sendVoice}
+                  aria-label="Send voice note"
+                  className="h-10 w-10 grid place-items-center rounded-lg bg-[#dc2626] hover:bg-red-700 text-white"
+                >
+                  <Send size={15} />
+                </button>
+              </div>
+            ) : (
             <div className="flex items-end gap-2">
               <textarea
                 value={input}
@@ -292,6 +392,17 @@ export default function AssistantPage() {
                 >
                   <Square size={15} />
                 </button>
+              ) : !input.trim() ? (
+                <button
+                  type="button"
+                  onClick={recordVoice}
+                  disabled={!status?.enabled || opening}
+                  aria-label="Record a voice note"
+                  title="Record a voice note"
+                  className="h-11 w-11 flex-shrink-0 grid place-items-center rounded-lg bg-[#dc2626] hover:bg-red-700 text-white disabled:opacity-40"
+                >
+                  <Mic size={17} />
+                </button>
               ) : (
                 <button
                   type="submit"
@@ -303,9 +414,10 @@ export default function AssistantPage() {
                 </button>
               )}
             </div>
+            )}
             <p className="mt-1.5 text-[11px] text-[#606060]">
-              AI can make mistakes. Check important figures on their own page. Questions and the data used to answer them are
-              sent to the AI service.
+              AI can make mistakes. Check important figures on their own page. Questions, voice notes and the data used to answer
+              them are sent to the AI service.
             </p>
           </form>
         </section>
