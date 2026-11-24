@@ -1521,6 +1521,7 @@ export async function getMemberActivityAnalyticsHandler(req: FastifyRequest, rep
     status: r.status,
     plan: r.plan,
     batchName: r.batch_name,
+    accountManagerName: r.account_manager_name,
     joinedAt: r.created_at,
     lastActiveAt: r.last_active_at,
     activeDays: r.active_days,

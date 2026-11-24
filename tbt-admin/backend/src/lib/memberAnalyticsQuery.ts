@@ -116,7 +116,7 @@ export function buildMemberAnalyticsQuery(f: MemberAnalyticsFilters, timeZone: s
     SELECT * FROM (
       SELECT m.id, m.member_id, m.first_name, m.last_name, m.email, m.phone,
              m.status::text AS status, m.membership_plan::text AS plan,
-             b.name AS batch_name, m.created_at, m.last_active_at,
+             b.name AS batch_name, am.full_name AS account_manager_name, m.created_at, m.last_active_at,
              COALESCE(a.active_days, 0)::int     AS active_days,
              COALESCE(a.active_minutes, 0)::int  AS active_minutes,
              COALESCE(a.video_minutes, 0)::int   AS video_minutes,
@@ -128,6 +128,7 @@ export function buildMemberAnalyticsQuery(f: MemberAnalyticsFilters, timeZone: s
              ${hasReport} AS weekly_report
         FROM members m
         LEFT JOIN batches b ON b.id = m.batch_id
+        LEFT JOIN admins am ON am.id = m.account_manager_id
         LEFT JOIN LATERAL (
           SELECT COUNT(*) AS active_days,
                  SUM(length(replace(d.active_bits::text, '0', ''))) AS active_minutes,

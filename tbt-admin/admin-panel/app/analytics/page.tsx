@@ -196,7 +196,7 @@ function MemberActivityTable() {
     try {
       const res = await fetchMemberActivityAnalytics({ ...params, page: 1, limit: 5000 });
       const list: any[] = res?.data ?? [];
-      const header = ["Member ID", "Name", "Email", "Phone", "Status", "Plan", "Batch", "Joined", "Last active",
+      const header = ["Member ID", "Name", "Email", "Phone", "Status", "Plan", "Batch", "Account manager", "Joined", "Last active",
         `Active days (${rangeDays}d)`, `Active minutes (${rangeDays}d)`, `Video minutes (${rangeDays}d)`,
         `Lessons completed (${rangeDays}d)`, "Lessons completed (all time)", "Watch minutes (all time)",
         "Courses enrolled", `Tasks submitted (${rangeDays}d)`, "Weekly report this week"];
@@ -206,7 +206,7 @@ function MemberActivityTable() {
         return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
       };
       const lines = [header, ...list.map((r) => [
-        r.memberId, r.name, r.email, r.phone, r.status, r.plan, r.batchName ?? "",
+        r.memberId, r.name, r.email, r.phone, r.status, r.plan, r.batchName ?? "", r.accountManagerName ?? "",
         r.joinedAt ? format(new Date(r.joinedAt), "yyyy-MM-dd") : "",
         r.lastActiveAt ? format(new Date(r.lastActiveAt), "yyyy-MM-dd HH:mm") : "Never",
         r.activeDays, r.activeMinutes, r.videoMinutes, r.lessonsCompleted, r.lessonsCompletedTotal,
@@ -321,10 +321,11 @@ function MemberActivityTable() {
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1000px]">
+            <table className="w-full min-w-[1120px]">
               <thead>
                 <tr className="bg-[#1a1a1a] border-b border-[#2a2a2a]">
                   <Th k="name">Member</Th>
+                  <Th>Account manager</Th>
                   <Th k="last_active">Last active</Th>
                   <Th k="active_days" right>Active days</Th>
                   <Th k="active_minutes" right>Time on app</Th>
@@ -348,6 +349,11 @@ function MemberActivityTable() {
                           {r.status} · {r.plan}{r.batchName ? ` · ${r.batchName}` : ""}
                         </p>
                       </Link>
+                    </td>
+                    <td className="px-3 py-3 text-[12px] max-w-[160px]">
+                      <p className={`truncate ${r.accountManagerName ? "text-[#d0d0d0]" : "text-[#606060] italic"}`} title={r.accountManagerName ?? undefined}>
+                        {r.accountManagerName ?? "Unassigned"}
+                      </p>
                     </td>
                     <td className="px-3 py-3 text-[12px] whitespace-nowrap" title={r.lastActiveAt ? format(new Date(r.lastActiveAt), "d MMM yyyy, h:mm a") : undefined}>
                       <span className={r.lastActiveAt ? "text-[#a0a0a0]" : "text-[#606060]"}>{fmtAgo(r.lastActiveAt)}</span>
