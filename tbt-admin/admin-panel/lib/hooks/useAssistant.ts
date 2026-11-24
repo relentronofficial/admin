@@ -21,7 +21,7 @@ export function useAssistantStatus() {
     queryKey: [...KEY, "status"],
     queryFn: async () => {
       const res: any = await apiClient.get("/api/admin-assistant/status");
-      return res.data as { enabled: boolean; tools: string[] };
+      return res.data as { enabled: boolean; keyInvalid?: boolean; tools: string[] };
     },
   });
 }

@@ -206,7 +206,9 @@ export default function AssistantPage() {
               </p>
             ) : off ? (
               <p className="py-10 text-center text-sm text-amber-400">
-                The assistant isn&apos;t set up yet: the OpenRouter key has not been added to the backend.
+                {status?.keyInvalid
+                  ? "The assistant is off: the saved value is not an OpenRouter key (it should start with sk-or-)."
+                  : "The assistant isn't set up yet: the OpenRouter key has not been added to the backend."}
               </p>
             ) : messages.length === 0 && !error ? (
               <div className="py-8 max-w-xl mx-auto text-center">

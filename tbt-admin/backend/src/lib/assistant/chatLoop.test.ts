@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { HISTORY_CHARS, HISTORY_TURNS, MAX_CALLS_PER_ROUND, MAX_ROUNDS, adminSystemPrompt, conversationTitle, runChatLoop } from './chatLoop.js';
-import { AssistantServiceError, explainStatus, openRouterComplete, readCompletion, type Completion } from './openRouter.js';
+import { AssistantServiceError, explainStatus, openRouterComplete, readCompletion, usableKey, type Completion } from './openRouter.js';
 
 const answer = (text: string | null, finishReason = 'stop'): Completion => ({ message: { role: 'assistant', content: text }, finishReason, costUsd: 0.01 });
 const asks = (...names: string[]): Completion => ({
@@ -84,6 +84,21 @@ describe('OpenRouter', () => {
     const body = JSON.parse(String(spy.mock.calls[1][1]?.body));
     expect(body.provider.data_collection).toBe('deny');
     spy.mockRestore();
+  });
+});
+
+describe('key safety', () => {
+  it('accepts only an OpenRouter key', () => {
+    expect(usableKey(' sk-or-v1-abc\n')).toBe('sk-or-v1-abc');
+    expect(usableKey('{"type":"service_account"}')).toBeNull();
+    expect(usableKey('sk-or-a\nb')).toBeNull();
+    expect(usableKey(undefined)).toBeNull();
+  });
+  it('never logs the key, even when fetch quotes it', async () => {
+    const logs: unknown[] = [];
+    await expect(openRouterComplete('SECRET\nKEY', (i) => logs.push(i))([], [])).rejects.toThrow(AssistantServiceError);
+    expect(logs).toHaveLength(1);
+    expect(JSON.stringify(logs)).not.toContain('SECRET');
   });
 });
 

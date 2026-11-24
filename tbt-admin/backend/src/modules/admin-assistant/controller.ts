@@ -14,7 +14,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { adminTools, type AdminToolCtx } from '../../lib/assistant/adminTools.js';
 import { HISTORY_TURNS, QUESTION_MAX, adminSystemPrompt, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
-import { AssistantServiceError, openRouterComplete } from '../../lib/assistant/openRouter.js';
+import { AssistantServiceError, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
 
 const BURST_LIMIT = 15; // questions per 10 minutes, per admin
@@ -22,7 +22,7 @@ const DAILY_LIMIT = 150; // per admin per IST day
 const TEAM_DAILY_LIMIT = 600; // everyone together, so a runaway client cannot drain the credit
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const enabled = () => !!env.OPENROUTER_API_KEY;
+const apiKey = () => usableKey(env.OPENROUTER_API_KEY);
 
 function fail(reply: FastifyReply, status: number, message: string) {
   return reply.code(status).send({ success: false, data: null, error: message });
@@ -59,7 +59,7 @@ export async function statusHandler(req: FastifyRequest, reply: FastifyReply) {
   const admin = await actingAdmin(req, reply);
   if (!admin) return reply;
   const ctx: AdminToolCtx = { prisma: req.server.prisma as any, now: new Date(), admin };
-  return reply.send({ success: true, data: { enabled: enabled(), tools: toolDefinitions(adminTools, ctx).map((t) => t.function.name) }, error: null });
+  return reply.send({ success: true, data: { enabled: !!apiKey(), keyInvalid: !!env.OPENROUTER_API_KEY && !apiKey(), tools: toolDefinitions(adminTools, ctx).map((t) => t.function.name) }, error: null });
 }
 
 export async function listConversationsHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -99,7 +99,8 @@ export async function chatHandler(
   req: FastifyRequest<{ Body: { message?: unknown; conversationId?: unknown } }>,
   reply: FastifyReply,
 ) {
-  if (!enabled()) return fail(reply, 503, 'The assistant is not set up yet.');
+  const key = apiKey();
+  if (!key) return fail(reply, 503, 'The assistant is not set up yet.');
   const admin = await actingAdmin(req, reply);
   if (!admin) return reply;
 
@@ -151,7 +152,7 @@ export async function chatHandler(
     const now = new Date();
     const ctx: AdminToolCtx = { prisma: prisma as any, now, admin };
     const r = await runChatLoop({
-      complete: openRouterComplete(env.OPENROUTER_API_KEY!, (info) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed')),
+      complete: openRouterComplete(key, (info) => req.log.error(info as object, '[admin-assistant] OpenRouter call failed')),
       system: adminSystemPrompt({ adminName: admin.fullName, role: admin.role, today: new Date(now.getTime() + 5.5 * 3600_000).toISOString().slice(0, 10) }),
       history,
       question,

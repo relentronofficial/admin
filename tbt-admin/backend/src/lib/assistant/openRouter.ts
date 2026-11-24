@@ -30,6 +30,12 @@ export interface Completion {
 
 export type Complete = (messages: ChatMessage[], tools: unknown[], signal?: AbortSignal) => Promise<Completion>;
 
+/** The configured key, or null when it is missing or is not an OpenRouter key. */
+export function usableKey(raw: string | undefined): string | null {
+  const k = raw?.trim() ?? '';
+  return /^sk-or-[\w-]+$/.test(k) ? k : null;
+}
+
 /** Carries a message that is safe to show an admin. */
 export class AssistantServiceError extends Error {}
 
@@ -83,7 +89,8 @@ export function openRouterComplete(apiKey: string, log: (info: unknown) => void)
       });
     } catch (err) {
       if (signal?.aborted) throw err;
-      log({ err });
+      // Never log the error itself: a bad key makes fetch quote the whole header in its message.
+      log({ errorName: (err as Error)?.name ?? 'unknown' });
       throw new AssistantServiceError('The AI service took too long or could not be reached. Please try again.');
     }
     if (!res.ok) {
