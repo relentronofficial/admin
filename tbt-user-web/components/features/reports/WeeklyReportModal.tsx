@@ -5,9 +5,12 @@ import { FileText, Loader2, Send, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import toast from "react-hot-toast";
 import { useCourses, useMyEnrollments } from "@/lib/hooks/useCourses";
-import { useSubmitWeeklyReport } from "@/lib/hooks/useCourseReports";
+import { useSubmitWeeklyReport, useWeeklyForm } from "@/lib/hooks/useCourseReports";
+import type { WeeklyAnswer } from "@/lib/api/services/courseReports.service";
+import { QuestionField } from "./QuestionField";
 
-/** The member's Weekly Report form (one report a week covers every course). Used from
+/** The member's Weekly Report form (one report a week covers every course): the admin's
+ *  questions for this batch week, or free text when there are none. Used from
  *  Messages, the Friday/Saturday reminder popup and the locked-video screen. */
 export function WeeklyReportModal({
   onClose,
@@ -28,6 +31,7 @@ export function WeeklyReportModal({
   const { data: catalog, isLoading: catalogLoading, isError: catalogError, refetch } = useCourses({ limit: 200 });
   const { data: enrollments, isLoading: enrollmentsLoading } = useMyEnrollments();
   const submit = useSubmitWeeklyReport();
+  const { data: form, isPending: formLoading, isLoadingError: formError, refetch: refetchForm } = useWeeklyForm();
   const loadingCourses = catalogLoading || enrollmentsLoading;
 
   const courses = useMemo(() => {
@@ -62,16 +66,35 @@ export function WeeklyReportModal({
     else if (courses.length === 1) setCourseId(courses[0].id);
   }, [courses, courseId, preselectId]);
 
-  const canSubmit = !!courseId && feedback.trim().length >= 1;
+  // The member's edits over what they submitted earlier this week.
+  const [edits, setEdits] = useState<Record<string, WeeklyAnswer>>({});
+  const answers = { ...form?.answers, ...edits };
+  const isBlank = (v: WeeklyAnswer | undefined) => v === undefined || (typeof v === "number" ? false : Array.isArray(v) ? v.length === 0 : !v.trim());
+  const answered = !!form
+    && form.questions.every((q) => !q.required || !isBlank(answers[q.id]))
+    && form.questions.some((q) => !isBlank(answers[q.id]));
+
+  const canSubmit = !!courseId && !formLoading && !formError && (form ? answered : feedback.trim().length >= 1);
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
     try {
-      await submit.mutateAsync({ courseId, feedback: feedback.trim(), remarks: remarks.trim() || undefined });
+      await submit.mutateAsync(
+        form
+          ? {
+              courseId,
+              week: form.week,
+              version: form.version,
+              answers: Object.fromEntries(form.questions.filter((q) => !isBlank(answers[q.id])).map((q) => [q.id, answers[q.id]])),
+            }
+          : { courseId, feedback: feedback.trim(), remarks: remarks.trim() || undefined },
+      );
       toast.success("Weekly report submitted!");
       onClose();
-    } catch {
-      toast.error("Failed to submit report. Please try again.");
+    } catch (err) {
+      // The week may have moved on, or an admin changed the questions while the form was open.
+      void refetchForm();
+      toast.error((err as Error)?.message || "Failed to submit report. Please try again.");
     }
   };
 
@@ -97,7 +120,7 @@ export function WeeklyReportModal({
           <div className="flex items-center gap-2">
             <FileText size={16} style={{ color: "var(--color-accent)" }} />
             <p id="weekly-report-title" className="font-semibold text-sm text-foreground">
-              Weekly Report
+              Weekly Report{form ? ` · Week ${form.week} of ${form.totalWeeks}` : ""}
             </p>
           </div>
           <button onClick={onClose} disabled={submit.isPending} aria-label="Close" className="text-muted-foreground hover:text-foreground">
@@ -142,6 +165,28 @@ export function WeeklyReportModal({
             )}
           </div>
 
+          {formLoading ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 size={14} className="animate-spin" /> Loading questions…</p>
+          ) : formError ? (
+            <p className="text-sm text-muted-foreground" role="alert">
+              Couldn&apos;t load this week&apos;s questions. <button type="button" onClick={() => refetchForm()} className="underline">Try again</button>
+            </p>
+          ) : form ? (
+            <>
+              {form.submitted && <p className="text-xs text-muted-foreground">You already submitted this week. You can change your answers.</p>}
+              {form.questions.map((q) => (
+                <QuestionField
+                  key={q.id}
+                  q={q}
+                  value={answers[q.id]}
+                  disabled={submit.isPending}
+                  style={fieldStyle}
+                  onChange={(v) => setEdits((e) => ({ ...e, [q.id]: v }))}
+                />
+              ))}
+            </>
+          ) : (
+          <>
           <div>
             <label className="block text-xs font-semibold text-muted-foreground mb-1.5">
               Report <span style={{ color: "var(--color-accent)" }}>*</span>
@@ -174,6 +219,8 @@ export function WeeklyReportModal({
               style={fieldStyle}
             />
           </div>
+          </>
+          )}
         </div>
 
         <div className="flex gap-2 pt-1">

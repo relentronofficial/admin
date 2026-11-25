@@ -38,6 +38,34 @@ export interface SubmitFeedbackBody {
   remarks?: string;
 }
 
+export type WeeklyAnswer = string | number | string[];
+
+export interface WeeklyQuestion {
+  id: string;
+  question: string;
+  help: string;
+  type: "short_text" | "long_text" | "number" | "rating" | "yes_no" | "single_choice" | "multi_choice" | "date";
+  required: boolean;
+  options: string[];
+}
+
+/** This batch week's admin-written questions. `null` = free-text report. */
+export interface WeeklyForm {
+  week: number;
+  totalWeeks: number;
+  version: number;
+  questions: WeeklyQuestion[];
+  submitted: boolean;
+  answers: Record<string, WeeklyAnswer>;
+}
+
+export interface SubmitWeeklyAnswersBody {
+  courseId: string;
+  week: number;
+  version: number;
+  answers: Record<string, WeeklyAnswer>;
+}
+
 export interface CourseEpisodeFeedback {
   id: string;
   memberId: string;
@@ -72,6 +100,15 @@ export interface WeeklyReportStatus {
 export const courseReportsService = {
   getWeeklyStatus: () =>
     apiClient.get<never, ApiResponse<WeeklyReportStatus>>("/api/course-reports/weekly-status"),
+
+  getWeeklyForm: () =>
+    apiClient.get<never, ApiResponse<WeeklyForm | null>>("/api/course-reports/weekly-form"),
+
+  submitWeeklyAnswers: (body: SubmitWeeklyAnswersBody) =>
+    apiClient.post<never, ApiResponse<{ status: string; feedbackId: string }>>(
+      "/api/course-reports/weekly-answers",
+      body,
+    ),
 
   getCurrentReport: (courseId: string) =>
     apiClient.get<never, ApiResponse<CourseWeeklyReport>>("/api/course-reports/current", {

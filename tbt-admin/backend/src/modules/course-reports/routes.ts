@@ -20,6 +20,13 @@ import {
   submitEpisodeFeedbackHandler,
   getMyEpisodeFeedbackHandler,
 } from './controller.js';
+import {
+  adminGetQuestionsHandler,
+  adminListAnswersHandler,
+  adminSaveQuestionsHandler,
+  getWeeklyFormHandler,
+  submitWeeklyAnswersHandler,
+} from './questions.controller.js';
 
 /**
  * Weekly Course Report + Feedback routes at `/api/course-reports`.
@@ -46,6 +53,10 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
       adminScope.get('/episode-feedback', adminListEpisodeFeedbackHandler);
       adminScope.get('/episode-feedback/:id', adminGetEpisodeFeedbackHandler);
       adminScope.patch('/episode-feedback/:id/status', adminUpdateEpisodeFeedbackStatusHandler);
+
+      adminScope.get('/questions', adminGetQuestionsHandler);
+      adminScope.put('/questions/:week', adminSaveQuestionsHandler);
+      adminScope.get('/answers', adminListAnswersHandler);
     },
     { prefix: '/admin' },
   );
@@ -59,6 +70,8 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
     userScope.post('/feedback', submitFeedbackHandler);
     userScope.get('/feedback/mine', getMyFeedbackHistoryHandler);
     userScope.get('/weekly-status', getWeeklyReportStatusHandler);
+    userScope.get('/weekly-form', getWeeklyFormHandler);
+    userScope.post('/weekly-answers', submitWeeklyAnswersHandler);
 
     userScope.post('/episode-feedback', submitEpisodeFeedbackHandler);
     userScope.get('/episode-feedback/mine', getMyEpisodeFeedbackHandler);

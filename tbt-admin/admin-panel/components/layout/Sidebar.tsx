@@ -101,6 +101,7 @@ const navGroups: NavGroup[] = [
       { name: "Onboarding", href: "/onboarding", icon: UserCheck },
       { name: "Batches", href: "/batches", icon: GraduationCap },
       { name: "Weekly Graph", href: "/weekly-graph", icon: BarChart3 },
+      { name: "Weekly Questions", href: "/weekly-questions", icon: ClipboardList },
       { name: "Tasks", href: "/tasks", icon: CheckSquare },
     ],
   },

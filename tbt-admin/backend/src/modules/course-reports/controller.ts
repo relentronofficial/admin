@@ -13,6 +13,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { deliverMemberCourseReport, deliverMemberEpisodeFeedbackToAdmin, deliverMemberFeedbackToAdmin } from '../../lib/courseReports.js';
 import { computeWeekNumberForDate } from '../../lib/courseReportLogic.js';
+import { loadCurrentForm } from './questions.controller.js';
 import { loadWeeklyReportStatus } from '../../lib/weeklyReportAccess.js';
 import {
   createOrSendReportSchema,
@@ -267,6 +268,11 @@ export async function getMyReportHistoryHandler(req: FastifyRequest, reply: Fast
 export async function submitFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
   const parsed = submitFeedbackSchema.safeParse(req.body);
   if (!parsed.success) return fail(reply, 400, 'invalid_input', parsed.error.message);
+
+  // A week with admin-written questions is answered through POST /weekly-answers.
+  if (await loadCurrentForm(req.server.prisma, req.memberId!)) {
+    return fail(reply, 409, 'questions_required', "Please answer this week's report questions.");
+  }
 
   // The weekly report can be about any published course the member sees in the
   // catalog, or any course they are enrolled in (even one later unpublished).

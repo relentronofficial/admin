@@ -10,7 +10,9 @@ import {
   useMyCourseReportHistory,
   useMyCurrentCourseReport,
   useSubmitCourseFeedback,
+  useWeeklyForm,
 } from "@/lib/hooks/useCourseReports";
+import { WeeklyReportModal } from "@/components/features/reports/WeeklyReportModal";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
@@ -48,6 +50,8 @@ export default function WeeklyCourseReportPage() {
   const { data: reportHistory = [] } = useMyCourseReportHistory(courseId);
   const { data: feedbackHistory = [] } = useMyCourseFeedbackHistory(courseId);
   const submitFeedback = useSubmitCourseFeedback(courseId);
+  const { data: form, isPending: formLoading, refetch: refetchForm } = useWeeklyForm();
+  const [answering, setAnswering] = useState(false);
 
   const currentWeekNumber = currentReport?.weekNumber;
   const feedbackAlreadySubmitted = useMemo(
@@ -165,6 +169,27 @@ export default function WeeklyCourseReportPage() {
       )}
 
       {/* Feedback form */}
+      {formLoading ? null : form ? (
+        <div className="mt-5">
+          <h2 className="text-sm font-bold text-foreground mb-2">Week {form.week} Report</h2>
+          <SectionCard>
+            <p className="text-sm text-muted-foreground mb-3">
+              {form.submitted ? "You submitted this week's report." : `${form.questions.length} question${form.questions.length === 1 ? "" : "s"} to answer this week.`}
+            </p>
+            <button
+              onClick={() => setAnswering(true)}
+              className="w-full flex items-center justify-center gap-2 h-10 rounded-lg text-sm font-semibold text-white"
+              style={{ background: "var(--color-accent)" }}
+            >
+              <Send size={14} />
+              {form.submitted ? "Change Answers" : "Answer Questions"}
+            </button>
+          </SectionCard>
+          {answering && (
+            <WeeklyReportModal defaultCourseId={courseId} onClose={() => { setAnswering(false); void refetchForm(); }} />
+          )}
+        </div>
+      ) : (
       <div className="mt-5">
         <h2 className="text-sm font-bold text-foreground mb-2">
           {feedbackAlreadySubmitted ? "Your Feedback This Week" : "Share This Week's Feedback"}
@@ -209,6 +234,7 @@ export default function WeeklyCourseReportPage() {
           </div>
         </SectionCard>
       </div>
+      )}
 
       {/* History */}
       {reportHistory.length > 1 && (

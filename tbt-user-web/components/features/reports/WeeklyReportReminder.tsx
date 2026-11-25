@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Clock } from "lucide-react";
 import { useMe } from "@/lib/hooks/useUser";
@@ -45,12 +45,15 @@ export function WeeklyReportReminder() {
   }, []);
 
   const [open, setOpen] = useState(false);
+  // The link's ?weeklyReport=1 stays in the URL for a moment after closing; don't reopen on it.
+  const forcedClosed = useRef(false);
+  useEffect(() => { if (!forced) forcedClosed.current = false; }, [forced]);
   const pastDeadline = !!status && now >= new Date(status.deadline).getTime();
   const slot = status ? `${istDay(now)}:${pastDeadline ? "late" : "early"}` : "";
 
   useEffect(() => {
     if (!status || open) return;
-    if (forced && status.required) { setOpen(true); return; }
+    if (forced && status.required && !forcedClosed.current) { setOpen(true); return; }
     if ((status.showReminder || status.locked) && readDismissed() !== slot) setOpen(true);
   }, [status, slot, forced, open]);
 
@@ -60,6 +63,7 @@ export function WeeklyReportReminder() {
     writeDismissed(slot);
     setOpen(false);
     if (forced) {
+      forcedClosed.current = true;
       const next = new URLSearchParams(params?.toString());
       next.delete("weeklyReport");
       router.replace(next.size ? `${pathname}?${next}` : pathname);

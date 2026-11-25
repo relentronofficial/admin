@@ -1624,6 +1624,29 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       `CREATE INDEX IF NOT EXISTS idx_admin_assistant_msg_created ON admin_assistant_messages(created_at)`
     ).catch(() => {});
 
+    // ── Weekly report questions (weeks 1–18) and answers. batch_id has no FK: answers outlive the batch.
+    for (const ddl of [
+      `CREATE TABLE IF NOT EXISTS weekly_report_forms (
+         week_number INT PRIMARY KEY CHECK (week_number BETWEEN 1 AND 18),
+         questions JSONB NOT NULL,
+         version INT NOT NULL DEFAULT 1,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
+      `CREATE TABLE IF NOT EXISTS weekly_report_answers (
+         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         member_id UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+         batch_id UUID NOT NULL,
+         week_number INT NOT NULL,
+         course_id UUID,
+         answers JSONB NOT NULL,
+         submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+         UNIQUE (member_id, batch_id, week_number)
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_weekly_report_answers_week ON weekly_report_answers(week_number, batch_id, submitted_at DESC)`,
+    ]) {
+      await prisma.$executeRawUnsafe(ddl).catch((err) => fastify.log.warn({ err }, 'weekly_report DDL failed'));
+    }
+
     // ── TBT Assistant for members (modules/help-bot). Off for everyone unless the
     // member is a tester or the audience is 'all' (admin → Member Assistant).
     for (const ddl of [

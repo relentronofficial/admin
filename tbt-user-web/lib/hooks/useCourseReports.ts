@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { isAxiosError } from "axios";
-import { courseReportsService, type SubmitEpisodeFeedbackBody, type SubmitFeedbackBody } from "@/lib/api/services/courseReports.service";
+import { courseReportsService, type SubmitEpisodeFeedbackBody, type SubmitFeedbackBody, type SubmitWeeklyAnswersBody } from "@/lib/api/services/courseReports.service";
 
 /** Current week's report for a course. Resolves to `null` (not an error)
  * when the week's report hasn't been generated yet — that's an expected
@@ -83,7 +83,8 @@ export function useSubmitEpisodeFeedback() {
 export function useSubmitWeeklyReport() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: SubmitFeedbackBody) => courseReportsService.submitFeedback(body),
+    mutationFn: (body: SubmitFeedbackBody | SubmitWeeklyAnswersBody) =>
+      "answers" in body ? courseReportsService.submitWeeklyAnswers(body) : courseReportsService.submitFeedback(body),
     onSuccess: (_res, vars) => {
       qc.invalidateQueries({ queryKey: ["course-reports", "feedback", vars.courseId] });
       // Unlocks course videos (the course detail carries the playable URLs) and the
@@ -92,6 +93,20 @@ export function useSubmitWeeklyReport() {
       qc.invalidateQueries({ queryKey: ["courses"] });
       qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] });
     },
+  });
+}
+
+/** This week's admin-written questions (`null` = free-text report). Read fresh each time the
+ *  form opens, and left alone while the member is answering. */
+export function useWeeklyForm() {
+  return useQuery({
+    queryKey: ["course-reports", "weekly-form"],
+    queryFn: async () => (await courseReportsService.getWeeklyForm()).data ?? null,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 
