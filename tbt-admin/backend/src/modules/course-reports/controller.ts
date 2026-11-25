@@ -131,7 +131,7 @@ export async function adminListFeedbackHandler(req: FastifyRequest, reply: Fasti
     req.server.prisma.courseWeeklyFeedback.findMany({
       where,
       include: { member: { select: memberSelect }, course: { select: courseSelect } },
-      orderBy: [{ weekNumber: 'desc' }, { submittedAt: 'desc' }],
+      orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
       skip: (p - 1) * l,
       take: l,
     }),
@@ -185,7 +185,7 @@ export async function adminListEpisodeFeedbackHandler(req: FastifyRequest, reply
     req.server.prisma.courseEpisodeFeedback.findMany({
       where,
       include: { member: { select: memberSelect }, course: { select: courseSelect }, episode: { select: episodeSelect } },
-      orderBy: { submittedAt: 'desc' },
+      orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
       skip: (p - 1) * l,
       take: l,
     }),

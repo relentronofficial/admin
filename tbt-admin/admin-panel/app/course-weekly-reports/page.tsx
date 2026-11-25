@@ -613,7 +613,7 @@ function FeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId
                     <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                     <td className="px-4 py-3"><StatusBadge status={row.whatsappStatus} /></td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p>
+                      <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p><p className="text-[#888] text-[11px]">{format(new Date(row.submittedAt), "hh:mm a")}</p>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
@@ -741,7 +741,7 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
                         <td className="px-4 py-3"><StatusBadge status={row.status} /></td>
                         <td className="px-4 py-3"><StatusBadge status={row.whatsappStatus} /></td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p>
+                          <p className="text-[#a0a0a0] text-xs">{format(new Date(row.submittedAt), "dd MMM yyyy")}</p><p className="text-[#888] text-[11px]">{format(new Date(row.submittedAt), "hh:mm a")}</p>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
