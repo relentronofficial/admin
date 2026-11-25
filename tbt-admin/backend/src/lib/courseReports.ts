@@ -6,6 +6,7 @@
 // the separate Batch Program report feature — same idempotency-by-unique-key
 // and "never lose the report on WhatsApp failure" guarantees.
 
+import { storedWeek } from './weeklyReportForm.js';
 import { sendWhatsappMessage } from './whatsapp.js';
 import { createAdminNotification } from './adminNotifications.js';
 import { env } from '../config/env.js';
@@ -255,7 +256,7 @@ export async function deliverMemberFeedbackToAdmin(
   prisma: any,
   memberId: string,
   courseId: string,
-  input: { feedback: string; remarks?: string | null },
+  input: { feedback: string; remarks?: string | null; batchWeek?: number },
   now: Date = new Date(),
 ): Promise<DeliverFeedbackResult> {
   const member = await prisma.member.findUnique({
@@ -273,11 +274,13 @@ export async function deliverMemberFeedbackToAdmin(
 
   // Weeks count from enrollment; a report about a course the member isn't enrolled
   // in (any published catalog course) counts from the day they joined.
-  const weekNumber = computeWeekNumberForDate(now, enrollment?.enrolledAt ?? member.createdAt);
+  // Answers to the admin's questions belong to the batch week instead.
+  const weekNumber = input.batchWeek ?? computeWeekNumberForDate(now, enrollment?.enrolledAt ?? member.createdAt);
+  const storedWeekNumber = input.batchWeek ? storedWeek(input.batchWeek) : weekNumber;
 
   const row = await prisma.courseWeeklyFeedback.upsert({
-    where: { memberId_courseId_weekNumber: { memberId, courseId, weekNumber } },
-    create: { memberId, courseId, weekNumber, feedback: input.feedback, remarks: input.remarks ?? null },
+    where: { memberId_courseId_weekNumber: { memberId, courseId, weekNumber: storedWeekNumber } },
+    create: { memberId, courseId, weekNumber: storedWeekNumber, feedback: input.feedback, remarks: input.remarks ?? null },
     // submittedAt moves on resubmit: the mandatory weekly-report gate counts the latest submit time.
     update: { feedback: input.feedback, remarks: input.remarks ?? null, submittedAt: now },
   });

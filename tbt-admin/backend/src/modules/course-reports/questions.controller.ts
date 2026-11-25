@@ -7,7 +7,7 @@ import {
   type StoredAnswer, type WeeklyQuestion,
 } from '../../lib/weeklyReportForm.js';
 
-const ok = (reply: FastifyReply, data: unknown, extra: object = {}) => reply.send({ success: true, data, error: null, ...extra });
+const ok = (reply: FastifyReply, data: unknown) => reply.send({ success: true, data, error: null });
 const fail = (reply: FastifyReply, status: number, code: string, message: string) =>
   reply.status(status).send({ success: false, data: null, error: { code, message } });
 
@@ -71,7 +71,7 @@ export async function submitWeeklyAnswersHandler(req: FastifyRequest, reply: Fas
      ON CONFLICT (member_id, batch_id, week_number)
      DO UPDATE SET course_id = EXCLUDED.course_id, answers = EXCLUDED.answers, submitted_at = NOW()`,
     memberId, form.batchId, week, courseId, JSON.stringify(answers));
-  const result = await deliverMemberFeedbackToAdmin(prisma, memberId, courseId, { feedback: answersAsText(week, answers) });
+  const result = await deliverMemberFeedbackToAdmin(prisma, memberId, courseId, { feedback: answersAsText(answers), batchWeek: week });
 
   const member = await prisma.member.findUnique({ where: { id: memberId }, select: { firstName: true } });
   req.server.io.to('admin').emit('admin:course_weekly_feedback', { feedbackId: result.feedbackId, memberName: member?.firstName, courseId });
@@ -113,23 +113,4 @@ export async function adminSaveQuestionsHandler(req: FastifyRequest, reply: Fast
     week, JSON.stringify(parsed.data.questions), parsed.data.version);
   if (!row) return fail(reply, 409, 'changed', 'Another admin changed this week. Reload the page to see their questions.');
   return ok(reply, { week, version: row.version, questions: parsed.data.questions });
-}
-
-// GET /admin/answers?week=&batchId=&page=
-export async function adminListAnswersHandler(req: FastifyRequest, reply: FastifyReply) {
-  const { week, batchId, page } = req.query as Record<string, string | undefined>;
-  const p = Math.min(10_000, Math.max(1, Math.floor(Number(page)) || 1));
-  const weekN = week && /^\d{1,2}$/.test(week) ? Number(week) : null;
-  const batch = batchId && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(batchId) ? batchId : null;
-  const prisma = req.server.prisma as any;
-  const where = `($1::int IS NULL OR a.week_number = $1::int) AND ($2::uuid IS NULL OR a.batch_id = $2::uuid)`;
-  const [rows, [{ total }]] = await Promise.all([
-    prisma.$queryRawUnsafe(
-      `SELECT a.id, a.week_number AS "weekNumber", a.answers, a.submitted_at AS "submittedAt", m.id AS "memberId",
-              TRIM(CONCAT(m.first_name, ' ', m.last_name)) AS "memberName", m.phone, b.name AS "batchName"
-       FROM weekly_report_answers a JOIN members m ON m.id = a.member_id LEFT JOIN batches b ON b.id = a.batch_id
-       WHERE ${where} ORDER BY a.submitted_at DESC, a.id LIMIT 25 OFFSET $3::int`, weekN, batch, (p - 1) * 25),
-    prisma.$queryRawUnsafe(`SELECT COUNT(*)::int AS total FROM weekly_report_answers a WHERE ${where}`, weekN, batch),
-  ]);
-  return ok(reply, rows, { meta: { total, page: p, limit: 25 } });
 }

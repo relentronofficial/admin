@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { WeeklyQuestionsTab } from "@/components/course-reports/WeeklyQuestionsTab";
 import {
   useListCourseWeeklyReports,
   useCreateOrSendCourseReport,
@@ -365,7 +366,26 @@ function DetailModal({
                 </>
               )}
 
-              {kind === "feedback" && (
+              {kind === "feedback" && row.answers?.length > 0 && (
+                <DetailField label={`Answers${row.batchName ? ` · ${row.batchName}` : ""}`}>
+                  <ol className="space-y-3 bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg p-3">
+                    {row.answers.map((a: any, i: number) => (
+                      <li key={a.id}>
+                        <p className="text-[#a0a0a0] break-words">{i + 1}. {a.question}</p>
+                        <p className="mt-0.5 text-sm text-[#f0f0f0] whitespace-pre-wrap break-words">
+                          {a.value === null ? <span className="text-[#888] italic">Not answered</span>
+                            : Array.isArray(a.value) ? a.value.join(", ")
+                            : a.type === "rating" ? `${a.value} / 10`
+                            : a.type === "number" ? Number(a.value).toLocaleString("en-IN")
+                            : a.value}
+                        </p>
+                      </li>
+                    ))}
+                  </ol>
+                </DetailField>
+              )}
+
+              {kind === "feedback" && !row.answers?.length && (
                 <DetailField label="Report">
                   <p className="whitespace-pre-wrap leading-relaxed bg-[#0f0f0f] border border-[#2a2a2a] rounded-lg p-3 break-words">
                     {row.feedback || <span className="text-[#606060] italic">Empty</span>}
@@ -538,6 +558,7 @@ function FeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId
   const [page, setPage] = useState(1);
   const [courseFilter, setCourseFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [weekFilter, setWeekFilter] = useState("");
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
   useEffect(() => { if (initialOpenId) setOpenId(initialOpenId); }, [initialOpenId]);
   const LIMIT = 25;
@@ -545,6 +566,7 @@ function FeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId
   const { data, isLoading } = useListCourseWeeklyFeedback({
     page,
     limit: LIMIT,
+    week: weekFilter ? Number(weekFilter) : undefined,
     courseId: courseFilter || undefined,
     status: statusFilter || undefined,
   });
@@ -555,6 +577,15 @@ function FeedbackTab({ courses, initialOpenId }: { courses: any[]; initialOpenId
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap gap-3">
+        <select
+          value={weekFilter}
+          aria-label="Week"
+          onChange={(e) => { setWeekFilter(e.target.value); setPage(1); }}
+          className="px-4 h-9 text-sm bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-[#a0a0a0] outline-none focus:border-[#dc2626] cursor-pointer"
+        >
+          <option value="">All weeks</option>
+          {Array.from({ length: 18 }, (_, i) => <option key={i} value={i + 1}>Week {i + 1}</option>)}
+        </select>
         <div className="relative">
           <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888]" />
           <select
@@ -809,7 +840,8 @@ function EpisodeFeedbackTab({ courses, initialOpenId }: { courses: any[]; initia
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CourseWeeklyReportsPage() {
-  const [tab, setTab] = useState<"reports" | "feedback" | "video-feedback">("reports");
+  const [tab, setTab] = useState<"reports" | "questions" | "feedback" | "video-feedback">("reports");
+  const [questionsDirty, setQuestionsDirty] = useState(false);
   const [initialOpenFeedbackId, setInitialOpenFeedbackId] = useState<string | null>(null);
   const [initialOpenWeeklyId, setInitialOpenWeeklyId] = useState<string | null>(null);
 
@@ -818,7 +850,7 @@ export default function CourseWeeklyReportsPage() {
     const params = new URLSearchParams(window.location.search);
     const t = params.get("tab");
     const openId = params.get("open");
-    if (t === "video-feedback" || t === "feedback" || t === "reports") setTab(t);
+    if (t === "questions" || t === "video-feedback" || t === "feedback" || t === "reports") setTab(t);
     if (openId) {
       if (t === "feedback") setInitialOpenWeeklyId(openId);
       else setInitialOpenFeedbackId(openId);
@@ -841,25 +873,31 @@ export default function CourseWeeklyReportsPage() {
           </p>
         </div>
 
-        <CreateSendPanel />
+        {tab !== "questions" && <CreateSendPanel />}
 
-        <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
-          {(["reports", "feedback", "video-feedback"] as const).map((t) => (
+        <div className="flex flex-wrap items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg p-1 w-fit">
+          {(["reports", "questions", "feedback", "video-feedback"] as const).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                if (t === tab || (questionsDirty && !window.confirm("The questions have unsaved changes. Leave without saving?"))) return;
+                setQuestionsDirty(false);
+                setTab(t);
+              }}
               className={cn(
                 "px-3.5 py-1.5 rounded-md text-[12px] font-bold uppercase tracking-wider transition-all",
                 tab === t ? "bg-[#dc2626] text-white shadow-sm" : "text-[#505050] hover:text-[#a0a0a0] hover:bg-[#181818]",
               )}
             >
-              {t === "reports" ? "Reports" : t === "feedback" ? "Weekly Feedback" : "Video Feedback"}
+              {t === "reports" ? "Reports" : t === "questions" ? "Weekly Questions" : t === "feedback" ? "Weekly Feedback" : "Video Feedback"}
             </button>
           ))}
         </div>
 
         {tab === "reports" ? (
           <ReportsTab courses={courses} />
+        ) : tab === "questions" ? (
+          <WeeklyQuestionsTab dirty={questionsDirty} setDirty={setQuestionsDirty} />
         ) : tab === "feedback" ? (
           <FeedbackTab courses={courses} initialOpenId={initialOpenWeeklyId} />
         ) : (

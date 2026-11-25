@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { answersAsText, batchWeek, prefill, readAnswer, readAnswers, saveQuestionsSchema, type WeeklyQuestion } from './weeklyReportForm.js';
+import { answersAsText, batchWeek, batchWeekOf, prefill, readAnswer, readAnswers, saveQuestionsSchema, storedWeek, withShownWeek, type WeeklyQuestion } from './weeklyReportForm.js';
 
 const q = (over: Partial<WeeklyQuestion> = {}): WeeklyQuestion => ({ id: 'a', question: 'Q', help: '', type: 'short_text', required: true, options: [], ...over });
 
@@ -15,6 +15,16 @@ describe('batchWeek', () => {
   });
   it('uses the IST start date whatever the time of day', () => {
     expect(batchWeek(new Date('2026-11-01T18:30:00Z'), new Date('2026-11-08T18:29:00Z'))).toBe(1);
+  });
+});
+
+describe('stored week', () => {
+  it('keeps question reports apart from enrollment weeks', () => {
+    expect(batchWeekOf(storedWeek(1))).toBe(1);
+    expect(batchWeekOf(storedWeek(18))).toBe(18);
+    expect([0, 18, 100, 119].map(batchWeekOf)).toEqual([null, null, null, null]);
+    expect(withShownWeek({ weekNumber: storedWeek(4) }).weekNumber).toBe(4);
+    expect(withShownWeek({ weekNumber: 30 }).weekNumber).toBe(30);
   });
 });
 
@@ -41,7 +51,7 @@ describe('answers', () => {
   it('refills only what still fits, and renders text', () => {
     const old = readAnswers([q({ type: 'single_choice', options: ['A', 'B'] }), q({ id: 'b' })], { a: 'A', b: 'hi' });
     expect(prefill([q({ type: 'single_choice', options: ['B', 'C'] }), q({ id: 'b' })], old)).toEqual({ b: 'hi' });
-    expect(answersAsText(3, old)).toBe('Batch week 3\n\nQ\nA\n\nQ\nhi');
+    expect(answersAsText(old)).toBe('Q\nA\n\nQ\nhi');
   });
 });
 

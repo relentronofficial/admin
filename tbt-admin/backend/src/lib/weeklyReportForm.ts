@@ -38,6 +38,19 @@ export const submitAnswersSchema = z.object({
   answers: z.record(z.string(), z.unknown()),
 });
 
+// course_weekly_feedback is unique on (member, course, week_number) and older free-text rows
+// count weeks from enrollment. Question reports are stored as 100 + batch week, so the two
+// kinds never overwrite each other.
+const BATCH_WEEK_BASE = 100;
+export const storedWeek = (batchWeekNumber: number) => BATCH_WEEK_BASE + batchWeekNumber;
+/** The batch week of a stored week number, or null for a free-text report. */
+export function batchWeekOf(stored: number): number | null {
+  const w = stored - BATCH_WEEK_BASE;
+  return w >= 1 && w <= TOTAL_WEEKS ? w : null;
+}
+/** A feedback row as shown: the real week number. */
+export const withShownWeek = <T extends { weekNumber: number }>(row: T): T => ({ ...row, weekNumber: batchWeekOf(row.weekNumber) ?? row.weekNumber });
+
 const istDay = (d: Date) => Math.floor((d.getTime() + IST_OFFSET_MS) / 86_400_000);
 
 /** Batch week on `now`: 1 = the 7 days from the start date. ≤ 0 before it starts, > 18 once finished. */
@@ -105,9 +118,7 @@ export function prefill(questions: WeeklyQuestion[], stored: StoredAnswer[] | nu
 }
 
 /** Plain-text report, for the existing Feedback tab and WhatsApp message. */
-export function answersAsText(week: number, answers: StoredAnswer[]): string {
-  return [
-    `Batch week ${week}`,
-    ...answers.filter((a) => a.value !== null).map((a) => `${a.question}\n${Array.isArray(a.value) ? a.value.join(', ') : a.value}`),
-  ].join('\n\n');
+export function answersAsText(answers: StoredAnswer[]): string {
+  return answers.filter((a) => a.value !== null)
+    .map((a) => `${a.question}\n${Array.isArray(a.value) ? a.value.join(', ') : a.value}`).join('\n\n');
 }

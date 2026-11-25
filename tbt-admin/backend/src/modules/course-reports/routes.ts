@@ -22,7 +22,6 @@ import {
 } from './controller.js';
 import {
   adminGetQuestionsHandler,
-  adminListAnswersHandler,
   adminSaveQuestionsHandler,
   getWeeklyFormHandler,
   submitWeeklyAnswersHandler,
@@ -56,7 +55,6 @@ export async function courseReportRoutes(fastify: FastifyInstance) {
 
       adminScope.get('/questions', adminGetQuestionsHandler);
       adminScope.put('/questions/:week', adminSaveQuestionsHandler);
-      adminScope.get('/answers', adminListAnswersHandler);
     },
     { prefix: '/admin' },
   );

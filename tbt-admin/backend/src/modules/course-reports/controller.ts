@@ -14,6 +14,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { deliverMemberCourseReport, deliverMemberEpisodeFeedbackToAdmin, deliverMemberFeedbackToAdmin } from '../../lib/courseReports.js';
 import { computeWeekNumberForDate } from '../../lib/courseReportLogic.js';
 import { loadCurrentForm } from './questions.controller.js';
+import { batchWeekOf, storedWeek, withShownWeek } from '../../lib/weeklyReportForm.js';
 import { loadWeeklyReportStatus } from '../../lib/weeklyReportAccess.js';
 import {
   createOrSendReportSchema,
@@ -127,6 +128,8 @@ export async function adminListFeedbackHandler(req: FastifyRequest, reply: Fasti
   if (week) where.weekNumber = Number(week);
   if (status) where.status = status;
 
+  if (week && Number.isInteger(Number(week))) where.weekNumber = { in: [Number(week), storedWeek(Number(week))] };
+
   const [rows, total] = await Promise.all([
     req.server.prisma.courseWeeklyFeedback.findMany({
       where,
@@ -137,7 +140,7 @@ export async function adminListFeedbackHandler(req: FastifyRequest, reply: Fasti
     }),
     req.server.prisma.courseWeeklyFeedback.count({ where }),
   ]);
-  return reply.send({ success: true, data: rows, meta: { total, page: p, limit: l }, error: null });
+  return reply.send({ success: true, data: rows.map(withShownWeek), meta: { total, page: p, limit: l }, error: null });
 }
 
 export async function adminGetFeedbackHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -147,7 +150,14 @@ export async function adminGetFeedbackHandler(req: FastifyRequest, reply: Fastif
     include: { member: { select: memberSelect }, course: { select: courseSelect } },
   });
   if (!row) return fail(reply, 404, 'not_found', 'Feedback not found.');
-  return ok(reply, row);
+  const batchWeek = batchWeekOf(row.weekNumber);
+  if (batchWeek === null) return ok(reply, row);
+  // Answers to the admin's questions, one by one. No match (course changed on resubmit): the text is shown.
+  const [mine] = await (req.server.prisma as any).$queryRawUnsafe(
+    `SELECT a.answers, b.name FROM weekly_report_answers a LEFT JOIN batches b ON b.id = a.batch_id
+     WHERE a.member_id = $1::uuid AND a.course_id = $2::uuid AND a.week_number = $3::int
+     ORDER BY a.submitted_at DESC LIMIT 1`, row.memberId, row.courseId, batchWeek);
+  return ok(reply, { ...withShownWeek(row), answers: mine?.answers ?? null, batchName: mine?.name ?? null });
 }
 
 export async function adminUpdateFeedbackStatusHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -312,9 +322,9 @@ export async function getMyFeedbackHistoryHandler(req: FastifyRequest, reply: Fa
   const rows = await req.server.prisma.courseWeeklyFeedback.findMany({
     where: { memberId: req.memberId!, courseId },
     include: { course: { select: courseSelect } },
-    orderBy: { weekNumber: 'desc' },
+    orderBy: { submittedAt: 'desc' },
   });
-  return ok(reply, rows);
+  return ok(reply, rows.map(withShownWeek));
 }
 
 // ────────────────────────────────────────────────────────────────
