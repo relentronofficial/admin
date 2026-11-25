@@ -10,6 +10,7 @@ import { Card, EmptyState, ErrorState, FilterTabs, LoadingRow, Pill, WorkspaceHe
 
 const GROUPS = [
   { key: "all", label: "All" },
+  { key: "messages", label: "Messages" },
   { key: "tasks", label: "Tasks" },
   { key: "learning", label: "Learning" },
   { key: "reports", label: "Reports & feedback" },
@@ -20,6 +21,8 @@ const GROUPS = [
 ];
 
 const ACTION: Record<string, string> = {
+  direct_message: "sent a direct message",
+  group_message: "messaged in group",
   task_submitted: "submitted a task",
   day_submitted: "submitted the daily checklist",
   assignment_submitted: "submitted an assignment",
@@ -44,7 +47,9 @@ const ACTION: Record<string, string> = {
 };
 
 const hrefFor = (a: MemberActivityItem) =>
-  a.kind === "ticket_raised" || a.kind === "ticket_reply" ? `/support?tab=tickets&id=${a.ref}`
+  a.kind === "direct_message" ? (a.ref ? `/messages?conversation=${a.ref}` : "/messages")
+    : a.kind === "group_message" ? `/groups?open=${a.ref}`
+    : a.kind === "ticket_raised" || a.kind === "ticket_reply" ? `/support?tab=tickets&id=${a.ref}`
     : a.kind === "weekly_report" ? `/course-weekly-reports?tab=feedback&open=${a.ref}`
       : `/members/${a.memberId}`;
 
@@ -120,7 +125,7 @@ export default function MemberActivityPage() {
                 <p className="px-4 pt-4 pb-2 text-[11px] font-bold uppercase tracking-widest text-[#606060] font-rajdhani">{d.day}</p>
                 <ul>
                   {d.items.map((a) => (
-                    <li key={`${a.kind}-${a.ref}-${a.at}`} className="border-b border-[#222] last:border-0">
+                    <li key={`${a.kind}-${a.ref}-${a.memberId}-${a.at}`} className="border-b border-[#222] last:border-0">
                       <Link href={hrefFor(a)} className="flex items-start gap-4 px-4 py-3 hover:bg-[#1f1f1f]">
                         <span className="w-16 flex-shrink-0 text-[12px] tabular-nums text-[#a0a0a0] mt-px" title={ago(a.at)}>{timeOf(a.at)}</span>
                         <div className="min-w-0 flex-1">

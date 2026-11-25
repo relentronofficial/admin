@@ -32,8 +32,8 @@ export const useMemberActivityUnread = () =>
   useQuery({
     queryKey: UNREAD_KEY,
     queryFn: async () => ((await apiClient.get(`${BASE}/unread`)) as any).data.count as number,
-    refetchInterval: 60_000,
-    staleTime: 30_000,
+    refetchInterval: 30_000,
+    staleTime: 15_000,
   });
 
 export function useMarkMemberActivitySeen() {

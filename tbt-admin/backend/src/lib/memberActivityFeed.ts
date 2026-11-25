@@ -2,7 +2,7 @@
 // straight from the tables each action is already saved in (so nothing can be missed and
 // earlier activity is included). Pure SQL building — see memberActivityFeed.test.ts.
 
-export const ACTIVITY_GROUPS = ['tasks', 'learning', 'reports', 'support', 'payments', 'community', 'notices'] as const;
+export const ACTIVITY_GROUPS = ['messages', 'tasks', 'learning', 'reports', 'support', 'payments', 'community', 'notices'] as const;
 export type ActivityGroup = (typeof ACTIVITY_GROUPS)[number];
 
 /** Rows per page. */
@@ -19,7 +19,22 @@ interface Source {
   where?: string;
 }
 
+/** Message text, or what was sent when it is only a photo, voice note, … */
+const messageText = (m: string) =>
+  `CASE WHEN ${m}.deleted_for_everyone THEN 'Message deleted' ELSE COALESCE(NULLIF(${m}.body, ''), '[' || ${m}.media_type || ']') END`;
+
 const SOURCES: Source[] = [
+  {
+    // The member's chat with the TBT team; senders are only ever that member or an admin.
+    kind: 'direct_message', group: 'messages', member: 'd.member_id', at: 'd.created_at',
+    select: `COALESCE(d.conversation_id::text, ''), COALESCE(v.subject, 'Direct message'), ${messageText('d')}`,
+    from: 'direct_messages d LEFT JOIN conversations v ON v.id = d.conversation_id', where: `d.sender_type = 'member'`,
+  },
+  {
+    kind: 'group_message', group: 'messages', member: 'm.sender_member_id', at: 'm.created_at',
+    select: `g.id::text, g.name, ${messageText('m')}`,
+    from: 'chat_group_messages m JOIN chat_groups g ON g.id = m.group_id', where: 'NOT m.is_system AND NOT g.is_deleted',
+  },
   {
     kind: 'task_submitted', group: 'tasks', member: 's.member_id',
     // Reviewing a submission also touches updated_at; only the member's own (re)submission counts.

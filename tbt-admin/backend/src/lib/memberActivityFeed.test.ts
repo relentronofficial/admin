@@ -19,9 +19,16 @@ describe('member activity feed', () => {
     expect(feedSql('tasks')).not.toContain("'ticket_raised'");
   });
 
+  it('messages: only those the member sent', () => {
+    const sql = feedSql('messages');
+    expect(sql).toContain("d.sender_type = 'member'");
+    expect(sql).toContain('m.sender_member_id IN (SELECT id FROM mine)');
+  });
+
   it('includes every kind, and counts everything but sent notifications as new', () => {
     for (const k of ACTIVITY_KINDS) expect(all).toContain(`'${k}'`);
     expect(isActionKind('task_submitted')).toBe(true);
+    expect(isActionKind('direct_message') && isActionKind('group_message')).toBe(true);
     expect(isActionKind('notification_sent')).toBe(false);
     expect(unreadSql()).not.toContain('FROM notifications');
   });

@@ -1647,6 +1647,9 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       await prisma.$executeRawUnsafe(ddl).catch((err) => fastify.log.warn({ err }, 'weekly_report DDL failed'));
     }
 
+    await prisma.$executeRawUnsafe(
+      `CREATE INDEX IF NOT EXISTS idx_chat_group_messages_sender ON chat_group_messages(sender_member_id, created_at DESC)`,
+    ).catch((err) => fastify.log.warn({ err }, 'idx_chat_group_messages_sender DDL failed'));
     // My Workspace → Member Activity: when each admin last opened the log.
     await prisma.$executeRawUnsafe(
       `CREATE TABLE IF NOT EXISTS admin_activity_seen (

@@ -2,7 +2,7 @@
 
 // Admin group-chat management (WhatsApp-inspired).
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { CalendarClock, Loader2, Megaphone, MessageSquare, Pencil, Plus, Search, Trash2, Users, X } from "lucide-react";
 
@@ -37,6 +37,15 @@ export default function AdminGroupsPage() {
   const [messagesGroup, setMessagesGroup] = useState<AdminChatGroup | null>(null);
   const [scheduleGroup, setScheduleGroup] = useState<AdminChatGroup | null>(null);
   const deleteGroup = useAdminDeleteGroup();
+
+  // ?open=<groupId> (My Workspace → Member Activity) opens that group's chat once.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("open");
+    const group = id ? groups.find((g) => g.id === id) : undefined;
+    if (!group) return;
+    setMessagesGroup(group);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [groups]);
 
   return (
     <DashboardLayout>
