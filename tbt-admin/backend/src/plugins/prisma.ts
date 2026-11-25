@@ -1647,6 +1647,14 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
       await prisma.$executeRawUnsafe(ddl).catch((err) => fastify.log.warn({ err }, 'weekly_report DDL failed'));
     }
 
+    // My Workspace → Member Activity: when each admin last opened the log.
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE IF NOT EXISTS admin_activity_seen (
+         admin_id UUID PRIMARY KEY REFERENCES admins(id) ON DELETE CASCADE,
+         seen_at TIMESTAMPTZ NOT NULL
+       )`,
+    ).catch((err) => fastify.log.warn({ err }, 'admin_activity_seen DDL failed'));
+
     // ── TBT Assistant for members (modules/help-bot). Off for everyone unless the
     // member is a tester or the audience is 'all' (admin → Member Assistant).
     for (const ddl of [

@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import toast from "react-hot-toast";
 import {
+  Activity,
   LineChart,
   LayoutDashboard,
   Users,
@@ -61,12 +63,13 @@ import {
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/hooks/useAdmin";
 import { useMyWorkspaceSummary } from "@/lib/hooks/useTbt";
+import { useMemberActivityUnread } from "@/lib/hooks/useMemberActivity";
 
 // `exact` items are active only on their own path (an overview whose children
 // have their own items). `badge` names a My Workspace summary count shown
 // beside the item.
 type NavItem = { name: string; href: string; icon: any; exact?: boolean; badge?: WorkspaceBadge };
-type WorkspaceBadge = "pending" | "membersTotal" | "ticketsOpen" | "callsToday" | "team";
+type WorkspaceBadge = "pending" | "membersTotal" | "ticketsOpen" | "callsToday" | "team" | "activity";
 // `collapsible` groups render as a dropdown: the label toggles the items open
 // and closed. Groups without it keep the plain label + always-visible items.
 // `basePath` marks pages that belong to the group without a menu item of their
@@ -82,6 +85,7 @@ const myWorkspaceGroup: NavGroup = {
   items: [
     { name: "Overview", href: "/my-workspace", icon: Briefcase, exact: true, badge: "pending" },
     { name: "My Members", href: "/my-workspace/members", icon: Users, badge: "membersTotal" },
+    { name: "Member Activity", href: "/my-workspace/activity", icon: Activity, badge: "activity" },
     { name: "My Tickets", href: "/my-workspace/tickets", icon: LifeBuoy, badge: "ticketsOpen" },
     { name: "My Calls", href: "/my-workspace/calls", icon: CalendarClock, badge: "callsToday" },
     { name: "My Team", href: "/my-workspace/team", icon: Network, badge: "team" },
@@ -230,6 +234,9 @@ function workspaceBadge(summary: any, badge: WorkspaceBadge | undefined): number
   return typeof n === "number" && n > 0 ? n : null;
 }
 
+// Last count a pop-up was shown for. Module scope: the sidebar remounts on every page.
+let lastActivityCount: number | null = null;
+
 // Open dropdowns are remembered per browser. Every page renders its own
 // DashboardLayout, so the sidebar remounts on navigation and would otherwise
 // forget which groups the admin had opened.
@@ -365,6 +372,13 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
 
   const { data: me } = useMe();
   const { data: workspace } = useMyWorkspaceSummary();
+  const { data: newActivity } = useMemberActivityUnread();
+  useEffect(() => {
+    if (newActivity === undefined) return;
+    const added = lastActivityCount === null ? 0 : newActivity - lastActivityCount;
+    lastActivityCount = newActivity;
+    if (added > 0) toast(`${added} new member ${added === 1 ? "activity" : "activities"} — see My Workspace → Member Activity`, { icon: "🔔", id: "member-activity" });
+  }, [newActivity]);
   const displayName = me?.fullName || "Admin";
   const initial = displayName.charAt(0).toUpperCase();
   const roleLabel = me?.role
@@ -438,7 +452,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                     if (item.badge === "team" && !workspaceBadge(workspace, "team") && !isItemActive(pathname, item.href)) return null;
                     const Icon = item.icon;
                     const isActive = isItemActive(pathname, item.href, item.exact);
-                    const count = item.badge === "team" ? null : workspaceBadge(workspace, item.badge);
+                    const count = item.badge === "team" ? null : item.badge === "activity" ? newActivity || null : workspaceBadge(workspace, item.badge);
                     return (
                       <Link
                         key={item.name}
@@ -462,7 +476,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
                           <span
                             className={cn(
                               "ml-auto min-w-[18px] h-[18px] px-1.5 rounded-full text-[10px] font-bold leading-[18px] text-center",
-                              item.badge === "pending" ? "bg-[#dc2626] text-white" : "bg-[#262626] text-[#c0c0c0]"
+                              item.badge === "pending" || item.badge === "activity" ? "bg-[#dc2626] text-white" : "bg-[#262626] text-[#c0c0c0]"
                             )}
                             aria-label={`${count}`}
                           >

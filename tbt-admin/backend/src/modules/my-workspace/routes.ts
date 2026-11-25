@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { activityHandler, activitySeenHandler, activityUnreadHandler } from './activity.controller.js';
 import { callsHandler, membersHandler, summaryHandler, teamHandler, ticketsHandler } from './controller.js';
 
 /**
@@ -13,4 +14,7 @@ export async function myWorkspaceRoutes(fastify: FastifyInstance) {
   fastify.get('/tickets', ticketsHandler as any);
   fastify.get('/calls', callsHandler as any);
   fastify.get('/team', teamHandler as any);
+  fastify.get('/activity', activityHandler);
+  fastify.get('/activity/unread', activityUnreadHandler);
+  fastify.post('/activity/seen', activitySeenHandler);
 }
