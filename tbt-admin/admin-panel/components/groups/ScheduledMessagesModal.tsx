@@ -218,14 +218,8 @@ export function ScheduledMessagesModal({ group, onClose }: Props) {
             pendingRelative={items.filter((i) => i.scheduleType === "relative" && (i.status === "active" || i.status === "paused")).length}
           />
 
-          {editing !== null && (
-            <ScheduleForm
-              key={editing === "new" ? "new" : editing.id}
-              startDate={start?.startDate ?? null}
-              groupId={group.id}
-              initial={editing === "new" ? null : editing}
-              onDone={() => setEditing(null)}
-            />
+          {editing === "new" && (
+            <ScheduleForm startDate={start?.startDate ?? null} groupId={group.id} initial={null} onDone={() => setEditing(null)} />
           )}
 
           {isLoading ? (
@@ -249,7 +243,16 @@ export function ScheduledMessagesModal({ group, onClose }: Props) {
               </p>
             </div>
           ) : (
-            items.map((s) => (
+            items.map((s) => editing !== null && editing !== "new" && editing.id === s.id ? (
+              // Edited where it is in the list.
+              <ScheduleForm
+                key={s.id}
+                startDate={start?.startDate ?? null}
+                groupId={group.id}
+                initial={editing}
+                onDone={() => setEditing(null)}
+              />
+            ) : (
               <div key={s.id} className="rounded-lg border border-[#2a2a2a] bg-[#181818] p-3">
                 <div className="flex items-start gap-3">
                   <div className="mt-0.5 text-[#a0a0a0]">

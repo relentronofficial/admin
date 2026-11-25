@@ -234,8 +234,12 @@ export async function adminListScheduledHandler(
      FROM chat_group_scheduled_messages s
      LEFT JOIN admins a ON a.id = s.created_by_admin_id
      WHERE s.group_id = $1::uuid
-     ORDER BY (s.status = 'active') DESC, (s.status = 'paused') DESC,
-              s.next_run_at ASC NULLS LAST, s.created_at DESC`,
+     -- Upcoming first, soonest on top; then finished ones, latest on top. Never by creation
+     -- time: an edited message has to move to its new time.
+     ORDER BY (s.status IN ('active', 'paused')) DESC,
+              CASE WHEN s.status IN ('active', 'paused') THEN s.next_run_at END ASC NULLS LAST,
+              COALESCE(CASE WHEN s.status = 'completed' THEN s.last_sent_at END, s.send_at, s.updated_at) DESC,
+              s.created_at DESC`,
     req.params.id,
   );
   return ok(reply, rows.map(toJson));
