@@ -1051,7 +1051,13 @@ function EpisodesTab({ course }: { course: any }) {
   const [editingSection, setEditingSection] = useState<any>(null);
   const [sectionForm, setSectionForm] = useState({ title: "", description: "", timerMinutes: "" as string | number });
   const [deletingSection, setDeletingSection] = useState<string | null>(null);
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  // Sections start closed; a click on the title opens one. "none" = the Unsectioned group.
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const toggleSection = (id: string) => setExpandedSections(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const sectionDragIdx = useRef<number | null>(null);
   const [sectionDragOver, setSectionDragOver] = useState<number | null>(null);
   const dragType = useRef<'section' | 'episode' | null>(null);
@@ -1353,6 +1359,8 @@ function EpisodesTab({ course }: { course: any }) {
         }
         toast.success(`Episode created${inlineTasks.length > 0 ? ` with ${inlineTasks.length} task${inlineTasks.length > 1 ? "s" : ""}` : ""}`);
       }
+      // Keep the saved episode in view.
+      setExpandedSections(prev => new Set(prev).add(epForm.sectionId || "none"));
       setShowForm(false);
     } catch (e: any) { toast.error(e.message || "Failed"); }
   };
@@ -1555,7 +1563,7 @@ function EpisodesTab({ course }: { course: any }) {
           <div>
             {localSections.map((sec: any, si: number) => {
               const eps = epsBySection.get(sec.id) ?? [];
-              const collapsed = collapsedSections.has(sec.id);
+              const collapsed = !expandedSections.has(sec.id);
               const isEpTarget = epDropSection === sec.id;
               return (
                 <div key={sec.id} draggable
@@ -1567,11 +1575,7 @@ function EpisodesTab({ course }: { course: any }) {
                   {/* Section header */}
                   <div className="flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222] group/sec">
                     <GripVertical size={13} className="text-[#555] cursor-grab shrink-0" />
-                    <button onClick={() => setCollapsedSections(prev => {
-                      const next = new Set(prev);
-                      if (next.has(sec.id)) next.delete(sec.id); else next.add(sec.id);
-                      return next;
-                    })} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+                    <button type="button" aria-expanded={!collapsed} onClick={() => toggleSection(sec.id)} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
                       <ChevronDown size={12} className={`text-[#888] transition-transform shrink-0 ${collapsed ? "-rotate-90" : ""}`} />
                       <span className="text-[11px] font-bold text-[#d0d0d0] font-rajdhani uppercase tracking-wider truncate">{sec.title}</span>
                       {sec.timerSeconds != null && (
@@ -1622,12 +1626,17 @@ function EpisodesTab({ course }: { course: any }) {
                   }
                 }}>
                 <div className={`flex items-center gap-2 px-3 py-2 bg-[#181818] border-b border-[#222] ${epDropSection === null ? "ring-1 ring-inset ring-[#dc2626]/40" : ""}`}>
-                  <span className="text-[10px] font-bold text-[#888] font-rajdhani uppercase tracking-wider">Unsectioned</span>
-                  <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
+                  <button type="button" aria-expanded={expandedSections.has("none")} onClick={() => toggleSection("none")} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
+                    <ChevronDown size={12} className={`text-[#888] transition-transform shrink-0 ${expandedSections.has("none") ? "" : "-rotate-90"}`} />
+                    <span className="text-[10px] font-bold text-[#888] font-rajdhani uppercase tracking-wider">Unsectioned</span>
+                    <span className="text-[10px] text-[#555]">({epsBySection.get(null)?.length})</span>
+                  </button>
                 </div>
+                {expandedSections.has("none") && (
                 <div className="divide-y divide-[#1e1e1e] bg-[#0f0f0f]/20">
                   {epsBySection.get(null)!.map((ep: any, k: number) => renderEpRow(ep, localEps.indexOf(ep), null, k + 1))}
                 </div>
+                )}
               </div>
             )}
           </div>

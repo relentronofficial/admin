@@ -2830,8 +2830,7 @@ export default function CourseDetailPage({
     if (sections.length === 0) return;
     const activeSectionId = selectedLesson?.sectionId ?? "__unsectioned__";
     setCollapsedSections(new Set<string>(
-      sections
-        .map((s: any) => s.id)
+      [...sections.map((s: any) => s.id), "__unsectioned__"]
         .filter((id: string) => id !== activeSectionId)
     ));
   }, [(course as any)?.sections?.length, selectedLesson?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4421,7 +4420,12 @@ export default function CourseDetailPage({
                           </span>
                         </button>
                       ) : (
-                        <div className="flex items-center gap-3 px-4 py-3 rounded-lg text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                        <button
+                          type="button"
+                          aria-expanded={!isSectionCollapsed}
+                          onClick={() => setCollapsedSections(prev => { const next = new Set(prev); if (next.has(lessonSectionId!)) next.delete(lessonSectionId!); else next.add(lessonSectionId!); return next; })}
+                          className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-lg text-[10px] font-bold uppercase tracking-wide" style={{ color: "var(--color-text-subtle)", background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)" }}>
+                          <ChevronDown size={13} className={`shrink-0 transition-transform ${isSectionCollapsed ? "-rotate-90" : ""}`} />
                           <span className="flex-1">General</span>
                           <span
                             className="shrink-0 font-semibold tabular-nums normal-case"
@@ -4431,7 +4435,7 @@ export default function CourseDetailPage({
                           >
                             {group.completed}/{group.total}
                           </span>
-                        </div>
+                        </button>
                       )}
                     </div>
                   )}

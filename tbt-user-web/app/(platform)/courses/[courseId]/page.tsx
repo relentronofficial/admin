@@ -574,7 +574,7 @@ function MCCurriculumSection({ course }: { course: any }) {
 }
 
 function MCModuleCard({ index, group }: { index: number; group: { title: string; tag?: string; lessons: any[]; featured?: boolean } }) {
-  const [open, setOpen] = useState(index === 0);
+  const [open, setOpen] = useState(false);
   const totalSecs = group.lessons.reduce((a: number, l: any) => a + (l.durationSeconds || 0), 0);
 
   return (
