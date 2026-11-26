@@ -105,6 +105,12 @@ function AuthInterceptor() {
         );
         invalidateAdminNotifs();
       });
+      // OpenRouter balance below the alert level on /ai-credits: every assistant stops when it runs out.
+      socket.on('admin:ai_provider_low_balance', (p: { remainingUsd?: number | null }) => {
+        const left = p?.remainingUsd != null ? `: US$${Number(p.remainingUsd).toFixed(2)} left` : '';
+        toast.error(`AI provider (OpenRouter) balance is low${left}. Top it up so TBT Assistant keeps answering.`, { duration: 15000 });
+        invalidateAdminNotifs();
+      });
       // Onboarding live meetings — keep the /onboarding "Live Meetings" tab
       // reactive without a manual refresh. See ONBOARDING_LIVE_MEETING_SPECKIT.md.
       const invalidateOnboardingMeetings = () => queryClient.invalidateQueries({ queryKey: ['onboarding-meetings'] });
@@ -122,6 +128,7 @@ function AuthInterceptor() {
         s.off('admin:course_access_request');
         s.off('admin:member_joined');
         s.off('admin:whatsapp_low_balance');
+        s.off('admin:ai_provider_low_balance');
         s.off('admin:onboarding_meeting_scheduled');
         s.off('admin:onboarding_meeting_started');
         s.off('admin:onboarding_meeting_ended');

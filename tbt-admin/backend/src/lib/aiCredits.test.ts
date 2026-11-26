@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AI_CREDITS_DDL, DEFAULT_AI_CREDIT_SETTINGS, aiCreditPackSchema, aiCreditSettingsSchema, costCapUsd, creditAiOrder, creditsForCost,
-  handleAiCreditWebhookEvent, holdFor, loadAiCreditBalance, loadAvailableAiCredits, releaseAiCredits, reserveAiCredits, rupeesToPaise, settleAiCredits,
+  adjustAiCredits, aiCreditAdjustSchema, handleAiCreditWebhookEvent, holdFor, loadAiCreditBalance, loadAvailableAiCredits, releaseAiCredits, reserveAiCredits, rupeesToPaise, settleAiCredits,
 } from './aiCredits.js';
 
 const MEMBER = '41000000-0000-4000-8000-000000000001';
@@ -22,6 +22,13 @@ function fakeDb(orders: Array<{ id: string; member_id: string; razorpay_order_id
     charged,
     async $queryRawUnsafe(sql: string, ...v: any[]) {
       if (sql.includes('pg_advisory_xact_lock')) return [{}];
+      if (sql.startsWith('SELECT 1 FROM members')) return v[0] === MEMBER || v[0] === OTHER ? [{}] : [];
+      if (sql.includes('SELECT -delta AS charged')) return ledger.filter((l) => l.source === 'usage' && l.reference_id === v[0] && l.member_id === v[1]).map((l) => ({ charged: -l.delta }));
+      if (sql.includes('created_by)')) {
+        if (v[3] && ledger.some((l) => l.source === v[2] && l.reference_id === v[3])) return [];
+        ledger.push({ member_id: v[0], delta: v[1], source: v[2], reference_id: v[3] });
+        return [{ id: 'a' }];
+      }
       if (sql.includes('FROM ai_credit_holds WHERE member_id = $1::uuid AND expires_at > NOW()')) {
         return [{
           balance: ledger.filter((l) => l.member_id === v[0]).reduce((a, l) => a + l.delta, 0),
@@ -212,6 +219,56 @@ describe('AI credits', () => {
     it('charging starts switched off', () => {
       expect(DEFAULT_AI_CREDIT_SETTINGS.chargingEnabled).toBe(false);
       expect(AI_CREDITS_DDL.join(' ')).toContain('charging_enabled          BOOLEAN NOT NULL DEFAULT FALSE');
+    });
+  });
+
+  describe('admin refunds and grants', () => {
+    const S = { ...DEFAULT_AI_CREDIT_SETTINGS, chargingEnabled: true };
+    const MSG = '61000000-0000-4000-8000-000000000002';
+    const ADMIN = 'admin-1';
+    const base = { memberId: MEMBER, note: 'Wrong answer' };
+    const charged = async () => {
+      const db = fakeDb([]);
+      db.ledger.push({ member_id: MEMBER, delta: 100, source: 'purchase', reference_id: 'p' });
+      const h = await reserveAiCredits(db, MEMBER, S);
+      if (!h.ok) throw new Error('expected a hold');
+      await settleAiCredits(db, { memberId: MEMBER, holdId: h.holdId, held: h.credits, credits: 20, messageId: MSG });
+      return db;
+    };
+
+    it('refunds a charged answer once, and at most what it was charged', async () => {
+      const db = await charged();
+      expect(await adjustAiCredits(db, { ...base, kind: 'refund', credits: 25, messageId: MSG }, ADMIN)).toEqual({ status: 'over_charged', charged: 20 });
+      expect(await adjustAiCredits(db, { ...base, kind: 'refund', credits: 20, messageId: MSG }, ADMIN)).toEqual({ status: 'done', balance: 100, credits: 20 });
+      expect(await adjustAiCredits(db, { ...base, kind: 'refund', credits: 20, messageId: MSG }, ADMIN)).toEqual({ status: 'already_refunded' });
+      expect(await loadAiCreditBalance(db, MEMBER)).toBe(100);
+    });
+
+    it('will not refund an answer that was not charged, or one of another member', async () => {
+      const db = await charged();
+      const other = '61000000-0000-4000-8000-000000000009';
+      expect(await adjustAiCredits(db, { ...base, kind: 'refund', credits: 5, messageId: other }, ADMIN)).toEqual({ status: 'not_charged' });
+      expect(await adjustAiCredits(db, { ...base, memberId: OTHER, kind: 'refund', credits: 5, messageId: MSG }, ADMIN)).toEqual({ status: 'not_charged' });
+    });
+
+    it('grants free credits, and a correction never takes the balance below 0', async () => {
+      const db = await charged();
+      expect(await adjustAiCredits(db, { ...base, kind: 'grant', credits: 50 }, ADMIN)).toEqual({ status: 'done', balance: 130, credits: 50 });
+      expect(await adjustAiCredits(db, { ...base, kind: 'adjust', credits: -131 }, ADMIN)).toEqual({ status: 'insufficient', balance: 130 });
+      expect(await adjustAiCredits(db, { ...base, kind: 'adjust', credits: -130 }, ADMIN)).toEqual({ status: 'done', balance: 0, credits: -130 });
+      expect(await adjustAiCredits(db, { ...base, memberId: '41000000-0000-4000-8000-000000000099', kind: 'grant', credits: 5 }, ADMIN))
+        .toEqual({ status: 'member_not_found' });
+    });
+
+    it('validates the request', () => {
+      const ok = (v: object) => aiCreditAdjustSchema.safeParse({ ...base, ...v }).success;
+      expect(ok({ kind: 'grant', credits: 10 })).toBe(true);
+      expect(ok({ kind: 'grant', credits: -10 })).toBe(false);
+      expect(ok({ kind: 'refund', credits: 0 })).toBe(false);
+      expect(ok({ kind: 'adjust', credits: -10 })).toBe(true);
+      expect(ok({ kind: 'grant', credits: 10, messageId: MSG })).toBe(false);
+      expect(ok({ kind: 'grant', credits: 1.5 })).toBe(false);
+      expect(ok({ kind: 'grant', credits: 10, note: '' })).toBe(false);
     });
   });
 });

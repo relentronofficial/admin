@@ -75,3 +75,104 @@ export function useSaveAiCreditSettings() {
     onSuccess: () => qc.invalidateQueries({ queryKey: SETTINGS }),
   });
 }
+
+// ── Refunds, members, usage summary, provider balance ───────────────────────
+
+export interface AiCreditMemberRow {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  balance: number;
+  lastActivityAt: string | null;
+}
+
+export interface AiCreditMemberDetail {
+  member: { id: string; name: string | null; phone: string | null };
+  balance: number;
+  available: number;
+  entries: Array<{ id: string; delta: number; source: "purchase" | "usage" | "refund" | "grant" | "adjust"; note: string | null; createdAt: string; byName: string | null }>;
+  answers: Array<{ messageId: string; createdAt: string; credits: number; question: string; answer: string; refunded: boolean }>;
+}
+
+export interface AiCreditSummary {
+  days: number;
+  memberAnswers: number;
+  chargedAnswers: number;
+  memberCostUsd: number;
+  chargedAnswersCostUsd: number;
+  adminAnswers: number;
+  adminCostUsd: number;
+  creditsUsed: number;
+  creditsUsedInr: number;
+  creditsRefunded: number;
+  creditsGranted: number;
+  creditsAdjusted: number;
+  paidOrders: number;
+  salesInr: number;
+  creditsSold: number;
+  creditsOutstanding: number;
+  creditsOutstandingInr: number;
+  usdToInr: number;
+  series: Array<{ date: string; costUsd: number; creditsUsed: number; salesInr: number }>;
+}
+
+export interface ProviderBalance {
+  remainingUsd: number | null;
+  limitUsd: number | null;
+  usageDailyUsd: number | null;
+  usageMonthlyUsd: number | null;
+  source: "account" | "key_limit" | "unknown";
+  error?: string;
+  thresholdUsd: number;
+  checkedAt: string;
+  alerted: boolean;
+}
+
+const MEMBERS = ["ai-credits-admin", "members"];
+
+export const useAiCreditMembers = (q: string) =>
+  useQuery({
+    queryKey: [...MEMBERS, q],
+    queryFn: async () => ((await apiClient.get(`${BASE}/members`, { params: q ? { q } : {} })) as any).data as AiCreditMemberRow[],
+    retry: false,
+  });
+
+export const useAiCreditMember = (id: string | null) =>
+  useQuery({
+    queryKey: ["ai-credits-admin", "member", id],
+    queryFn: async () => ((await apiClient.get(`${BASE}/members/${id}`)) as any).data as AiCreditMemberDetail,
+    enabled: !!id,
+    retry: false,
+  });
+
+export const useAiCreditSummary = (days: number) =>
+  useQuery({
+    queryKey: ["ai-credits-admin", "summary", days],
+    queryFn: async () => ((await apiClient.get(`${BASE}/summary`, { params: { days } })) as any).data as AiCreditSummary,
+    retry: false,
+  });
+
+export const useProviderBalance = () =>
+  useQuery({
+    queryKey: ["ai-credits-admin", "provider-balance"],
+    queryFn: async () => ((await apiClient.get(`${BASE}/provider-balance`)) as any).data as ProviderBalance | null,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+export function useAdjustAiCredits() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { memberId: string; kind: "grant" | "refund" | "adjust"; credits: number; note: string; messageId?: string }) =>
+      apiClient.post(`${BASE}/adjust`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-credits-admin"] }),
+  });
+}
+
+export function useSaveBalanceAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lowBalanceAlertUsd: number) => apiClient.put(`${BASE}/alert`, { lowBalanceAlertUsd }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-credits-admin", "provider-balance"] }),
+  });
+}

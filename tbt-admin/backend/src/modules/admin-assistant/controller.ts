@@ -28,6 +28,7 @@ import { compileQuery, queryDataTool, runCompiled, selfTest } from '../../lib/as
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
 import { SPEECH_SAMPLE_RATE, spokenScript, startSpeech } from '../../lib/assistant/speak.js';
 import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
+import { checkProviderBalanceSoon } from '../../lib/aiProviderBalance.js';
 
 const BURST_LIMIT = 15; // questions per 10 minutes, per admin
 const DAILY_LIMIT = 150; // per admin per IST day
@@ -333,6 +334,7 @@ export async function chatHandler(
       conversationId, r.text, JSON.stringify(r.toolsUsed), String(r.costUsd));
     await prisma.$executeRawUnsafe(`UPDATE admin_assistant_conversations SET updated_at = NOW() WHERE id = $1::uuid`, conversationId);
     send({ t: 'answer', text: r.text, messageId: saved?.id ?? null, conversationId, title, tools: r.toolsUsed });
+    if (r.costUsd > 0) checkProviderBalanceSoon(prisma as any, { key, io: req.server.io as any, log: req.log });
   } catch (err) {
     if (!abort.signal.aborted) {
       if (!(err instanceof AssistantServiceError)) req.log.error({ err }, '[admin-assistant] chat failed');

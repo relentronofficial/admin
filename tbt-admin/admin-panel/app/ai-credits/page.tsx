@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { MembersCard, ProviderBalanceCard, UsageCard } from "@/components/ai-credits/AiCreditsInsights";
 import {
   useAiCreditOrders,
   useAiCreditPacks,
@@ -293,9 +294,12 @@ export default function AiCreditsPage() {
           <h1 className="text-2xl font-bold text-[#f0f0f0] font-rajdhani uppercase tracking-wide">AI Credits</h1>
           <p className="text-sm text-[#a0a0a0]">Credits members buy and spend on TBT Assistant answers. Who can use the assistant is set in Member Assistant.</p>
         </div>
+        <ProviderBalanceCard />
+        <UsageCard />
         <SettingsCard />
         <PacksCard />
         <OrdersCard />
+        <MembersCard />
       </div>
     </DashboardLayout>
   );

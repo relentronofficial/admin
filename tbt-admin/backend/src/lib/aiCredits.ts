@@ -80,7 +80,71 @@ export const AI_CREDITS_DDL = [
     expires_at  TIMESTAMPTZ NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS idx_ai_credit_holds_member ON ai_credit_holds(member_id, expires_at)`,
+  // AI provider (OpenRouter) balance watch: alert admins below a threshold (lib/aiProviderBalance.ts).
+  `ALTER TABLE ai_credit_settings
+    ADD COLUMN IF NOT EXISTS low_balance_alert_usd NUMERIC(10,2) NOT NULL DEFAULT 10,
+    ADD COLUMN IF NOT EXISTS balance_checked_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS balance_alerted_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS last_balance_usd NUMERIC(12,4),
+    ADD COLUMN IF NOT EXISTS last_balance_source VARCHAR(20)`,
 ];
+
+// ── Admin changes to a member's credits ─────────────────────────────────────
+
+/**
+ * grant  — free credits (credits > 0)
+ * refund — credits back for one charged answer (messageId, at most what it was charged) or a general refund (credits > 0)
+ * adjust — a correction either way; never takes the balance below 0
+ */
+export const aiCreditAdjustSchema = z.object({
+  memberId: z.string().uuid('Pick a member'),
+  kind: z.enum(['grant', 'refund', 'adjust']),
+  credits: z.number().int('Credits must be a whole number').refine((v) => v !== 0, 'Credits cannot be 0')
+    .refine((v) => Math.abs(v) <= 1_000_000, 'Too many credits'),
+  note: z.string().trim().min(3, 'Add a short reason').max(300),
+  messageId: z.string().uuid().optional(),
+}).superRefine((v, ctx) => {
+  if (v.kind !== 'adjust' && v.credits < 0) ctx.addIssue({ code: 'custom', message: 'Credits must be above 0', path: ['credits'] });
+  if (v.messageId && v.kind !== 'refund') ctx.addIssue({ code: 'custom', message: 'Only a refund can name an answer', path: ['messageId'] });
+});
+export type AiCreditAdjust = z.infer<typeof aiCreditAdjustSchema>;
+
+export type AdjustResult =
+  | { status: 'done'; balance: number; credits: number }
+  | { status: 'member_not_found' }
+  | { status: 'not_charged' }
+  | { status: 'over_charged'; charged: number }
+  | { status: 'already_refunded' }
+  | { status: 'insufficient'; balance: number };
+
+/** Applies an admin grant / refund / adjustment under the member's credits lock. */
+export async function adjustAiCredits(prisma: Prisma, input: AiCreditAdjust, adminId: string): Promise<AdjustResult> {
+  return prisma.$transaction(async (tx) => {
+    const member = await tx.$queryRawUnsafe<any[]>(`SELECT 1 FROM members WHERE id = $1::uuid`, input.memberId);
+    if (!member.length) return { status: 'member_not_found' } as const;
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('ai-credits:' || $1))`, input.memberId);
+    if (input.messageId) {
+      const used = await tx.$queryRawUnsafe<any[]>(
+        `SELECT -delta AS charged FROM ai_credit_ledger WHERE source = 'usage' AND reference_id = $1::uuid AND member_id = $2::uuid`,
+        input.messageId, input.memberId,
+      );
+      if (!used.length) return { status: 'not_charged' } as const;
+      const charged = Number(used[0].charged);
+      if (input.credits > charged) return { status: 'over_charged', charged } as const;
+    }
+    const balance = await loadAiCreditBalance(tx, input.memberId);
+    if (balance + input.credits < 0) return { status: 'insufficient', balance } as const;
+    const rows = await tx.$queryRawUnsafe<any[]>(
+      `INSERT INTO ai_credit_ledger (member_id, delta, source, reference_id, note, created_by)
+       VALUES ($1::uuid, $2, $3, $4::uuid, $5, $6)
+       ON CONFLICT (source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      input.memberId, input.credits, input.kind, input.messageId ?? null, input.note, adminId,
+    );
+    if (!rows.length) return { status: 'already_refunded' } as const;
+    return { status: 'done', balance: balance + input.credits, credits: input.credits } as const;
+  });
+}
 
 // ── Charging for answers ────────────────────────────────────────────────────
 

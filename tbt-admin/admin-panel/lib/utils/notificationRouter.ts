@@ -66,6 +66,9 @@ export function resolveNotificationRoute(notification: {
     // billing page in the admin panel — surface the full notification
     // detail so ops can read the description and act (top up on
     // zacx.com). Sits alongside `announcement` in behaviour.
+    case "ai_provider_low_balance":
+      return "/ai-credits";
+
     case "whatsapp_low_balance":
       return "/app-notifications";
 

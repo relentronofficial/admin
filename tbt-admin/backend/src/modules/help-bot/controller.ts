@@ -27,6 +27,7 @@ import { isAudience, loadHelpBotAccess } from '../../lib/helpBot/access.js';
 import { MAX_ACTIONS, allowedFrom, type HelpBotAction } from '../../lib/helpBot/actions.js';
 import { exactFaq, offlineAnswer } from '../../lib/helpBot/fallback.js';
 import { APP_GUIDE, HELP_BOT_INSTRUCTIONS } from '../../lib/helpBot/knowledge.js';
+import { checkProviderBalanceSoon } from '../../lib/aiProviderBalance.js';
 import {
   MAX_USER_CHARS,
   buildMemberContext,
@@ -437,6 +438,7 @@ export async function helpBotChatHandler(
         });
     }
     send({ t: 'answer', text, messageId: saved?.id ?? null, conversationId, actions, ...(credits !== undefined && { credits }) });
+    if (costUsd > 0) checkProviderBalanceSoon(prisma as any, { key: apiKey(), io: req.server.io as any, log: req.log });
   };
 
   try {
