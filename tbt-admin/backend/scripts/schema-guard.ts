@@ -17,7 +17,11 @@ if (!diffPath || !outPath) {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const startupSource = readFileSync(resolve(here, '../src/plugins/prisma.ts'), 'utf8');
+// Every file whose DDL the backend runs at startup. A table created by startup
+// DDL that is missing here looks unknown to the guard, which then blocks the
+// deploy (it would drop the table).
+const STARTUP_DDL_SOURCES = ['../src/plugins/prisma.ts', '../src/lib/aiCredits.ts'];
+const startupSource = STARTUP_DDL_SOURCES.map((f) => readFileSync(resolve(here, f), 'utf8')).join(' ');
 const managed = extractStartupManagedObjects(startupSource);
 const result = guardSchemaDiff(readFileSync(diffPath, 'utf8'), managed);
 

@@ -30,6 +30,23 @@ describe('extractStartupManagedObjects', () => {
     expect(managed.indexes.has('idx_course_enrollments_course_id')).toBe(true);
   });
 
+  it('keeps the AI credits tables, whose startup DDL lives in lib/aiCredits.ts', () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const script = readFileSync(resolve(here, '../../scripts/schema-guard.ts'), 'utf8');
+    expect(script).toContain("'../src/lib/aiCredits.ts'");
+    const ai = extractStartupManagedObjects(readFileSync(resolve(here, 'aiCredits.ts'), 'utf8'));
+    for (const t of ['ai_credit_packs', 'ai_credit_orders', 'ai_credit_ledger', 'ai_credit_settings', 'ai_credit_holds']) {
+      expect(ai.tables.has(t), t).toBe(true);
+    }
+    // The diff that blocked the 2026-11-26 deploy is now skipped, not blocked.
+    const r = guardSchemaDiff(
+      'ALTER TABLE "ai_credit_orders" DROP CONSTRAINT "ai_credit_orders_pack_id_fkey";\nDROP TABLE "ai_credit_ledger";\nDROP TABLE "ai_credit_packs";',
+      ai,
+    );
+    expect(r.blocked).toEqual([]);
+    expect(r.apply).toEqual([]);
+  });
+
   it('finds the incident objects in the real startup DDL (src/plugins/prisma.ts)', () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const real = extractStartupManagedObjects(readFileSync(resolve(here, '../plugins/prisma.ts'), 'utf8'));
