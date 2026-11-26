@@ -105,6 +105,14 @@ async function errorOf(res: Response): Promise<string> {
   return (await errorBody(res)).message;
 }
 
+/** A hold-to-record voice note (base64 16 kHz mono WAV) as text. The audio is not kept. */
+export async function transcribeHelpBotVoice(audio: string, signal: AbortSignal): Promise<string> {
+  const res = await post("/transcribe", { audio }, signal);
+  const j = await res.json().catch(() => null);
+  if (!res.ok || typeof j?.data?.text !== "string") throw new Error(typeof j?.error === "string" ? j.error : "");
+  return j.data.text;
+}
+
 /** The spoken answer as PCM. Made only by this call. */
 export async function fetchHelpBotSpeech(messageId: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
   const res = await post(`/messages/${messageId}/speech`, {}, signal);

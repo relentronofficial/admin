@@ -16,10 +16,12 @@ import { playPcm, unlockAudio } from "@/lib/audio/pcmPlayer";
 import { fetchHelpBotSpeech, getHelpBotStatus, helpBotService, streamHelpBotChat, type HelpBotMessage, type HelpBotNudge } from "@/lib/api/services/helpBot.service";
 import { AssistantSettings } from "./AssistantSettings";
 import { shrinkImage } from "./shrinkImage";
+import { HelpBotVoiceButton } from "./HelpBotVoiceButton";
 import { ActionCard, type T } from "./ActionCard";
 import { useAiCreditWallet, useRefreshAiCredits } from "@/lib/hooks/useAiCredits";
 
 const CHAT_KEY = "tbt_help_bot_chat"; // the open chat's id, for this tab
+const VOICE_MARK = "🎤 "; // shown before a question asked by voice note
 const UNSAVED = "unsaved-"; // an answer the server could not keep: nothing to rate or voice
 /** Pages where a floating button would get in the way. */
 const HIDDEN_ON = ["/live", "/onboarding", "/psychometric"];
@@ -372,7 +374,12 @@ function Chat({ pathname }: { pathname: string }) {
 
   const suggestions = useMemo(() => suggestionsFor(pathname, t), [pathname, t]);
 
-  async function ask(question: string, withImage: string | null = null) {
+  async function ask(question: string, withImage: string | null = null, opts: { voice?: boolean } = {}) {
+    // "Try again" on a voice question: resend its words, not the mic mark.
+    if (question.startsWith(VOICE_MARK)) {
+      question = question.slice(VOICE_MARK.length);
+      opts = { ...opts, voice: true };
+    }
     const q = question.trim().slice(0, MAX_INPUT) || (withImage ? t("helpBotScreenshotAsk", "Please look at this screenshot and help me with it.") : "");
     if (!q || busy || loading) return;
     stopSpeaking();
@@ -387,8 +394,9 @@ function Chat({ pathname }: { pathname: string }) {
     abortRef.current = ctrl;
     setMessages((m) => {
       const last = m[m.length - 1];
-      const retrying = last?.role === "user" && last.content === q;
-      return [...(retrying ? m.slice(0, -1) : m), { id: `q-${Date.now()}`, role: "user", content: withImage ? `${q}\n📷 ${t("helpBotScreenshot", "Screenshot")}` : q }];
+      const shown = withImage ? `${q}\n📷 ${t("helpBotScreenshot", "Screenshot")}` : opts.voice ? `${VOICE_MARK}${q}` : q;
+      const retrying = last?.role === "user" && (last.content === q || last.content === shown);
+      return [...(retrying ? m.slice(0, -1) : m), { id: `q-${Date.now()}`, role: "user", content: shown }];
     });
     let answered = false;
     let failed = "";
@@ -772,7 +780,7 @@ function Chat({ pathname }: { pathname: string }) {
                 </div>
               )}
               {imageError && <p role="alert" className="px-3 pt-2 text-xs" style={{ color: "var(--color-alert)" }}>{imageError}</p>}
-              <form onSubmit={(e) => { e.preventDefault(); void ask(input, image); }} className="flex items-end gap-2 px-3 py-3" style={{ borderTop: "1px solid var(--color-border-medium)" }}>
+              <form onSubmit={(e) => { e.preventDefault(); void ask(input, image); }} className="relative flex items-end gap-2 px-3 py-3" style={{ borderTop: "1px solid var(--color-border-medium)" }}>
                 <input
                   ref={fileRef}
                   type="file"
@@ -821,6 +829,13 @@ function Chat({ pathname }: { pathname: string }) {
                   <button type="button" onClick={() => abortRef.current?.abort()} aria-label={t("helpBotStop", "Stop")} className="h-11 w-11 shrink-0 rounded-xl grid place-items-center" style={{ border: "1px solid var(--color-border-medium)" }}>
                     <Square size={14} />
                   </button>
+                ) : !input.trim() && !image ? (
+                  <HelpBotVoiceButton
+                    t={t}
+                    disabled={loading || lowCredits}
+                    onText={(text) => void ask(text, null, { voice: true })}
+                    onError={setError}
+                  />
                 ) : (
                   <button type="submit" disabled={(!input.trim() && !image) || loading || lowCredits} aria-label={t("helpBotSend", "Send")} className="h-11 w-11 shrink-0 rounded-xl grid place-items-center disabled:opacity-40" style={{ background: "var(--color-accent)", color: "#fff" }}>
                     <Send size={16} />

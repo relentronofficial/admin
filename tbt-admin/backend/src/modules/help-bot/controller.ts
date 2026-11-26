@@ -26,6 +26,7 @@ import { memberTools, type MemberToolCtx } from '../../lib/assistant/memberTools
 import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
 import { runTool, toolDefinitions } from '../../lib/assistant/registry.js';
 import { SPEECH_SAMPLE_RATE, spokenScript, startSpeech } from '../../lib/assistant/speak.js';
+import { transcribeVoiceNote, validVoiceNote } from '../../lib/assistant/transcribe.js';
 import { isAudience, loadHelpBotAccess } from '../../lib/helpBot/access.js';
 import { MAX_ACTIONS, allowedFrom, type HelpBotAction } from '../../lib/helpBot/actions.js';
 import { exactFaq, offlineAnswer } from '../../lib/helpBot/fallback.js';
@@ -44,6 +45,8 @@ const REFERENCE_TTL_MS = 5 * 60_000;
 const BURST_LIMIT = 15; // questions per 10 minutes, per member
 const TOTAL_DAILY_LIMIT = 1_500; // everyone together, so the AI credit cannot be drained
 const VOICE_DAILY_LIMIT = 30; // per member
+const VOICE_NOTE_DAILY_LIMIT = 40; // voice notes turned into text, per member
+const VOICE_NOTE_BURST = 10; // per member in 10 minutes
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const tools = [...memberTools, ...memberActionTools, ...memberMoreTools, calculateTool];
@@ -394,6 +397,36 @@ export async function speechHandler(req: FastifyRequest<{ Params: { id: string }
     reply.raw.destroy(); // half a sentence must not look finished
   }
   return reply;
+}
+
+/**
+ * POST /transcribe { audio }: a hold-to-record voice note (base64 16 kHz mono
+ * WAV, up to 60 s) as text. The app then sends that text to /chat like a typed
+ * question, so every /chat check still applies. The audio is never stored.
+ */
+export async function transcribeHandler(req: FastifyRequest<{ Body: { audio?: unknown } }>, reply: FastifyReply) {
+  const key = apiKey();
+  if (!key) return fail(reply, 503, OFF);
+  const memberId = req.memberId!;
+  const audio = validVoiceNote(req.body?.audio);
+  if (!audio) return fail(reply, 400, 'That voice note could not be read. Please record it again (up to 60 seconds).');
+
+  const limited = await overLimit(req, memberId);
+  if (limited) return fail(reply, 429, limited);
+  if ((await bump(req, `helpbot:vn10:${memberId}`, 600)) > VOICE_NOTE_BURST) return fail(reply, 429, "You're sending voice notes very quickly. Please wait a few minutes.");
+  if ((await bump(req, `helpbot:vn:${memberId}:${istToday()}`, 26 * 3600)) > VOICE_NOTE_DAILY_LIMIT) return fail(reply, 429, "You've reached today's voice note limit. Please type your question, or try again tomorrow.");
+
+  try {
+    const text = await transcribeVoiceNote({
+      apiKey: key, wavBase64: audio, max: MAX_USER_CHARS, audience: 'member',
+      log: (info) => req.log.error(info as object, '[help-bot] transcription failed'),
+    });
+    if (!text) return fail(reply, 422, "I couldn't hear any words. Please try again, closer to the microphone.");
+    return ok(reply, { text });
+  } catch (err) {
+    if (!(err instanceof AssistantServiceError)) req.log.error({ errorName: (err as Error)?.name }, '[help-bot] transcription failed');
+    return fail(reply, 502, err instanceof AssistantServiceError ? err.message : 'The voice note could not be processed. Please try again.');
+  }
 }
 
 /** Today's to-dos for the empty chat, from data only (no AI, no credits). */

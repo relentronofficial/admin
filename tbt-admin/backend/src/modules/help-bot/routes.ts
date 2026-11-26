@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import * as h from './controller.js';
+import { VOICE_BODY_LIMIT } from '../../lib/assistant/transcribe.js';
 
 /** TBT Assistant for members. Registered at /api/help-bot. */
 export async function helpBotRoutes(fastify: FastifyInstance) {
@@ -17,6 +18,8 @@ export async function helpBotRoutes(fastify: FastifyInstance) {
       opened.post('/messages/:id/rating', h.rateHandler);
       opened.post('/messages/:id/actions/:index', h.actionHandler);
       opened.post('/messages/:id/speech', h.speechHandler);
+      // A hold-to-record voice note (base64 WAV, up to 60 s) → text.
+      opened.post('/transcribe', { bodyLimit: VOICE_BODY_LIMIT + 1_024 }, h.transcribeHandler);
       opened.get('/habits', h.listHabitsHandler);
       opened.put('/habits', h.saveHabitHandler);
       opened.get('/nudge', h.nudgeHandler);
