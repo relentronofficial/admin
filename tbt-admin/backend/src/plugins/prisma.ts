@@ -1704,6 +1704,19 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
          PRIMARY KEY (member_id, habit_id, answer_date)
        )`,
+      // Suggested next questions shown under an answer; an admin's review of a poor answer.
+      `ALTER TABLE help_bot_messages ADD COLUMN IF NOT EXISTS follow_ups JSONB`,
+      `ALTER TABLE help_bot_messages ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`,
+      // Each member's own assistant settings: what it remembers, voice, daily credit cap.
+      `CREATE TABLE IF NOT EXISTS help_bot_member_prefs (
+         member_id UUID PRIMARY KEY REFERENCES members(id) ON DELETE CASCADE,
+         memory TEXT,
+         voice_lang VARCHAR(10) NOT NULL DEFAULT 'tanglish',
+         voice_name VARCHAR(20) NOT NULL DEFAULT 'Zephyr',
+         voice_pace VARCHAR(10) NOT NULL DEFAULT 'normal',
+         daily_credit_cap INT,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`,
       // Chats are kept for 90 days.
       `DELETE FROM help_bot_conversations WHERE updated_at < NOW() - INTERVAL '90 days'`,
     ]) {

@@ -118,11 +118,30 @@ async function post(url: string, apiKey: string, body: unknown, log: (info: unkn
   return res;
 }
 
+/** A member's voice settings (help-bot Assistant settings); none = the default Tanglish voice. */
+export interface VoiceStyle {
+  lang: 'tanglish' | 'tamil' | 'english';
+  voice: string;
+  pace: 'slow' | 'normal' | 'fast';
+}
+
 interface SpeakOptions {
   apiKey: string;
   log: (info: unknown) => void;
   signal?: AbortSignal;
+  style?: VoiceStyle;
 }
+
+const LANG_NOTE: Record<VoiceStyle['lang'], string> = {
+  tanglish: '',
+  tamil: '\n\nThis listener prefers Tamil: use spoken Tamil words wherever a Tamil speaker naturally would, and keep English only for names, course names and words with no everyday Tamil form.',
+  english: '\n\nThis listener prefers English: say it all in simple, friendly spoken Indian English, with no Tamil words.',
+};
+const PACE_NOTE: Record<VoiceStyle['pace'], string> = {
+  slow: 'at a slow, clear pace with short pauses',
+  normal: 'at a normal conversational pace',
+  fast: 'at a brisk but clear pace',
+};
 
 /** The words to say, figures already in words when they are Tamil. */
 export async function spokenScript(answer: string, o: SpeakOptions): Promise<string> {
@@ -132,7 +151,7 @@ export async function spokenScript(answer: string, o: SpeakOptions): Promise<str
     const res = await post('https://openrouter.ai/api/v1/chat/completions', o.apiKey, {
       model: VOICE_MODEL,
       messages: [
-        { role: 'system', content: PROMPT + (problem ? `\n\nYour last try was refused: ${problem}` : '') },
+        { role: 'system', content: PROMPT + LANG_NOTE[o.style?.lang ?? 'tanglish'] + (problem ? `\n\nYour last try was refused: ${problem}` : '') },
         { role: 'user', content: said },
       ],
       max_tokens: 3_000,
@@ -176,9 +195,9 @@ export async function speechStream(script: string, o: SpeakOptions): Promise<Rea
   const res = await post('https://openrouter.ai/api/v1/audio/speech', o.apiKey, {
     model: SPEECH_MODEL,
     input: script,
-    voice: SPEECH_VOICE,
+    voice: o.style?.voice || SPEECH_VOICE,
     response_format: 'pcm',
-    instructions: 'Friendly Tamil Nadu office colleague talking naturally in everyday spoken Tamil mixed with Indian English, clear and relaxed, at a normal conversational pace.',
+    instructions: `Friendly Tamil Nadu office colleague talking naturally in ${o.style?.lang === 'english' ? 'Indian English' : 'everyday spoken Tamil mixed with Indian English'}, clear and relaxed, ${PACE_NOTE[o.style?.pace ?? 'normal']}.`,
     provider: { data_collection: 'deny' },
   }, o.log, o.signal);
   if (!res.body || /json|html/i.test(res.headers.get('content-type') ?? '')) {

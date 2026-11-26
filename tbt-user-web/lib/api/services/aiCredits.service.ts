@@ -10,6 +10,10 @@ export interface AiCreditWallet {
   chargingEnabled: boolean;
   minCreditsToAsk: number;
   inrPerCredit: number;
+  /** The most one question can use. */
+  maxCreditsPerQuestion?: number;
+  /** What a question usually uses (recent answers); null = not known yet. */
+  typicalCredits?: number | null;
 }
 
 export interface AiCreditPack {

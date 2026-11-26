@@ -40,7 +40,7 @@ export function bookLocked(batchIds: unknown, memberBatchId: string | null): boo
 const word = { type: 'string' as const, required: true, maxLength: 60 };
 const category = { type: 'string' as const, required: true, enum: SUPPORT_CALL_CATEGORIES, description: 'sales_support = Sales, tech_support = Tech, content_support = Content, ad_support = Marketing, one_to_one = Mentor 1-on-1, group_call = Group Q&A.' };
 
-async function myCourses(c: MemberToolCtx) {
+export async function myCourses(c: MemberToolCtx) {
   const [access, enrolled] = await Promise.all([
     c.prisma.courseAccess.findMany({
       where: { memberId: c.memberId, isActive: true, OR: [{ accessType: 'lifetime' }, { expiresAt: { gt: c.now } }] },

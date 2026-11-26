@@ -9,7 +9,30 @@ export type HelpBotAction = { status: HelpBotActionStatus } & (
   | { type: "book_call"; sessionId: string; title: string; category: string; startsAt: string; minutes: number; host: string | null }
   | { type: "cancel_call"; bookingId: string; title: string; startsAt: string }
   | { type: "habit"; habitId: string; question: string; done: boolean }
+  | { type: "revenue"; revenue: number; orders: number | null; week: string }
+  | { type: "task_draft"; taskTitle: string; text: string; link: string }
+  | { type: "lesson_rating"; courseId: string; lessonId: string; lessonTitle: string; rating: number; feedback: string | null }
+  | { type: "memory"; note: string }
 );
+
+/** Something to do today, from the member's data (no AI). */
+export type HelpBotNudge =
+  | { kind: "weekly_report"; locked: boolean; href: string }
+  | { kind: "call_today"; title: string; starts: string; href: string }
+  | { kind: "tasks"; count: number; day: number; href: string }
+  | { kind: "lesson"; title: string; course: string; href: string }
+  | { kind: "revenue"; href: string }
+  | { kind: "habits"; count: number; href: string }
+  | { kind: "notifications"; count: number; href: string };
+
+/** The member's own assistant settings. */
+export interface HelpBotPrefs {
+  memory: string | null;
+  voiceLang: "tanglish" | "tamil" | "english";
+  voiceName: "Zephyr" | "Kore" | "Puck" | "Charon";
+  voicePace: "slow" | "normal" | "fast";
+  dailyCreditCap: number | null;
+}
 
 export interface HelpBotMessage {
   id: string;
@@ -19,12 +42,16 @@ export interface HelpBotMessage {
   rating?: 1 | -1 | null;
   /** AI credits this answer used (null/absent = not charged). */
   credits?: number | null;
+  /** Questions the member may want to ask next (buttons). */
+  followUps?: string[] | null;
+  /** Shown a little at a time once, as it arrives. */
+  reveal?: boolean;
 }
 
 export type HelpBotEvent =
   | { t: "start"; conversationId: string }
   | { t: "tool"; name: string }
-  | { t: "answer"; text: string; messageId: string | null; conversationId: string; actions: HelpBotAction[]; credits?: number }
+  | { t: "answer"; text: string; messageId: string | null; conversationId: string; actions: HelpBotAction[]; credits?: number; followUps?: string[] }
   /** code AI_CREDITS_NEEDED: the member has too few AI credits to ask. */
   | { t: "error"; message: string; code?: string };
 
@@ -47,6 +74,10 @@ export const helpBotService = {
     apiClient.post(`${BASE}/messages/${id}/actions/${index}`, { status }),
   habits: async () => ((await apiClient.get(`${BASE}/habits`)) as Res<Array<{ habitId: string; done: boolean }>>).data,
   saveHabit: (habitId: string, done: boolean) => apiClient.put(`${BASE}/habits`, { habitId, done }),
+  nudges: async () => ((await apiClient.get(`${BASE}/nudge`)) as Res<HelpBotNudge[]>).data ?? [],
+  prefs: async () => ((await apiClient.get(`${BASE}/prefs`)) as Res<HelpBotPrefs>).data,
+  savePrefs: (p: HelpBotPrefs) => apiClient.put(`${BASE}/prefs`, p),
+  addMemory: (note: string) => apiClient.post(`${BASE}/memory`, { note }),
 };
 
 /** fetch, because axios can't stream. A 401 refreshes the session once, like the axios interceptor does. */
@@ -82,7 +113,7 @@ export async function fetchHelpBotSpeech(messageId: string, signal: AbortSignal)
 }
 
 export async function streamHelpBotChat(
-  body: { message: string; conversationId: string | null; page: string },
+  body: { message: string; conversationId: string | null; page: string; image?: string },
   onEvent: (ev: HelpBotEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

@@ -50,13 +50,20 @@ const purchaseAvailable = () => !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRE
 
 export async function walletHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
-    const [{ balance, available }, s] = await Promise.all([
+    const [{ balance, available }, s, typical] = await Promise.all([
       loadAvailableAiCredits(req.server.prisma, req.memberId!),
       loadAiCreditSettings(req.server.prisma),
+      // What a question usually costs (median of recent charged answers), for the estimate shown before asking.
+      req.server.prisma.$queryRawUnsafe<Array<{ median: number | null }>>(
+        `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY credits_charged)::float8 AS median FROM (
+           SELECT credits_charged FROM help_bot_messages WHERE credits_charged > 0 AND created_at > NOW() - INTERVAL '30 days'
+            ORDER BY created_at DESC LIMIT 300) x`).catch(() => [] as Array<{ median: number | null }>),
     ]);
+    const median = typical[0]?.median;
     return ok(reply, {
       balance, available, purchaseAvailable: purchaseAvailable(),
       chargingEnabled: s.chargingEnabled, minCreditsToAsk: s.minCreditsToAsk, inrPerCredit: s.inrPerCredit,
+      maxCreditsPerQuestion: s.maxCreditsPerQuestion, typicalCredits: median != null && median > 0 ? Math.ceil(median) : null,
     });
   } catch (err) {
     req.log.error({ err }, 'ai credit balance read failed');

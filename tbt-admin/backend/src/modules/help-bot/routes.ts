@@ -9,7 +9,8 @@ export async function helpBotRoutes(fastify: FastifyInstance) {
 
     user.register(async (opened) => {
       opened.addHook('preHandler', h.requireHelpBot);
-      opened.post('/chat', h.helpBotChatHandler);
+      // Room for one screenshot (the app shrinks it to well under this).
+      opened.post('/chat', { bodyLimit: 2_500_000 }, h.helpBotChatHandler);
       opened.get('/conversations', h.listConversationsHandler);
       opened.get('/conversations/:id', h.getConversationHandler);
       opened.delete('/conversations/:id', h.deleteConversationHandler);
@@ -18,6 +19,10 @@ export async function helpBotRoutes(fastify: FastifyInstance) {
       opened.post('/messages/:id/speech', h.speechHandler);
       opened.get('/habits', h.listHabitsHandler);
       opened.put('/habits', h.saveHabitHandler);
+      opened.get('/nudge', h.nudgeHandler);
+      opened.get('/prefs', h.getPrefsHandler);
+      opened.put('/prefs', h.savePrefsHandler);
+      opened.post('/memory', h.addMemoryHandler);
     });
   });
 
@@ -28,5 +33,6 @@ export async function helpBotRoutes(fastify: FastifyInstance) {
     admin.put('/settings', h.adminSettingsHandler);
     admin.post('/testers', h.addTesterHandler);
     admin.delete('/testers/:id', h.removeTesterHandler);
+    admin.post('/poor/:id', h.reviewPoorHandler);
   }, { prefix: '/admin' });
 }

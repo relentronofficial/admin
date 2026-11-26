@@ -3,12 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, CalendarX, CheckCircle2, LifeBuoy, Loader2, Sun } from "lucide-react";
+import { Brain, CalendarCheck, CalendarX, CheckCircle2, ClipboardCopy, IndianRupee, LifeBuoy, Loader2, Star, Sun } from "lucide-react";
 import { useMe } from "@/lib/hooks/useUser";
 import { useBookSupportCall, useCancelSupportCallBooking } from "@/lib/hooks/useSupportCalls";
 import { supportKeys } from "@/lib/hooks/useSupport";
 import { supportService } from "@/lib/api/services/support.service";
 import { helpBotService, type HelpBotAction, type HelpBotActionStatus } from "@/lib/api/services/helpBot.service";
+import { mentorshipService } from "@/lib/api/services/mentorship.service";
+import { coursesService } from "@/lib/api/services/courses.service";
+import { weeklyGraphQueryKey } from "@/lib/hooks/useBatchProgram";
 
 export type T = (key: string, fallback: string) => string;
 
@@ -32,12 +35,17 @@ export function ActionCard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState(action.type === "ticket" ? action.message : "");
+  const [draft, setDraft] = useState(action.type === "task_draft" ? action.text : "");
 
   const view = {
     ticket: { Icon: LifeBuoy, title: t("helpBotTicketTitle", "Raise a support ticket"), link: "/support/tickets" },
     book_call: { Icon: CalendarCheck, title: t("helpBotBookTitle", "Book this call"), link: "/mentorship" },
     cancel_call: { Icon: CalendarX, title: t("helpBotCancelCallTitle", "Cancel this call"), link: "/mentorship" },
     habit: { Icon: Sun, title: t("helpBotHabitTitle", "Update today's habit"), link: "/dashboard" },
+    revenue: { Icon: IndianRupee, title: t("helpBotRevenueTitle", "Save this week's revenue"), link: "/mentorship" },
+    task_draft: { Icon: ClipboardCopy, title: t("helpBotDraftTitle", "Draft for your task"), link: action.type === "task_draft" ? action.link : "/batch-program" },
+    lesson_rating: { Icon: Star, title: t("helpBotRatingTitle", "Rate this lesson"), link: action.type === "lesson_rating" ? `/learning/${action.courseId}?lesson=${action.lessonId}` : "/learning" },
+    memory: { Icon: Brain, title: t("helpBotMemoryTitle", "Remember this about you"), link: "/community" },
   }[action.type];
 
   const person = me as unknown as { name?: string; firstName?: string; lastName?: string; email?: string; phone?: string } | undefined;
@@ -60,9 +68,28 @@ export function ActionCard({
       await bookCall.mutateAsync({ sessionId: action.sessionId, expectedStartsAt: action.startsAt });
     } else if (action.type === "cancel_call") {
       await cancelCall.mutateAsync(action.bookingId);
-    } else {
+    } else if (action.type === "habit") {
       await helpBotService.saveHabit(action.habitId, action.done);
       void qc.invalidateQueries({ queryKey: ["help-bot", "habits"] });
+    } else if (action.type === "revenue") {
+      // Only revenue and orders change; everything else saved for this week is sent back as it is.
+      const current = (await mentorshipService.getRevenue()).data;
+      if (current?.dailyRevenue?.some((v) => v != null)) {
+        throw new Error(t("helpBotRevenueDaily", "You entered day-by-day figures this week. Please update them on the Mentorship page."));
+      }
+      const { weekNumber: _w, year: _y, updatedAt: _u, totalAllTime: _t, ...keep } = current ?? ({} as Partial<NonNullable<typeof current>>);
+      await mentorshipService.upsertRevenue({ ...keep, revenueGenerated: action.revenue, ...(action.orders != null ? { numberOfOrders: action.orders } : {}) });
+      void qc.invalidateQueries({ queryKey: ["user", "mentorship-revenue"] });
+      void qc.invalidateQueries({ queryKey: ["user", "mentorship-stats"] });
+      void qc.invalidateQueries({ queryKey: weeklyGraphQueryKey });
+    } else if (action.type === "task_draft") {
+      await navigator.clipboard.writeText(draft);
+    } else if (action.type === "lesson_rating") {
+      await coursesService.saveLessonFeedback(action.courseId, action.lessonId, { rating: action.rating, ...(action.feedback ? { feedbackText: action.feedback } : {}) });
+      void qc.invalidateQueries({ queryKey: ["lesson-feedback", action.courseId] });
+    } else {
+      await helpBotService.addMemory(action.note);
+      void qc.invalidateQueries({ queryKey: ["help-bot", "prefs"] });
     }
   }
 
@@ -137,6 +164,42 @@ export function ActionCard({
         {action.type === "habit" && (
           <p>{action.question} → <b>{action.done ? t("helpBotHabitYes", "Yes") : t("helpBotHabitNo", "Not yet")}</b></p>
         )}
+        {action.type === "revenue" && (
+          <p>
+            {action.week}: <b style={{ color: "var(--color-text-normal)" }}>₹{action.revenue.toLocaleString("en-IN")}</b>
+            {action.orders != null && <> · {action.orders.toLocaleString("en-IN")} {t("helpBotRevenueOrders", "orders")}</>}
+            <br />
+            <span className="text-xs">{t("helpBotRevenueNote", "Saved in Mentorship → Your Revenue Stats. Your other figures stay as they are.")}</span>
+          </p>
+        )}
+        {action.type === "task_draft" && (
+          <>
+            <p className="font-medium" style={{ color: "var(--color-text-normal)" }}>{action.taskTitle}</p>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              maxLength={3000}
+              rows={6}
+              aria-label={t("helpBotDraftLabel", "Draft answer")}
+              className="w-full resize-y rounded-lg px-2 py-1.5 text-base sm:text-sm"
+              style={{ background: "transparent", border: "1px solid var(--color-border-medium)", color: "var(--color-text-normal)" }}
+            />
+            <p className="text-xs">{t("helpBotDraftNote", "Only a draft: copy it, check it, and submit it yourself on the task.")}</p>
+          </>
+        )}
+        {action.type === "lesson_rating" && (
+          <p>
+            {action.lessonTitle} → <b style={{ color: "var(--color-text-normal)" }}>{action.rating}/10</b>
+            {action.feedback && <><br /><span className="whitespace-pre-wrap">{action.feedback}</span></>}
+          </p>
+        )}
+        {action.type === "memory" && (
+          <p>
+            “{action.note}”
+            <br />
+            <span className="text-xs">{t("helpBotMemoryNote", "You can edit or delete it any time in Assistant settings.")}</span>
+          </p>
+        )}
       </div>
       {error && <p role="alert" className="mt-2 text-xs" style={{ color: "var(--color-alert)" }}>{error}</p>}
       {open ? (
@@ -154,8 +217,13 @@ export function ActionCard({
               className="h-10 flex-1 rounded-lg text-sm font-semibold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
               style={{ background: "var(--color-accent)", color: "#fff" }}
             >
-              {busy && <Loader2 size={14} className="animate-spin" />} {t("helpBotConfirm", "Confirm")}
+              {busy && <Loader2 size={14} className="animate-spin" />} {action.type === "task_draft" ? t("helpBotDraftCopy", "Copy draft") : t("helpBotConfirm", "Confirm")}
             </button>
+          )}
+          {action.type === "task_draft" && (
+            <Link href={action.link} className="h-10 px-3 rounded-lg text-sm inline-flex items-center" style={{ border: "1px solid var(--color-border-medium)" }}>
+              {t("helpBotDraftOpen", "Open task")}
+            </Link>
           )}
           <button type="button" onClick={dismiss} disabled={busy} className="h-10 px-3 rounded-lg text-sm disabled:opacity-50" style={{ border: "1px solid var(--color-border-medium)" }}>
             {t("helpBotNotNow", "Not now")}
@@ -165,7 +233,7 @@ export function ActionCard({
         <p className="mt-2 text-xs inline-flex items-center gap-1.5" style={{ color: action.status === "done" ? "var(--color-success)" : "var(--color-text-secondary)" }}>
           {action.status === "done" && <CheckCircle2 size={14} />}
           {action.status === "done"
-            ? t("helpBotDone", "Done")
+            ? action.type === "task_draft" ? t("helpBotDraftCopied", "Copied. Paste it in the task and submit.") : t("helpBotDone", "Done")
             : action.status === "dismissed"
               ? t("helpBotDismissed", "Not done")
               : t("helpBotCheck", "Started. Check whether it went through:")}

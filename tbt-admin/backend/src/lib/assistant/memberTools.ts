@@ -9,6 +9,7 @@ import { loadCategoryQuota, loadCoinBalance } from '../supportCallData.js';
 import { SUPPORT_CALL_CATEGORIES } from '../supportCallLogic.js';
 import { isTaskVisibleToMember } from '../weeklyGraphLogic.js';
 import type { HelpBotAction } from '../helpBot/actions.js';
+import type { PageRef } from '../helpBot/extras.js';
 import { batchDay, loadProgress } from './adminTools.js';
 import { ToolError, ist, listed, type AssistantTool } from './registry.js';
 
@@ -18,6 +19,8 @@ export interface MemberToolCtx {
   memberId: string;
   /** Things prepared for the member to confirm; nothing is done until they do. */
   actions?: HelpBotAction[];
+  /** The page the member has open (lib/helpBot/extras.ts parsePage). */
+  page?: PageRef;
 }
 
 const always = () => true;

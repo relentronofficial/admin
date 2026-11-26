@@ -6,7 +6,14 @@ export type HelpBotAction =
   | { type: 'ticket'; subject: string; message: string; categoryId: string | null; categoryName: string | null; priority: 'low' | 'medium' | 'high' }
   | { type: 'book_call'; sessionId: string; title: string; category: string; startsAt: string; minutes: number; host: string | null }
   | { type: 'cancel_call'; bookingId: string; title: string; startsAt: string }
-  | { type: 'habit'; habitId: string; question: string; done: boolean };
+  | { type: 'habit'; habitId: string; question: string; done: boolean }
+  /** This ISO week's figures on Mentorship → Your Revenue Stats; the app keeps the other figures. */
+  | { type: 'revenue'; revenue: number; orders: number | null; week: string }
+  /** A draft only: the member copies it into the task and submits it themselves. */
+  | { type: 'task_draft'; taskTitle: string; text: string; link: string }
+  | { type: 'lesson_rating'; courseId: string; lessonId: string; lessonTitle: string; rating: number; feedback: string | null }
+  /** A note for the assistant to remember (Assistant settings → Memory). */
+  | { type: 'memory'; note: string };
 
 /** pending → working → done, or → dismissed. A failed try goes back to pending. */
 export type ActionStatus = 'pending' | 'working' | 'done' | 'dismissed';

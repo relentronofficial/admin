@@ -58,6 +58,8 @@ export async function runChatLoop(o: {
   facts?: string;
   /** Stop looking things up once this much (USD) is spent; the member's credits pay for no more. */
   maxCostUsd?: number;
+  /** Pictures sent with the question (data: URLs), e.g. a screenshot of an error. */
+  images?: string[];
 }): Promise<LoopResult> {
   let messages: ChatMessage[] = [
     // Cache point 1: tool definitions + shared rules (reused across questions and admins).
@@ -66,7 +68,7 @@ export async function runChatLoop(o: {
     // Cache point 2: everything up to the question, reused by this question's
     // later rounds and by the next question in the chat. Tool results are not
     // cached: most questions read them once, and writing to the cache costs extra.
-    { role: 'user', content: [{ type: 'text', text: o.question, ...CACHE }] },
+    { role: 'user', content: [...(o.images ?? []).map((url) => ({ type: 'image_url', image_url: { url } })), { type: 'text', text: o.question, ...CACHE }] },
   ];
   const toolsUsed: string[] = [];
   let costUsd = 0;
@@ -103,7 +105,8 @@ export async function runChatLoop(o: {
       if (c.finishReason === 'content_filter') return { text: "Sorry, I can't help with that question.", toolsUsed, costUsd, hard };
       if (!text) return { text: 'I could not put together an answer. Please ask again in a different way.', toolsUsed, costUsd, hard };
       if (c.finishReason !== 'length') {
-        const unsupported = unsupportedNumbers(text, sources);
+        // The suggested next questions (help bot "FOLLOWUPS:" line) are not claims to check.
+        const unsupported = unsupportedNumbers(text.replace(/^.*FOLLOWUPS:.*$/gim, ""), sources);
         if (unsupported.length && !rechecked && round < MAX_ROUNDS) {
           rechecked = true;
           o.onTool?.('checkAnswer');

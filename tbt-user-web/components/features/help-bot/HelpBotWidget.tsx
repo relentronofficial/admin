@@ -9,11 +9,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, History, Loader2, Maximize2, Minimize2, Plus, Send, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, Volume2, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Check, Copy, History, ImagePlus, Loader2, Maximize2, Minimize2, Plus, Send, Settings2, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, Volume2, X } from "lucide-react";
 import { useSiteConfig } from "@/lib/context/SiteConfigContext";
 import { usePodcastPlayer } from "@/lib/stores/usePodcastPlayer";
 import { playPcm, unlockAudio } from "@/lib/audio/pcmPlayer";
-import { fetchHelpBotSpeech, getHelpBotStatus, helpBotService, streamHelpBotChat, type HelpBotMessage } from "@/lib/api/services/helpBot.service";
+import { fetchHelpBotSpeech, getHelpBotStatus, helpBotService, streamHelpBotChat, type HelpBotMessage, type HelpBotNudge } from "@/lib/api/services/helpBot.service";
+import { AssistantSettings } from "./AssistantSettings";
+import { shrinkImage } from "./shrinkImage";
 import { ActionCard, type T } from "./ActionCard";
 import { useAiCreditWallet, useRefreshAiCredits } from "@/lib/hooks/useAiCredits";
 
@@ -27,6 +29,10 @@ const TOOL_LABELS: Record<string, string> = {
   getMyPoints: "your coins", getMyPayments: "your payments", getMySupportQuota: "your calls", getMyUpcomingCalls: "your calls",
   getCallSlots: "open slots", getMyTickets: "your tickets", getMyTicket: "your ticket", searchHelp: "help answers",
   searchCommunity: "community posts", searchLibrary: "the library", getUpcomingEvents: "events", getMyHabits: "your habits",
+  getMyWeeklyGraph: "your weekly graph", getMyStanding: "your points and rank", getMyLifelines: "your lifelines",
+  getMyWorkshopsAndWebinars: "workshops and webinars", getMyNotifications: "your notifications", getMyWeeklyReport: "your weekly report",
+  getMyResumePoint: "where you stopped", getLessonNotes: "the lesson", getMyWeekAhead: "your week",
+  prepareRevenueUpdate: "your revenue", prepareTaskDraft: "your task", prepareLessonRating: "your rating", prepareMemory: "your notes",
 };
 const MAX_INPUT = 1500;
 
@@ -105,14 +111,69 @@ function Markdown({ text, onNavigate }: { text: string; onNavigate: () => void }
   return <div className="space-y-2 break-words">{blocks}</div>;
 }
 
+/** The in-app links of an answer, for "Open" buttons (at most three, no repeats). */
+function appLinks(text: string): Array<{ label: string; href: string }> {
+  const out: Array<{ label: string; href: string }> = [];
+  for (const m of text.matchAll(/\[([^\]]+)\]\((\/(?!\/)[\w\-/?=&%.#]*)\)/g)) {
+    if (!out.some((l) => l.href === m[2])) out.push({ label: m[1].replace(/\*\*/g, "").slice(0, 40), href: m[2] });
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
+/**
+ * Shows a new answer a little at a time, like typing. The whole answer has
+ * already arrived (the assistant checks its figures before sending), so this
+ * is only how it appears; it finishes in about 1.5 seconds whatever the length.
+ */
+function useReveal(text: string, on: boolean): string {
+  const [shown, setShown] = useState(on ? 0 : text.length);
+  useEffect(() => {
+    if (!on) return setShown(text.length);
+    if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return setShown(text.length);
+    const step = Math.max(4, Math.ceil(text.length / 50));
+    const id = setInterval(() => setShown((n) => {
+      const next = Math.min(text.length, n + step);
+      if (next >= text.length) clearInterval(id);
+      return next;
+    }), 30);
+    return () => clearInterval(id);
+  }, [text, on]);
+  if (shown >= text.length) return text;
+  // Never cut inside a link or bold marker.
+  const cut = text.slice(0, shown);
+  const open = cut.lastIndexOf("[");
+  return open > cut.lastIndexOf(")") ? cut.slice(0, open) : cut;
+}
+
+function AnswerText({ text, reveal, onNavigate, onDone }: { text: string; reveal: boolean; onNavigate: () => void; onDone: () => void }) {
+  const shown = useReveal(text, reveal);
+  const done = shown === text;
+  useEffect(() => { if (reveal && done) onDone(); }, [reveal, done]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <Markdown text={shown} onNavigate={onNavigate} />;
+}
+
+function nudgeText(n: HelpBotNudge, t: T): string {
+  switch (n.kind) {
+    case "weekly_report": return n.locked ? t("helpBotNudgeReportLocked", "Submit your weekly report — your course videos are locked until you do") : t("helpBotNudgeReport", "Submit this week's report before Saturday 6 PM");
+    case "call_today": return `${t("helpBotNudgeCall", "Your call today")}: ${n.title} · ${n.starts.slice(11)}`;
+    case "tasks": return `${n.count} ${t("helpBotNudgeTasks", "task(s) left for today")} (${t("helpBotNudgeDay", "Day")} ${n.day})`;
+    case "lesson": return `${t("helpBotNudgeLesson", "Continue")}: ${n.title} · ${n.course}`;
+    case "revenue": return t("helpBotNudgeRevenue", "Add this week's revenue in Your Revenue Stats");
+    case "habits": return `${n.count} ${t("helpBotNudgeHabits", "Morning Ritual habit(s) to answer today")}`;
+    case "notifications": return `${n.count} ${t("helpBotNudgeNotifications", "unread notification(s)")}`;
+  }
+}
+
 // ── Widget ───────────────────────────────────────────────────────────────────
 
 function suggestionsFor(path: string, t: T): string[] {
+  if (path.startsWith("/learning/")) return [t("helpBotSugLesson1", "Explain this lesson simply"), t("helpBotSugCourse2", "Why is my next lesson locked?"), t("helpBotSugLesson3", "Is my weekly report done?")];
   if (/^\/(learning|courses)/.test(path)) return [t("helpBotSugCourse1", "Where did I stop in my course?"), t("helpBotSugCourse2", "Why is my next lesson locked?"), t("helpBotSugCourse3", "How do I get my certificate?")];
-  if (/^\/(mentorship|batch-program)/.test(path)) return [t("helpBotSugMentor1", "What are my tasks today?"), t("helpBotSugMentor2", "How many expert calls do I have left?"), t("helpBotSugMentor3", "Book a sales call for me")];
+  if (/^\/(mentorship|batch-program)/.test(path)) return [t("helpBotSugMentor1", "What are my tasks today?"), t("helpBotSugGraph", "How is my weekly graph looking?"), t("helpBotSugMentor2", "How many expert calls do I have left?"), t("helpBotSugMentor3", "Book a sales call for me")];
   if (path.startsWith("/support")) return [t("helpBotSugSupport1", "What's the status of my tickets?"), t("helpBotSugSupport2", "I paid but my course isn't open")];
   if (path.startsWith("/community")) return [t("helpBotSugCommunity1", "Any posts about Instagram ads?"), t("helpBotSugCommunity2", "Any events coming up?"), t("helpBotSugCommunity3", "What should I do today?")];
-  return [t("helpBotSugAny1", "What should I do today?"), t("helpBotSugAny2", "How many coins do I have?"), t("helpBotSugAny3", "Show my habits for today"), t("helpBotSugAny4", "Any events coming up?")];
+  return [t("helpBotSugAny1", "What should I do today?"), t("helpBotSugPlan", "Make my plan for this week"), t("helpBotSugCaption", "Write an Instagram caption for my business"), t("helpBotSugRank", "What's my rank and points?")];
 }
 
 export function HelpBotWidget() {
@@ -186,7 +247,13 @@ function Chat({ pathname }: { pathname: string }) {
 
   const [open, setOpen] = useState(false);
   const [wide, setWide] = useState(false);
-  const [view, setView] = useState<"chat" | "history">("chat");
+  const [view, setView] = useState<"chat" | "history" | "settings">("chat");
+  /** A screenshot to send with the next question (shrunk JPEG data URL). */
+  const [image, setImage] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  /** The last question hit the member's own daily credit cap. */
+  const [capped, setCapped] = useState(false);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<HelpBotMessage[]>([]);
   const [input, setInput] = useState("");
@@ -216,6 +283,14 @@ function Chat({ pathname }: { pathname: string }) {
     enabled: open && view === "history",
   });
 
+  const { data: nudges } = useQuery({
+    queryKey: ["help-bot", "nudge"],
+    queryFn: helpBotService.nudges,
+    enabled: open && view === "chat" && messages.length === 0,
+    staleTime: 5 * 60_000,
+  });
+  const lowCredits = charging && !!wallet && wallet.available < wallet.minCreditsToAsk;
+
   const remember = (id: string | null) => {
     setChatId(id);
     try {
@@ -238,6 +313,7 @@ function Chat({ pathname }: { pathname: string }) {
     setBusy(false);
     setError(null);
     setNeedsCredits(false);
+    setCapped(false);
     setMessages([]);
     setView("chat");
     return ++loadRef.current;
@@ -296,13 +372,15 @@ function Chat({ pathname }: { pathname: string }) {
 
   const suggestions = useMemo(() => suggestionsFor(pathname, t), [pathname, t]);
 
-  async function ask(question: string) {
-    const q = question.trim().slice(0, MAX_INPUT);
+  async function ask(question: string, withImage: string | null = null) {
+    const q = question.trim().slice(0, MAX_INPUT) || (withImage ? t("helpBotScreenshotAsk", "Please look at this screenshot and help me with it.") : "");
     if (!q || busy || loading) return;
     stopSpeaking();
     setError(null);
     setNeedsCredits(false);
+    setCapped(false);
     setInput("");
+    if (withImage) setImage(null);
     setBusy(true);
     setStep("");
     const ctrl = new AbortController();
@@ -310,22 +388,24 @@ function Chat({ pathname }: { pathname: string }) {
     setMessages((m) => {
       const last = m[m.length - 1];
       const retrying = last?.role === "user" && last.content === q;
-      return [...(retrying ? m.slice(0, -1) : m), { id: `q-${Date.now()}`, role: "user", content: q }];
+      return [...(retrying ? m.slice(0, -1) : m), { id: `q-${Date.now()}`, role: "user", content: withImage ? `${q}\n📷 ${t("helpBotScreenshot", "Screenshot")}` : q }];
     });
     let answered = false;
     let failed = "";
     let noCredits = false;
     try {
-      await streamHelpBotChat({ message: q, conversationId: chatId, page: pathname }, (ev) => {
+      const page = `${pathname}${typeof window !== "undefined" ? window.location.search : ""}`.slice(0, 300);
+      await streamHelpBotChat({ message: q, conversationId: chatId, page, ...(withImage ? { image: withImage } : {}) }, (ev) => {
         if (ctrl.signal.aborted) return;
         if (ev.t === "start") remember(ev.conversationId);
         else if (ev.t === "tool") setStep(TOOL_LABELS[ev.name] ? t(`helpBotStep_${ev.name}`, TOOL_LABELS[ev.name]) : "");
         else if (ev.t === "answer") {
           answered = true;
-          setMessages((m) => [...m, { id: ev.messageId ?? `${UNSAVED}${Date.now()}`, role: "assistant", content: ev.text, actions: ev.actions, credits: ev.credits ?? null }]);
+          setMessages((m) => [...m, { id: ev.messageId ?? `${UNSAVED}${Date.now()}`, role: "assistant", content: ev.text, actions: ev.actions, credits: ev.credits ?? null, followUps: ev.followUps ?? null, reveal: true }]);
         } else {
           failed = ev.message;
           noCredits = ev.code === "AI_CREDITS_NEEDED";
+          if (ev.code === "AI_DAILY_CAP") setCapped(true);
         }
       }, ctrl.signal);
     } catch { /* reported below */ }
@@ -440,13 +520,13 @@ function Chat({ pathname }: { pathname: string }) {
         >
           {/* Header */}
           <div className="flex items-center gap-0.5 px-3 py-2.5" style={{ borderBottom: "1px solid var(--color-border-medium)" }}>
-            {view === "history" ? (
+            {view !== "chat" ? (
               <button type="button" onClick={() => setView("chat")} aria-label={t("helpBotBack", "Back to chat")} className={iconBtn} style={muted}><ArrowLeft size={18} /></button>
             ) : (
               <BotAvatar size={34} />
             )}
             <div className="flex-1 min-w-0 pl-2">
-              <div className="font-semibold text-sm truncate">{view === "history" ? t("helpBotHistory", "Your chats") : title}</div>
+              <div className="font-semibold text-sm truncate">{view === "history" ? t("helpBotHistory", "Your chats") : view === "settings" ? t("helpBotSettings", "Assistant settings") : title}</div>
               {view === "chat" && (
                 charging && wallet ? (
                   <Link href="/ai-credits" onClick={() => { if (window.innerWidth < 640) setOpen(false); }} className="text-xs truncate inline-flex items-center gap-1 hover:underline" style={muted}>
@@ -460,6 +540,9 @@ function Chat({ pathname }: { pathname: string }) {
             {view === "chat" && (
               <button type="button" onClick={() => setView("history")} aria-label={t("helpBotHistory", "Your chats")} title={t("helpBotHistory", "Your chats")} className={iconBtn} style={muted}><History size={16} /></button>
             )}
+            {view === "chat" && (
+              <button type="button" onClick={() => setView("settings")} aria-label={t("helpBotSettings", "Assistant settings")} title={t("helpBotSettings", "Assistant settings")} className={iconBtn} style={muted}><Settings2 size={16} /></button>
+            )}
             <button type="button" onClick={newChat} aria-label={t("helpBotNewChat", "New chat")} title={t("helpBotNewChat", "New chat")} className={iconBtn} style={muted}><Plus size={18} /></button>
             <span className="hidden sm:block">
               <button type="button" onClick={() => setWide((w) => !w)} aria-label={wide ? t("helpBotSmaller", "Smaller") : t("helpBotLarger", "Larger")} className={iconBtn} style={muted}>
@@ -469,7 +552,9 @@ function Chat({ pathname }: { pathname: string }) {
             <button type="button" onClick={() => setOpen(false)} aria-label={t("helpBotClose", "Close")} className={iconBtn} style={muted}><X size={18} /></button>
           </div>
 
-          {view === "history" ? (
+          {view === "settings" ? (
+            <AssistantSettings t={t} charging={charging} onDone={() => setView("chat")} />
+          ) : view === "history" ? (
             <div className="flex-1 overflow-y-auto p-2 text-sm">
               {chatsLoading ? (
                 <p className="p-4 text-center" style={muted}>{t("helpBotLoading", "Loading…")}</p>
@@ -500,6 +585,17 @@ function Chat({ pathname }: { pathname: string }) {
                         {t("helpBotGreeting", "Vanakkam! I'm your TBT Assistant. Ask me in Tamil, Tanglish or English: your courses, tasks, coins, calls, tickets, community and more.")}
                       </div>
                     </div>
+                    {!!nudges?.length && (
+                      <div className="ml-9 rounded-xl p-3 space-y-1.5" style={{ border: "1px solid var(--color-border-medium)", background: "var(--color-bg-surface)" }}>
+                        <p className="text-xs font-semibold" style={muted}>{t("helpBotNudgeTitle", "For you today")}</p>
+                        {nudges.map((n, i) => (
+                          <Link key={i} href={n.href} onClick={() => { if (window.innerWidth < 640) setOpen(false); }} className="flex items-start gap-1.5 text-sm hover:underline">
+                            <ArrowUpRight size={14} className="mt-0.5 shrink-0" style={{ color: "var(--color-accent)" }} />
+                            <span>{nudgeText(n, t)}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex flex-wrap gap-2 pl-9">
                       {suggestions.map((s) => (
                         <button
@@ -527,8 +623,28 @@ function Chat({ pathname }: { pathname: string }) {
                     <div className="shrink-0"><BotAvatar size={28} /></div>
                     <div className="max-w-[88%] min-w-0">
                       <div className="rounded-2xl rounded-tl-sm px-3 py-2" style={bubble}>
-                        <Markdown text={m.content} onNavigate={() => { if (window.innerWidth < 640) setOpen(false); }} />
+                        <AnswerText
+                          text={m.content}
+                          reveal={!!m.reveal}
+                          onNavigate={() => { if (window.innerWidth < 640) setOpen(false); }}
+                          onDone={() => setMessages((all) => all.map((x) => (x.id === m.id ? { ...x, reveal: false } : x)))}
+                        />
                       </div>
+                      {!m.reveal && appLinks(m.content).length > 0 && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {appLinks(m.content).map((l) => (
+                            <Link
+                              key={l.href}
+                              href={l.href}
+                              onClick={() => { if (window.innerWidth < 640) setOpen(false); }}
+                              className="h-8 px-2.5 rounded-lg text-xs font-medium inline-flex items-center gap-1"
+                              style={{ background: "color-mix(in srgb, var(--color-accent) 12%, transparent)", color: "var(--color-accent)" }}
+                            >
+                              {t("helpBotOpen", "Open")} {l.label} <ArrowUpRight size={12} />
+                            </Link>
+                          ))}
+                        </div>
+                      )}
                       {!m.id.startsWith(UNSAVED) && m.actions?.map((a, i) => (
                         <ActionCard
                           key={i}
@@ -579,6 +695,23 @@ function Chat({ pathname }: { pathname: string }) {
                   </div>
                 ))}
 
+                {!busy && last?.role === "assistant" && !last.reveal && !!last.followUps?.length && (
+                  <div className="flex flex-wrap gap-2 pl-9">
+                    {last.followUps.map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => void ask(f)}
+                        disabled={lowCredits}
+                        className="text-xs rounded-full px-3 py-2 text-left hover:opacity-80 disabled:opacity-40"
+                        style={{ border: "1px solid var(--color-accent)", color: "var(--color-accent)" }}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {busy && (
                   <div className="flex items-center gap-2" style={muted} role="status">
                     <BotAvatar size={28} />
@@ -587,7 +720,16 @@ function Chat({ pathname }: { pathname: string }) {
                   </div>
                 )}
 
-                {needsCredits && !busy && (
+                {capped && !busy && (
+                  <div role="alert" className="rounded-xl px-3 py-3 space-y-2 text-sm" style={{ border: "1px solid var(--color-border-medium)" }}>
+                    <p>{t("helpBotCapReached", "You've used your own daily credit limit. Ask again tomorrow, or change the limit in Assistant settings.")}</p>
+                    <button type="button" onClick={() => setView("settings")} className="h-9 px-3 rounded-lg text-xs font-semibold" style={{ border: "1px solid var(--color-border-medium)" }}>
+                      {t("helpBotSettings", "Assistant settings")}
+                    </button>
+                  </div>
+                )}
+
+                {(needsCredits || lowCredits) && !busy && (
                   <div
                     role="alert"
                     className="rounded-xl px-3 py-3 space-y-2 text-sm"
@@ -621,7 +763,44 @@ function Chat({ pathname }: { pathname: string }) {
               </div>
 
               {/* Composer */}
-              <form onSubmit={(e) => { e.preventDefault(); void ask(input); }} className="flex items-end gap-2 px-3 py-3" style={{ borderTop: "1px solid var(--color-border-medium)" }}>
+              {image && (
+                <div className="flex items-center gap-2 px-3 pt-2 text-xs" style={muted}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image} alt={t("helpBotScreenshot", "Screenshot")} className="h-12 w-12 rounded-md object-cover" />
+                  <span className="flex-1">{t("helpBotScreenshotReady", "Screenshot will be sent with your question")}</span>
+                  <button type="button" onClick={() => setImage(null)} aria-label={t("helpBotScreenshotRemove", "Remove screenshot")} className={iconBtn}><X size={14} /></button>
+                </div>
+              )}
+              {imageError && <p role="alert" className="px-3 pt-2 text-xs" style={{ color: "var(--color-alert)" }}>{imageError}</p>}
+              <form onSubmit={(e) => { e.preventDefault(); void ask(input, image); }} className="flex items-end gap-2 px-3 py-3" style={{ borderTop: "1px solid var(--color-border-medium)" }}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!f) return;
+                    setImageError(null);
+                    try {
+                      setImage(await shrinkImage(f));
+                    } catch {
+                      setImageError(t("helpBotScreenshotFailed", "This picture could not be used. Try a screenshot (PNG or JPG)."));
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={busy || loading}
+                  aria-label={t("helpBotScreenshotAdd", "Add a screenshot")}
+                  title={t("helpBotScreenshotAdd", "Add a screenshot")}
+                  className="h-11 w-9 shrink-0 grid place-items-center rounded-xl hover:opacity-70 disabled:opacity-40"
+                  style={muted}
+                >
+                  <ImagePlus size={18} />
+                </button>
                 <textarea
                   ref={inputRef}
                   value={input}
@@ -629,7 +808,7 @@ function Chat({ pathname }: { pathname: string }) {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                       e.preventDefault();
-                      void ask(input);
+                      void ask(input, image);
                     }
                   }}
                   rows={input.length > 45 || input.includes("\n") ? 3 : 1}
@@ -643,11 +822,20 @@ function Chat({ pathname }: { pathname: string }) {
                     <Square size={14} />
                   </button>
                 ) : (
-                  <button type="submit" disabled={!input.trim() || loading} aria-label={t("helpBotSend", "Send")} className="h-11 w-11 shrink-0 rounded-xl grid place-items-center disabled:opacity-40" style={{ background: "var(--color-accent)", color: "#fff" }}>
+                  <button type="submit" disabled={(!input.trim() && !image) || loading || lowCredits} aria-label={t("helpBotSend", "Send")} className="h-11 w-11 shrink-0 rounded-xl grid place-items-center disabled:opacity-40" style={{ background: "var(--color-accent)", color: "#fff" }}>
                     <Send size={16} />
                   </button>
                 )}
               </form>
+              {charging && wallet && !lowCredits && (
+                <p className="px-4 -mt-1 mb-1 text-[11px] text-center tabular-nums" style={muted}>
+                  {wallet.typicalCredits
+                    ? `${t("helpBotEstimate", "A question usually uses about")} ${wallet.typicalCredits} ${t("aiCreditsUnit", "credits")}`
+                    : `${t("helpBotEstimateMin", "Each question uses at least")} ${wallet.minCreditsToAsk} ${t("aiCreditsUnit", "credits")}`}
+                  {wallet.maxCreditsPerQuestion ? ` (${t("helpBotEstimateMax", "at most")} ${wallet.maxCreditsPerQuestion})` : ""}
+                  {` · ${wallet.available.toLocaleString("en-IN")} ${t("helpBotEstimateLeft", "left")}`}
+                </p>
+              )}
               <p className="px-4 -mt-1 text-[10px] text-center" style={{ color: "var(--color-text-subtle)", paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}>
                 {t("helpBotDisclaimer", "AI answers can be wrong. Your question and the data needed to answer it go to an AI service. Chats are kept for 90 days.")}
               </p>
