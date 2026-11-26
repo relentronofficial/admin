@@ -286,6 +286,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   // handleLifelineWebhookEvent). These tests create none, so the lookup finds no rows
   // and the event falls through to the coin / course logic — as the real database would.
   if (q.startsWith('SELECT 1 FROM lifeline_razorpay_orders WHERE order_id')) return [];
+  if (q.startsWith('SELECT 1 FROM ai_credit_orders WHERE razorpay_order_id')) return []; // no AI credit orders here
 
   unhandled.push(q.slice(0, 120));
   return q.startsWith('SELECT') || q.includes('RETURNING') ? [] : 0;

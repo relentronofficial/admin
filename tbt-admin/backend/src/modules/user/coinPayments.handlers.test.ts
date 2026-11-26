@@ -263,6 +263,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
   if (q.includes('FROM course_payments') || q.startsWith('UPDATE course_payments')) return q.startsWith('UPDATE') ? 0 : [];
   // The shared webhook looks for an Extra Lifeline order first; none exist here.
   if (q.startsWith('SELECT 1 FROM lifeline_razorpay_orders WHERE order_id')) return [];
+  if (q.startsWith('SELECT 1 FROM ai_credit_orders WHERE razorpay_order_id')) return []; // no AI credit orders here
   // Fire-and-forget admin bell entry written after a booking.
   if (q.startsWith('INSERT INTO admin_notifications')) return 1;
 

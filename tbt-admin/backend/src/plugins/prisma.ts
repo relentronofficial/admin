@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import fp from 'fastify-plugin';
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env.js';
+import { AI_CREDITS_DDL } from '../lib/aiCredits.js';
 
 // lifeline_razorpay_orders — DDL for Extra Lifeline Razorpay orders (raw SQL, no Prisma model).
 //
@@ -2820,6 +2821,10 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
     await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS idx_coin_orders_member ON coin_orders(member_id)`
     ).catch(() => {});
+    // AI credits wallet (lib/aiCredits.ts): packs, Razorpay orders, ledger.
+    for (const sql of AI_CREDITS_DDL) {
+      await prisma.$executeRawUnsafe(sql).catch((err) => fastify.log.error({ err }, '[ai-credits] startup DDL failed'));
+    }
     // Upfront coin purchases of extra support call quota. Member spends coins to
     // pre-purchase N extra calls for a category; the purchased quantity is added
     // to their allocated count so they can book slots without per-slot coin deduction.

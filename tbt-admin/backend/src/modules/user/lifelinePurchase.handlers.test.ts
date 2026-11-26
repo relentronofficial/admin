@@ -120,6 +120,7 @@ async function sql(text: string, ...a: any[]): Promise<any> {
     return 1;
   }
   if (q.startsWith('SELECT 1 FROM lifeline_razorpay_orders WHERE order_id')) return db.orders.filter((o) => o.orderId === a[0]).map(() => ({ '?column?': 1 }));
+  if (q.startsWith('SELECT 1 FROM ai_credit_orders WHERE razorpay_order_id')) return []; // no AI credit orders here
   if (q.startsWith('SELECT order_id AS "orderId"')) {
     return db.orders.filter((o) => o.orderId === a[0]).map((o) => ({
       orderId: o.orderId, memberId: o.memberId, batchId: o.batchId, amountPaise: String(o.amountPaise),

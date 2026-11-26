@@ -27,6 +27,7 @@ import { weeklyGraphRoutes } from './modules/weekly-graph/routes.js';
 import { myWorkspaceRoutes } from './modules/my-workspace/routes.js';
 import { moduleFaqsRoutes } from './modules/module-faqs/routes.js';
 import { helpBotRoutes } from './modules/help-bot/routes.js';
+import { aiCreditsRoutes } from './modules/ai-credits/routes.js';
 import { adminAssistantRoutes } from './modules/admin-assistant/routes.js';
 import { insightsRoutes } from './modules/insights/routes.js';
 import { creditsRoutes } from './modules/credits/routes.js';
@@ -230,6 +231,7 @@ async function bootstrap() {
     await fastify.register(myWorkspaceRoutes, { prefix: '/api/my-workspace' });
     await fastify.register(moduleFaqsRoutes, { prefix: '/api/module-faqs' });
     await fastify.register(helpBotRoutes, { prefix: '/api/help-bot' });
+    await fastify.register(aiCreditsRoutes, { prefix: '/api/ai-credits' });
     await fastify.register(adminAssistantRoutes, { prefix: '/api/admin-assistant' });
     await fastify.register(insightsRoutes, { prefix: '/api/insights' });
     await fastify.register(creditsRoutes, { prefix: '/api/credits' });

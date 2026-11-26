@@ -93,6 +93,7 @@ import {
   rupeesToPaise,
   type CoinPackage,
 } from '../../lib/coinOrders.js';
+import { handleAiCreditWebhookEvent } from '../../lib/aiCredits.js';
 import { demoRevenue, demoSocial, demoStats } from '../../lib/mentorshipDemo.js';
 import { buildDemoOverlay, isMentorshipDemoRequest, markDemo } from '../../lib/mentorshipDemoRequest.js';
 import { notifyWeeklyGraphChanged } from '../../lib/weeklyGraphNotify.js';
@@ -8326,6 +8327,10 @@ export async function razorpayWebhookHandler(request: FastifyRequest, reply: Fas
   // exist in course_payments; anything else falls through to the course logic below.
   const lifeline = await handleLifelineWebhookEvent(request.server.prisma, body, request.log);
   if (lifeline) return reply.status(lifeline.status).send(lifeline.payload);
+
+  // AI credit orders (lib/aiCredits.ts) — also never in course_payments.
+  const aiCredit = await handleAiCreditWebhookEvent(request.server.prisma as any, body, request.log);
+  if (aiCredit) return reply.status(aiCredit.status).send(aiCredit.payload);
 
   if (body.event === 'payment.failed') {
     const failedOrderId: string | undefined = body?.payload?.payment?.entity?.order_id;
