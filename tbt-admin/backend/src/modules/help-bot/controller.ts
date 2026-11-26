@@ -259,7 +259,7 @@ export async function getConversationHandler(req: FastifyRequest<{ Params: { id:
   if (!own) return fail(reply, 404, 'Chat not found.');
   const messages = await req.server.prisma.$queryRawUnsafe(
     `SELECT * FROM (
-       SELECT id::text, role, content, actions, rating, created_at AS "createdAt" FROM help_bot_messages
+       SELECT id::text, role, content, actions, rating, credits_charged AS credits, created_at AS "createdAt" FROM help_bot_messages
         WHERE conversation_id = $1::uuid ORDER BY created_at DESC LIMIT 100) m ORDER BY m."createdAt"`, req.params.id);
   return ok(reply, { id: req.params.id, messages });
 }

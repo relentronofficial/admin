@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Sun, Sparkles, Target, Dumbbell, Coffee,
   ChevronDown, ChevronUp, CheckCircle2,
 } from "lucide-react";
 import { useRitualHabits, useRitualsButtonsConfig } from "@/lib/hooks/useRituals";
+import { getHelpBotStatus, helpBotService } from "@/lib/api/services/helpBot.service";
 import type { Habit } from "@/types";
 
 // ─── Fallbacks (mirror mobile) ───────────────────────────────────────────────
@@ -58,6 +60,22 @@ export function MorningRitualCard() {
   const [expanded, setExpanded] = useState(true);
 
   const list = (habits && habits.length > 0) ? habits : FALLBACK_HABITS;
+  // Members with the TBT Assistant have their answers saved, so card and chat agree.
+  const qc = useQueryClient();
+  const { data: bot } = useQuery({ queryKey: ["help-bot", "status"], queryFn: getHelpBotStatus, staleTime: 10 * 60_000, retry: 1 });
+  const saves = !!bot?.enabled && !!habits?.length;
+  const { data: saved } = useQuery({ queryKey: ["help-bot", "habits"], queryFn: helpBotService.habits, enabled: saves });
+  const shown = useRef<unknown>(null);
+  useEffect(() => {
+    if (!saved || !habits?.length || shown.current === saved) return;
+    const first = shown.current === null;
+    shown.current = saved;
+    const done = new Map(saved.map((x) => [x.habitId, x.done]));
+    setAnswers((prev) => habits.map((h, i) => done.get(h.id) ?? prev[i] ?? null));
+    const next = habits.findIndex((h) => !done.has(h.id));
+    if (first && next > 0) setStep(next);
+  }, [saved, habits]);
+
   const yesLabel = buttons?.yesLabel ?? "Yes";
   const notYetLabel = buttons?.notYetLabel ?? "Not Yet";
 
@@ -69,6 +87,11 @@ export function MorningRitualCard() {
     const next = [...answers];
     next[step] = value;
     setAnswers(next);
+    if (saves) {
+      helpBotService.saveHabit(list[step].id, value)
+        .then(() => qc.invalidateQueries({ queryKey: ["help-bot", "habits"] }))
+        .catch(() => undefined);
+    }
     if (step < list.length - 1) {
       setTimeout(() => setStep((s) => s + 1), 220);
     }

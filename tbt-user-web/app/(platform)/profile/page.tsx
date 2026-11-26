@@ -949,6 +949,18 @@ export default function ProfilePage() {
         <ArrowRight size={16} className="text-muted-foreground shrink-0" />
       </Link>
 
+      {/* AI credits for TBT Assistant answers (/ai-credits) */}
+      <Link
+        href="/ai-credits"
+        className="flex items-center justify-between gap-3 p-5 rounded-2xl border border-border bg-card transition-opacity hover:opacity-90"
+      >
+        <div>
+          <h3 className="text-sm font-bold text-foreground">AI Credits</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Your balance, buy credits and history</p>
+        </div>
+        <ArrowRight size={16} className="text-muted-foreground shrink-0" />
+      </Link>
+
       {/* Mentorship Benefits */}
       <div className="p-6 rounded-2xl border border-border bg-card space-y-4">
         <h3 className="text-sm font-bold text-foreground">Your Mentorship Benefits</h3>
