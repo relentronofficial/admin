@@ -16,7 +16,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
 import { calculateTool } from '../../lib/assistant/calculate.js';
-import { HISTORY_TURNS, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
+import { HISTORY_TURNS, OVER_BUDGET, conversationTitle, runChatLoop } from '../../lib/assistant/chatLoop.js';
+import { costCapUsd, creditsForCost, loadAiCreditSettings, releaseAiCredits, reserveAiCredits, settleAiCredits, type AiCreditSettings } from '../../lib/aiCredits.js';
 import { memberActionTools } from '../../lib/assistant/memberActionTools.js';
 import { memberTools, type MemberToolCtx } from '../../lib/assistant/memberTools.js';
 import { AssistantServiceError, HARD_MODEL, openRouterComplete, usableKey } from '../../lib/assistant/openRouter.js';
@@ -378,6 +379,20 @@ export async function helpBotChatHandler(
   const [reference, memberCtx] = await Promise.all([getReference(req), loadMemberContext(req, memberId, req.body?.page)]);
   if (!memberCtx) return fail(reply, 404, 'Member not found.');
 
+  // AI credits: when charging is on, set credits aside before any AI call.
+  const pricing: AiCreditSettings = await loadAiCreditSettings(prisma);
+  let hold: { holdId: string; credits: number } | null = null;
+  if (pricing.chargingEnabled) {
+    const r = await reserveAiCredits(prisma as any, memberId, pricing);
+    if (!r.ok) {
+      return reply.code(402).send({
+        success: false, data: { code: 'AI_CREDITS_NEEDED', available: r.available, minCredits: pricing.minCreditsToAsk },
+        error: 'You need AI credits to ask the assistant. Buy credits to continue.',
+      });
+    }
+    hold = { holdId: r.holdId, credits: r.credits };
+  }
+
   if (conversationId == null) {
     const [c] = await prisma.$queryRawUnsafe<Array<{ id: string }>>(
       `INSERT INTO help_bot_conversations (member_id, title) VALUES ($1::uuid, $2) RETURNING id::text`, memberId, conversationTitle(question));
@@ -409,7 +424,19 @@ export async function helpBotChatHandler(
       `INSERT INTO help_bot_messages (conversation_id, role, content, tools, actions, cost_usd) VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4::jsonb, $5::numeric) RETURNING id::text`,
       conversationId, text, JSON.stringify(used), JSON.stringify(actions), String(costUsd));
     await prisma.$executeRawUnsafe(`UPDATE help_bot_conversations SET updated_at = NOW() WHERE id = $1::uuid`, conversationId);
-    send({ t: 'answer', text, messageId: saved?.id ?? null, conversationId, actions });
+    let credits: number | undefined;
+    if (hold) {
+      const h = hold;
+      hold = null;
+      // A question cut short for using too much is not charged.
+      const owed = text === OVER_BUDGET ? 0 : creditsForCost(costUsd, pricing);
+      credits = await settleAiCredits(prisma as any, { memberId, holdId: h.holdId, held: h.credits, credits: owed, messageId: saved?.id ?? null })
+        .catch((err) => {
+          req.log.error({ err }, '[help-bot] AI credit charge failed');
+          return 0;
+        });
+    }
+    send({ t: 'answer', text, messageId: saved?.id ?? null, conversationId, actions, ...(credits !== undefined && { credits }) });
   };
 
   try {
@@ -430,6 +457,7 @@ export async function helpBotChatHandler(
       history,
       question,
       tools: toolDefinitions(tools, ctx),
+      ...(hold && { maxCostUsd: costCapUsd(hold.credits, pricing) }),
       runTool: (name, args) => runTool(tools, ctx, name, args, { onError: (err) => req.log.error({ err, tool: name }, '[help-bot] tool failed') }),
       onTool: (name) => send({ t: 'tool', name }),
       signal: abort.signal,
@@ -444,6 +472,8 @@ export async function helpBotChatHandler(
     }
   } finally {
     clearInterval(ping);
+    // Not answered (failed or the member left): nothing is charged.
+    if (hold) await releaseAiCredits(prisma as any, memberId, hold.holdId).catch(() => {});
     if (!reply.raw.writableEnded) reply.raw.end();
   }
 }

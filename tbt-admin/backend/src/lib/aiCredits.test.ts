@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { AI_CREDITS_DDL, aiCreditPackSchema, creditAiOrder, handleAiCreditWebhookEvent, loadAiCreditBalance, rupeesToPaise } from './aiCredits.js';
+import {
+  AI_CREDITS_DDL, DEFAULT_AI_CREDIT_SETTINGS, aiCreditPackSchema, aiCreditSettingsSchema, costCapUsd, creditAiOrder, creditsForCost,
+  handleAiCreditWebhookEvent, holdFor, loadAiCreditBalance, loadAvailableAiCredits, releaseAiCredits, reserveAiCredits, rupeesToPaise, settleAiCredits,
+} from './aiCredits.js';
 
 const MEMBER = '41000000-0000-4000-8000-000000000001';
 const OTHER = '41000000-0000-4000-8000-000000000002';
@@ -8,11 +11,33 @@ const OTHER = '41000000-0000-4000-8000-000000000002';
 /** In-memory stand-in answering exactly the SQL lib/aiCredits.ts issues. */
 function fakeDb(orders: Array<{ id: string; member_id: string; razorpay_order_id: string; credits: number; amount_paise: number; status: string }>) {
   const ledger: Array<{ member_id: string; delta: number; source: string; reference_id: string | null }> = [];
+  const holds: Array<{ id: string; member_id: string; credits: number; expired?: boolean }> = [];
+  const charged: Record<string, number> = {};
+  let nextHold = 1;
   let chain = Promise.resolve();
   const db: any = {
     ledger,
     orders,
+    holds,
+    charged,
     async $queryRawUnsafe(sql: string, ...v: any[]) {
+      if (sql.includes('pg_advisory_xact_lock')) return [{}];
+      if (sql.includes('FROM ai_credit_holds WHERE member_id = $1::uuid AND expires_at > NOW()')) {
+        return [{
+          balance: ledger.filter((l) => l.member_id === v[0]).reduce((a, l) => a + l.delta, 0),
+          held: holds.filter((h) => h.member_id === v[0] && !h.expired).reduce((a, h) => a + h.credits, 0),
+        }];
+      }
+      if (sql.includes('INSERT INTO ai_credit_holds')) {
+        const h = { id: `h${nextHold++}`, member_id: v[0], credits: v[1] };
+        holds.push(h);
+        return [{ id: h.id }];
+      }
+      if (sql.includes("'usage', $3::uuid")) {
+        if (ledger.some((l) => l.source === 'usage' && l.reference_id === v[2])) return [];
+        ledger.push({ member_id: v[0], delta: v[1], source: 'usage', reference_id: v[2] });
+        return [{ id: 'u' }];
+      }
       if (sql.includes('SUM(delta)')) return [{ balance: ledger.filter((l) => l.member_id === v[0]).reduce((a, l) => a + l.delta, 0) }];
       if (sql.startsWith('SELECT 1 FROM ai_credit_orders')) return orders.filter((o) => o.razorpay_order_id === v[0]).map(() => ({ '?column?': 1 }));
       if (sql.includes('FROM ai_credit_orders WHERE razorpay_order_id = $1 FOR UPDATE')) return orders.filter((o) => o.razorpay_order_id === v[0]).map((o) => ({ ...o }));
@@ -24,6 +49,16 @@ function fakeDb(orders: Array<{ id: string; member_id: string; razorpay_order_id
       throw new Error(`unexpected query: ${sql}`);
     },
     async $executeRawUnsafe(sql: string, ...v: any[]) {
+      if (sql.includes('DELETE FROM ai_credit_holds WHERE member_id = $1::uuid AND expires_at <= NOW()')) {
+        for (let i = holds.length - 1; i >= 0; i--) if (holds[i].member_id === v[0] && holds[i].expired) holds.splice(i, 1);
+        return 0;
+      }
+      if (sql.includes('DELETE FROM ai_credit_holds WHERE id = $1::uuid')) {
+        const i = holds.findIndex((h) => h.id === v[0] && h.member_id === v[1]);
+        if (i >= 0) holds.splice(i, 1);
+        return i >= 0 ? 1 : 0;
+      }
+      if (sql.includes('UPDATE help_bot_messages SET credits_charged')) { charged[v[0]] = v[1]; return 1; }
       if (sql.includes("SET status = 'paid'")) { const o = orders.find((x) => x.id === v[0])!; o.status = 'paid'; return 1; }
       if (sql.includes("SET status = 'failed'")) {
         const o = orders.find((x) => x.razorpay_order_id === v[0] && x.status === 'created');
@@ -108,5 +143,75 @@ describe('AI credits', () => {
     for (const t of ['ai_credit_packs', 'ai_credit_orders', 'ai_credit_ledger']) expect(ddl).toContain(`EXISTS ${t} `);
     expect(ddl).toContain('ON ai_credit_ledger(source, reference_id) WHERE reference_id IS NOT NULL');
     expect(readFileSync(new URL('../plugins/prisma.ts', import.meta.url), 'utf8')).toContain('for (const sql of AI_CREDITS_DDL)');
+  });
+
+  describe('charging for answers', () => {
+    const S = { ...DEFAULT_AI_CREDIT_SETTINGS, chargingEnabled: true };
+    const MSG = '61000000-0000-4000-8000-000000000001';
+    const withBalance = (n: number) => {
+      const db = fakeDb([]);
+      db.ledger.push({ member_id: MEMBER, delta: n, source: 'purchase', reference_id: 'p' });
+      return db;
+    };
+
+    it('prices at provider cost plus 10%, rounded up to whole credits', () => {
+      // $0.02 → ₹1.80 → ₹1.98 → 19.8 → 20 credits at ₹0.10 each
+      expect(creditsForCost(0.02, S)).toBe(20);
+      expect(creditsForCost(0, S)).toBe(0);
+      expect(creditsForCost(0.000001, S)).toBe(1);
+      // The cap is the inverse: 60 credits pay for exactly the cost that prices at 60.
+      expect(creditsForCost(costCapUsd(60, S), S)).toBe(60);
+    });
+
+    it('needs the minimum to ask, and sets aside at most one question’s worth', () => {
+      expect(holdFor(9, S)).toBeNull();
+      expect(holdFor(10, S)).toBe(10);
+      expect(holdFor(500, S)).toBe(60);
+    });
+
+    it('charges what the answer cost, never more than was set aside', async () => {
+      const db = withBalance(100);
+      const h = await reserveAiCredits(db, MEMBER, S);
+      expect(h).toEqual({ ok: true, holdId: 'h1', credits: 60 });
+      expect((await loadAvailableAiCredits(db, MEMBER)).available).toBe(40);
+      const charged = await settleAiCredits(db, { memberId: MEMBER, holdId: 'h1', held: 60, credits: 75, messageId: MSG });
+      expect(charged).toBe(60);
+      expect(await loadAiCreditBalance(db, MEMBER)).toBe(40);
+      expect(db.holds).toHaveLength(0);
+      expect(db.charged[MSG]).toBe(60);
+      // The same answer is never charged twice.
+      expect(await settleAiCredits(db, { memberId: MEMBER, holdId: 'h1', held: 60, credits: 5, messageId: MSG })).toBe(0);
+    });
+
+    it('parallel questions cannot spend the same credits', async () => {
+      const db = withBalance(70);
+      const [a, b] = await Promise.all([reserveAiCredits(db, MEMBER, S), reserveAiCredits(db, MEMBER, S)]);
+      expect(a).toMatchObject({ ok: true, credits: 60 });
+      expect(b).toMatchObject({ ok: true, credits: 10 });
+      expect(await reserveAiCredits(db, MEMBER, S)).toEqual({ ok: false, available: 0 });
+    });
+
+    it('a failed answer or a lapsed hold costs nothing', async () => {
+      const db = withBalance(30);
+      const h = await reserveAiCredits(db, MEMBER, S);
+      if (!h.ok) throw new Error('expected a hold');
+      await releaseAiCredits(db, MEMBER, h.holdId);
+      expect((await loadAvailableAiCredits(db, MEMBER)).available).toBe(30);
+      db.holds.push({ id: 'old', member_id: MEMBER, credits: 30, expired: true });
+      expect(await reserveAiCredits(db, MEMBER, S)).toMatchObject({ ok: true, credits: 30 });
+      expect(await loadAiCreditBalance(db, MEMBER)).toBe(30);
+    });
+
+    it('rejects settings that would charge below provider cost', () => {
+      const v = { chargingEnabled: true, usdToInr: 90, rateMultiplier: 1.1, inrPerCredit: 0.1, minCreditsToAsk: 10, maxCreditsPerQuestion: 60 };
+      expect(aiCreditSettingsSchema.safeParse(v).success).toBe(true);
+      expect(aiCreditSettingsSchema.safeParse({ ...v, rateMultiplier: 0.9 }).success).toBe(false);
+      expect(aiCreditSettingsSchema.safeParse({ ...v, minCreditsToAsk: 100 }).success).toBe(false);
+    });
+
+    it('charging starts switched off', () => {
+      expect(DEFAULT_AI_CREDIT_SETTINGS.chargingEnabled).toBe(false);
+      expect(AI_CREDITS_DDL.join(' ')).toContain('charging_enabled          BOOLEAN NOT NULL DEFAULT FALSE');
+    });
   });
 });

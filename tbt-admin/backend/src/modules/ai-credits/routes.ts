@@ -20,5 +20,7 @@ export async function aiCreditsRoutes(fastify: FastifyInstance) {
     admin.put('/packs/:id', h.adminUpdatePackHandler);
     admin.delete('/packs/:id', h.adminDeletePackHandler);
     admin.get('/orders', h.adminListOrdersHandler);
+    admin.get('/settings', h.adminGetSettingsHandler);
+    admin.put('/settings', h.adminUpdateSettingsHandler);
   }, { prefix: '/admin' });
 }

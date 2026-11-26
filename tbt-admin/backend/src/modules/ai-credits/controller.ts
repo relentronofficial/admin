@@ -2,7 +2,7 @@
  * AI credits wallet (`/api/ai-credits`). See lib/aiCredits.ts.
  *
  * Member routes (JWT cookie, always scoped to request.memberId):
- *   GET  /                        → { balance, purchaseAvailable }
+ *   GET  /                        → { balance, available, purchaseAvailable, chargingEnabled, ... }
  *   GET  /packs                   → active packs
  *   GET  /history?before=ISO      → ledger entries, newest first
  *   POST /razorpay/create-order   { packId }
@@ -11,7 +11,8 @@
  * (POST /api/user/courses/razorpay/webhook → handleAiCreditWebhookEvent).
  *
  * Admin routes (Clerk; writes limited to admin/super_admin):
- *   GET/POST /admin/packs, PUT/DELETE /admin/packs/:id, GET /admin/orders
+ *   GET/POST /admin/packs, PUT/DELETE /admin/packs/:id, GET /admin/orders,
+ *   GET/PUT /admin/settings (pricing; charging is off until turned on here)
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { env } from '../../config/env.js';
@@ -20,6 +21,9 @@ import {
   AI_CREDIT_ORDER_TYPE,
   aiCreditPackAdminDto,
   aiCreditPackSchema,
+  aiCreditSettingsSchema,
+  loadAiCreditSettings,
+  loadAvailableAiCredits,
   creditAiOrder,
   ledgerEntryDto,
   loadAiCreditBalance,
@@ -43,7 +47,14 @@ const purchaseAvailable = () => !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRE
 
 export async function walletHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
-    return ok(reply, { balance: await loadAiCreditBalance(req.server.prisma, req.memberId!), purchaseAvailable: purchaseAvailable() });
+    const [{ balance, available }, s] = await Promise.all([
+      loadAvailableAiCredits(req.server.prisma, req.memberId!),
+      loadAiCreditSettings(req.server.prisma),
+    ]);
+    return ok(reply, {
+      balance, available, purchaseAvailable: purchaseAvailable(),
+      chargingEnabled: s.chargingEnabled, minCreditsToAsk: s.minCreditsToAsk, inrPerCredit: s.inrPerCredit,
+    });
   } catch (err) {
     req.log.error({ err }, 'ai credit balance read failed');
     return fail(reply, 503, 'Could not load your AI credits');
@@ -217,4 +228,23 @@ export async function adminListOrdersHandler(req: FastifyRequest<{ Querystring: 
     createdAt: new Date(r.created_at).toISOString(),
     paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null,
   })));
+}
+
+export async function adminGetSettingsHandler(req: FastifyRequest, reply: FastifyReply) {
+  return ok(reply, await loadAiCreditSettings(req.server.prisma));
+}
+
+export async function adminUpdateSettingsHandler(req: FastifyRequest, reply: FastifyReply) {
+  const acting = await requirePackEditor(req, reply);
+  if (!acting) return reply;
+  const parsed = aiCreditSettingsSchema.safeParse(req.body);
+  if (!parsed.success) return fail(reply, 400, parsed.error.issues[0]?.message ?? 'Invalid settings');
+  const v = parsed.data;
+  await req.server.prisma.$executeRawUnsafe(
+    `UPDATE ai_credit_settings SET charging_enabled = $1, usd_to_inr = $2, rate_multiplier = $3, inr_per_credit = $4,
+            min_credits_to_ask = $5, max_credits_per_question = $6, updated_by = $7, updated_at = NOW()
+      WHERE id = TRUE`,
+    v.chargingEnabled, v.usdToInr, v.rateMultiplier, v.inrPerCredit, v.minCreditsToAsk, v.maxCreditsPerQuestion, acting.id,
+  );
+  return ok(reply, await loadAiCreditSettings(req.server.prisma));
 }

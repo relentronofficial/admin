@@ -57,7 +57,153 @@ export const AI_CREDITS_DDL = [
   // One ledger row per (source, reference): a paid order is credited once.
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_credit_ledger_ref ON ai_credit_ledger(source, reference_id) WHERE reference_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_ai_credit_ledger_member ON ai_credit_ledger(member_id, created_at DESC)`,
+  // Pricing. Charging stays off until an admin turns it on.
+  `CREATE TABLE IF NOT EXISTS ai_credit_settings (
+    id                        BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
+    charging_enabled          BOOLEAN NOT NULL DEFAULT FALSE,
+    usd_to_inr                NUMERIC(10,4) NOT NULL DEFAULT 90 CHECK (usd_to_inr > 0),
+    rate_multiplier           NUMERIC(6,3) NOT NULL DEFAULT 1.10 CHECK (rate_multiplier >= 1),
+    inr_per_credit            NUMERIC(10,4) NOT NULL DEFAULT 0.10 CHECK (inr_per_credit > 0),
+    min_credits_to_ask        INT NOT NULL DEFAULT 10 CHECK (min_credits_to_ask > 0),
+    max_credits_per_question  INT NOT NULL DEFAULT 60 CHECK (max_credits_per_question > 0),
+    updated_by                TEXT,
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`,
+  `INSERT INTO ai_credit_settings (id) VALUES (TRUE) ON CONFLICT DO NOTHING`,
+  // Credits set aside while a question is being answered, so parallel questions
+  // cannot spend the same credits. A hold left behind by a crash lapses.
+  `CREATE TABLE IF NOT EXISTS ai_credit_holds (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    member_id   UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    credits     INT NOT NULL CHECK (credits > 0),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at  TIMESTAMPTZ NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_credit_holds_member ON ai_credit_holds(member_id, expires_at)`,
 ];
+
+// ── Charging for answers ────────────────────────────────────────────────────
+
+export interface AiCreditSettings {
+  chargingEnabled: boolean;
+  usdToInr: number;
+  rateMultiplier: number;
+  inrPerCredit: number;
+  minCreditsToAsk: number;
+  maxCreditsPerQuestion: number;
+}
+
+export const DEFAULT_AI_CREDIT_SETTINGS: AiCreditSettings = {
+  chargingEnabled: false, usdToInr: 90, rateMultiplier: 1.1, inrPerCredit: 0.1, minCreditsToAsk: 10, maxCreditsPerQuestion: 60,
+};
+
+export const aiCreditSettingsSchema = z.object({
+  chargingEnabled: z.boolean(),
+  usdToInr: z.number().positive().max(1000),
+  rateMultiplier: z.number().min(1, 'The rate multiplier cannot be below 1').max(10),
+  inrPerCredit: z.number().positive().max(1000),
+  minCreditsToAsk: z.number().int().positive().max(100_000),
+  maxCreditsPerQuestion: z.number().int().positive().max(100_000),
+}).refine((s) => s.minCreditsToAsk <= s.maxCreditsPerQuestion, { message: 'The minimum to ask cannot be above the most one question may use' });
+
+/** How long a hold lasts; longer than the slowest answer (10 AI calls at 60 s would be cut by the client anyway). */
+export const HOLD_MINUTES = 15;
+
+/** Credits for an AI cost: provider cost in USD → rupees → credits, rounded up. Free answers cost 0. */
+export function creditsForCost(costUsd: number, s: AiCreditSettings): number {
+  if (!(costUsd > 0)) return 0;
+  const inr = costUsd * s.usdToInr * s.rateMultiplier;
+  // Round to 6 places first so float noise (e.g. 3.0000000004) does not add a credit.
+  return Math.max(1, Math.ceil(Number((inr / s.inrPerCredit).toFixed(6))));
+}
+
+/** The provider spend (USD) that `credits` pays for: the loop stops spending past it. */
+export function costCapUsd(credits: number, s: AiCreditSettings): number {
+  return (credits * s.inrPerCredit) / (s.usdToInr * s.rateMultiplier);
+}
+
+/** How much to set aside for one question, or null when the member cannot ask. */
+export function holdFor(available: number, s: AiCreditSettings): number | null {
+  if (available < s.minCreditsToAsk) return null;
+  return Math.min(available, s.maxCreditsPerQuestion);
+}
+
+export function mapAiCreditSettings(r: any): AiCreditSettings {
+  if (!r) return { ...DEFAULT_AI_CREDIT_SETTINGS };
+  return {
+    chargingEnabled: !!r.charging_enabled,
+    usdToInr: Number(r.usd_to_inr),
+    rateMultiplier: Number(r.rate_multiplier),
+    inrPerCredit: Number(r.inr_per_credit),
+    minCreditsToAsk: Number(r.min_credits_to_ask),
+    maxCreditsPerQuestion: Number(r.max_credits_per_question),
+  };
+}
+
+export async function loadAiCreditSettings(db: Db): Promise<AiCreditSettings> {
+  const rows = await db.$queryRawUnsafe<any[]>(`SELECT * FROM ai_credit_settings WHERE id = TRUE`);
+  return mapAiCreditSettings(rows[0]);
+}
+
+/** Balance minus credits set aside for questions still being answered. */
+export async function loadAvailableAiCredits(db: Db, memberId: string): Promise<{ balance: number; available: number }> {
+  const rows = await db.$queryRawUnsafe<any[]>(
+    `SELECT (SELECT COALESCE(SUM(delta), 0) FROM ai_credit_ledger WHERE member_id = $1::uuid)::int AS balance,
+            (SELECT COALESCE(SUM(credits), 0) FROM ai_credit_holds WHERE member_id = $1::uuid AND expires_at > NOW())::int AS held`,
+    memberId,
+  );
+  const balance = Number(rows[0]?.balance ?? 0);
+  return { balance, available: balance - Number(rows[0]?.held ?? 0) };
+}
+
+export type HoldResult = { ok: true; holdId: string; credits: number } | { ok: false; available: number };
+
+/** Sets credits aside for one question. Serialised per member, so two questions cannot both pass on the same credits. */
+export async function reserveAiCredits(prisma: Prisma, memberId: string, s: AiCreditSettings): Promise<HoldResult> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext('ai-credits:' || $1))`, memberId);
+    await tx.$executeRawUnsafe(`DELETE FROM ai_credit_holds WHERE member_id = $1::uuid AND expires_at <= NOW()`, memberId);
+    const { available } = await loadAvailableAiCredits(tx, memberId);
+    const credits = holdFor(available, s);
+    if (credits == null) return { ok: false, available } as const;
+    const rows = await tx.$queryRawUnsafe<any[]>(
+      `INSERT INTO ai_credit_holds (member_id, credits, expires_at) VALUES ($1::uuid, $2, NOW() + INTERVAL '${HOLD_MINUTES} minutes') RETURNING id::text`,
+      memberId, credits,
+    );
+    return { ok: true, holdId: String(rows[0].id), credits } as const;
+  });
+}
+
+/**
+ * Ends a hold: charges `credits` (never more than were held) against the answer
+ * `messageId`, or just releases it when credits is 0. Returns the credits charged.
+ */
+export async function settleAiCredits(
+  prisma: Prisma,
+  input: { memberId: string; holdId: string; held: number; credits: number; messageId: string | null },
+): Promise<number> {
+  const charge = Math.max(0, Math.min(Math.floor(input.credits), input.held));
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(`DELETE FROM ai_credit_holds WHERE id = $1::uuid AND member_id = $2::uuid`, input.holdId, input.memberId);
+    // A hold that lapsed (very slow answer) still charges: the answer was given.
+    if (charge === 0 || !input.messageId) return 0;
+    const rows = await tx.$queryRawUnsafe<any[]>(
+      `INSERT INTO ai_credit_ledger (member_id, delta, source, reference_id, note)
+       VALUES ($1::uuid, $2, 'usage', $3::uuid, 'Assistant answer')
+       ON CONFLICT (source, reference_id) WHERE reference_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      input.memberId, -charge, input.messageId,
+    );
+    if (!rows.length) return 0;
+    await tx.$executeRawUnsafe(`UPDATE help_bot_messages SET credits_charged = $2 WHERE id = $1::uuid`, input.messageId, charge);
+    return charge;
+  });
+}
+
+/** Releases a hold without charging (the answer failed or was never given). */
+export async function releaseAiCredits(db: Tx, memberId: string, holdId: string): Promise<void> {
+  await db.$executeRawUnsafe(`DELETE FROM ai_credit_holds WHERE id = $1::uuid AND member_id = $2::uuid`, holdId, memberId);
+}
 
 export const aiCreditPackSchema = z.object({
   label: z.string().trim().min(1, 'Label is required').max(120),

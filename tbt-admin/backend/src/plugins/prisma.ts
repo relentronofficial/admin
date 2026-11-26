@@ -1691,6 +1691,8 @@ async function prismaPlugin(fastify: FastifyInstance, opts: FastifyPluginOptions
          cost_usd NUMERIC(10,6),
          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
        )`,
+      // AI credits charged for an answer (lib/aiCredits.ts); NULL = not charged.
+      `ALTER TABLE help_bot_messages ADD COLUMN IF NOT EXISTS credits_charged INT`,
       `CREATE INDEX IF NOT EXISTS idx_help_bot_conv ON help_bot_conversations(member_id, updated_at DESC)`,
       `CREATE INDEX IF NOT EXISTS idx_help_bot_msg ON help_bot_messages(conversation_id, created_at)`,
       `CREATE INDEX IF NOT EXISTS idx_help_bot_msg_created ON help_bot_messages(created_at)`,

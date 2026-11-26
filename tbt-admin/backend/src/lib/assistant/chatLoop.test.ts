@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HISTORY_CHARS, HISTORY_TURNS, MAX_CALLS_PER_ROUND, MAX_ROUNDS, adminSystemPrompt, conversationTitle, runChatLoop } from './chatLoop.js';
+import { HISTORY_CHARS, HISTORY_TURNS, MAX_CALLS_PER_ROUND, MAX_ROUNDS, OVER_BUDGET, adminSystemPrompt, conversationTitle, runChatLoop } from './chatLoop.js';
 import { AssistantServiceError, explainStatus, openRouterComplete, readCompletion, usableKey, type Completion, retryDelay } from './openRouter.js';
 
 const answer = (text: string | null, finishReason = 'stop'): Completion => ({ message: { role: 'assistant', content: text }, finishReason, costUsd: 0.01 });
@@ -37,6 +37,17 @@ describe('runChatLoop', () => {
       { role: 'tool', tool_call_id: 'c0', content: '{"n":1}' },
       { role: 'tool', tool_call_id: 'c1', content: '{"error":"nope"}' },
     ]);
+  });
+  it('stops looking things up once the spending cap is reached', async () => {
+    const { complete, sent } = script(asks('a'), asks('a'), answer('done'));
+    const runTool = vi.fn(async () => ({ ok: true as const, data: 1 }));
+    const r = await runChatLoop({ ...base, complete, runTool, maxCostUsd: 0.04 });
+    expect(sent).toHaveLength(2);
+    expect(r.text).toBe(OVER_BUDGET);
+    expect(r.costUsd).toBeCloseTo(0.04);
+    // An answer that arrives within the cap is returned as usual.
+    const ok = script(asks('a'), answer('done'));
+    expect((await runChatLoop({ ...base, complete: ok.complete, runTool, maxCostUsd: 0.04 })).text).toBe('done');
   });
   it('stops after the round limit', async () => {
     const { complete, sent } = script(asks('a'));

@@ -41,6 +41,7 @@ function withoutReasoning(messages: ChatMessage[]): ChatMessage[] {
 }
 
 const CACHE = { cache_control: { type: 'ephemeral' } };
+export const OVER_BUDGET = 'This question needed more lookups than one question allows. Please ask a narrower question.';
 
 export async function runChatLoop(o: {
   complete: Complete;
@@ -55,6 +56,8 @@ export async function runChatLoop(o: {
   signal?: AbortSignal;
   /** Trusted text in the prompt whose figures may be quoted. */
   facts?: string;
+  /** Stop looking things up once this much (USD) is spent; the member's credits pay for no more. */
+  maxCostUsd?: number;
 }): Promise<LoopResult> {
   let messages: ChatMessage[] = [
     // Cache point 1: tool definitions + shared rules (reused across questions and admins).
@@ -113,6 +116,9 @@ export async function runChatLoop(o: {
         if (unsupported.length) return { text: `${text}\n\n⚠ Calculated, not read directly from the data: ${unsupported.slice(0, 10).join('; ')}`, toolsUsed, costUsd, hard };
       }
       return { text: c.finishReason === 'length' ? `${text}\n\n(The answer was cut short. Ask for less at once.)` : text, toolsUsed, costUsd, hard };
+    }
+    if (o.maxCostUsd != null && costUsd >= o.maxCostUsd) {
+      return { text: OVER_BUDGET, toolsUsed, costUsd, hard };
     }
     messages.push(c.message);
     const results = await Promise.all(calls.map(async (call, i): Promise<ToolResult> => {
