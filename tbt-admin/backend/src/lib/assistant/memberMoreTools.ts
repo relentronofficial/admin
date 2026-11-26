@@ -147,8 +147,17 @@ export const memberMoreTools: AssistantTool<MemberToolCtx>[] = [
     async run(c) {
       const g = await loadMemberWeeklyGraph(c.prisma, c.memberId);
       if (!g) return { inProgram: false };
+      // No active weeks: the graph has no columns, and its currentWeek is only a
+      // fallback of 1. Say so plainly instead of naming a week that isn't there.
+      const current = g.weeks.find((w) => w.isCurrent);
+      const weeksNote = !g.weeks.length
+        ? 'The team has not set up any weeks on this graph yet, so it shows no weeks. Do not name a current week.'
+        : current && g.currentDay > current.endDay
+          ? `Day ${g.currentDay} is after the last week set up on this graph (${current.label}, days ${current.startDay}-${current.endDay}).`
+          : null;
       return {
-        inProgram: true, link: '/mentorship', currentDay: g.currentDay, currentWeek: g.currentWeek, totalDays: g.totalDays,
+        inProgram: true, link: '/mentorship', currentDay: g.currentDay, currentWeek: g.weeks.length ? g.currentWeek : null, totalDays: g.totalDays,
+        ...(weeksNote ? { weeksNote } : {}),
         tasksDone: g.summary,
         weeks: g.weeks.filter((w) => w.weekNumber <= g.currentWeek + 1).map((w) => ({
           week: w.label, days: `${w.startDay}-${w.endDay}`, current: w.isCurrent, tasksDone: w.completed, tasks: w.total,
